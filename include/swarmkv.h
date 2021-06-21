@@ -17,7 +17,8 @@ struct swarmkv_writeoptions;
 struct swarmkv_store;
 
 // config example: "token=49ffb3ae-8e7e-40ab-bc3f-824567e932fe,db=0";
-struct swarmkv_store* swarmkv_open(const char* bootstrap_address, const char* config, char* err);
+// bootstraps example: "tcp://192.168.0.100:8323,tcp://192.168.0.101:8323"
+struct swarmkv_store* swarmkv_open(const char* bootstraps, const char* config, char* err);
 int swarmkv_set(struct swarmkv_store* store, const char* table, const struct swarmkv_writeoptions* options, 
 					const char* key, size_t keylen, const char* value, size_t vallen, char** errptr);
 //Returend value MUST Be freed by caller.
