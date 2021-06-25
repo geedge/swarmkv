@@ -14,6 +14,39 @@
 | Instance | 实例   | 一个Swarm KV句柄                           |
 | Table    | 表     | Key的命名空间，一个Instance可以有多个Table |
 
+## Wired Format
+### Ping/Pong Message
+```
+{
+    "self_id": 101,
+    "self_ip": "192.168.0.1",
+    "self_port": 8323,
+    "msg_type":" "ping",
+    "transaction_id":"8310-de139bc9-847474",
+    "node_list":[
+        {
+            "node_id":101,
+            "node_ip":"192.168.0.1",
+            "node_port":8323
+        },
+        {
+            "node_id":102,
+            "node_ip":"192.168.0.2",
+            "node_port":8323           
+        }
+    ],
+    "slot_list":[
+        {
+            "slot_id": 1,
+            "owner_id": 101
+        },
+        {
+            "slot_id": 2,
+            "owner_id": 102
+        }
+    ]
+}
+```
 
 
 ## 基础设施

@@ -160,9 +160,14 @@ void swarmkv_msg_processing_thread()
 		msg=msgpack_unpack(buff);
 		switch(msg.type)
 		{
-			case PUT:
+			case PUT_REQ:
 				//hash_table_add(owned_value_hash, msg.key, msg.value)
 				//send INVLIDATE_KEY message
+				break;
+			case GET_REQ:
+				//value=hash_table_find(owned_value_hash, msg.key);
+				//update nodes_have_key(msg.node_id,);
+				//send GET_RESPONSE message
 				break;
 			case GET_RESPONSE:
 			case PUT_RESPONSE:
@@ -170,15 +175,29 @@ void swarmkv_msg_processing_thread()
 				//transaction=hash_table_find(on_fly_transactions, msg.transaction_id);
 				//transaction.callback()
 				break;
-			case GET:
-				//value=hash_table_find(owned_value_hash, msg.key);
-				//update nodes_have_key(msg.node_id,);
-				//send GET_RESPONSE message
+			case HEALTH_CHECK_PING:
+				//check swarmkv_node nodes;
+				//send HEALTH_CHECK_PONG message;
 				break;
-			case MEET:
+			case HEALTH_CHECK_PONG:
+				//update swarmkv_node->pong_recieved;
+				//check swarmkv_node nodes;
+				break;
+			case MEET_REQ:
 				//add the node into swarmkv_store->nodes
-			case MOVE:
+				//send MEET_RESP message
+				break;
+			case MEET_RESP:
+				//read swarmkv_slot myslots[65535];
+				break;
+			case FAILED:
+				//calculate consistent hash, update slot table
+				break;
+			case MOVE_REQ:
 				//see swarmkv_open 3.2
+				break;
+			case MOVE_RESP:
+				//update swarmkv_value* owned_value_hash;
 				break;
 			case HEALTH_CHECK:
 				//do gossip
@@ -186,12 +205,7 @@ void swarmkv_msg_processing_thread()
 			case INVALIDATE_KEY:
 				//delete from cached_value_hash;
 				break;
-			case LIST_SLOT:
-				//send swarmkv_store->slots;
-				break;
-			case FAILED_NODE:
-				//calculate consistent hash, update slot table
-				break;
+			
 		}
 		//Failover of cluster node
 			//send failed_msg to other node
