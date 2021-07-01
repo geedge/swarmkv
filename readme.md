@@ -15,24 +15,25 @@
 | Table    | 表     | Key的命名空间，一个Instance可以有多个Table |
 
 ## Wired Format
-### Ping/Pong Message
+### Ping/Pong/MEET Message
 ```
 {
-    "self_id": 101,
-    "self_ip": "192.168.0.1",
-    "self_port": 8323,
-    "msg_type":" "ping",
-    "transaction_id":"8310-de139bc9-847474",
+    "my_id": 101,
+    "my_ip": "192.168.0.1",
+    "my_port": 8323,
+    "msg_type": "ping",
     "node_list":[
         {
             "node_id":101,
             "node_ip":"192.168.0.1",
-            "node_port":8323
+            "node_port":8323,
+            "node_status":1
         },
         {
             "node_id":102,
             "node_ip":"192.168.0.2",
-            "node_port":8323           
+            "node_port":8323, 
+            "node_status":1         
         }
     ],
     "slot_list":[
@@ -47,8 +48,151 @@
     ]
 }
 ```
+### PFAIL Message
+```
+{
+    "my_id": 101,
+    "my_ip": "192.168.0.1",
+    "my_port": 8323,
+    "msg_type": "pfail",
+    "node_id": 100
+}
+```
+### FAIL Message
+Request
+```
+{
+    "my_id": 101,
+    "my_ip": "192.168.0.1",
+    "my_port": 8323,
+    "msg_type": "fail_req",
+    "node_id": 100
+}
+```
+Response
+```
+{
+    "my_id": 102,
+    "my_ip": "192.168.0.1",
+    "my_port": 8323,
+    "msg_type": "fail_resp",
+    "msg":"ok"
+}
+```
+### Slot Migration
+Request
+```
+{
+    "my_id": 101,
+    "my_ip": "192.168.0.1",
+    "my_port": 8323,
+    "msg_type":" "migrate_request",
+    "slot_id": 2
+}
+```
+Reponse
+```
+{
+    "my_id": 102,
+    "my_ip": "192.168.0.1",
+    "my_port": 8323,
+    "msg_type":" "migrate_response",  
+    "slot_id": 102,
+    "kv":[
+        {
+            "key": "key1",
+            "value": "value1",
+        },
+        {
 
+        }
+    ]
+}
+```
+### PUT Keys
+Request
+```
+{
+    "my_id": 101,
+    "my_ip": "192.168.0.1",
+    "my_port": 8323,
+    "msg_type":" "put_keys",
+    "transaction_id":"8310-de139bc9-847474",
+    "kv":[
+        {
+            "key": "key1",
+            "value": "value1",
+        },
+        {
 
+        }
+    ]
+}
+```
+Response
+```
+{
+    "my_id": 102,
+    "my_ip": "192.168.0.1",
+    "my_port": 8323,
+    "msg_type":" "put_keys_response",
+    "transaction_id":"8310-de139bc9-847474",
+    "msg":"ok"
+}
+```
+### GET Keys
+Request
+```
+{
+    "my_id": 101,
+    "my_ip": "192.168.0.1",
+    "my_port": 8323,
+    "msg_type":" "get_key",
+    "transaction_id":"8310-de139bc9-847474",
+    "key": "test"
+}
+```
+Response
+```
+{
+    "my_id": 102,
+    "my_ip": "192.168.0.1",
+    "my_port": 8323,
+    "msg_type":" "get_keys_response",
+    "transaction_id":"8310-de139bc9-847474",
+    "key":"test",
+    "value":"hello"
+}
+```
+### Invalidate Keys
+Request
+```
+{
+    "my_id": 101,
+    "my_ip": "192.168.0.1",
+    "my_port": 8323,
+    "msg_type": "invalidate_keys",
+    "kv":[
+        {
+            "key": "key1",
+            "value": "value1",
+        },
+        {
+
+        }
+    ]
+}
+```
+Response
+```
+{
+    "my_id": 102,
+    "my_ip": "192.168.0.1",
+    "my_port": 8323,
+    "msg_type": "invalidate_keys_response",
+    "msg":"ok"
+}
+```
 ## 基础设施
 
 Msgpack https://msgpack.org/index.html  https://github.com/msgpack/msgpack-c/tree/c_master
