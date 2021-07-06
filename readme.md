@@ -142,7 +142,8 @@ Request
     "my_ip": "192.168.0.1",
     "my_port": 8323,
     "msg_type": "get_key",
-    "callback": "print_result",
+    “uuid": "8310-de139bc9-847474"
+    "callback": "0xabdcefg",
     "table_name": "tb1",
     "key": "test"
 }

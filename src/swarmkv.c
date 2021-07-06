@@ -1233,6 +1233,10 @@ void swarmkv_node_health_check(int sockfd, struct swarmkv_store *store)
 	for (i = 0; i < choose_in; i++)
 	{
 		int node_id = rand()%nodes_cnt;
+		if(node_id == store->my_node_id)
+		{
+			continue;
+		}
 		struct swarmkv_node *candidate_node = NULL;
 		candidate_node = ALLOC(struct swarmkv_node, 1);
 		HASH_FIND_INT(store->nodes, &node_id, candidate_node);
@@ -1342,56 +1346,12 @@ int add_bootstrap_node(struct swarmkv_store *store)
 	return 1;
 }
 
-struct swarmkv_store *swarmkv_open(uint16_t port, const char *eth_inf, int my_node_id)
+void *swarmkv_recv_thread(void *arg)
 {
-	printf("open a node\n");
-	struct swarmkv_store *store = NULL;
-	store = ALLOC(struct swarmkv_store, 1);
-	//my info
-	store->my_ip = get_local_ip(eth_inf);
-	//printf("%s\n",store->my_ip);
-	store->my_node_id = my_node_id;
-	if(!port)
-		store->my_port = SWARMKV_DEFAULT_LISTEN_PORT;
-	else
-		store->my_port = port;
-
-	//init rwlock
-	pthread_rwlock_init(&store->rwlock, NULL);
-
-	//create socket
-	struct sockaddr_in peer_addr;
-    socklen_t peerlen = sizeof(struct sockaddr_in);
+	struct swarmkv_store *store = (struct swarmkv_store *) arg;
 	char recvbuf[BUFSIZ];
-	store->sockfd = create_socket(store->my_port);
-	printf("store->sockfd : %d\n", store->sockfd);
-
-	//add myselt to store->nodes
-	struct swarmkv_node* myself = NULL;
-	myself = ALLOC(struct swarmkv_node, 1);
-	myself->node_id = store->my_node_id;
-	myself->ip = store->my_ip;
-	myself->port = store->my_port;
-	myself->ping_sent_t = 0;
-	myself->pong_received_t = 0;
-	myself->status = ON;
-	myself->pfail_cnt = 0;
-	HASH_ADD_INT(store->nodes, node_id, myself); 
-
-	//add bootstrap nodes
-	add_bootstrap_node(store);
-
-	//send meet msg to bootstrap nodes
-	struct swarmkv_node* bootstrap_node = NULL;
-	for (bootstrap_node = store->nodes; bootstrap_node != NULL; bootstrap_node = (struct swarmkv_node*)(bootstrap_node->hh.next)) 
-	{
-		if(bootstrap_node->node_id != store->my_node_id)
-		{
-			swarmkv_send_meet_req_msg(bootstrap_node, store);
-		}
-		//printf("send meet msg\n");
-	}
-
+	struct sockaddr_in peer_addr;
+	socklen_t peerlen = sizeof(struct sockaddr_in);
 	int msg_cnt = 0;
 	int ping_cnt = 0;
 	int check_cnt = 0;
@@ -1455,6 +1415,71 @@ struct swarmkv_store *swarmkv_open(uint16_t port, const char *eth_inf, int my_no
 			swarmkv_node_health_check(store->sockfd, store);
 		}	
 	}
+	pthread_exit(NULL);
+}
+
+struct swarmkv_store *swarmkv_open(uint16_t port, const char *eth_inf, int my_node_id)
+{
+	printf("open a node\n");
+	struct swarmkv_store *store = NULL;
+	store = ALLOC(struct swarmkv_store, 1);
+	//my info
+	store->my_ip = get_local_ip(eth_inf);
+	//printf("%s\n",store->my_ip);
+	store->my_node_id = my_node_id;
+	if(!port)
+		store->my_port = SWARMKV_DEFAULT_LISTEN_PORT;
+	else
+		store->my_port = port;
+
+	//init rwlock
+	pthread_rwlock_init(&store->rwlock, NULL);
+
+	//create socket
+	store->sockfd = create_socket(store->my_port);
+	printf("store->sockfd : %d\n", store->sockfd);
+
+	//add myselt to store->nodes
+	struct swarmkv_node* myself = NULL;
+	myself = ALLOC(struct swarmkv_node, 1);
+	myself->node_id = store->my_node_id;
+	myself->ip = store->my_ip;
+	myself->port = store->my_port;
+	myself->ping_sent_t = 0;
+	myself->pong_received_t = 0;
+	myself->status = ON;
+	myself->pfail_cnt = 0;
+	HASH_ADD_INT(store->nodes, node_id, myself); 
+
+	//add bootstrap nodes
+	add_bootstrap_node(store);
+
+	//send meet msg to bootstrap nodes
+	struct swarmkv_node* bootstrap_node = NULL;
+	for (bootstrap_node = store->nodes; bootstrap_node != NULL; bootstrap_node = (struct swarmkv_node*)(bootstrap_node->hh.next)) 
+	{
+		if(bootstrap_node->node_id != store->my_node_id)
+		{
+			swarmkv_send_meet_req_msg(bootstrap_node, store);
+		}
+		//printf("send meet msg\n");
+	}
+
+	//create a thread to recieve and handle remote message
+	pthread_t tid;
+	int pthread_ret = pthread_create(&tid, NULL, swarmkv_recv_thread, (void*)store);
+	if(pthread_ret != 0)
+	{
+		printf("pthread_create error: error_code = %d\n", pthread_ret);
+        return NULL;
+	}
+
+	if (pthread_join(tid, NULL))                  
+    {
+        printf("thread is not exit...\n");
+	}
+	pthread_exit(NULL);
+
 	close(store->sockfd);
 	return store;
 	//1 create udp socket, which receive and send msg via UDP 8323 by default. And necessary data structures.
