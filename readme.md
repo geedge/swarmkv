@@ -118,15 +118,9 @@ Request
     "my_port": 8323,
     "msg_type":" "put_keys",
     "transaction_id":"8310-de139bc9-847474",
-    "kv":[
-        {
-            "key": "key1",
-            "value": "value1",
-        },
-        {
-
-        }
-    ]
+    "table_name": "tb1",
+    "key": "key1",
+    "value": "value1"
 }
 ```
 Response
@@ -147,8 +141,9 @@ Request
     "my_id": 101,
     "my_ip": "192.168.0.1",
     "my_port": 8323,
-    "msg_type":" "get_key",
-    "transaction_id":"8310-de139bc9-847474",
+    "msg_type": "get_key",
+    "callback": "print_result",
+    "table_name": "tb1",
     "key": "test"
 }
 ```
@@ -158,10 +153,10 @@ Response
     "my_id": 102,
     "my_ip": "192.168.0.1",
     "my_port": 8323,
-    "msg_type":" "get_keys_response",
-    "transaction_id":"8310-de139bc9-847474",
-    "key":"test",
-    "value":"hello"
+    "msg_type": "get_keys_response",
+    "callback": "print_result",
+    "key": "test",
+    "value": "hello"
 }
 ```
 ### Invalidate Keys
@@ -172,15 +167,9 @@ Request
     "my_ip": "192.168.0.1",
     "my_port": 8323,
     "msg_type": "invalidate_keys",
-    "kv":[
-        {
-            "key": "key1",
-            "value": "value1",
-        },
-        {
-
-        }
-    ]
+    "table_name": "tb1",
+    "key": "key1",
+    "value": "value1"
 }
 ```
 Response

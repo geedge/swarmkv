@@ -55,11 +55,18 @@ struct swarmkv_table
 	UT_hash_handle hh;
 };
 
+struct consistent_hash
+{
+	int node_id;
+	int hash;
+};
+
 struct swarmkv_node
 {
 	int node_id;       //Key
 	char* ip;
 	uint16_t port;
+	int virtual_num;   //number of virtual nodes
 	uint32_t ping_sent_t;
 	uint32_t pong_received_t;
 	int status;        //ONLINE/PFAIL/FAIL
