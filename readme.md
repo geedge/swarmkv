@@ -15,7 +15,7 @@
 | Table    | 表     | Key的命名空间，一个Instance可以有多个Table |
 
 ## Wired Format
-### Ping/Pong/MEET Message
+### Ping/Pong/MEET_RESP Message
 ```
 {
     "my_id": 101,
@@ -48,6 +48,17 @@
     ]
 }
 ```
+### MEET REQUEST Message
+Request
+```
+{
+    "my_id": 101,
+    "my_ip": "192.168.0.1",
+    "my_port": 8323,
+    "msg_type": "MSG_MEET_REQ"
+}
+```
+
 ### PFAIL Message
 ```
 {
