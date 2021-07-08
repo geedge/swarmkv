@@ -81,7 +81,6 @@ struct swarmkv_store
 	//struct swarmkv_ch_node* ch_nodes;
 };
 
-/*
+
 struct swarmkv_readoptions{};
 struct swarmkv_writeoptions{};
-*/

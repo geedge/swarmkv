@@ -193,7 +193,7 @@ size_t swarmkv_msg_pack_ok_response(struct swarmkv_store *store, enum swarmkv_ms
 }
 
 //pack put/invalidate key request msg
-size_t swarmkv_msg_pack_update_key_req(struct swarmkv_store *store, enum swarmkv_msg_type type, char *buff, size_t buff_size, char* tb_name, char* key, char* value)
+size_t swarmkv_msg_pack_update_key_req(struct swarmkv_store *store, enum swarmkv_msg_type type, char *buff, size_t buff_size, const char* tb_name, const char* key, const char* value)
 {
 	if(buff_check(buff_size) <= 0)
 	{
@@ -222,7 +222,7 @@ size_t swarmkv_msg_pack_update_key_req(struct swarmkv_store *store, enum swarmkv
 }
 
 //pack get req msg
-size_t swarmkv_msg_pack_get_req(struct swarmkv_store *store, char *buff, size_t buff_size, char *table_name, char* key, char* cb_function)
+size_t swarmkv_msg_pack_get_req(struct swarmkv_store *store, char *buff, size_t buff_size, const char *table_name, const char* key, long unsigned int callback_addr)
 {
 	if(buff_check(buff_size) <= 0)
 	{
@@ -235,7 +235,7 @@ size_t swarmkv_msg_pack_get_req(struct swarmkv_store *store, char *buff, size_t 
 	enum swarmkv_msg_type type = MSG_GET_REQ;
 
 	js_get_req_msg = swarmkv_msg_pack_basic_info(store, type);
-	cJSON_AddStringToObject(js_get_req_msg, "callback", cb_function);
+	cJSON_AddNumberToObject(js_get_req_msg, "callback", callback_addr);
 	cJSON_AddStringToObject(js_get_req_msg, "table_name", table_name);
 	cJSON_AddStringToObject(js_get_req_msg, "key", key);
 
@@ -252,7 +252,7 @@ size_t swarmkv_msg_pack_get_req(struct swarmkv_store *store, char *buff, size_t 
 }
 
 //pack get resp msg
-size_t swarmkv_msg_pack_get_resp(struct swarmkv_store *store, char *buff, size_t buff_size, char *table_name, char* key, char* value, char* cb_function)
+size_t swarmkv_msg_pack_get_resp(struct swarmkv_store *store, char *buff, size_t buff_size, const char *table_name, const char* key, char* value, long unsigned int callback_addr)
 {
 	if(buff_check(buff_size) <= 0)
 	{
@@ -265,7 +265,8 @@ size_t swarmkv_msg_pack_get_resp(struct swarmkv_store *store, char *buff, size_t
 	enum swarmkv_msg_type type = MSG_GET_RESP;
 
 	js_get_resp_msg = swarmkv_msg_pack_basic_info(store, type);
-	cJSON_AddStringToObject(js_get_resp_msg, "callback", cb_function);
+	
+	cJSON_AddNumberToObject(js_get_resp_msg, "callback", callback_addr);
 	cJSON_AddStringToObject(js_get_resp_msg, "table_name", table_name);
 	cJSON_AddStringToObject(js_get_resp_msg, "key", key);
 	cJSON_AddStringToObject(js_get_resp_msg, "value", value);
