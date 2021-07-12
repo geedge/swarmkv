@@ -1,5 +1,7 @@
 cmake_minimum_required (VERSION 2.8)
 
+include(ExternalProject)
+
 #[[
 MESSAGE("PROJECT_NAME: ${PROJECT_NAME}")       #swarmkv
 MESSAGE("PROJECT_SOURCE_DIR: ${PROJECT_SOURCE_DIR}")   #/home/janessa/Desktop/swarmkv
@@ -7,9 +9,7 @@ MESSAGE("PROJECT_BINARY_DIR: ${PROJECT_BINARY_DIR}")   #/home/janessa/Desktop/sw
 MESSAGE("CMAKE_CURRENT_SOURCE_DIR: ${CMAKE_CURRENT_SOURCE_DIR}")   #/home/janessa/Desktop/swarmkv/vendor
 ]]
 
-
-include(ExternalProject)
-
+#caculate md5: md5sum filename
 #[[
 ExternalProject_Add(GoogleTest PREFIX GoogleTest
         URL ${CMAKE_CURRENT_SOURCE_DIR}/googletest-release-1.8.0.tar.gz
@@ -26,22 +26,63 @@ set_property(TARGET gtest PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${INSTALL_DIR}/
 set_property(TARGET gtest PROPERTY INTERFACE_LINK_LIBRARIES pthread)
 ]]
 
+#cjson
 ExternalProject_Add(cJSON PREFIX cJSON
         URL ${CMAKE_CURRENT_SOURCE_DIR}/cJSON-master.zip
         URL_MD5 19a4bd52cd9f3e91c652cabcb1f09e12
-        CONFIGURE_COMMAND ""
+        CONFIGURE_COMMAND cmake
         BUILD_COMMAND make
         INSTALL_COMMAND ""
         BUILD_IN_SOURCE 1)
 
-
 ExternalProject_Get_Property(cJSON INSTALL_DIR)
 file(MAKE_DIRECTORY ${INSTALL_DIR}/include)
+message("INSTALL_DIR: ${INSTALL_DIR}")    #/build/vendor/cJSON
+
+add_library(cjson-static STATIC IMPORTED GLOBAL)
+set_property(TARGET cjson-static PROPERTY IMPORTED_LOCATION ${INSTALL_DIR}/src/cJSON/libcjson.a)
+set_property(TARGET cjson-static PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${INSTALL_DIR}/include)
+
+
+#uuid
+#--with-pic, PIC:position independent code
+ExternalProject_Add(uuid PREFIX uuid
+        URL ${CMAKE_CURRENT_SOURCE_DIR}/libuuid-1.0.3.tar.gz
+        URL_MD5 d44d866d06286c08ba0846aba1086d68
+        CONFIGURE_COMMAND ./configure --prefix=<INSTALL_DIR> --disable-shared --with-pic
+        BUILD_COMMAND make
+        INSTALL_COMMAND make install
+        BUILD_IN_SOURCE 1)
+
 message("INSTALL_DIR: ${INSTALL_DIR}")
 
-add_library(cjson STATIC IMPORTED GLOBAL)
-set_property(TARGET cjson PROPERTY IMPORTED_LOCATION ${INSTALL_DIR}/src/cJSON/libcjson.a)
-set_property(TARGET cjson PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${INSTALL_DIR}/include)
+ExternalProject_Get_Property(uuid INSTALL_DIR)
+file(MAKE_DIRECTORY ${INSTALL_DIR}/include)
+
+add_library(uuid-static STATIC IMPORTED GLOBAL)
+#add_dependencies(uuid-static uuid)
+set_property(TARGET uuid-static PROPERTY IMPORTED_LOCATION ${INSTALL_DIR}/src/uuid/.libs/libuuid.a)
+set_property(TARGET uuid-static PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${INSTALL_DIR}/include)
+
+#[[
+### libxml2
+ExternalProject_Add(libxml2
+        PREFIX libxml2
+        URL ${CMAKE_CURRENT_SOURCE_DIR}/libxml2-2.9.2.tar.gz
+        URL_MD5 9e6a9aca9d155737868b3dc5fd82f788
+        CONFIGURE_COMMAND ./configure --prefix=<INSTALL_DIR> --disable-shared --without-python
+        BUILD_IN_SOURCE 1)
+
+ExternalProject_Get_Property(libxml2 INSTALL_DIR)
+file(MAKE_DIRECTORY ${INSTALL_DIR}/include/libxml2/)
+
+add_library(libxml2-static STATIC IMPORTED GLOBAL)
+add_dependencies(libxml2-static libxml2)
+set_property(TARGET libxml2-static PROPERTY IMPORTED_LOCATION ${INSTALL_DIR}/lib/libxml2.a)
+set_property(TARGET libxml2-static PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${INSTALL_DIR}/include/libxml2/)
+]]
+
+
 
 
 
