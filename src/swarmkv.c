@@ -18,6 +18,7 @@
 
 #include <pthread.h>
 
+/*
 #include "../include/swarmkv.h"
 #include "./inc_internal/swarmkv_internal.h"
 #include "./inc_internal/swarmkv_net.h"
@@ -25,7 +26,14 @@
 #include "./inc_internal/uthash/uthash.h"
 #include "./inc_internal/uthash/utarray.h"
 #include "./inc_internal/swarmkv_utils.h"
-
+*/
+#include "swarmkv.h"
+#include "swarmkv_internal.h"
+#include "swarmkv_net.h"
+#include "swarmkv_message.h"
+#include "uthash/uthash.h"
+#include "uthash/utarray.h"
+#include "swarmkv_utils.h"
 
 #define BUFSIZE 2048
 #define SWARMKV_DEFAULT_LISTEN_PORT 8323
@@ -160,8 +168,6 @@ void swarmkv_owner_put_kv(struct swarmkv_store *store, const char *tb_name, cons
 	kv->vallen = strlen(kv->value);
 
 	pthread_rwlock_unlock(&store->rwlock);
-	free(table);
-	free(kv);
 }
 
 //send an invalidate request msg to nodes in nodes_have_key_cached
@@ -202,9 +208,6 @@ int swarmkv_msg_send_invalidate_key_req(struct swarmkv_store *store, const char 
 			invalidate_key_req_msg = NULL;
 		}
 	}
-	free(table);
-	free(kv);
-	free(cache_node);
 	return 1;
 }
 
@@ -247,12 +250,14 @@ int swarmkv_put(struct swarmkv_store *store, const char *tb_name, const struct s
 		{
 			printf("Pack put request message error.\n");
 			free(peer_node);
+			peer_node = NULL;
 			free(put_req_msg);
+			put_req_msg = NULL;
 			return -1;
 		}
 		swarmkv_msg_send(store->sockfd, put_req_msg, peer_node->ip, peer_node->port);
 		free(put_req_msg);	
-		free(peer_node);
+		put_req_msg = NULL;
 	}
 	return 1;
 }
@@ -274,6 +279,7 @@ size_t swarmkv_owner_get_kv(struct swarmkv_store *store, const char *tb_name, co
 	{
 		printf("I can't find the key!\n");
 		free(table);
+		table = NULL;
 		return -1;
 	}
 	//insert the request node into UT_array *nodes_have_key_cached
@@ -285,8 +291,6 @@ size_t swarmkv_owner_get_kv(struct swarmkv_store *store, const char *tb_name, co
 	pthread_rwlock_unlock(&store->rwlock);
 
 	size_t vallen = strlen(kv->value);
-	free(table);
-	free(kv);
 	return vallen;
 }
 
@@ -307,14 +311,13 @@ size_t swarmkv_cache_get_kv(struct swarmkv_store *store, const char *tb_name, co
 	{
 		//printf("I can't find the key in my cache!\n");
 		free(table);
+		table = NULL;
 		return -1;
 	}
 	pthread_rwlock_unlock(&store->rwlock);
 	value = kv->value;
 	size_t vallen = strlen(kv->value);
 
-	free(table);
-	free(kv);
 	return vallen;
 }
 
@@ -406,7 +409,9 @@ int swarmkv_parse_node_and_slot(struct swarmkv_store *store, cJSON* node_list, c
 			new_node->pfail_cnt = 0;
 			HASH_ADD_INT(store->nodes, node_id, new_node);
 			free(node_ip);
+			node_ip = NULL;
 			free(node_port);
+			node_port = NULL;
 		}
 		//check the exist node status
 		else
@@ -463,11 +468,15 @@ int swarmkv_parse_node_and_slot(struct swarmkv_store *store, cJSON* node_list, c
 			//需要添加epoch进行控制，不然不知道到底谁的版本才是最新的，可能因为网络延迟，旧的slot版本反而后到
 		}
 	}
-	free(new_node);
+	
 	free(node_item);
+	node_item = NULL;
 	free(node_id);
+	node_id = NULL;
 	free(node_status);
+	node_status = NULL;
 	free(slot_item);
+	slot_item = NULL;
 	return 1;
 }
 
@@ -499,6 +508,7 @@ int swarmkv_msg_unpack(struct swarmkv_store* store, char *buf)
 	cJSON* node_list = 0;
 	cJSON* slot_list = 0;
 	int id = src_id->valueint;
+	size_t msg_len = 0;
 
 	struct swarmkv_node *src_node = NULL;
 	HASH_FIND_INT(store->nodes, &id, src_node); 
@@ -506,14 +516,13 @@ int swarmkv_msg_unpack(struct swarmkv_store* store, char *buf)
 	//check if the src node is legal
 	if(src_node == NULL)
 	{
-		if(msg_type->valueint != MSG_MEET_RESP || msg_type->valueint != MSG_MEET_REQ)
+		if((msg_type->valueint != MSG_MEET_RESP) && (msg_type->valueint != MSG_MEET_REQ))
 		{
+			
 			printf("It is an UNKNOWN node %d!\n", id);
 			return -1;
 		}
 	}
-
-	size_t msg_len = 0;
 
 	switch(msg_type->valueint)
 	{
@@ -592,10 +601,11 @@ int swarmkv_msg_unpack(struct swarmkv_store* store, char *buf)
 			src_node->status = ON;
 			src_node->pfail_cnt = 0;
 
+			
 			//send a meet response msg
 			char *meet_resp_msg = ALLOC(char, SWARMKV_MAX_MSG_SIZE);
-			msg_len = swarmkv_msg_pack_health_check(store, MSG_MEET_RESP, resp_msg, SWARMKV_MAX_MSG_SIZE);
-			//swarmkv_msg_pack_health_check(store, MSG_MEET_RESP);
+			msg_len = swarmkv_msg_pack_health_check(store, MSG_MEET_RESP, meet_resp_msg, SWARMKV_MAX_MSG_SIZE);
+			printf("msg_len: %ld\n",msg_len);
 			if(msg_len <= 0)
 			{
 				printf("Pack meet response error.\n");
@@ -670,7 +680,7 @@ int swarmkv_msg_unpack(struct swarmkv_store* store, char *buf)
 				fail_resp_msg = NULL;
 			}
 			free(fail_node_id);
-			free(fail_node);
+			fail_node_id = NULL;
 			break;
 
 		case MSG_FAIL_RESP:
@@ -732,10 +742,6 @@ int swarmkv_msg_unpack(struct swarmkv_store* store, char *buf)
 				}
 			}
 			pthread_rwlock_unlock(&store->rwlock);
-			free(table);
-			table = NULL;
-			free(cache_kv);
-			cache_kv = NULL;
 			break;
 
 		case MSG_INVALIDATE_KEYS_RESP:
@@ -756,7 +762,7 @@ int swarmkv_msg_unpack(struct swarmkv_store* store, char *buf)
 
 			//send a response
 			char *get_resp_msg = ALLOC(char, SWARMKV_MAX_MSG_SIZE);
-			msg_len = swarmkv_msg_pack_get_resp(store, get_resp_msg, SWARMKV_MAX_MSG_SIZE, tb_name->valuestring, key->valuestring, val, cb_function->valueint);
+			msg_len = swarmkv_msg_pack_get_resp(store, get_resp_msg, SWARMKV_MAX_MSG_SIZE, tb_name->valuestring, key->valuestring, val, cb_function->valueint, uuid->valuestring);
 			if(msg_len <= 0 )
 			{
 				printf("pack a get response message error.\n");
@@ -766,7 +772,7 @@ int swarmkv_msg_unpack(struct swarmkv_store* store, char *buf)
 			free(get_resp_msg);
 			get_resp_msg = NULL;
 			free(val);
-			val == NULL;
+			val = NULL;
 			break;
 
 		case MSG_GET_RESP:
@@ -812,24 +818,34 @@ int swarmkv_msg_unpack(struct swarmkv_store* store, char *buf)
 				(*cb_f)(key->valuestring, value->valuestring);
 			}
 			*/
-			free(tb);
-			free(kv);
 			break;
 		default:
 			printf("UNKNOWN msg\n");
 	}
 	free(msg);
+	msg = NULL;
 	free(msg_type);
+	msg_type = NULL;
 	free(src_id);
+	src_id = NULL;
 	free(src_ip);
+	src_ip = NULL;
 	free(src_port);
+	src_port = NULL;
 	free(uuid);
+	uuid = NULL;
 	free(tb_name);
+	tb_name = NULL;
 	free(key);
+	key = NULL;
 	free(value);
+	value = NULL;
 	free(cb_function);
+	cb_function = NULL;
 	free(node_list);
+	node_list = NULL;
 	free(slot_list);
+	slot_list = NULL;
 	return 1;
 }
 
@@ -935,6 +951,7 @@ int swarmkv_regular_ping(struct swarmkv_store *store, clock_t cur_t)
 		}	
 	}
 	free(node);
+	node = NULL;
 	return 1;
 }
 
@@ -1005,8 +1022,9 @@ int swarmkv_config_and_init(struct swarmkv_store *store, const char *bootstraps,
 	{
 		printf("Please set your node id. Format: node_id=id;token=xxxxx,db=0\n");
 		free(bootstrap_info);
+		bootstrap_info = NULL;
 		free(config_info);
-		free(p);
+		config_info = NULL;
 		return -1;
 	}
 	strtok_r(my_id_info, "=", &p);
@@ -1026,12 +1044,9 @@ int swarmkv_config_and_init(struct swarmkv_store *store, const char *bootstraps,
 	if(my_info == NULL || peer_node_info == NULL)
 	{
 		free(bootstrap_info);
+		bootstrap_info = NULL;
 		free(config_info);
-		free(my_id_info);
-		free(my_info);
-		free(peer_node_info);
-		free(p);
-		free(p1);
+		config_info = NULL;
 		printf("Please set your ip&port and bootstrap_nodes ip&port. Format: self=ip:port;peers=ip0:port0,ip1:port1,...\n");
 		return -1;
 	}
@@ -1074,13 +1089,9 @@ int swarmkv_config_and_init(struct swarmkv_store *store, const char *bootstraps,
 		peer_node_info = strtok_r(NULL, ",", &p);
 	}
 	free(bootstrap_info);
+	bootstrap_info = NULL;
 	free(config_info);
-	free(my_id_info);
-	free(my_info);
-	free(peer_node_info);
-	free(p);
-	free(p1);
-	free(peer_ip);
+	config_info = NULL;
 	if(meet_cnt == 0)
 	{
 		printf("error: None of the meet messages were sent successfully.\n");
@@ -1089,22 +1100,24 @@ int swarmkv_config_and_init(struct swarmkv_store *store, const char *bootstraps,
 	return 1;
 }
 
-struct swarmkv_store *swarmkv_open(const char *bootstraps, const char *config, char *err)
+struct swarmkv_store *swarmkv_open(const char *bootstraps, const char *config, char **err)
 {
 	//parse my_node_id from config
 	//parse my port from bootstraps
 	struct swarmkv_store *store = NULL;
 	store = ALLOC(struct swarmkv_store, 1);
-
-	printf("open a node\n");
-
+	
+	uuid_t uuid;
+    uuid_generate(store->uuid); 
+	uuid_unparse(uuid, store->uuid);
+	
 	//init, set my info(ip.port,id), parse bootstrap node information and send meet msg to them
 	if(swarmkv_config_and_init(store, bootstraps, config) < 0)
 	{
 		printf("Startup failed, please reconfigure.\n");
 		return NULL;
 	}
-	
+
 	//init rwlock
 	pthread_rwlock_init(&store->rwlock, NULL);
 
@@ -1278,26 +1291,3 @@ void swarmkv_msg_processing_thread()
 }
 */
 
-int main(int argc, char **argv)
-{
-	//printf("%d\n",argc);
-	const char *bootstraps = "self=172.16.224.160:8323;peers=172.16.224.160:6323,172.16.224.160:7323,172.16.224.160:18323";
-	const char *config = "node_id=0;token=49ffb3ae-8e7e-40ab-bc3f-824567e932fe,db=0";
-	char *err = NULL;
-	swarmkv_open(bootstraps, config, err);
-	/*
-	if(argc == 4)
-	{
-		int port = atoi(argv[1]);
-		//printf("%s\n",argv[2]);
-		char *eth_inf = argv[2];
-		int node_id = atoi(argv[3]);
-		swarmkv_open(bootstraps, config, err);
-	}
-	else
-	{
-		printf("arg error\n");
-	}*/
-
-	return 1;
-}

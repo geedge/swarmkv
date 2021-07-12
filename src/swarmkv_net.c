@@ -1,4 +1,5 @@
-#include "./inc_internal/swarmkv_net.h"
+//#include "./inc_internal/swarmkv_net.h"
+#include "swarmkv_net.h"
 
 char* get_local_ip(const char *eth_inf)
 {
@@ -42,6 +43,10 @@ int swarmkv_create_socket(int port)
 		perror("socket");
 		return 0;
 	}
+	int on=1;
+  	setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR | SO_BROADCAST, &on, sizeof(on));
+
+
 	//set socket to non-block
 	fcntl(sockfd, F_SETFL, O_NONBLOCK);
 
@@ -66,7 +71,5 @@ int swarmkv_msg_send(int sockfd, char* msg, char* peer_ip, uint16_t peer_port)
 		printf("snedto error: %s\n", strerror(errno));
         return -1;
     }
-	printf("send a meet msg:\n%s\n",msg);
-
     return 1;
 }
