@@ -4,9 +4,14 @@
 #include <uuid/uuid.h>
 #include "./uthash/uthash.h"
 #include "./uthash/utarray.h"
+#include "swarmkv_utils.h"
 
 #define SWARMKV_DEFAULT_SLOT_NUM 65535
+#define SWARMKV_DEFAULT_NODE_NUM 32
 #define BOOTSTRAPS_NUM 5
+#define PFAIL 0
+#define FAIL -1
+#define ON 1
 
 struct swarmkv_key_value
 {

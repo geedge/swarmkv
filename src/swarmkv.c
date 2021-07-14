@@ -15,113 +15,26 @@
 #include <sys/types.h>  
 #include <sys/ioctl.h> 
 #include <cjson/cJSON.h> 
-
 #include <pthread.h>
 
-/*
-#include "../include/swarmkv.h"
-#include "./inc_internal/swarmkv_internal.h"
-#include "./inc_internal/swarmkv_net.h"
-#include "./inc_internal/swarmkv_message.h"
-#include "./inc_internal/uthash/uthash.h"
-#include "./inc_internal/uthash/utarray.h"
-#include "./inc_internal/swarmkv_utils.h"
-*/
 #include "swarmkv.h"
 #include "swarmkv_internal.h"
 #include "swarmkv_net.h"
 #include "swarmkv_message.h"
 #include "uthash/uthash.h"
 #include "uthash/utarray.h"
-#include "swarmkv_utils.h"
+#include "swarmkv_base64.h"
+#include "swarmkv_crc32.h"
 
 #define BUFSIZE 2048
 #define SWARMKV_DEFAULT_LISTEN_PORT 8323
+#define SWARMKV_MAX_KEY_LEN 2048
+#define SWARMKV_MAX_VAL_LEN 2048
 
 
-#define ON 1
-#define PFAIL 0
-#define FAIL -1
 #define SWARMKV_DEFAULT_NODE_TIMEOUT 15000000
 #define SWARMKV_PING_INTERVAL 100000   //100ms
 
-
-
-static const uint32_t crc32tab[] = {
- 0x00000000L, 0x77073096L, 0xee0e612cL, 0x990951baL,
- 0x076dc419L, 0x706af48fL, 0xe963a535L, 0x9e6495a3L,
- 0x0edb8832L, 0x79dcb8a4L, 0xe0d5e91eL, 0x97d2d988L,
- 0x09b64c2bL, 0x7eb17cbdL, 0xe7b82d07L, 0x90bf1d91L,
- 0x1db71064L, 0x6ab020f2L, 0xf3b97148L, 0x84be41deL,
- 0x1adad47dL, 0x6ddde4ebL, 0xf4d4b551L, 0x83d385c7L,
- 0x136c9856L, 0x646ba8c0L, 0xfd62f97aL, 0x8a65c9ecL,
- 0x14015c4fL, 0x63066cd9L, 0xfa0f3d63L, 0x8d080df5L,
- 0x3b6e20c8L, 0x4c69105eL, 0xd56041e4L, 0xa2677172L,
- 0x3c03e4d1L, 0x4b04d447L, 0xd20d85fdL, 0xa50ab56bL,
- 0x35b5a8faL, 0x42b2986cL, 0xdbbbc9d6L, 0xacbcf940L,
- 0x32d86ce3L, 0x45df5c75L, 0xdcd60dcfL, 0xabd13d59L,
- 0x26d930acL, 0x51de003aL, 0xc8d75180L, 0xbfd06116L,
- 0x21b4f4b5L, 0x56b3c423L, 0xcfba9599L, 0xb8bda50fL,
- 0x2802b89eL, 0x5f058808L, 0xc60cd9b2L, 0xb10be924L,
- 0x2f6f7c87L, 0x58684c11L, 0xc1611dabL, 0xb6662d3dL,
- 0x76dc4190L, 0x01db7106L, 0x98d220bcL, 0xefd5102aL,
- 0x71b18589L, 0x06b6b51fL, 0x9fbfe4a5L, 0xe8b8d433L,
- 0x7807c9a2L, 0x0f00f934L, 0x9609a88eL, 0xe10e9818L,
- 0x7f6a0dbbL, 0x086d3d2dL, 0x91646c97L, 0xe6635c01L,
- 0x6b6b51f4L, 0x1c6c6162L, 0x856530d8L, 0xf262004eL,
- 0x6c0695edL, 0x1b01a57bL, 0x8208f4c1L, 0xf50fc457L,
- 0x65b0d9c6L, 0x12b7e950L, 0x8bbeb8eaL, 0xfcb9887cL,
- 0x62dd1ddfL, 0x15da2d49L, 0x8cd37cf3L, 0xfbd44c65L,
- 0x4db26158L, 0x3ab551ceL, 0xa3bc0074L, 0xd4bb30e2L,
- 0x4adfa541L, 0x3dd895d7L, 0xa4d1c46dL, 0xd3d6f4fbL,
- 0x4369e96aL, 0x346ed9fcL, 0xad678846L, 0xda60b8d0L,
- 0x44042d73L, 0x33031de5L, 0xaa0a4c5fL, 0xdd0d7cc9L,
- 0x5005713cL, 0x270241aaL, 0xbe0b1010L, 0xc90c2086L,
- 0x5768b525L, 0x206f85b3L, 0xb966d409L, 0xce61e49fL,
- 0x5edef90eL, 0x29d9c998L, 0xb0d09822L, 0xc7d7a8b4L,
- 0x59b33d17L, 0x2eb40d81L, 0xb7bd5c3bL, 0xc0ba6cadL,
- 0xedb88320L, 0x9abfb3b6L, 0x03b6e20cL, 0x74b1d29aL,
- 0xead54739L, 0x9dd277afL, 0x04db2615L, 0x73dc1683L,
- 0xe3630b12L, 0x94643b84L, 0x0d6d6a3eL, 0x7a6a5aa8L,
- 0xe40ecf0bL, 0x9309ff9dL, 0x0a00ae27L, 0x7d079eb1L,
- 0xf00f9344L, 0x8708a3d2L, 0x1e01f268L, 0x6906c2feL,
- 0xf762575dL, 0x806567cbL, 0x196c3671L, 0x6e6b06e7L,
- 0xfed41b76L, 0x89d32be0L, 0x10da7a5aL, 0x67dd4accL,
- 0xf9b9df6fL, 0x8ebeeff9L, 0x17b7be43L, 0x60b08ed5L,
- 0xd6d6a3e8L, 0xa1d1937eL, 0x38d8c2c4L, 0x4fdff252L,
- 0xd1bb67f1L, 0xa6bc5767L, 0x3fb506ddL, 0x48b2364bL,
- 0xd80d2bdaL, 0xaf0a1b4cL, 0x36034af6L, 0x41047a60L,
- 0xdf60efc3L, 0xa867df55L, 0x316e8eefL, 0x4669be79L,
- 0xcb61b38cL, 0xbc66831aL, 0x256fd2a0L, 0x5268e236L,
- 0xcc0c7795L, 0xbb0b4703L, 0x220216b9L, 0x5505262fL,
- 0xc5ba3bbeL, 0xb2bd0b28L, 0x2bb45a92L, 0x5cb36a04L,
- 0xc2d7ffa7L, 0xb5d0cf31L, 0x2cd99e8bL, 0x5bdeae1dL,
- 0x9b64c2b0L, 0xec63f226L, 0x756aa39cL, 0x026d930aL,
- 0x9c0906a9L, 0xeb0e363fL, 0x72076785L, 0x05005713L,
- 0x95bf4a82L, 0xe2b87a14L, 0x7bb12baeL, 0x0cb61b38L,
- 0x92d28e9bL, 0xe5d5be0dL, 0x7cdcefb7L, 0x0bdbdf21L,
- 0x86d3d2d4L, 0xf1d4e242L, 0x68ddb3f8L, 0x1fda836eL,
- 0x81be16cdL, 0xf6b9265bL, 0x6fb077e1L, 0x18b74777L,
- 0x88085ae6L, 0xff0f6a70L, 0x66063bcaL, 0x11010b5cL,
- 0x8f659effL, 0xf862ae69L, 0x616bffd3L, 0x166ccf45L,
- 0xa00ae278L, 0xd70dd2eeL, 0x4e048354L, 0x3903b3c2L,
- 0xa7672661L, 0xd06016f7L, 0x4969474dL, 0x3e6e77dbL,
- 0xaed16a4aL, 0xd9d65adcL, 0x40df0b66L, 0x37d83bf0L,
- 0xa9bcae53L, 0xdebb9ec5L, 0x47b2cf7fL, 0x30b5ffe9L,
- 0xbdbdf21cL, 0xcabac28aL, 0x53b39330L, 0x24b4a3a6L,
- 0xbad03605L, 0xcdd70693L, 0x54de5729L, 0x23d967bfL,
- 0xb3667a2eL, 0xc4614ab8L, 0x5d681b02L, 0x2a6f2b94L,
- 0xb40bbe37L, 0xc30c8ea1L, 0x5a05df1bL, 0x2d02ef8dL 
-};
-
-uint32_t crc32( const unsigned char *buf, uint32_t size)
-{
-     uint32_t i, crc;
-     crc = 0xFFFFFFFF;
-     for (i = 0; i < size; i++)
-      crc = crc32tab[(crc ^ buf[i]) & 0xff] ^ (crc >> 8);
-     return crc^0xFFFFFFFF;
-}
 
 /*
 //set node address
@@ -138,7 +51,7 @@ struct sockaddr_in set_node_addr(struct swarmkv_node* node)
 */
 
 //write the key-value into my store 
-void swarmkv_owner_put_kv(struct swarmkv_store *store, const char *tb_name, const char *key, const char *value)
+void swarmkv_owner_put_kv(struct swarmkv_store *store, const char *tb_name, const char *key, size_t keylen, const char *value, size_t vallen)
 {
 	struct swarmkv_table *table = NULL;
 	struct swarmkv_key_value *kv = NULL;
@@ -153,25 +66,29 @@ void swarmkv_owner_put_kv(struct swarmkv_store *store, const char *tb_name, cons
 		//add a new key
 		kv = ALLOC(struct swarmkv_key_value, 1);
 		kv->key = (char *)key;
-		HASH_ADD_STR(table->owned_value_hash, key, kv);
+		//HASH_ADD_STR(table->owned_value_hash, key, kv);
+		HASH_ADD(hh, table->owned_value_hash, key, keylen, kv);
 	}
-	HASH_FIND_STR(table->owned_value_hash, key, kv);
+	//HASH_FIND_STR(table->owned_value_hash, key, kv);
+	HASH_FIND(hh, table->owned_value_hash, key, keylen, kv);
 	if(kv == NULL)
 	{
 		//add a new key
 		kv = ALLOC(struct swarmkv_key_value, 1);
 		kv->key = (char *)key;
-		HASH_ADD_STR(table->owned_value_hash, key, kv);
+		//HASH_ADD_STR(table->owned_value_hash, key, kv);
+		HASH_ADD(hh, table->owned_value_hash, key, keylen, kv);
 	}
-	kv->keylen = strlen(kv->key);
+	kv->keylen = keylen;
 	kv->value = (char *)value;
-	kv->vallen = strlen(kv->value);
+	kv->vallen = vallen;
 
 	pthread_rwlock_unlock(&store->rwlock);
 }
 
 //send an invalidate request msg to nodes in nodes_have_key_cached
-int swarmkv_msg_send_invalidate_key_req(struct swarmkv_store *store, const char *tb_name, const char *key, const char *value)
+int swarmkv_msg_send_invalidate_key_req(struct swarmkv_store *store, const char *tb_name, const char *key, size_t keylen, 
+											const char *value, size_t vallen)
 {
 	struct swarmkv_table *table = NULL;
 	struct swarmkv_key_value *kv = NULL;
@@ -182,12 +99,20 @@ int swarmkv_msg_send_invalidate_key_req(struct swarmkv_store *store, const char 
 		printf("I don't have the table %s\n", tb_name);
 		return -1;
 	}
-	HASH_FIND_STR(table->owned_value_hash, key, kv);
+	//HASH_FIND_STR(table->owned_value_hash, key, kv);
+	HASH_FIND(hh, table->owned_value_hash, key, keylen, kv);
 	if(kv == NULL)
 	{
 		printf("I don't have the key %s in the table %s\n", key, tb_name);
 		return -1;
 	}
+
+	//base64 encode
+	char *key_base64 = ALLOC(char, SWARMKV_MAX_KEY_LEN);
+	char *value_base64 = ALLOC(char, SWARMKV_MAX_VAL_LEN);
+	base64_encode(key, keylen, key_base64);
+	base64_encode(value, vallen, value_base64);
+
 	int* cached_node_id;
 	struct swarmkv_node* cache_node = NULL;
 	for(cached_node_id=(int*)utarray_front(kv->nodes_have_key_cached); cached_node_id!=NULL; cached_node_id=(int*)utarray_next(kv->nodes_have_key_cached,cached_node_id)) 
@@ -196,7 +121,7 @@ int swarmkv_msg_send_invalidate_key_req(struct swarmkv_store *store, const char 
 		if(cache_node != NULL)
 		{
 			char *invalidate_key_req_msg = ALLOC(char, SWARMKV_MAX_MSG_SIZE);
-			size_t msg_len = swarmkv_msg_pack_update_key_req(store, MSG_INVALIDATE_KEYS_REQ, invalidate_key_req_msg, SWARMKV_MAX_MSG_SIZE, tb_name, key, value);
+			size_t msg_len = swarmkv_msg_pack_update_key_req(store, MSG_INVALIDATE_KEYS_REQ, invalidate_key_req_msg, SWARMKV_MAX_MSG_SIZE, tb_name, key_base64, value_base64);
 			//swarmkv_msg_pack(store, MSG_INVALIDATE_KEYS_REQ, invalidate_key_req_msg, SWARMKV_MAX_MSG_SIZE, tb_name, key, value, -1);
 			if(msg_len <= 0)
 			{
@@ -208,15 +133,19 @@ int swarmkv_msg_send_invalidate_key_req(struct swarmkv_store *store, const char 
 			invalidate_key_req_msg = NULL;
 		}
 	}
+	free(key_base64);
+	key_base64 = NULL;
+	free(value_base64);
+	value_base64 = NULL;
 	return 1;
 }
 
 //caculate the slot owner id
-int caculate_key_slot_owner(struct swarmkv_store *store, const char *key)
+int caculate_key_slot_owner(struct swarmkv_store *store, const char *key, size_t keylen)
 {
 	struct swarmkv_slot slot;
 	int slot_id = -1;
-	slot_id = crc32(key,strlen(key))%SWARMKV_DEFAULT_SLOT_NUM;
+	slot_id = crc32(key, keylen)%SWARMKV_DEFAULT_SLOT_NUM;
 	slot = store->slots[slot_id];
 	assert(slot_id == slot.slot_id);
 	return slot.owner_node_id;
@@ -227,15 +156,21 @@ int swarmkv_put(struct swarmkv_store *store, const char *tb_name, const struct s
 					const char *key, size_t keylen, const char *value, size_t vallen, char **errptr)
 {
 	int slot_owner_id = -1;
-	slot_owner_id = caculate_key_slot_owner(store, key);
+	slot_owner_id = caculate_key_slot_owner(store, key, keylen);
 	if(slot_owner_id == store->my_node_id)
 	{
 		//local put a key-value
-		swarmkv_owner_put_kv(store, tb_name, key, value);
-		swarmkv_msg_send_invalidate_key_req(store, tb_name, key, value);
+		swarmkv_owner_put_kv(store, tb_name, key, keylen, value, vallen);
+		swarmkv_msg_send_invalidate_key_req(store, tb_name, key, keylen, value, vallen);
 	}
 	else
 	{
+		//base64 encode
+		char *key_base64 = ALLOC(char, SWARMKV_MAX_KEY_LEN);
+		char *value_base64 = ALLOC(char, SWARMKV_MAX_VAL_LEN);
+		base64_encode(key, keylen, key_base64);
+		base64_encode(value, vallen, value_base64);
+
 		struct swarmkv_node* peer_node = NULL;
 		HASH_FIND_INT(store->nodes, &slot_owner_id, peer_node);
 		if(peer_node == NULL)
@@ -244,13 +179,11 @@ int swarmkv_put(struct swarmkv_store *store, const char *tb_name, const struct s
 			return -1;
 		}
 		char *put_req_msg = ALLOC(char, SWARMKV_MAX_MSG_SIZE);
-		size_t msg_len = swarmkv_msg_pack_update_key_req(store, MSG_PUT_REQ, put_req_msg, SWARMKV_MAX_MSG_SIZE, tb_name, key, value);
+		size_t msg_len = swarmkv_msg_pack_update_key_req(store, MSG_PUT_REQ, put_req_msg, SWARMKV_MAX_MSG_SIZE, tb_name, key_base64, value_base64);
 		//swarmkv_msg_pack(store, MSG_PUT_REQ, put_req_msg, SWARMKV_MAX_MSG_SIZE, tb_name, key, value, -1);
 		if(msg_len <= 0)
 		{
 			printf("Pack put request message error.\n");
-			free(peer_node);
-			peer_node = NULL;
 			free(put_req_msg);
 			put_req_msg = NULL;
 			return -1;
@@ -258,67 +191,77 @@ int swarmkv_put(struct swarmkv_store *store, const char *tb_name, const struct s
 		swarmkv_msg_send(store->sockfd, put_req_msg, peer_node->ip, peer_node->port);
 		free(put_req_msg);	
 		put_req_msg = NULL;
+		free(key_base64);
+		key_base64 = NULL;
+		free(value_base64);
+		value_base64 = NULL;
 	}
 	return 1;
 }
 
 //get a key-value from my store as owner
-size_t swarmkv_owner_get_kv(struct swarmkv_store *store, const char *tb_name, const char *key, char *value, int req_node_id)
+char *swarmkv_owner_get_kv(struct swarmkv_store *store, const char *tb_name, const char *key, size_t keylen, 
+								size_t *vallen, int req_node_id)
 {
 	struct swarmkv_table *table = NULL;
 	struct swarmkv_key_value *kv = NULL;
+	char* value = NULL;
 	pthread_rwlock_rdlock(&store->rwlock);
 	HASH_FIND_STR(store->table_hash, tb_name, table);
 	if(table == NULL)
 	{
 		//printf("I can't find the table!\n");
-		return -1;
+		return value;
 	}
-	HASH_FIND_STR(table->owned_value_hash, key, kv);
+	//HASH_FIND_STR(table->owned_value_hash, key, kv);
+	HASH_FIND(hh, table->owned_value_hash, key, keylen, kv);
 	if(kv == NULL)
 	{
 		printf("I can't find the key!\n");
-		free(table);
-		table = NULL;
-		return -1;
+		//free(table);
+		//table = NULL;
+		return value;
 	}
 	//insert the request node into UT_array *nodes_have_key_cached
 	if(req_node_id != store->my_node_id)
 	{
 		utarray_push_back(kv->nodes_have_key_cached, &req_node_id);
 	}
+	vallen = &kv->vallen;
 	value = kv->value;
+	
 	pthread_rwlock_unlock(&store->rwlock);
 
-	size_t vallen = strlen(kv->value);
-	return vallen;
+	return value;
 }
 
 //get a key-value from my cache
-size_t swarmkv_cache_get_kv(struct swarmkv_store *store, const char *tb_name, const char *key, char *value)
+char *swarmkv_cache_get_kv(struct swarmkv_store *store, const char *tb_name, const char *key, size_t keylen, size_t *vallen)
 {
 	struct swarmkv_table *table = NULL;
 	struct swarmkv_key_value *kv = NULL;
+	char *value = NULL;
 	pthread_rwlock_rdlock(&store->rwlock);
 	HASH_FIND_STR(store->table_hash, tb_name, table);
 	if(table == NULL)
 	{
-		//printf("I can't find the table in my cache!\n");
-		return -1;
+		printf("I don't have the table in my cache!\n");
+		return value;
 	}
-	HASH_FIND_STR(table->cached_value_hash, key, kv);
+	//HASH_FIND_STR(table->cached_value_hash, key, kv);
+	HASH_FIND(hh, table->cached_value_hash, key, keylen, kv);
 	if(kv == NULL)
 	{
-		//printf("I can't find the key in my cache!\n");
-		free(table);
-		table = NULL;
-		return -1;
+		printf("I don't find the key in my cache!\n");
+		//free(table);
+		//table = NULL;
+		return value;
 	}
 	pthread_rwlock_unlock(&store->rwlock);
 	value = kv->value;
-	size_t vallen = strlen(kv->value);
+	vallen = &kv->vallen;
 
-	return vallen;
+	return value;
 }
 
 //get keys
@@ -328,15 +271,14 @@ char *swarmkv_get(struct swarmkv_store *store, const char *table, const struct s
 {
 	int slot_owner_id = -1;
 	char *value = NULL;
-	size_t value_len;
 	
-	slot_owner_id = caculate_key_slot_owner(store, key);
+	slot_owner_id = caculate_key_slot_owner(store, key, keylen);
 	
 	//I am the owner of the key
 	if(slot_owner_id == store->my_node_id)
 	{
-		value_len = swarmkv_owner_get_kv(store, table, key, value, slot_owner_id);
-		if(value_len <= 0)
+		value = swarmkv_owner_get_kv(store, table, key, keylen, vallen, slot_owner_id);
+		if(value == NULL)
 		{
 			printf("get key %s from my store error.\n", key);
 		}
@@ -345,7 +287,7 @@ char *swarmkv_get(struct swarmkv_store *store, const char *table, const struct s
 	else
 	{
 		//check my cache
-		value_len = swarmkv_cache_get_kv(store, table, key, value);
+		value = swarmkv_cache_get_kv(store, table, key, keylen, vallen);
 		//I haven't cache the kv
 		if(value == NULL)
 		{
@@ -356,8 +298,12 @@ char *swarmkv_get(struct swarmkv_store *store, const char *table, const struct s
 			{
 				printf("I can't find the owner_node of the key %s!\n", key);	
 			}
+			//base64 encode
+			char *key_base64 = ALLOC(char, SWARMKV_MAX_KEY_LEN);
+			base64_encode(key, keylen, key_base64);
+
 			char *get_req_msg = ALLOC(char, SWARMKV_MAX_MSG_SIZE);
-			size_t msg_len = swarmkv_msg_pack_get_req(store, get_req_msg, SWARMKV_MAX_MSG_SIZE, table, key, (size_t)callback);
+			size_t msg_len = swarmkv_msg_pack_get_req(store, get_req_msg, SWARMKV_MAX_MSG_SIZE, table, key_base64, (size_t)callback);
 			if(msg_len <= 0)
 			{
 				printf("Pack get requerst message error.\n");
@@ -366,63 +312,50 @@ char *swarmkv_get(struct swarmkv_store *store, const char *table, const struct s
 			swarmkv_msg_send(store->sockfd, get_req_msg, peer_node->ip, peer_node->port);
 			free(get_req_msg);
 			get_req_msg = NULL;
+			free(key_base64);
+			key_base64 = NULL;
 		}
 	}
 	return value;
 }
 
 //parse the node list and slot list in ping/pong/meet_resp msg and compare with my store
-int swarmkv_parse_node_and_slot(struct swarmkv_store *store, cJSON* node_list, cJSON* slot_list)
+int swarmkv_parse_node_and_slot(struct swarmkv_store *store, struct swarmkv_health_check health_check_data)
 {
-	int node_num = cJSON_GetArraySize(node_list);
-	cJSON *node_item = 0;
-	cJSON *node_id = 0;
-	cJSON *node_status = 0;
-	struct swarmkv_node *new_node = NULL;
+	struct swarmkv_node* new_node = NULL;
 	int i = 0;
-	for (i = 0; i < node_num; i++)
-	{
-		node_item = cJSON_GetArrayItem(node_list, i);
-		node_id = cJSON_GetObjectItem(node_item, "node_id");
-		node_status = cJSON_GetObjectItem(node_item, "node_status");
-		int id = node_id->valueint;
-		
-		HASH_FIND_INT(store->nodes, &id, new_node);
+	for (i = 0; i < health_check_data.node_num; i++)
+	{	
+		HASH_FIND_INT(store->nodes, &health_check_data.nodes[i].node_id, new_node);
 		//add new nodes into my store->nodes
 		if (new_node == NULL)
 		{
-			if (node_status->valueint == FAIL)
+			if (health_check_data.nodes[i].status == FAIL)
 			{
 				continue;
 			}
-			printf("add a new node from ping\n");
+			printf("add a new node.\n");
 			new_node = ALLOC(struct swarmkv_node, 1);
 
-			new_node->node_id = id;
-			cJSON *node_ip = cJSON_GetObjectItem(node_item, "node_ip");
-			cJSON *node_port = cJSON_GetObjectItem(node_item, "node_port");
-			new_node->ip = node_ip->valuestring;
-			new_node->port = node_port->valueint;
-			new_node->status = node_status->valueint;
+			new_node->node_id = health_check_data.nodes[i].node_id;
+			new_node->ip = health_check_data.nodes[i].ip;
+			new_node->port = health_check_data.nodes[i].port;
+			new_node->status = health_check_data.nodes[i].status;
 			new_node->ping_sent_t = 0;
 			new_node->pong_received_t = 0;
 			new_node->pfail_cnt = 0;
 			HASH_ADD_INT(store->nodes, node_id, new_node);
-			free(node_ip);
-			node_ip = NULL;
-			free(node_port);
-			node_port = NULL;
 		}
 		//check the exist node status
 		else
 		{
 			//if the node is failed, update the node status
-			if (node_status->valueint == FAIL)
+			if (health_check_data.nodes[i].status == FAIL)
 			{
 				new_node->status = FAIL;
 			}
 			//if the node is pfailed, update the node status and increase the pfail_cnt
-			if (node_status->valueint == PFAIL)
+			if (health_check_data.nodes[i].status == PFAIL)
 			{
 				new_node->status = PFAIL;
 				new_node->pfail_cnt++;
@@ -436,7 +369,7 @@ int swarmkv_parse_node_and_slot(struct swarmkv_store *store, cJSON* node_list, c
 					new_node->pfail_cnt = 0;
 					//broadcast a fail msg
 					char *fail_req_msg = ALLOC(char, SWARMKV_MAX_MSG_SIZE);
-					size_t msg_len = swarmkv_msg_pack_fail_req(store, fail_req_msg, SWARMKV_MAX_MSG_SIZE, id);
+					size_t msg_len = swarmkv_msg_pack_fail_req(store, fail_req_msg, SWARMKV_MAX_MSG_SIZE, health_check_data.nodes[i].node_id);
 					//swarmkv_msg_pack_fail_req(store, id);
 					if(msg_len <= 0)
 					{
@@ -454,29 +387,14 @@ int swarmkv_parse_node_and_slot(struct swarmkv_store *store, cJSON* node_list, c
 			}
 		}
 	}
-	int slot_num = cJSON_GetArraySize(slot_list);
-	cJSON *slot_item;
-	for (i = 0; i < slot_num; i++)
+	for (i = 0; i < health_check_data.slot_num; i++)
 	{
-		slot_item = cJSON_GetArrayItem(slot_list, i);
-		cJSON *slot_id = cJSON_GetObjectItem(slot_item, "slot_id");
-		cJSON *owner_id = cJSON_GetObjectItem(slot_item, "owner_id");
-		if (store->slots[slot_id->valueint].owner_node_id != owner_id->valueint)
+		int slot_id = health_check_data.slots[i].slot_id;
+		if(health_check_data.slots[i].owner_node_id != store->slots[slot_id].owner_node_id)
 		{
-			store->slots[slot_id->valueint].owner_node_id = owner_id->valueint;
-			//Haven't consider the problem of slot backup nodes.
-			//需要添加epoch进行控制，不然不知道到底谁的版本才是最新的，可能因为网络延迟，旧的slot版本反而后到
+			store->slots[slot_id].owner_node_id = health_check_data.slots[i].owner_node_id;
 		}
 	}
-	
-	free(node_item);
-	node_item = NULL;
-	free(node_id);
-	node_id = NULL;
-	free(node_status);
-	node_status = NULL;
-	free(slot_item);
-	slot_item = NULL;
 	return 1;
 }
 
@@ -491,67 +409,46 @@ void print_result(char *key, char *value)
 
 int swarmkv_msg_unpack(struct swarmkv_store* store, char *buf)
 {
-    cJSON* msg = cJSON_Parse(buf);
-	if(!msg) {
-    	printf("get msg faild !\n");
-		return -1;
-	}
-	cJSON* msg_type = cJSON_GetObjectItem(msg, "msg_type");
-	cJSON* src_id = cJSON_GetObjectItem(msg, "my_id");
-	cJSON* src_ip = cJSON_GetObjectItem(msg, "my_ip");
-	cJSON* src_port = cJSON_GetObjectItem(msg, "my_port");
-	cJSON* uuid = cJSON_GetObjectItem(msg, "uuid");
-	cJSON* tb_name = 0;
-	cJSON* key = 0;
-	cJSON* value = 0;
-	cJSON* cb_function = 0;
-	cJSON* node_list = 0;
-	cJSON* slot_list = 0;
-	int id = src_id->valueint;
-	size_t msg_len = 0;
-
+	//parse cjson message to swarmkv_msg struct
+	struct swarmkv_msg *msg = ALLOC(struct swarmkv_msg, 1);
+    assert(swarmkv_js_msg_unpack(buf, msg) > 0);
+	
+	size_t msg_len = -1;
 	struct swarmkv_node *src_node = NULL;
-	HASH_FIND_INT(store->nodes, &id, src_node); 
-
+	HASH_FIND_INT(store->nodes, &msg->src_node_id, src_node); 
 	//check if the src node is legal
+	//except meet messages, other messages from a unknown node are illegal
 	if(src_node == NULL)
 	{
-		if((msg_type->valueint != MSG_MEET_RESP) && (msg_type->valueint != MSG_MEET_REQ))
+		if((msg->type != MSG_MEET_RESP) && (msg->type != MSG_MEET_REQ))
 		{
 			
-			printf("It is an UNKNOWN node %d!\n", id);
+			printf("It is a message from an UNKNOWN node %d!\n", msg->src_node_id);
 			return -1;
 		}
 	}
+	char *key = NULL;
+	char *value = NULL;
+	size_t keylen = -1;
+	size_t vallen = -1;
+	struct swarmkv_table* table = NULL;
+	struct swarmkv_key_value* kv = NULL;
 
-	switch(msg_type->valueint)
+	switch(msg->type)
 	{
 		case MSG_PING:
 		case MSG_PONG:
-			if(msg_type->valueint == MSG_PING)
+			if(msg->type == MSG_PING)
 			{
-				printf("it is a PING msg\n");
+				printf("It is a PING msg\n");
 			}
-			else if((msg_type->valueint == MSG_PONG))
+			else if((msg->type == MSG_PONG))
 			{
 				src_node->pong_received_t = clock();
 				src_node->ping_sent_t = 0;
-				printf("it is a PONG msg\n");
+				printf("It is a PONG msg\n");
 			}
-			//check if the msg is complete
-			node_list = cJSON_GetObjectItem(msg, "node_list");
-			if(!node_list)
-			{
-				printf("no node list!\n");
-				return -1;
-			}
-			slot_list = cJSON_GetObjectItem(msg, "slot_list");
-			if(!node_list)
-			{
-				printf("no slot list!\n");
-				return -1;
-			}
-	
+
 			//update the status of src_node to ON
 			if(src_node->status != ON)
 			{
@@ -559,25 +456,26 @@ int swarmkv_msg_unpack(struct swarmkv_store* store, char *buf)
 				src_node->pfail_cnt = 0;
 			}
 			//parse and compare nodes and slots infomation with my store
-			swarmkv_parse_node_and_slot(store, node_list, slot_list);
+			swarmkv_parse_node_and_slot(store, msg->data.health_check_data);
 
-			//response a pong msg
-			char *resp_msg = ALLOC(char, SWARMKV_MAX_MSG_SIZE);
-			if(msg_type->valueint == MSG_PING)
+			//send a PONG response
+			
+			if(msg->type == MSG_PING)
 			{
+				char *resp_msg = ALLOC(char, SWARMKV_MAX_MSG_SIZE);
 				msg_len = swarmkv_msg_pack_health_check(store, MSG_PONG, resp_msg, SWARMKV_MAX_MSG_SIZE);
 				if(msg_len <= 0)
 				{
 					printf("Pack pong message error\n");
 					return -1;
 				}
+				swarmkv_msg_send(store->sockfd, resp_msg, src_node->ip, src_node->port);
+				free(resp_msg);
+				resp_msg = NULL;
 			}
-			swarmkv_msg_send(store->sockfd, resp_msg, src_node->ip, src_node->port);
-			free(resp_msg);
-			resp_msg = NULL;
 
-			printf("Press enter to continue...\n");
-			getchar();
+			//printf("Press enter to continue...\n");
+			//getchar();
 
 			break;
 
@@ -585,24 +483,28 @@ int swarmkv_msg_unpack(struct swarmkv_store* store, char *buf)
 			printf("it is a MEET REQUEST msg\n");
 			if(src_node == NULL)
 			{
-				printf("meet a new node\n");
+				printf("Meet a new node\n");
 				src_node = ALLOC(struct swarmkv_node, 1);
-				src_node->node_id = id;
+				src_node->node_id = msg->src_node_id;
 				HASH_ADD_INT(store->nodes, node_id, src_node);
 			}
 			else
 			{
-				printf("meet a exist failed node\n");
+				printf("Meet a exist failed node\n");
 			}
-			src_node->ip = src_ip->valuestring;
-			src_node->port = src_port->valueint;
+			printf("%s\n", msg->src_ip);
+			src_node->ip = ALLOC(char, strlen(msg->src_ip));
+			memcpy(src_node->ip, msg->src_ip, strlen(msg->src_ip));
+			//src_node->ip = msg->src_ip;
+			src_node->port = msg->src_port;
 			src_node->ping_sent_t = 0;
 			src_node->pong_received_t = 0;
 			src_node->status = ON;
 			src_node->pfail_cnt = 0;
 
-			
+		
 			//send a meet response msg
+			printf("src_node->ip: %s\n", src_node->ip);
 			char *meet_resp_msg = ALLOC(char, SWARMKV_MAX_MSG_SIZE);
 			msg_len = swarmkv_msg_pack_health_check(store, MSG_MEET_RESP, meet_resp_msg, SWARMKV_MAX_MSG_SIZE);
 			printf("msg_len: %ld\n",msg_len);
@@ -615,44 +517,31 @@ int swarmkv_msg_unpack(struct swarmkv_store* store, char *buf)
 			free(meet_resp_msg);
 			meet_resp_msg = NULL;
 
-			printf("Press enter to continue...\n");
-			getchar();
+			//printf("Press enter to continue...\n");
+			//getchar();
 
 			break;
 
 		case MSG_MEET_RESP:
-			printf("it is a MEET RESPONSE msg\n");
+			printf("It is a MEET RESPONSE msg\n");
 			
 			if(src_node == NULL)
 			{
 				src_node = ALLOC(struct swarmkv_node, 1);
-				src_node->node_id = id;
+				src_node->node_id = msg->src_node_id;
 				HASH_ADD_INT(store->nodes, node_id, src_node);
 			}
-			src_node->ip = src_ip->valuestring;
-			src_node->port = src_port->valueint;
+			src_node->ip = msg->src_ip;
+			src_node->port = msg->src_port;
 			src_node->ping_sent_t = 0;
 			src_node->pong_received_t = 0;
 			src_node->status = ON;
 			src_node->pfail_cnt = 0;
 
-			//check if the msg is complete
-			node_list = cJSON_GetObjectItem(msg, "node_list");
-			if(!node_list)
-			{
-				printf("no node list!\n");
-				return -1;
-			}
-			slot_list = cJSON_GetObjectItem(msg, "slot_list");
-			if(!slot_list)
-			{
-				printf("no slot list!\n");
-				return -1;
-			}
-			swarmkv_parse_node_and_slot(store, node_list, slot_list);
+			swarmkv_parse_node_and_slot(store, msg->data.health_check_data);
 
-			printf("Press enter to continue...\n");
-			getchar();
+			//printf("Press enter to continue...\n");
+			//getchar();
 
 			break;
 
@@ -660,16 +549,15 @@ int swarmkv_msg_unpack(struct swarmkv_store* store, char *buf)
 			printf("It is a FAIL msg\n");
 			//find the fail node
 			struct swarmkv_node *fail_node = NULL;
-			cJSON* fail_node_id = cJSON_GetObjectItem(msg, "fail_node_id");
-			int fail_id = fail_node_id->valueint;
-			HASH_FIND_INT(store->nodes, &fail_id, fail_node); 
+			int fail_node_id = msg->data.fail_req_data.failed_node_id;
+			HASH_FIND_INT(store->nodes, &fail_node_id, fail_node); 
 			if(fail_node != NULL)
 			{
 				fail_node->status = FAIL;
 				fail_node->pfail_cnt = 0;
 				//send a fail response msg
 				char *fail_resp_msg = ALLOC(char, SWARMKV_MAX_MSG_SIZE);
-				msg_len = swarmkv_msg_pack_ok_response(store, MSG_FAIL_RESP, fail_resp_msg, SWARMKV_MAX_MSG_SIZE);
+				msg_len = swarmkv_msg_pack_fail_response(store, fail_resp_msg, SWARMKV_MAX_MSG_SIZE, fail_node_id, OP_SUCCESS);
 				if(msg_len <= 0)
 				{
 					printf("pack fail response message error.\n");
@@ -679,27 +567,31 @@ int swarmkv_msg_unpack(struct swarmkv_store* store, char *buf)
 				free(fail_resp_msg);
 				fail_resp_msg = NULL;
 			}
-			free(fail_node_id);
-			fail_node_id = NULL;
 			break;
 
 		case MSG_FAIL_RESP:
 			break;
 
 		case MSG_PUT_REQ:
-			tb_name = cJSON_GetObjectItem(msg, "table_name");
-			key = cJSON_GetObjectItem(msg, "key");
-			value = cJSON_GetObjectItem(msg, "value");
-
+			//decode key and value
+			key = ALLOC(char, SWARMKV_MAX_KEY_LEN);
+			value = ALLOC(char, SWARMKV_MAX_KEY_LEN);
+			keylen = base64_decode(msg->data.update_req_data.key, strlen(msg->data.update_req_data.key), key);
+			vallen = base64_decode(msg->data.update_req_data.value, strlen(msg->data.update_req_data.value), value);
+			//check slot is belong to me.
+			//......
+			
 			//put the key-value into my store and send invalidate request msg
-			swarmkv_owner_put_kv(store, tb_name->valuestring, key->valuestring, value->valuestring);
-			swarmkv_msg_send_invalidate_key_req(store, tb_name->valuestring, key->valuestring, value->valuestring);
+			swarmkv_owner_put_kv(store, msg->data.update_req_data.table_name, key, keylen, value, vallen);
+			swarmkv_msg_send_invalidate_key_req(store, msg->data.update_req_data.table_name, key, keylen, value, vallen);
+
 			//send a put response "ok"
 			char *put_resp_msg = ALLOC(char, SWARMKV_MAX_MSG_SIZE);
-			msg_len = swarmkv_msg_pack_ok_response(store, MSG_PUT_RESP, put_resp_msg, SWARMKV_MAX_MSG_SIZE);
+			msg_len = swarmkv_msg_pack_update_key_response(store, MSG_PUT_RESP, put_resp_msg, SWARMKV_MAX_MSG_SIZE, msg->data.update_req_data.table_name, 
+																msg->data.update_req_data.key, msg->data.update_req_data.value, OP_SUCCESS);
 			if(msg_len <= 0)
 			{
-				printf("pack put response message error.\n");
+				printf("Pack put response message error.\n");
 				return -1;
 			}
 			swarmkv_msg_send(store->sockfd, put_resp_msg, src_node->ip, src_node->port);
@@ -712,29 +604,33 @@ int swarmkv_msg_unpack(struct swarmkv_store* store, char *buf)
 		
 		case MSG_INVALIDATE_KEYS_REQ:
 			//update the cached_value_hash
-			tb_name = cJSON_GetObjectItem(msg, "table_name");
-			key = cJSON_GetObjectItem(msg, "key");
-			value = cJSON_GetObjectItem(msg, "value");
-	
-			struct swarmkv_table* table = NULL;
-			struct swarmkv_key_value* cache_kv = NULL;
+			
+
 			pthread_rwlock_wrlock(&store->rwlock);
-			HASH_FIND_STR(store->table_hash, tb_name->valuestring, table);
+			HASH_FIND_STR(store->table_hash, msg->data.update_req_data.table_name, table);
 			if(table != NULL)
 			{
-				HASH_FIND_STR(table->cached_value_hash, key->valuestring, cache_kv);
-				if(cache_kv != NULL)
+				//decode key and value
+				key = ALLOC(char, SWARMKV_MAX_KEY_LEN);
+				value = ALLOC(char, SWARMKV_MAX_KEY_LEN);
+				keylen = base64_decode(msg->data.update_req_data.key, strlen(msg->data.update_req_data.key), key);
+				vallen = base64_decode(msg->data.update_req_data.value, strlen(msg->data.update_req_data.value), value);
+
+				//HASH_FIND_STR(table->cached_value_hash, key->valuestring, cache_kv);
+				HASH_FIND(hh, table->cached_value_hash, key, keylen, kv);
+				if(kv != NULL)
 				{
-					cache_kv->value = value->valuestring;
-					cache_kv->vallen = strlen(cache_kv->value);
+					kv->value = value;
+					kv->vallen = vallen;
 					//send a invalidate key response "ok"
 					char *invalidate_key_resp_msg = ALLOC(char, SWARMKV_MAX_MSG_SIZE);
-					msg_len = swarmkv_msg_pack_ok_response(store, MSG_INVALIDATE_KEYS_RESP, invalidate_key_resp_msg, SWARMKV_MAX_MSG_SIZE);
+					msg_len = swarmkv_msg_pack_update_key_response(store, MSG_INVALIDATE_KEYS_RESP, invalidate_key_resp_msg, SWARMKV_MAX_MSG_SIZE, 
+												msg->data.update_req_data.table_name, msg->data.update_req_data.key, msg->data.update_req_data.value, OP_SUCCESS);
 					if(msg_len <= 0)
 					{
 						printf("pack put response message error.\n");
 						pthread_rwlock_unlock(&store->rwlock);
-						return -1;
+						break;
 					}
 					swarmkv_msg_send(store->sockfd, invalidate_key_resp_msg, src_node->ip, src_node->port);
 					free(invalidate_key_resp_msg);
@@ -748,21 +644,27 @@ int swarmkv_msg_unpack(struct swarmkv_store* store, char *buf)
 			break;
 		
 		case MSG_GET_REQ:
-			tb_name = cJSON_GetObjectItem(msg, "table_name");
-			key = cJSON_GetObjectItem(msg, "key");
-			cb_function = cJSON_GetObjectItem(msg, "callback");
-			char *val = NULL;
-			size_t vallen;
-			vallen = swarmkv_owner_get_kv(store, tb_name->valuestring, key->valuestring, val, src_node->node_id);
-			if(vallen <= 0)
+			//decode key
+			key = ALLOC(char, SWARMKV_MAX_KEY_LEN);
+			keylen = base64_decode(msg->data.update_req_data.key, strlen(msg->data.update_req_data.key), key);
+
+			size_t *value_len = NULL;
+			value_len = ALLOC(size_t, 1);
+			value = swarmkv_owner_get_kv(store, msg->data.get_req_data.table_name, key, keylen, value_len, src_node->node_id);
+			if(value == NULL)
 			{
-				printf("get key %s from my store for node %d error.\n", key->valuestring, src_node->node_id);
+				printf("get key %s from my store for node %d error.\n", key, src_node->node_id);
 				break;
 			}
 
 			//send a response
 			char *get_resp_msg = ALLOC(char, SWARMKV_MAX_MSG_SIZE);
-			msg_len = swarmkv_msg_pack_get_resp(store, get_resp_msg, SWARMKV_MAX_MSG_SIZE, tb_name->valuestring, key->valuestring, val, cb_function->valueint, uuid->valuestring);
+			//encode value
+			char *value_base64 = ALLOC(char, SWARMKV_MAX_KEY_LEN);
+			base64_encode(value, *value_len, value_base64);
+
+			msg_len = swarmkv_msg_pack_get_resp(store, get_resp_msg, SWARMKV_MAX_MSG_SIZE, msg->data.get_req_data.table_name, msg->data.update_req_data.key, 
+									value_base64, msg->data.get_req_data.cb_function, msg->src_uuid);
 			if(msg_len <= 0 )
 			{
 				printf("pack a get response message error.\n");
@@ -771,52 +673,58 @@ int swarmkv_msg_unpack(struct swarmkv_store* store, char *buf)
 			swarmkv_msg_send(store->sockfd, get_resp_msg, src_node->ip, src_node->port);
 			free(get_resp_msg);
 			get_resp_msg = NULL;
-			free(val);
-			val = NULL;
+			free(value_len);
+			value_len = NULL;
+			
 			break;
 
 		case MSG_GET_RESP:
-			tb_name = cJSON_GetObjectItem(msg, "table_name");
-			key = cJSON_GetObjectItem(msg, "key");
-			value = cJSON_GetObjectItem(msg, "value");
-			cb_function = cJSON_GetObjectItem(msg, "callback");
-
+			//decode key and value
+			key = ALLOC(char, SWARMKV_MAX_KEY_LEN);
+			value = ALLOC(char, SWARMKV_MAX_KEY_LEN);
+			keylen = base64_decode(msg->data.update_req_data.key, strlen(msg->data.update_req_data.key), key);
+			vallen = base64_decode(msg->data.update_req_data.value, strlen(msg->data.update_req_data.value), value);
+			
 			//update my cache
-			struct swarmkv_table *tb = NULL;
-			struct swarmkv_key_value *kv = NULL;
+			
 			pthread_rwlock_wrlock(&store->rwlock);
-			HASH_FIND_STR(store->table_hash, tb_name->valuestring, tb);
-			if(tb == NULL)
+			HASH_FIND_STR(store->table_hash, msg->data.get_resp_data.table_name, table);
+			if(table == NULL)
 			{
 				//add a new table in my swarmkv_store
-				tb = ALLOC(struct swarmkv_table, 1);
-				memcpy(tb->table_name, tb_name->valuestring, strlen(tb_name->valuestring));
-				HASH_ADD_STR(store->table_hash, table_name, tb);
+				table = ALLOC(struct swarmkv_table, 1);
+				memcpy(table->table_name, msg->data.get_resp_data.table_name, strlen(msg->data.get_resp_data.table_name));
+				HASH_ADD_STR(store->table_hash, table_name, table);
 				//add a new key
 				kv = ALLOC(struct swarmkv_key_value, 1);
-				kv->key = key->valuestring;
-				HASH_ADD_STR(tb->cached_value_hash, key, kv);
+				kv->key = key;
+				//HASH_ADD_STR(tb->cached_value_hash, key, kv);
+				HASH_ADD(hh, table->cached_value_hash, key, keylen, kv);
 			}
-			HASH_FIND_STR(tb->cached_value_hash, key->valuestring, kv);
+			//HASH_FIND_STR(tb->cached_value_hash, key, kv);
+			HASH_FIND(hh, table->cached_value_hash, key, keylen, kv);
 			if(kv == NULL)
 			{
 				//add a new key
 				kv = ALLOC(struct swarmkv_key_value, 1);
-				kv->key = key->valuestring;
-				HASH_ADD_STR(tb->cached_value_hash, key, kv);
+				kv->key = key;
+				HASH_ADD(hh, table->cached_value_hash, key, keylen, kv);
 			}
-			kv->keylen = strlen(kv->key);
-			kv->value = value->valuestring;
-			kv->vallen = strlen(kv->value);
+			kv->keylen = keylen;
+			kv->value = value;
+			kv->vallen = vallen;
 			pthread_rwlock_unlock(&store->rwlock);
 			//callback
 			/*
-			swarmkv_cb_function cb_f = NULL;
-			cb_f = (swarmkv_cb_function)cb_function->valuestring;
-			if(cb_f!=NULL)
+			if(msg->data.get_resp_data.last_uuid == store->uuid)
 			{
-				(*cb_f)(key->valuestring, value->valuestring);
-			}
+				swarmkv_cb_function cb_f = NULL;
+				cb_f = (swarmkv_cb_function)cb_function->valuestring;
+				if(cb_f!=NULL)
+				{
+					(*cb_f)(key->valuestring, value->valuestring);
+				}
+			}			
 			*/
 			break;
 		default:
@@ -824,28 +732,11 @@ int swarmkv_msg_unpack(struct swarmkv_store* store, char *buf)
 	}
 	free(msg);
 	msg = NULL;
-	free(msg_type);
-	msg_type = NULL;
-	free(src_id);
-	src_id = NULL;
-	free(src_ip);
-	src_ip = NULL;
-	free(src_port);
-	src_port = NULL;
-	free(uuid);
-	uuid = NULL;
-	free(tb_name);
-	tb_name = NULL;
 	free(key);
 	key = NULL;
 	free(value);
 	value = NULL;
-	free(cb_function);
-	cb_function = NULL;
-	free(node_list);
-	node_list = NULL;
-	free(slot_list);
-	slot_list = NULL;
+
 	return 1;
 }
 
@@ -888,8 +779,6 @@ int swarmkv_random_ping(int sockfd, struct swarmkv_store *store)
 			min_pong_node = candidate_node;
 		}
 	}
-	free(candidate_node);
-	candidate_node = NULL;
 	if(min_pong_node)
 	{
 		printf("send a ping to random node %d\n", min_pong_node->node_id);
@@ -905,8 +794,6 @@ int swarmkv_random_ping(int sockfd, struct swarmkv_store *store)
 		free(ping_msg);
 		ping_msg = NULL;
 	}
-	free(min_pong_node);
-	min_pong_node = NULL;
 	return 1;
 }
 
@@ -927,7 +814,8 @@ int swarmkv_regular_ping(struct swarmkv_store *store, clock_t cur_t)
 			continue;
 		}
 		//if there is a node: current_time - pong_sent_t >timeout/2, send a ping msg immediately
-		if (node->pong_received_t == 0 || cur_t - node->pong_received_t > SWARMKV_DEFAULT_NODE_TIMEOUT / 2)
+		//if (node->pong_received_t == 0 || cur_t - node->pong_received_t > SWARMKV_DEFAULT_NODE_TIMEOUT / 2)
+		if (cur_t - node->pong_received_t > SWARMKV_DEFAULT_NODE_TIMEOUT / 2)
 		{
 			//printf("send a ping to node %d\n", node->node_id);
 			char *ping_msg = ALLOC(char, SWARMKV_MAX_MSG_SIZE);
@@ -950,8 +838,6 @@ int swarmkv_regular_ping(struct swarmkv_store *store, clock_t cur_t)
 			node->status = PFAIL;
 		}	
 	}
-	free(node);
-	node = NULL;
 	return 1;
 }
 
@@ -976,9 +862,8 @@ void *swarmkv_msg_processing_thread(void *arg)
 			printf("port:%d,buff=%s\n",htons(peer_addr.sin_port),recvbuf);
 			swarmkv_msg_unpack(store, recvbuf);	
 		}
-		clock_t cur_t = clock();
-		struct swarmkv_node* node = NULL;
 		
+		clock_t cur_t = clock();
 		//Traverse all nodes per 100ms
 		if(cur_t/SWARMKV_PING_INTERVAL >= check_cnt)
 		{
@@ -1050,7 +935,12 @@ int swarmkv_config_and_init(struct swarmkv_store *store, const char *bootstraps,
 		printf("Please set your ip&port and bootstrap_nodes ip&port. Format: self=ip:port;peers=ip0:port0,ip1:port1,...\n");
 		return -1;
 	}
-	store->my_ip = strtok_r(my_info, ":", &p);
+	
+	char* my_ip = strtok_r(my_info, ":", &p);
+	int ip_len = strlen(my_ip);
+	store->my_ip = ALLOC(char, ip_len);
+	memcpy(store->my_ip, my_ip, ip_len);
+	
 	store->my_port = atoi(strtok_r(NULL, ":", &p));
 	//printf("store->my_ip: %s\n", store->my_ip);
 	//printf("store->my_port: %d\n", store->my_port);
@@ -1088,10 +978,13 @@ int swarmkv_config_and_init(struct swarmkv_store *store, const char *bootstraps,
 		meet_cnt ++;
 		peer_node_info = strtok_r(NULL, ",", &p);
 	}
+	
 	free(bootstrap_info);
 	bootstrap_info = NULL;
 	free(config_info);
 	config_info = NULL;
+	printf("my_ip: %s\n", store->my_ip);
+
 	if(meet_cnt == 0)
 	{
 		printf("error: None of the meet messages were sent successfully.\n");
@@ -1132,6 +1025,14 @@ struct swarmkv_store *swarmkv_open(const char *bootstraps, const char *config, c
 	myself->status = ON;
 	myself->pfail_cnt = 0;
 	HASH_ADD_INT(store->nodes, node_id, myself); 
+
+	//init slots[SWARMKV_DEFAULT_SLOT_NUM]
+	int i = 0;
+	for(i = 0; i<3; i++)
+	{
+		store->slots[i].slot_id = i;
+		store->slots[i].owner_node_id = 0;
+	}
 	
 	//create a thread to recieve and handle remote message
 	pthread_t tid;
@@ -1148,7 +1049,7 @@ struct swarmkv_store *swarmkv_open(const char *bootstraps, const char *config, c
         printf("thread is not exit...\n");
 	}
 	pthread_exit(NULL);
-
+	
 	close(store->sockfd);
 	return store;
 	//1 create udp socket, which receive and send msg via UDP 8323 by default. And necessary data structures.
@@ -1163,62 +1064,6 @@ struct swarmkv_store *swarmkv_open(const char *bootstraps, const char *config, c
 	//4 Create a thread to handle remote messages: PUT, GET, MOVE, HEALTH_CHECK, INVALIDATE_KEY, LIST_SLOT
 	//return
 }
-
-/*
-char *swarmkv_get(struct swarmkv_store *store, const char *table_name, const struct swarmkv_readoptions *options, const char *key, size_t keylen, size_t *vallen, char **errptr)
-{
-	int slot_id = -1;
-	struct swarmkv_slot *slot = NULL;
-	struct swarmkv_table *table = NULL;
-	struct swarmkv_value *result = NULL;
-	struct swarmkv_transaction *transaction = NULL;
-	char *ret_buff = NULL;
-	pthread_rwlock_rdlock(&store->rwlock);
-	slot_id = crc(key, keylen);
-	slot = store->slots[slot_id];
-	assert(slot_id = slot->slot_id);
-	if (slot->owner_node_id == store->node_id) //if I am the owner of this slot
-	{
-		table = HASH_FIND_STR(&store->table_hash, table_name);
-		if (!table)
-		{
-			//table=swarmkv_table_new();
-		}
-		HASH_FIND_PTR(table->owned_value_hash, key, keylen, &result);
-		if (result)
-		{
-			ret_buff = ALLOC(char, result->vallen);
-			memcpy(ret_buff, result->value, result->vallen);
-		}
-	}
-	else
-	{
-		transaction = ALLOC(struct swarmkv_transaction, 1);
-		transaction->uuid = getuuid();
-		HASH_ADD(hh, store->on_fly_transactions, uuid, strlen(transaction->uuid), transaction);
-		//call rpc
-	}
-	//先检查缓存？
-	else
-	{
-		table = HASH_FIND_STR(&store->table_hash, table_name);
-		HASH_FIND_PTR(table->cached_value_hash, key, keylen, &result);
-		if (result)
-		{
-			ret_buff = ALLOC(char *, result->vallen);
-			memcpy(ret_buff, result->value, result->vallen);
-		}
-		else
-		{
-			transaction = ALLOC(struct swarmkv_transaction, 1);
-			transaction->uuid = getuuid();
-			HASH_ADD(hh, store->on_fly_transactions, uuid, strlen(transaction->uuid), transaction);
-			//call rpc
-		}
-	}
-	pthread_rwlock_unlock(&store->rwlock);
-}
-*/
 
 void swarmkv_close()
 {

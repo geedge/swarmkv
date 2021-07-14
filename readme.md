@@ -59,16 +59,6 @@ Request
 }
 ```
 
-### PFAIL Message
-```
-{
-    "my_id": 101,
-    "my_ip": "192.168.0.1",
-    "my_port": 8323,
-    "msg_type": "pfail",
-    "node_id": 100
-}
-```
 ### FAIL Message
 Request
 ```
@@ -87,7 +77,8 @@ Response
     "my_ip": "192.168.0.1",
     "my_port": 8323,
     "msg_type": "fail_resp",
-    "msg":"ok"
+    "node_id": 100,
+    "op_result": 1
 }
 ```
 ### Slot Migration
@@ -142,7 +133,10 @@ Response
     "my_port": 8323,
     "msg_type":" "put_keys_response",
     "transaction_id":"8310-de139bc9-847474",
-    "msg":"ok"
+    "table_name": "tb1",
+    "key": "key1",
+    "value": "value1",
+    "op_result":"ok"
 }
 ```
 ### GET Keys
@@ -154,9 +148,9 @@ Request
     "my_port": 8323,
     "msg_type": "get_key",
     “uuid": "8310-de139bc9-847474"
-    "callback": "0xabdcefg",
     "table_name": "tb1",
-    "key": "test"
+    "key": "test",
+    "callback": "0xabdcefg"
 }
 ```
 Response
@@ -166,9 +160,11 @@ Response
     "my_ip": "192.168.0.1",
     "my_port": 8323,
     "msg_type": "get_keys_response",
-    "callback": "print_result",
+    “uuid": "8310-de139bc9-847474"
     "key": "test",
-    "value": "hello"
+    "value": "hello",
+    "callback": "print_result",
+    "last_uuid": "8310-de139bc9-847474"
 }
 ```
 ### Invalidate Keys
@@ -191,7 +187,7 @@ Response
     "my_ip": "192.168.0.1",
     "my_port": 8323,
     "msg_type": "invalidate_keys_response",
-    "msg":"ok"
+    "op_result":"ok"
 }
 ```
 ## 基础设施

@@ -28,11 +28,22 @@ enum swarmkv_msg_type
 	MSG_INVALIDATE_KEYS_RESP,
 };
 
+
+struct node
+{
+	int node_id;       //Key
+	char* ip;
+	uint16_t port;
+	int status;        //ONLINE/PFAIL/FAIL
+};
+
 //ping, pong, meet resp
 struct swarmkv_health_check
 {
-	struct swarmkv_node *nodes;
-	struct swarmkv_slot myslots[SWARMKV_DEFAULT_SLOT_NUM];
+	int node_num;
+	struct node nodes[SWARMKV_DEFAULT_NODE_NUM];
+	int slot_num;
+	struct swarmkv_slot slots[SWARMKV_DEFAULT_SLOT_NUM];
 };
 
 struct swarmkv_fail_req
@@ -48,37 +59,33 @@ struct swarmkv_fail_resp
 
 struct swarmkv_update_req
 {
-	char *table;
+	char *table_name;
 	char *key;
-	size_t keylen;
 	char *value;
-	size_t vallen;
 };
 
 struct swarmkv_update_resp
 {
-	char *table;
+	char *table_name;
 	char *key;
-	size_t keylen;
 	char *value;
-	size_t vallen;
 	int op_result;
 };
 
 struct swarmkv_get_req
 {
-	char *table;
+	char *table_name;
 	char *key;
-	size_t keylen;
+	long unsigned int cb_function; 
 };
 
 struct swarmkv_get_resp
 {
-	char *table;
+	char *table_name;
 	char *key;
-	size_t keylen;
 	char *value;
-	size_t vallen;
+	char last_uuid[32];
+	long unsigned int cb_function; 
 };
 
 struct swarmkv_migrate_req
@@ -110,7 +117,7 @@ struct swarmkv_msg
 	int src_node_id;
 	char *src_ip;
 	uint16_t src_port;
-	char uuid[32];
+	char src_uuid[32];
 	enum swarmkv_msg_type type;
 	union MsgData data;
 };
@@ -122,12 +129,14 @@ cJSON *swarmkv_msg_pack_slot_list(struct swarmkv_store *store);
 size_t swarmkv_msg_pack_meet_req(struct swarmkv_store *store, char *buff, size_t buff_size);
 size_t swarmkv_msg_pack_health_check(struct swarmkv_store *store, enum swarmkv_msg_type type, char *buff, size_t buff_size);
 size_t swarmkv_msg_pack_fail_req(struct swarmkv_store *store, char *buff, size_t buff_size, int fail_node_id);
+size_t swarmkv_msg_pack_fail_response(struct swarmkv_store *store, char *buff, size_t buff_size, int fail_node_id, int op_result);
 size_t swarmkv_msg_pack_get_req(struct swarmkv_store *store, char *buff, size_t buff_size, const char *table_name, const char *key,
 								long unsigned int cb_function);
 size_t swarmkv_msg_pack_get_resp(struct swarmkv_store *store, char *buff, size_t buff_size, const char *table_name, const char *key,
 								 char *value, long unsigned int cb_function, char *uuid_version);
-size_t swarmkv_msg_pack_ok_response(struct swarmkv_store *store, enum swarmkv_msg_type type, char *buff, size_t buff_size);
-size_t swarmkv_msg_pack_update_key_req(struct swarmkv_store *store, enum swarmkv_msg_type type, char *buff, size_t buff_size,
-									   const char *tb_name, const char *key, const char *value);
-
-struct swarmkv_msg* unpack();
+//size_t swarmkv_msg_pack_ok_response(struct swarmkv_store *store, enum swarmkv_msg_type type, char *buff, size_t buff_size);
+size_t swarmkv_msg_pack_update_key_response(struct swarmkv_store *store, enum swarmkv_msg_type type, char *buff, size_t buff_size, 
+											const char* tb_name, const char* key, const char* value, int op_result);		
+size_t swarmkv_msg_pack_update_key_req(struct swarmkv_store *store, enum swarmkv_msg_type type, char *buff, 
+					size_t buff_size, const char* tb_name, const char* key, const char* value);
+int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg* msg);

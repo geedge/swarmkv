@@ -46,7 +46,6 @@ int swarmkv_create_socket(int port)
 	int on=1;
   	setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR | SO_BROADCAST, &on, sizeof(on));
 
-
 	//set socket to non-block
 	fcntl(sockfd, F_SETFL, O_NONBLOCK);
 
