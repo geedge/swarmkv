@@ -32,7 +32,6 @@
 #define SWARMKV_MAX_KEY_LEN 512
 #define SWARMKV_MAX_VAL_LEN 2048
 
-
 #define SWARMKV_DEFAULT_NODE_TIMEOUT 15000000
 #define SWARMKV_PING_INTERVAL 100000   //100ms
 
@@ -52,32 +51,29 @@ struct sockaddr_in set_node_addr(struct swarmkv_node* node)
 */
 
 //write the key-value into my store 
-void swarmkv_owner_put_kv(struct swarmkv_store *store, const char *tb_name, const char *key, size_t keylen, const char *value, size_t vallen)
+void swarmkv_owner_put_kv(struct swarmkv_store *store, const char *table_name, const char *key, size_t keylen, const char *value, size_t vallen)
 {
 	struct swarmkv_table *table = NULL;
 	struct swarmkv_key_value *kv = NULL;
 	pthread_rwlock_wrlock(&store->rwlock);
-	HASH_FIND_STR(store->table_hash, tb_name, table);
+	HASH_FIND_STR(store->table_hash, table_name, table);
 	if(table == NULL)
 	{
 		//add a new table in my swarmkv_store
 		table = ALLOC(struct swarmkv_table, 1);
-		memcpy(table->table_name, tb_name, strlen(tb_name));
+		memcpy(table->table_name, table_name, strlen(table_name));
 		HASH_ADD_STR(store->table_hash, table_name, table);
 		//add a new key
 		kv = ALLOC(struct swarmkv_key_value, 1);
 		kv->key = (char *)key;
-		//HASH_ADD_STR(table->owned_value_hash, key, kv);
 		HASH_ADD(hh, table->owned_value_hash, key, keylen, kv);
 	}
-	//HASH_FIND_STR(table->owned_value_hash, key, kv);
 	HASH_FIND(hh, table->owned_value_hash, key, keylen, kv);
 	if(kv == NULL)
 	{
 		//add a new key
 		kv = ALLOC(struct swarmkv_key_value, 1);
 		kv->key = (char *)key;
-		//HASH_ADD_STR(table->owned_value_hash, key, kv);
 		HASH_ADD(hh, table->owned_value_hash, key, keylen, kv);
 	}
 	kv->keylen = keylen;
@@ -731,41 +727,52 @@ int swarmkv_msg_unpack(struct swarmkv_store* store, char *buf)
 		case MSG_PUT_REQ:
 			//decode key and value
 			key = ALLOC(char, SWARMKV_MAX_KEY_LEN);
-			value = ALLOC(char, SWARMKV_MAX_KEY_LEN);
 			keylen = base64_decode(msg->data.put_req_data.key, strlen(msg->data.put_req_data.key), key);
-			vallen = base64_decode(msg->data.put_req_data.value, strlen(msg->data.put_req_data.value), value);
 			//check slot is belong to me.
 			slot_owner_id = caculate_key_slot_owner(store, key, keylen);
+			char *put_resp_msg = ALLOC(char, SWARMKV_MAX_MSG_SIZE);
 			if(slot_owner_id != store->my_node_id)
 			{
-				struct swarmkv_node *own_node = NULL;
-				HASH_FIND_INT(store->nodes, &slot_owner_id, own_node);
-				if(own_node == NULL)
+				if(msg->ttl > 0)
 				{
-					printf("put error.\n");
-					return -1;
+					struct swarmkv_node *own_node = NULL;
+					HASH_FIND_INT(store->nodes, &slot_owner_id, own_node);
+					if(own_node == NULL)
+					{
+						printf("put error.\n");
+						return -1;
+					}
+					msg_len = swarmkv_msg_repack_ttl(buf, put_resp_msg, SWARMKV_MAX_MSG_SIZE);
+					swarmkv_msg_send(store->sockfd, buf, own_node->ip, own_node->port);
+					break;
 				}
-				//Forward to the node which I think the slot is belong to.
-				swarmkv_msg_send(store->sockfd, buf, own_node->ip, own_node->port);
-				break;
-			}
-			
-			//put the key-value into my store and send invalidate request msg
-			swarmkv_owner_put_kv(store, msg->data.put_req_data.table_name, key, keylen, value, vallen);
-			swarmkv_msg_send_invalidate_key_req(store, msg->data.put_req_data.table_name, key, keylen, value, vallen);
-
-			//send a put response "ok"
-			char *put_resp_msg = ALLOC(char, SWARMKV_MAX_MSG_SIZE);
-			if(msg->data.get_req_data.cb_function<0)
-			{
-				msg_len = swarmkv_msg_pack_put_resp(store, MSG_PUT_RESP, put_resp_msg, SWARMKV_MAX_MSG_SIZE, msg->data.put_req_data.table_name, 
-																msg->data.put_req_data.key, msg->data.put_req_data.value, OP_SUCCESS);
+				else
+				{
+					//返回REQ_ERROR消息
+					msg_len = swarmkv_msg_pack_put_resp(store, MSG_PUT_RESP, put_resp_msg, SWARMKV_MAX_MSG_SIZE, msg->data.put_req_data.table_name, 
+																msg->data.put_req_data.key, msg->data.put_req_data.value, REQ_ERROR);
+				}
 			}
 			else
 			{
-				msg_len = swarmkv_msg_pack_put_resp_with_cb(store, MSG_PUT_RESP, put_resp_msg, SWARMKV_MAX_MSG_SIZE, msg->data.put_req_data.table_name, 
-																msg->data.put_req_data.key, msg->data.put_req_data.value, OP_SUCCESS, msg->src_uuid, 
-																msg->data.get_req_data.cb_function, msg->data.get_req_data.cb_arg);
+				value = ALLOC(char, SWARMKV_MAX_KEY_LEN);
+				vallen = base64_decode(msg->data.put_req_data.value, strlen(msg->data.put_req_data.value), value);
+				//put the key-value into my store and send invalidate request msg
+				swarmkv_owner_put_kv(store, msg->data.put_req_data.table_name, key, keylen, value, vallen);
+				swarmkv_msg_send_invalidate_key_req(store, msg->data.put_req_data.table_name, key, keylen, value, vallen);
+
+				//send a put response
+				if(msg->data.get_req_data.cb_function<0)
+				{
+					msg_len = swarmkv_msg_pack_put_resp(store, MSG_PUT_RESP, put_resp_msg, SWARMKV_MAX_MSG_SIZE, msg->data.put_req_data.table_name, 
+																	msg->data.put_req_data.key, msg->data.put_req_data.value, OP_SUCCESS);
+				}
+				else
+				{
+					msg_len = swarmkv_msg_pack_put_resp_with_cb(store, MSG_PUT_RESP, put_resp_msg, SWARMKV_MAX_MSG_SIZE, msg->data.put_req_data.table_name, 
+																	msg->data.put_req_data.key, msg->data.put_req_data.value, OP_SUCCESS, msg->src_uuid, 
+																	msg->data.get_req_data.cb_function, msg->data.get_req_data.cb_arg);
+				}
 			}
 			if(msg_len <= 0)
 			{
@@ -787,6 +794,10 @@ int swarmkv_msg_unpack(struct swarmkv_store* store, char *buf)
 					void *cb_arg = (void*)((unsigned long int)msg->data.put_resp_data.cb_arg);
 					cb_func(table->table_name, key, keylen, value, vallen, cb_arg);
 				}
+			}
+			else if(msg->data.put_resp_data.op_result == REQ_ERROR)
+			{
+				printf("The key owner you requested is wrong.\n");
 			}
 			break;
 		
@@ -835,20 +846,29 @@ int swarmkv_msg_unpack(struct swarmkv_store* store, char *buf)
 			keylen = base64_decode(msg->data.get_req_data.key, strlen(msg->data.get_req_data.key), key);
 			//check the key is belong to me?
 			slot_owner_id = caculate_key_slot_owner(store, key, keylen);
+			char *get_resp_msg = ALLOC(char, SWARMKV_MAX_MSG_SIZE);
 			if(slot_owner_id != store->my_node_id)
 			{
-				struct swarmkv_node *own_node = NULL;
-				HASH_FIND_INT(store->nodes, &slot_owner_id, own_node);
-				if(own_node == NULL)
+				if(msg->ttl > 0)
 				{
-					printf("put error.\n");
-					return -1;
+					struct swarmkv_node *own_node = NULL;
+					HASH_FIND_INT(store->nodes, &slot_owner_id, own_node);
+					if(own_node == NULL)
+					{
+						printf("put error.\n");
+						return -1;
+					}
+					msg_len = swarmkv_msg_repack_ttl(buf, get_resp_msg, SWARMKV_MAX_MSG_SIZE);
+					//Forward to the node which I think the slot is belong to.
+					swarmkv_msg_send(store->sockfd, get_resp_msg, own_node->ip, own_node->port);
+					break;
 				}
-				//Forward to the node which I think the slot is belong to.
-				swarmkv_msg_send(store->sockfd, buf, own_node->ip, own_node->port);
-				break;
+				else
+				{
+					swarmkv_msg_pack_get_resp(store, get_resp_msg, SWARMKV_MAX_MSG_SIZE, msg->data.get_req_data.table_name, 
+												msg->data.get_req_data.key, NULL, REQ_ERROR);
+				}
 			}
-
 			size_t *value_len = NULL;
 			value_len = ALLOC(size_t, 1);
 			value = swarmkv_owner_get_kv(store, msg->data.get_req_data.table_name, key, keylen, value_len, src_node->node_id);
@@ -857,20 +877,17 @@ int swarmkv_msg_unpack(struct swarmkv_store* store, char *buf)
 				printf("get key %s from my store for node %d error.\n", key, src_node->node_id);
 				break;
 			}
-
-			//send a response
-			char *get_resp_msg = ALLOC(char, SWARMKV_MAX_MSG_SIZE);
 			//encode value
 			char *value_base64 = ALLOC(char, SWARMKV_MAX_KEY_LEN);
 			base64_encode(value, *value_len, value_base64);
 			if(msg->data.get_req_data.cb_function<0)
 			{
-				msg_len = swarmkv_msg_pack_get_resp(store, get_resp_msg, SWARMKV_MAX_MSG_SIZE, msg->data.get_req_data.table_name, msg->data.get_req_data.key, value_base64);
+				msg_len = swarmkv_msg_pack_get_resp(store, get_resp_msg, SWARMKV_MAX_MSG_SIZE, msg->data.get_req_data.table_name, msg->data.get_req_data.key, value_base64, OP_SUCCESS);
 			}
 			else
 			{
 				msg_len = swarmkv_msg_pack_get_resp_with_cb(store, get_resp_msg, SWARMKV_MAX_MSG_SIZE, msg->data.get_req_data.table_name, msg->data.get_req_data.key, 
-									value_base64, msg->src_uuid, msg->data.get_req_data.cb_function, msg->data.get_req_data.cb_arg);
+									value_base64, OP_SUCCESS, msg->src_uuid, msg->data.get_req_data.cb_function, msg->data.get_req_data.cb_arg);
 			}
 			if(msg_len <= 0 )
 			{

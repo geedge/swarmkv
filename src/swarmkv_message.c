@@ -375,7 +375,7 @@ size_t swarmkv_msg_pack_get_req_with_cb(struct swarmkv_store *store, char *buff,
 
 //pack get resp msg
 size_t swarmkv_msg_pack_get_resp(struct swarmkv_store *store, char *buff, size_t buff_size, const char *table_name, 
-									const char* key, char* value)
+									const char* key, char* value, int op_result)
 {
 	if(buff_check(buff_size) <= 0)
 	{
@@ -388,6 +388,7 @@ size_t swarmkv_msg_pack_get_resp(struct swarmkv_store *store, char *buff, size_t
 
 	js_msg = swarmkv_msg_pack_get_basic_info(store, table_name, key);
 	cJSON_AddStringToObject(js_msg, "value", value);
+	cJSON_AddNumberToObject(js_msg, "op_result", op_result);
 
 	msg = cJSON_PrintUnformatted(js_msg);
 	assert(msg!=NULL);
@@ -399,7 +400,7 @@ size_t swarmkv_msg_pack_get_resp(struct swarmkv_store *store, char *buff, size_t
 	return msg_len;
 }
 size_t swarmkv_msg_pack_get_resp_with_cb(struct swarmkv_store *store, char *buff, size_t buff_size, const char *table_name, const char* key, 
-									const char* value, const char* uuid_version, long unsigned int callback_func_addr, long unsigned int callback_arg_addr)
+									const char* value, int op_result, const char* uuid_version, long unsigned int callback_func_addr, long unsigned int callback_arg_addr)
 {
 	cJSON* js_msg = NULL;
 	char* msg = NULL;
@@ -407,6 +408,7 @@ size_t swarmkv_msg_pack_get_resp_with_cb(struct swarmkv_store *store, char *buff
 
 	js_msg = swarmkv_msg_pack_get_basic_info(store, table_name, key);
 	cJSON_AddStringToObject(js_msg, "value", value);
+	cJSON_AddNumberToObject(js_msg, "op_result", op_result);
 
 	cJSON_AddStringToObject(js_msg, "uuid_version", uuid_version);
 	cJSON_AddNumberToObject(js_msg, "callback_func", callback_func_addr);
@@ -491,11 +493,36 @@ size_t swarmkv_msg_pack_migration_resp(struct swarmkv_store *store, char *buff, 
 	return msg_len;
 }
 
+size_t swarmkv_msg_repack_ttl(char *raw_msg, char *buff, size_t buff_size)
+{
+	cJSON* js_msg = cJSON_Parse(raw_msg);
+	char *msg;
+	int msg_len = 0;
+	if(!js_msg) 
+	{
+    	printf("get msg faild !\n");
+		return -1;
+	}
+	int ttl = cJSON_GetObjectItem(js_msg, "ttl")->valueint;
+	cJSON_ReplaceItemInObject(js_msg, "ttl", cJSON_CreateNumber(ttl-1));
+	msg = cJSON_PrintUnformatted(js_msg);
+	assert(msg!=NULL);
+	
+	msg_len = min(buff_size, strlen(msg));
+	memcpy(buff, msg, msg_len);
+	free(msg);
+
+	cJSON_Delete(js_msg);
+
+	return msg_len;
+}
+
 //unpack received message
 int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg *msg)
 {
 	cJSON* js_msg = cJSON_Parse(buf);
-	if(!js_msg) {
+	if(!js_msg) 
+	{
     	printf("get msg faild !\n");
 		return -1;
 	}

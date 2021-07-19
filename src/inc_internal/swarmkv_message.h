@@ -9,6 +9,7 @@
 #define SWARMKV_MAX_MSG_SIZE 65500
 #define OP_SUCCESS 1
 #define OP_UNSUCCESS -1
+#define REQ_ERROR 0      //I am not the owner of the key
 #define SWARMKV_DEFAULT_TTL 1
 
 enum swarmkv_msg_type
@@ -105,6 +106,7 @@ struct swarmkv_get_resp
 	char *table_name;
 	char *key;
 	char *value;
+	int op_result;
 	char uuid_version[32];
 	long unsigned int cb_function; 
 	long unsigned int cb_arg;
@@ -173,9 +175,9 @@ size_t swarmkv_msg_pack_get_req(struct swarmkv_store *store, char *buff, size_t 
 size_t swarmkv_msg_pack_get_req_with_cb(struct swarmkv_store *store, char *buff, size_t buff_size, const char *table_name, 
 									const char* key, long unsigned int callback_func_addr, long unsigned int callback_arg_addr);
 size_t swarmkv_msg_pack_get_resp(struct swarmkv_store *store, char *buff, size_t buff_size, const char *table_name, 
-									const char* key, char* value);
+									const char* key, char* value, int op_result);
 size_t swarmkv_msg_pack_get_resp_with_cb(struct swarmkv_store *store, char *buff, size_t buff_size, const char *table_name, const char* key, 
-									const char* value, const char* uuid_version, long unsigned int callback_func_addr, long unsigned int callback_arg_addr);
+									const char* value, int op_result, const char* uuid_version, long unsigned int callback_func_addr, long unsigned int callback_arg_addr);
 
 //put&invalidate
 cJSON *swarmkv_msg_pack_put_basic_info(struct swarmkv_store *store, enum swarmkv_msg_type type, 
@@ -192,4 +194,5 @@ size_t swarmkv_msg_pack_put_resp_with_cb(struct swarmkv_store *store, enum swarm
 size_t swarmkv_msg_pack_migration_req(struct swarmkv_store *store, char *buff, size_t buff_size, int slot_id);
 size_t swarmkv_msg_pack_migration_resp(struct swarmkv_store *store, char *buff, size_t buff_size, int slot_id,
 										struct swarmkv_migrate_kv mkv[], int mkv_num);
+size_t swarmkv_msg_repack_ttl(char *raw_msg, char *buff, size_t buff_size);
 int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg* msg);

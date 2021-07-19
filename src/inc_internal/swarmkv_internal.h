@@ -29,7 +29,7 @@ struct swarmkv_slot
 {
 	int slot_id;
 	int owner_node_id;
-	//int slot_flag;          //migrate to a new node?
+	int migrate_id;          //migrate to a new node
 	int replica_node_id[16];
 };
 
