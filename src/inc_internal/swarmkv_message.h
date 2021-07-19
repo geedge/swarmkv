@@ -9,6 +9,7 @@
 #define SWARMKV_MAX_MSG_SIZE 65500
 #define OP_SUCCESS 1
 #define OP_UNSUCCESS -1
+#define SWARMKV_DEFAULT_TTL 1
 
 enum swarmkv_msg_type
 {
@@ -57,14 +58,14 @@ struct swarmkv_fail_resp
 	int op_result;
 };
 
-struct swarmkv_update_req
+struct swarmkv_invalidate_req
 {
 	char *table_name;
 	char *key;
 	char *value;
 };
 
-struct swarmkv_update_resp
+struct swarmkv_invalidate_resp
 {
 	char *table_name;
 	char *key;
@@ -72,20 +73,41 @@ struct swarmkv_update_resp
 	int op_result;
 };
 
+struct swarmkv_put_req
+{
+	char *table_name;
+	char *key;
+	char *value;
+	long unsigned int cb_function; 
+	long unsigned int cb_arg;
+};
+
+struct swarmkv_put_resp
+{
+	char *table_name;
+	char *key;
+	char *value;
+	int op_result;
+	char uuid_version[32];
+	long unsigned int cb_function; 
+	long unsigned int cb_arg;
+};
+
 struct swarmkv_get_req
 {
 	char *table_name;
 	char *key;
 	long unsigned int cb_function; 
+	long unsigned int cb_arg;
 };
-
 struct swarmkv_get_resp
 {
 	char *table_name;
 	char *key;
 	char *value;
-	char last_uuid[32];
+	char uuid_version[32];
 	long unsigned int cb_function; 
+	long unsigned int cb_arg;
 };
 
 struct swarmkv_migrate_req
@@ -93,10 +115,18 @@ struct swarmkv_migrate_req
 	int slot_id;
 };
 
+struct swarmkv_migrate_kv
+{
+	char *table_name;
+	char *key;
+	char *value;
+};
+
 struct swarmkv_migrate_resp
 {
 	int slot_id;
-	struct swarmkv_table *tables;
+	int kv_num;
+	struct swarmkv_migrate_kv *mkv;
 };
 
 union MsgData
@@ -104,10 +134,12 @@ union MsgData
 	struct swarmkv_health_check health_check_data;
 	struct swarmkv_fail_req fail_req_data;
 	struct swarmkv_fail_resp fail_resp_data;
-	struct swarmkv_update_req update_req_data;
-	struct swarmkv_update_resp update_resp_data;
+	struct swarmkv_put_req put_req_data;
+	struct swarmkv_put_resp put_resp_data;
 	struct swarmkv_get_req get_req_data;
 	struct swarmkv_get_resp get_resp_data;
+	struct swarmkv_invalidate_req invalidate_req_data;
+	struct swarmkv_invalidate_resp invalidate_resp_data;
 	struct swarmkv_migrate_req migrate_req_data;
 	struct swarmkv_migrate_resp migrate_resp_data;
 };
@@ -119,8 +151,11 @@ struct swarmkv_msg
 	uint16_t src_port;
 	char src_uuid[32];
 	enum swarmkv_msg_type type;
+	int ttl;
 	union MsgData data;
 };
+
+
 
 cJSON *swarmkv_msg_pack_basic_info(struct swarmkv_store *store, enum swarmkv_msg_type type);
 cJSON *swarmkv_msg_pack_node_list(struct swarmkv_store *store);
@@ -130,13 +165,31 @@ size_t swarmkv_msg_pack_meet_req(struct swarmkv_store *store, char *buff, size_t
 size_t swarmkv_msg_pack_health_check(struct swarmkv_store *store, enum swarmkv_msg_type type, char *buff, size_t buff_size);
 size_t swarmkv_msg_pack_fail_req(struct swarmkv_store *store, char *buff, size_t buff_size, int fail_node_id);
 size_t swarmkv_msg_pack_fail_response(struct swarmkv_store *store, char *buff, size_t buff_size, int fail_node_id, int op_result);
-size_t swarmkv_msg_pack_get_req(struct swarmkv_store *store, char *buff, size_t buff_size, const char *table_name, const char *key,
-								long unsigned int cb_function);
-size_t swarmkv_msg_pack_get_resp(struct swarmkv_store *store, char *buff, size_t buff_size, const char *table_name, const char *key,
-								 char *value, long unsigned int cb_function, char *uuid_version);
-//size_t swarmkv_msg_pack_ok_response(struct swarmkv_store *store, enum swarmkv_msg_type type, char *buff, size_t buff_size);
-size_t swarmkv_msg_pack_update_key_response(struct swarmkv_store *store, enum swarmkv_msg_type type, char *buff, size_t buff_size, 
-											const char* tb_name, const char* key, const char* value, int op_result);		
-size_t swarmkv_msg_pack_update_key_req(struct swarmkv_store *store, enum swarmkv_msg_type type, char *buff, 
-					size_t buff_size, const char* tb_name, const char* key, const char* value);
+
+//get
+cJSON *swarmkv_msg_pack_get_basic_info(struct swarmkv_store *store, const char *table_name, const char* key);
+size_t swarmkv_msg_pack_get_req(struct swarmkv_store *store, char *buff, size_t buff_size, const char *table_name, 
+									const char* key);
+size_t swarmkv_msg_pack_get_req_with_cb(struct swarmkv_store *store, char *buff, size_t buff_size, const char *table_name, 
+									const char* key, long unsigned int callback_func_addr, long unsigned int callback_arg_addr);
+size_t swarmkv_msg_pack_get_resp(struct swarmkv_store *store, char *buff, size_t buff_size, const char *table_name, 
+									const char* key, char* value);
+size_t swarmkv_msg_pack_get_resp_with_cb(struct swarmkv_store *store, char *buff, size_t buff_size, const char *table_name, const char* key, 
+									const char* value, const char* uuid_version, long unsigned int callback_func_addr, long unsigned int callback_arg_addr);
+
+//put&invalidate
+cJSON *swarmkv_msg_pack_put_basic_info(struct swarmkv_store *store, enum swarmkv_msg_type type, 
+											const char* tb_name, const char* key, const char* value);
+size_t swarmkv_msg_pack_put_req(struct swarmkv_store *store, enum swarmkv_msg_type type, char *buff, size_t buff_size,
+					 const char* tb_name, const char* key, const char* value);
+size_t swarmkv_msg_pack_put_req_with_cb(struct swarmkv_store *store, enum swarmkv_msg_type type, char *buff, size_t buff_size,
+					 const char* tb_name, const char* key, const char* value, long unsigned int callback_func_addr, long unsigned int callback_arg_addr);
+size_t swarmkv_msg_pack_put_resp(struct swarmkv_store *store, enum swarmkv_msg_type type, char *buff, size_t buff_size,
+					 const char* tb_name, const char* key, const char* value, int op_result);
+size_t swarmkv_msg_pack_put_resp_with_cb(struct swarmkv_store *store, enum swarmkv_msg_type type, char *buff, size_t buff_size,
+					 const char* tb_name, const char* key, const char* value, int op_result, const char* uuid_version, long unsigned int callback_func_addr, long unsigned int callback_arg_addr);
+
+size_t swarmkv_msg_pack_migration_req(struct swarmkv_store *store, char *buff, size_t buff_size, int slot_id);
+size_t swarmkv_msg_pack_migration_resp(struct swarmkv_store *store, char *buff, size_t buff_size, int slot_id,
+										struct swarmkv_migrate_kv mkv[], int mkv_num);
 int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg* msg);

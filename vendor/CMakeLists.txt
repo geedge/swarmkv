@@ -28,8 +28,8 @@ set_property(TARGET gtest PROPERTY INTERFACE_LINK_LIBRARIES pthread)
 
 #cjson
 ExternalProject_Add(cJSON PREFIX cJSON
-        URL ${CMAKE_CURRENT_SOURCE_DIR}/cJSON-master.zip
-        URL_MD5 19a4bd52cd9f3e91c652cabcb1f09e12
+        URL ${CMAKE_CURRENT_SOURCE_DIR}/cJSON-1.7.14.zip
+        URL_MD5 5fc6b4bb6134f7c3bfaca9d260f294d7
         CONFIGURE_COMMAND cmake
         BUILD_COMMAND make
         INSTALL_COMMAND ""

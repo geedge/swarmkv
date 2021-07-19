@@ -38,7 +38,7 @@ int swarmkv_create_socket(int port)
 	my_addr.sin_port = htons(port);
 	my_addr.sin_addr.s_addr = htonl(INADDR_ANY);
 
-	if ((sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0)
+	if ((sockfd = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0)
 	{
 		perror("socket");
 		return 0;

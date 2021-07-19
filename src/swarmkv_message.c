@@ -5,12 +5,13 @@
 //pack basic information: my id, ip, port, and msg_type
 cJSON *swarmkv_msg_pack_basic_info(struct swarmkv_store *store, enum swarmkv_msg_type type)
 {
-	cJSON* js_basic_info = 0;
+	cJSON* js_basic_info = NULL;
 	js_basic_info = cJSON_CreateObject();
 	cJSON_AddNumberToObject(js_basic_info, "my_id", store->my_node_id);
 	cJSON_AddStringToObject(js_basic_info, "my_ip", store->my_ip);
 	cJSON_AddNumberToObject(js_basic_info, "my_port", store->my_port);
 	cJSON_AddStringToObject(js_basic_info, "uuid", store->uuid);
+	cJSON_AddNumberToObject(js_basic_info, "TTL", SWARMKV_DEFAULT_TTL);
 	cJSON_AddNumberToObject(js_basic_info, "msg_type", type);
 
 	return js_basic_info;
@@ -19,8 +20,8 @@ cJSON *swarmkv_msg_pack_basic_info(struct swarmkv_store *store, enum swarmkv_msg
 //pack store->nodes into msg
 cJSON *swarmkv_msg_pack_node_list(struct swarmkv_store *store)
 {
-	cJSON* js_node_list = 0;
-	cJSON* js_node = 0;
+	cJSON* js_node_list = NULL;
+	cJSON* js_node = NULL;
 	
 	js_node_list = cJSON_CreateArray();
 	struct swarmkv_node* node;
@@ -37,8 +38,8 @@ cJSON *swarmkv_msg_pack_node_list(struct swarmkv_store *store)
 //pack store->slots[SWARMKV_DEFAULT_SLOT_NUM] into msg
 cJSON *swarmkv_msg_pack_slot_list(struct swarmkv_store *store)
 {
-	cJSON* js_slot_list = 0;
-	cJSON* js_slot = 0;
+	cJSON* js_slot_list = NULL;
+	cJSON* js_slot = NULL;
 	int i = 0;
 
 	js_slot_list = cJSON_CreateArray();
@@ -83,7 +84,7 @@ size_t swarmkv_msg_pack_meet_req(struct swarmkv_store *store, char *buff, size_t
 		return -1;
 	}
 	
-	cJSON* js_msg = 0;
+	cJSON* js_msg = NULL;
 	char* msg = NULL;
 	size_t msg_len = 0;
 	enum swarmkv_msg_type type = MSG_MEET_REQ;
@@ -109,9 +110,9 @@ size_t swarmkv_msg_pack_health_check(struct swarmkv_store *store, enum swarmkv_m
 		return -1;
 	}
 		
-	cJSON* js_msg = 0;
-	cJSON* js_node_list = 0;
-	cJSON* js_slot_list = 0;
+	cJSON* js_msg = NULL;
+	cJSON* js_node_list = NULL;
+	cJSON* js_slot_list = NULL;
 	size_t msg_len = 0;
 	char* msg = NULL;
 	
@@ -145,7 +146,7 @@ size_t swarmkv_msg_pack_fail_req(struct swarmkv_store *store, char *buff, size_t
 		return -1;
 	}
 
-	cJSON* js_msg = 0;
+	cJSON* js_msg = NULL;
 	char* msg = NULL;
 	size_t msg_len = 0;
 	enum swarmkv_msg_type type = MSG_FAIL_REQ;
@@ -193,93 +194,180 @@ size_t swarmkv_msg_pack_fail_response(struct swarmkv_store *store, char *buff, s
 	return msg_len;	
 }
 
-//put resp, invalidate resp
-size_t swarmkv_msg_pack_update_key_response(struct swarmkv_store *store, enum swarmkv_msg_type type, char *buff, size_t buff_size, 
-											const char* tb_name, const char* key, const char* value, int op_result)
+//pack put req msg
+cJSON *swarmkv_msg_pack_put_basic_info(struct swarmkv_store *store, enum swarmkv_msg_type type, 
+											const char* tb_name, const char* key, const char* value)
 {
-	if(buff_check(buff_size) <= 0)
-	{
-		return -1;
-	}
-
-	cJSON* js_msg = 0;
+	cJSON* js_msg = NULL;
 	char* msg = NULL;
 	size_t msg_len = 0;
-	
+
 	js_msg = swarmkv_msg_pack_basic_info(store, type);
 	cJSON_AddStringToObject(js_msg, "table_name", tb_name);
 	cJSON_AddStringToObject(js_msg, "key", key);
 	cJSON_AddStringToObject(js_msg, "value", value);
-	cJSON_AddNumberToObject(js_msg, "op_result", op_result);
 
-	msg = cJSON_PrintUnformatted(js_msg);
-	assert(msg!=NULL);
-
-	msg_len = min(buff_size, strlen(msg));
-	memcpy(buff, msg, msg_len);
-	free(msg);
-
-	cJSON_Delete(js_msg);
-
-	return msg_len;	
+	return js_msg;
 }
 
-//pack put/invalidate key request msg
-size_t swarmkv_msg_pack_update_key_req(struct swarmkv_store *store, enum swarmkv_msg_type type, char *buff, 
-					size_t buff_size, const char* tb_name, const char* key, const char* value)
+size_t swarmkv_msg_pack_put_req(struct swarmkv_store *store, enum swarmkv_msg_type type, char *buff, size_t buff_size,
+					 const char* tb_name, const char* key, const char* value)
 {
 	if(buff_check(buff_size) <= 0)
 	{
 		return -1;
 	}
-
-	cJSON* js_msg = 0;
+	cJSON* js_msg = NULL;
 	char* msg = NULL;
 	size_t msg_len = 0;
-
-	js_msg = swarmkv_msg_pack_basic_info(store, type);
-	cJSON_AddStringToObject(js_msg, "table_name", tb_name);
-	cJSON_AddStringToObject(js_msg,"key", key);
-	cJSON_AddStringToObject(js_msg, "value", value);
-
+	
+	js_msg = swarmkv_msg_pack_put_basic_info(store, type, tb_name, key, value);
+	
 	msg = cJSON_PrintUnformatted(js_msg);
-	if(msg)
+	assert(msg!=NULL);
+	msg_len = min(buff_size, strlen(msg));
+	memcpy(buff, msg, msg_len);
+	free(msg);
+	cJSON_Delete(js_msg);
+
+	return msg_len;
+}
+
+size_t swarmkv_msg_pack_put_req_with_cb(struct swarmkv_store *store, enum swarmkv_msg_type type, char *buff, size_t buff_size,
+					 const char* tb_name, const char* key, const char* value, long unsigned int callback_func_addr, long unsigned int callback_arg_addr)
+{
+	if(buff_check(buff_size) <= 0)
 	{
-		msg_len = min(buff_size, strlen(msg));
-		memcpy(buff, msg, msg_len);
-		free(msg);
+		return -1;
 	}
+	cJSON* js_msg = NULL;
+	char* msg = NULL;
+	size_t msg_len = 0;
+	
+	js_msg = swarmkv_msg_pack_put_basic_info(store, type, tb_name, key, value);
+	cJSON_AddNumberToObject(js_msg, "callback_func", callback_func_addr);
+	cJSON_AddNumberToObject(js_msg, "callback_func_arg", callback_arg_addr);
+	
+	msg = cJSON_PrintUnformatted(js_msg);
+	assert(msg!=NULL);
+	msg_len = min(buff_size, strlen(msg));
+	memcpy(buff, msg, msg_len);
+	free(msg);
+	cJSON_Delete(js_msg);
+
+	return msg_len;
+}
+
+//pack put response msg
+size_t swarmkv_msg_pack_put_resp(struct swarmkv_store *store, enum swarmkv_msg_type type, char *buff, size_t buff_size,
+					 const char* tb_name, const char* key, const char* value, int op_result)
+{
+	if(buff_check(buff_size) <= 0)
+	{
+		return -1;
+	}
+	cJSON* js_msg = NULL;
+	char* msg = NULL;
+	size_t msg_len = 0;
+	
+	js_msg = swarmkv_msg_pack_put_basic_info(store, type, tb_name, key, value);
+	cJSON_AddNumberToObject(js_msg, "op_result", op_result);
+	
+	msg = cJSON_PrintUnformatted(js_msg);
+	assert(msg!=NULL);
+	msg_len = min(buff_size, strlen(msg));
+	memcpy(buff, msg, msg_len);
+	free(msg);
+	cJSON_Delete(js_msg);
+
+	return msg_len;
+}
+
+size_t swarmkv_msg_pack_put_resp_with_cb(struct swarmkv_store *store, enum swarmkv_msg_type type, char *buff, size_t buff_size,
+					 const char* tb_name, const char* key, const char* value, int op_result, const char* uuid_version, long unsigned int callback_func_addr, long unsigned int callback_arg_addr)
+{
+	if(buff_check(buff_size) <= 0)
+	{
+		return -1;
+	}
+	cJSON* js_msg = NULL;
+	char* msg = NULL;
+	size_t msg_len = 0;
+	
+	js_msg = swarmkv_msg_pack_put_basic_info(store, type, tb_name, key, value);
+	cJSON_AddNumberToObject(js_msg, "op_result", op_result);
+	cJSON_AddNumberToObject(js_msg, "callback_func", callback_func_addr);
+	cJSON_AddNumberToObject(js_msg, "callback_func_arg", callback_arg_addr);
+	cJSON_AddStringToObject(js_msg, "uuid_version", uuid_version);
+	
+	msg = cJSON_PrintUnformatted(js_msg);
+	assert(msg!=NULL);
+	msg_len = min(buff_size, strlen(msg));
+	memcpy(buff, msg, msg_len);
+	free(msg);
 	cJSON_Delete(js_msg);
 
 	return msg_len;
 }
 
 //pack get req msg
-size_t swarmkv_msg_pack_get_req(struct swarmkv_store *store, char *buff, size_t buff_size, const char *table_name, 
-									const char* key, long unsigned int callback_addr)
+cJSON *swarmkv_msg_pack_get_basic_info(struct swarmkv_store *store, const char *table_name, const char* key)
 {
-	if(buff_check(buff_size) <= 0)
-	{
-		return -1;
-	}
-
-	cJSON* js_msg = 0;
+	cJSON* js_msg = NULL;
 	char* msg = NULL;
 	size_t msg_len = 0;
 	enum swarmkv_msg_type type = MSG_GET_REQ;
 
 	js_msg = swarmkv_msg_pack_basic_info(store, type);
-	cJSON_AddNumberToObject(js_msg, "callback", callback_addr);
 	cJSON_AddStringToObject(js_msg, "table_name", table_name);
 	cJSON_AddStringToObject(js_msg, "key", key);
 
+	return js_msg;
+}
+
+size_t swarmkv_msg_pack_get_req(struct swarmkv_store *store, char *buff, size_t buff_size, const char *table_name, 
+									const char* key)
+{
+	if(buff_check(buff_size) <= 0)
+	{
+		return -1;
+	}
+	cJSON* js_msg = NULL;
+	char* msg = NULL;
+	size_t msg_len = 0;
+
+	js_msg = swarmkv_msg_pack_get_basic_info(store, table_name, key);
+	
 	msg = cJSON_PrintUnformatted(js_msg);
 	assert(msg!=NULL);
-	
 	msg_len = min(buff_size, strlen(msg));
 	memcpy(buff, msg, msg_len);
 	free(msg);
+	cJSON_Delete(js_msg);
 
+	return msg_len;
+}
+size_t swarmkv_msg_pack_get_req_with_cb(struct swarmkv_store *store, char *buff, size_t buff_size, const char *table_name, 
+									const char* key, long unsigned int callback_func_addr, long unsigned int callback_arg_addr)
+{
+	if(buff_check(buff_size) <= 0)
+	{
+		return -1;
+	}
+	cJSON* js_msg = NULL;
+	char* msg = NULL;
+	size_t msg_len = 0;
+
+	js_msg = swarmkv_msg_pack_get_basic_info(store, table_name, key);
+
+	cJSON_AddNumberToObject(js_msg, "callback_func", callback_func_addr);
+	cJSON_AddNumberToObject(js_msg, "callback_func_arg", callback_arg_addr);
+
+	msg = cJSON_PrintUnformatted(js_msg);
+	assert(msg!=NULL);
+	msg_len = min(buff_size, strlen(msg));
+	memcpy(buff, msg, msg_len);
+	free(msg);
 	cJSON_Delete(js_msg);
 
 	return msg_len;
@@ -287,7 +375,54 @@ size_t swarmkv_msg_pack_get_req(struct swarmkv_store *store, char *buff, size_t 
 
 //pack get resp msg
 size_t swarmkv_msg_pack_get_resp(struct swarmkv_store *store, char *buff, size_t buff_size, const char *table_name, 
-									const char* key, char* value, long unsigned int callback_addr, char *uuid_version)
+									const char* key, char* value)
+{
+	if(buff_check(buff_size) <= 0)
+	{
+		return -1;
+	}
+
+	cJSON* js_msg = NULL;
+	char* msg = NULL;
+	size_t msg_len = 0;
+
+	js_msg = swarmkv_msg_pack_get_basic_info(store, table_name, key);
+	cJSON_AddStringToObject(js_msg, "value", value);
+
+	msg = cJSON_PrintUnformatted(js_msg);
+	assert(msg!=NULL);
+	msg_len = min(buff_size, strlen(msg));
+	memcpy(buff, msg, msg_len);
+	free(msg);
+	cJSON_Delete(js_msg);
+
+	return msg_len;
+}
+size_t swarmkv_msg_pack_get_resp_with_cb(struct swarmkv_store *store, char *buff, size_t buff_size, const char *table_name, const char* key, 
+									const char* value, const char* uuid_version, long unsigned int callback_func_addr, long unsigned int callback_arg_addr)
+{
+	cJSON* js_msg = NULL;
+	char* msg = NULL;
+	size_t msg_len = 0;
+
+	js_msg = swarmkv_msg_pack_get_basic_info(store, table_name, key);
+	cJSON_AddStringToObject(js_msg, "value", value);
+
+	cJSON_AddStringToObject(js_msg, "uuid_version", uuid_version);
+	cJSON_AddNumberToObject(js_msg, "callback_func", callback_func_addr);
+	cJSON_AddNumberToObject(js_msg, "callback_func_arg", callback_arg_addr);
+
+	msg = cJSON_PrintUnformatted(js_msg);
+	assert(msg!=NULL);
+	msg_len = min(buff_size, strlen(msg));
+	memcpy(buff, msg, msg_len);
+	free(msg);
+	cJSON_Delete(js_msg);
+
+	return msg_len;
+}
+
+size_t swarmkv_msg_pack_migration_req(struct swarmkv_store *store, char *buff, size_t buff_size, int slot_id)
 {
 	if(buff_check(buff_size) <= 0)
 	{
@@ -301,19 +436,56 @@ size_t swarmkv_msg_pack_get_resp(struct swarmkv_store *store, char *buff, size_t
 
 	js_msg = swarmkv_msg_pack_basic_info(store, type);
 	
-	cJSON_AddNumberToObject(js_msg, "callback", callback_addr);
-	cJSON_AddStringToObject(js_msg, "uuid_version", uuid_version);
-	cJSON_AddStringToObject(js_msg, "table_name", table_name);
-	cJSON_AddStringToObject(js_msg, "key", key);
-	cJSON_AddStringToObject(js_msg, "value", value);
-
+	cJSON_AddNumberToObject(js_msg, "slot_id", slot_id);
+	
 	msg = cJSON_PrintUnformatted(js_msg);
-	if(msg)
+	assert(msg!=NULL);
+	
+	msg_len = min(buff_size, strlen(msg));
+	memcpy(buff, msg, msg_len);
+	free(msg);
+
+	cJSON_Delete(js_msg);
+
+	return msg_len;
+}
+
+size_t swarmkv_msg_pack_migration_resp(struct swarmkv_store *store, char *buff, size_t buff_size, int slot_id,
+										struct swarmkv_migrate_kv mkv[], int mkv_num)
+{
+	if(buff_check(buff_size) <= 0)
 	{
-		msg_len = min(buff_size, strlen(msg));
-		memcpy(buff, msg, msg_len);
-		free(msg);
+		return -1;
 	}
+
+	cJSON* js_msg = NULL;
+	cJSON* js_mkv_list = NULL;
+	cJSON* js_mkv = NULL;
+	char* msg = NULL;
+	size_t msg_len = 0;
+	int i = 0;
+	enum swarmkv_msg_type type = MSG_GET_RESP;
+
+	js_msg = swarmkv_msg_pack_basic_info(store, type);
+	cJSON_AddNumberToObject(js_msg, "slot_id", slot_id);
+	cJSON_AddNumberToObject(js_msg, "kv_num", mkv_num);
+	cJSON_AddItemToObject(js_msg, "kv", js_mkv_list = cJSON_CreateArray());
+	
+	for(i=0; i<mkv_num; i++)
+	{
+		cJSON_AddItemToArray(js_mkv_list, js_mkv = cJSON_CreateObject());
+		cJSON_AddStringToObject(js_mkv,"table_name", mkv[i].table_name);
+		cJSON_AddStringToObject(js_mkv, "key", mkv[i].key);
+		cJSON_AddStringToObject(js_mkv,"value", mkv[i].value);
+	}
+	
+	msg = cJSON_PrintUnformatted(js_msg);
+	assert(msg!=NULL);
+	
+	msg_len = min(buff_size, strlen(msg));
+	memcpy(buff, msg, msg_len);
+	free(msg);
+
 	cJSON_Delete(js_msg);
 
 	return msg_len;
@@ -332,13 +504,15 @@ int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg *msg)
 	cJSON* src_ip = cJSON_GetObjectItem(js_msg, "my_ip");
 	cJSON* src_port = cJSON_GetObjectItem(js_msg, "my_port");
 	cJSON* src_uuid = cJSON_GetObjectItem(js_msg, "uuid");
+	cJSON* ttl = cJSON_GetObjectItem(js_msg, "TTL");
 	cJSON* msg_type = cJSON_GetObjectItem(js_msg, "msg_type");
+	
 	msg->src_node_id = src_id->valueint;
-
 	msg->src_ip = ALLOC(char, strlen(src_ip->valuestring));
 	memcpy(msg->src_ip, src_ip->valuestring, strlen(src_ip->valuestring));
 	msg->src_port = src_port->valueint;
 	memcpy(msg->src_uuid, src_uuid->valuestring, 32);
+	msg->ttl = ttl->valueint;
 	msg->type = msg_type->valueint;
 
 	printf("msg->src_ip: %s\n", msg->src_ip);
@@ -347,16 +521,21 @@ int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg *msg)
 	cJSON *key = NULL;
 	cJSON *value = NULL;
 	cJSON *cb_function = NULL;
-	cJSON* node_list = NULL;
-	cJSON* slot_list = NULL;
+	cJSON *cb_arg = NULL;
+	cJSON *node_list = NULL;
+	cJSON *slot_list = NULL;
 	cJSON *failed_node_id = NULL;
 	cJSON *op_result = NULL;
-	cJSON *last_uuid = NULL;
+	cJSON *uuid_version = NULL;
+	cJSON *slot_id = NULL;
+	cJSON *kv_num = NULL;
+	cJSON *kv_list = NULL;
 	int node_num = 0;
 	int slot_num = 0;
 	int tb_name_len = 0;
 	int key_len = 0;
 	int val_len = 0;
+	int i = 0;
 
 	switch(msg->type)
 	{
@@ -370,7 +549,7 @@ int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg *msg)
 			slot_num = cJSON_GetArraySize(slot_list);
 			msg->data.health_check_data.slot_num = slot_num;
 			
-			int i = 0;
+			i = 0;
 			if(node_list != NULL){
 				cJSON *node_item  = node_list->child;
 				while(node_item)
@@ -390,7 +569,6 @@ int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg *msg)
 					node_item = node_item->next;
 				}
 			}
-			
 			i = 0;
 			if(slot_list != NULL)
 			{
@@ -400,7 +578,6 @@ int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg *msg)
 					cJSON *slot_id = cJSON_GetObjectItem(slot_item, "slot_id");
 					cJSON *owner_id = cJSON_GetObjectItem(slot_item, "owner_id");
 					msg->data.health_check_data.slots[i].slot_id = slot_id->valueint;
-					
 					msg->data.health_check_data.slots[i].owner_node_id = owner_id->valueint;
 					i++;
 					slot_item = slot_item->next;
@@ -419,67 +596,90 @@ int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg *msg)
 			msg->data.fail_resp_data.failed_node_id = failed_node_id->valueint;
 			msg->data.fail_resp_data.op_result = op_result->valueint;
 			break;
+		
 		case MSG_PUT_REQ:
-		case MSG_INVALIDATE_KEYS_REQ:
 			tb_name = cJSON_GetObjectItem(js_msg, "table_name");
 			key = cJSON_GetObjectItem(js_msg, "table_name");
 			value = cJSON_GetObjectItem(js_msg, "value");
 			tb_name_len = strlen(tb_name->valuestring);
 			key_len = strlen(key->valuestring);
 			val_len = strlen(value->valuestring);
-			msg->data.update_req_data.table_name = ALLOC(char, tb_name_len);
-			msg->data.update_req_data.key = ALLOC(char, key_len);
-			msg->data.update_req_data.value = ALLOC(char, val_len);
-			memcpy(msg->data.update_req_data.table_name, tb_name->valuestring, tb_name_len);
-			memcpy(msg->data.update_req_data.key, key->valuestring, key_len);
-			memcpy(msg->data.update_req_data.value, value->valuestring, val_len);
+			msg->data.put_req_data.table_name = ALLOC(char, tb_name_len);
+			msg->data.put_req_data.key = ALLOC(char, key_len);
+			msg->data.put_req_data.value = ALLOC(char, val_len);
+			memcpy(msg->data.put_req_data.table_name, tb_name->valuestring, tb_name_len);
+			memcpy(msg->data.put_req_data.key, key->valuestring, key_len);
+			memcpy(msg->data.put_req_data.value, value->valuestring, val_len);
+			cb_function = cJSON_GetObjectItem(js_msg, "callback");
+			cb_arg = cJSON_GetObjectItem(js_msg, "callback_arg");
+			if(cb_function == NULL)
+			{
+				msg->data.put_req_data.cb_function = -1;
+				msg->data.put_req_data.cb_arg = -1;
+			}
+			else
+			{
+				msg->data.put_req_data.cb_function = cb_function->valueint;
+				msg->data.put_req_data.cb_arg = cb_arg->valueint;
+			}
 			break;
 		case MSG_PUT_RESP:
-		case MSG_INVALIDATE_KEYS_RESP:
 			tb_name = cJSON_GetObjectItem(js_msg, "table_name");
-			key = cJSON_GetObjectItem(js_msg, "table_name");
+			key = cJSON_GetObjectItem(js_msg, "key");
 			value = cJSON_GetObjectItem(js_msg, "value");
-			op_result = cJSON_GetObjectItem(js_msg, "op_result");
-			/*msg->data.update_resp_data.table_name = tb_name->valuestring;
-			msg->data.update_resp_data.key = key->valuestring;
-			msg->data.update_resp_data.value = value->valuestring;*/
-			msg->data.update_resp_data.op_result = op_result->valueint;
 			tb_name_len = strlen(tb_name->valuestring);
 			key_len = strlen(key->valuestring);
 			val_len = strlen(value->valuestring);
-			msg->data.update_resp_data.table_name = ALLOC(char, tb_name_len);
-			msg->data.update_resp_data.key = ALLOC(char, key_len);
-			msg->data.update_resp_data.value = ALLOC(char, val_len);
-			memcpy(msg->data.update_resp_data.table_name, tb_name->valuestring, tb_name_len);
-			memcpy(msg->data.update_resp_data.key, key->valuestring, key_len);
-			memcpy(msg->data.update_resp_data.value, value->valuestring, val_len);
+			msg->data.put_resp_data.table_name = ALLOC(char, tb_name_len);
+			msg->data.put_resp_data.key = ALLOC(char, key_len);
+			msg->data.put_resp_data.value = ALLOC(char, val_len);
+			memcpy(msg->data.put_resp_data.table_name, tb_name->valuestring, tb_name_len);
+			memcpy(msg->data.put_resp_data.key, key->valuestring, key_len);
+			memcpy(msg->data.put_resp_data.value, value->valuestring, val_len);
+			op_result = cJSON_GetObjectItem(js_msg, "op_result");
+			msg->data.put_resp_data.op_result = op_result->valueint;
+			cb_function = cJSON_GetObjectItem(js_msg, "callback");
+			cb_arg = cJSON_GetObjectItem(js_msg, "callback_arg");
+			uuid_version = cJSON_GetObjectItem(js_msg, "uuid_version");
+			if(cb_function == NULL)
+			{
+				msg->data.put_resp_data.cb_function = -1;
+				msg->data.put_resp_data.cb_arg = -1;
+			}
+			else
+			{
+				msg->data.put_resp_data.cb_function = cb_function->valueint;
+				msg->data.put_resp_data.cb_arg = cb_arg->valueint;
+				memcpy(msg->data.put_resp_data.uuid_version, uuid_version->valuestring, 32);
+			}
 			break;
+		
 		case MSG_GET_REQ:
 			tb_name = cJSON_GetObjectItem(js_msg, "table_name");
 			key = cJSON_GetObjectItem(js_msg, "key");
-			cb_function = cJSON_GetObjectItem(js_msg, "callback");
-			//msg->data.get_req_data.table_name = tb_name->valuestring;
-			//msg->data.get_req_data.key = key->valuestring;
-			msg->data.get_req_data.cb_function = cb_function->valueint;
 			tb_name_len = strlen(tb_name->valuestring);
 			key_len = strlen(key->valuestring);
 			msg->data.get_req_data.table_name = ALLOC(char, tb_name_len);
 			msg->data.get_req_data.key = ALLOC(char, key_len);
 			memcpy(msg->data.get_req_data.table_name, tb_name->valuestring, tb_name_len);
 			memcpy(msg->data.get_req_data.key, key->valuestring, key_len);
+			cb_function = cJSON_GetObjectItem(js_msg, "callback");
+			cb_arg = cJSON_GetObjectItem(js_msg, "callback_arg");
+			if(cb_function == NULL)
+			{
+				msg->data.get_req_data.cb_function = -1;
+				msg->data.get_req_data.cb_arg = -1;
+			}
+			else
+			{
+				msg->data.get_req_data.cb_function = cb_function->valueint;
+				msg->data.get_req_data.cb_arg = cb_arg->valueint;
+			}
 			break;
 		case MSG_GET_RESP:
 			tb_name = cJSON_GetObjectItem(js_msg, "table_name");
 			key = cJSON_GetObjectItem(js_msg, "key");
 			value = cJSON_GetObjectItem(js_msg, "value");
-			cb_function = cJSON_GetObjectItem(js_msg, "callback");
-			last_uuid = cJSON_GetObjectItem(js_msg, "last_uuid");
-			/*msg->data.get_resp_data.table_name = tb_name->valuestring;
-			msg->data.get_resp_data.key = key->valuestring;
-			msg->data.get_resp_data.value = value->valuestring;*/
-			memcpy(msg->data.get_resp_data.last_uuid, last_uuid->valuestring, 32);
-			msg->data.get_resp_data.cb_function = cb_function->valueint;
-
 			tb_name_len = strlen(tb_name->valuestring);
 			key_len = strlen(key->valuestring);
 			val_len = strlen(value->valuestring);
@@ -489,16 +689,90 @@ int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg *msg)
 			memcpy(msg->data.get_resp_data.table_name, tb_name->valuestring, tb_name_len);
 			memcpy(msg->data.get_resp_data.key, key->valuestring, key_len);
 			memcpy(msg->data.get_resp_data.value, value->valuestring, val_len);
+			cb_function = cJSON_GetObjectItem(js_msg, "callback");
+			cb_arg = cJSON_GetObjectItem(js_msg, "callback_arg");
+			uuid_version = cJSON_GetObjectItem(js_msg, "uuid_version");
+			if(cb_function == NULL)
+			{
+				msg->data.get_resp_data.cb_function = -1;
+				msg->data.get_resp_data.cb_arg = -1;
+			}
+			else
+			{
+				msg->data.get_resp_data.cb_function = cb_function->valueint;
+				msg->data.get_resp_data.cb_arg = cb_arg->valueint;
+				memcpy(msg->data.get_resp_data.uuid_version, uuid_version->valuestring, 32);
+			}
 			break;	
+		
+		case MSG_INVALIDATE_KEYS_REQ:
+			tb_name = cJSON_GetObjectItem(js_msg, "table_name");
+			key = cJSON_GetObjectItem(js_msg, "key");
+			value = cJSON_GetObjectItem(js_msg, "value");
+			tb_name_len = strlen(tb_name->valuestring);
+			key_len = strlen(key->valuestring);
+			val_len = strlen(value->valuestring);
+			msg->data.invalidate_req_data.table_name = ALLOC(char, tb_name_len);
+			msg->data.invalidate_req_data.key = ALLOC(char, key_len);
+			msg->data.invalidate_req_data.value = ALLOC(char, val_len);
+			memcpy(msg->data.invalidate_req_data.table_name, tb_name->valuestring, tb_name_len);
+			memcpy(msg->data.invalidate_req_data.key, key->valuestring, key_len);
+			memcpy(msg->data.invalidate_req_data.value, value->valuestring, val_len);
+			break;
+		case MSG_INVALIDATE_KEYS_RESP:
+			tb_name = cJSON_GetObjectItem(js_msg, "table_name");
+			key = cJSON_GetObjectItem(js_msg, "key");
+			value = cJSON_GetObjectItem(js_msg, "value");
+			tb_name_len = strlen(tb_name->valuestring);
+			key_len = strlen(key->valuestring);
+			val_len = strlen(value->valuestring);
+			msg->data.invalidate_resp_data.table_name = ALLOC(char, tb_name_len);
+			msg->data.invalidate_resp_data.key = ALLOC(char, key_len);
+			msg->data.invalidate_resp_data.value = ALLOC(char, val_len);
+			memcpy(msg->data.invalidate_resp_data.table_name, tb_name->valuestring, tb_name_len);
+			memcpy(msg->data.invalidate_resp_data.key, key->valuestring, key_len);
+			memcpy(msg->data.invalidate_resp_data.value, value->valuestring, val_len);
+			op_result = cJSON_GetObjectItem(js_msg, "op_result");
+			msg->data.invalidate_resp_data.op_result = op_result->valueint;
+			break;
+
 		case MSG_MIGRATE_REQ:
+			slot_id = cJSON_GetObjectItem(js_msg, "slot_id");
+			msg->data.migrate_req_data.slot_id = slot_id->valueint;
 			break;
 		case MSG_MIGRATE_RESP:	
+			slot_id = cJSON_GetObjectItem(js_msg, "slot_id");
+			msg->data.migrate_resp_data.slot_id = slot_id->valueint;
+			kv_num = cJSON_GetObjectItem(js_msg, "kv_num");
+			msg->data.migrate_resp_data.kv_num = kv_num->valueint;
+			msg->data.migrate_resp_data.mkv = ALLOC(struct swarmkv_migrate_kv, msg->data.migrate_resp_data.kv_num);
+			kv_list = cJSON_GetObjectItem(js_msg, "kv");
+			if(kv_list != NULL){
+				cJSON *kv_item  = kv_list->child;
+				i = 0;
+				while(kv_item)
+				{ 
+					tb_name = cJSON_GetObjectItem(kv_item, "table_name");
+					key = cJSON_GetObjectItem(kv_item, "key");
+					value = cJSON_GetObjectItem(kv_item, "value");
+					tb_name_len = strlen(tb_name->valuestring);
+					key_len = strlen(key->valuestring);
+					val_len = strlen(value->valuestring);
+					msg->data.migrate_resp_data.mkv[i].table_name = ALLOC(char, tb_name_len);
+					msg->data.migrate_resp_data.mkv[i].key = ALLOC(char, key_len);
+					msg->data.migrate_resp_data.mkv[i].value = ALLOC(char, val_len);
+					memcpy(msg->data.migrate_resp_data.mkv[i].table_name, tb_name->valuestring, tb_name_len);
+					memcpy(msg->data.migrate_resp_data.mkv[i].key, key->valuestring, key_len);
+					memcpy(msg->data.migrate_resp_data.mkv[i].value, value->valuestring, val_len);
+					i++;
+					kv_item = kv_item->next;
+				}
+			}
 			break;
 		default:
 			printf("UNKNOWN msg\n");
 	}
 	cJSON_Delete(js_msg);
-	js_msg = NULL;
 
 	return 1;
 }

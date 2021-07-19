@@ -6,12 +6,14 @@
 #include "./uthash/utarray.h"
 #include "swarmkv_utils.h"
 
-#define SWARMKV_DEFAULT_SLOT_NUM 65535
+#define SWARMKV_DEFAULT_SLOT_NUM 65536
 #define SWARMKV_DEFAULT_NODE_NUM 32
 #define BOOTSTRAPS_NUM 5
 #define PFAIL 0
 #define FAIL -1
 #define ON 1
+#define SWARMKV_POINTS_PER_NODE_ON_CHR 3
+#define SWARMKV_MAX_MIGRATE_KV_NUM 1000
 
 struct swarmkv_key_value
 {
@@ -27,6 +29,7 @@ struct swarmkv_slot
 {
 	int slot_id;
 	int owner_node_id;
+	//int slot_flag;          //migrate to a new node?
 	int replica_node_id[16];
 };
 
@@ -41,16 +44,6 @@ struct swarmkv_table
 	UT_hash_handle hh;
 };
 
-/*
-struct swarmkv_transaction
-{
-	char uuid[32];
-	swarmkv_callback_func_t callback;
-	void* usrdata;
-	UT_hash_handle hh;
-};
-*/
-
 struct swarmkv_node
 {
 	int node_id;       //Key
@@ -64,14 +57,6 @@ struct swarmkv_node
 	UT_hash_handle hh;
 };
 
-/*
-struct swarmkv_ch_node
-{
-	uint32_t	node_id;       
-	uint32_t	ch_hash_val;     
-};
-*/
-
 struct swarmkv_store
 {
 	int my_node_id; 
@@ -84,7 +69,6 @@ struct swarmkv_store
 	int sockfd;
 	//struct swarmkv_transaction *on_fly_transactions;
 	pthread_rwlock_t rwlock;
-	//struct swarmkv_ch_node* ch_nodes;
 };
 
 

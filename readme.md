@@ -100,8 +100,10 @@ Reponse
     "my_port": 8323,
     "msg_type":" "migrate_response",  
     "slot_id": 102,
+    "kv_num": 128,
     "kv":[
         {
+            "table_name": "table1",
             "key": "key1",
             "value": "value1",
         },
@@ -150,7 +152,8 @@ Request
     “uuid": "8310-de139bc9-847474"
     "table_name": "tb1",
     "key": "test",
-    "callback": "0xabdcefg"
+    "callback": "0xabdcefg",
+    "callback_arg": "0x7293468f"
 }
 ```
 Response
@@ -164,7 +167,8 @@ Response
     "key": "test",
     "value": "hello",
     "callback": "print_result",
-    "last_uuid": "8310-de139bc9-847474"
+    "callback_arg": "0x7293468f",
+    "uuid_version": "8310-de139bc9-847474"
 }
 ```
 ### Invalidate Keys
