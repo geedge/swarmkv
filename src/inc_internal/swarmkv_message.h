@@ -159,17 +159,14 @@ struct swarmkv_msg
 
 
 
-cJSON *swarmkv_msg_pack_basic_info(struct swarmkv_store *store, enum swarmkv_msg_type type);
-cJSON *swarmkv_msg_pack_node_list(struct swarmkv_store *store);
-cJSON *swarmkv_msg_pack_slot_list(struct swarmkv_store *store);
-
 size_t swarmkv_msg_pack_meet_req(struct swarmkv_store *store, char *buff, size_t buff_size);
-size_t swarmkv_msg_pack_health_check(struct swarmkv_store *store, enum swarmkv_msg_type type, char *buff, size_t buff_size);
+size_t swarmkv_msg_pack_ping(struct swarmkv_store *store, char *buff, size_t buff_size);
+size_t swarmkv_msg_pack_pong(struct swarmkv_store *store, char *buff, size_t buff_size);
+size_t swarmkv_msg_pack_meet_resp(struct swarmkv_store *store, char *buff, size_t buff_size);
 size_t swarmkv_msg_pack_fail_req(struct swarmkv_store *store, char *buff, size_t buff_size, int fail_node_id);
 size_t swarmkv_msg_pack_fail_response(struct swarmkv_store *store, char *buff, size_t buff_size, int fail_node_id, int op_result);
 
 //get
-cJSON *swarmkv_msg_pack_get_basic_info(struct swarmkv_store *store, const char *table_name, const char* key);
 size_t swarmkv_msg_pack_get_req(struct swarmkv_store *store, char *buff, size_t buff_size, const char *table_name, 
 									const char* key);
 size_t swarmkv_msg_pack_get_req_with_cb(struct swarmkv_store *store, char *buff, size_t buff_size, const char *table_name, 
@@ -180,8 +177,6 @@ size_t swarmkv_msg_pack_get_resp_with_cb(struct swarmkv_store *store, char *buff
 									const char* value, int op_result, const char* uuid_version, long unsigned int callback_func_addr, long unsigned int callback_arg_addr);
 
 //put&invalidate
-cJSON *swarmkv_msg_pack_put_basic_info(struct swarmkv_store *store, enum swarmkv_msg_type type, 
-											const char* tb_name, const char* key, const char* value);
 size_t swarmkv_msg_pack_put_req(struct swarmkv_store *store, enum swarmkv_msg_type type, char *buff, size_t buff_size,
 					 const char* tb_name, const char* key, const char* value);
 size_t swarmkv_msg_pack_put_req_with_cb(struct swarmkv_store *store, enum swarmkv_msg_type type, char *buff, size_t buff_size,
