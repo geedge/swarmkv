@@ -6,7 +6,8 @@
 #include "./uthash/utarray.h"
 #include "swarmkv_utils.h"
 
-#define SWARMKV_DEFAULT_SLOT_NUM 65536
+//#define SWARMKV_DEFAULT_SLOT_NUM 65536    //redis 16284
+#define SWARMKV_DEFAULT_SLOT_NUM 128
 #define SWARMKV_DEFAULT_NODE_NUM 32
 #define BOOTSTRAPS_NUM 5
 #define PFAIL 0
@@ -14,6 +15,7 @@
 #define ON 1
 #define SWARMKV_POINTS_PER_NODE_ON_CHR 3
 #define SWARMKV_MAX_MIGRATE_KV_NUM 1000
+#define TOKEN_LEN 32
 
 struct swarmkv_key_value
 {
@@ -50,8 +52,8 @@ struct swarmkv_node
 	char* ip;
 	uint16_t port;
 	//int virtual_num;
-	uint32_t ping_sent_t;
-	uint32_t pong_received_t;
+	uint32_t ping_sent_time;
+	uint32_t pong_received_time;
 	int status;        //ONLINE/PFAIL/FAIL
 	int pfail_cnt;
 	UT_hash_handle hh;
@@ -62,6 +64,7 @@ struct swarmkv_store
 	int my_node_id; 
 	char* my_ip;
 	uint16_t my_port;  
+	//uuid_t uuid;
 	char uuid[32];
 	struct swarmkv_slot slots[SWARMKV_DEFAULT_SLOT_NUM];
 	struct swarmkv_table *table_hash; //key: char table_name[256], value: struct swarmkv_table*
@@ -69,6 +72,13 @@ struct swarmkv_store
 	int sockfd;
 	//struct swarmkv_transaction *on_fly_transactions;
 	pthread_rwlock_t rwlock;
+};
+
+struct config_information
+{
+	int node_id;
+	char token[TOKEN_LEN];
+	int db_id;
 };
 
 

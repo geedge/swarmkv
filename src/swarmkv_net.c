@@ -43,6 +43,17 @@ int swarmkv_create_socket(int port)
 		perror("socket");
 		return 0;
 	}
+	/*
+	int sockfd_1;
+	if ((sockfd_1 = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0)
+	{
+		perror("socket");
+		return 0;
+	}
+	printf("sockfd:%d\n", sockfd);
+	printf("sockfd_1:%d\n", sockfd_1);
+	*/
+
 	int on=1;
   	setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR | SO_BROADCAST, &on, sizeof(on));
 
@@ -57,18 +68,21 @@ int swarmkv_create_socket(int port)
 	return sockfd;
 }
 
-int swarmkv_msg_send(int sockfd, char* msg, char* peer_ip, uint16_t peer_port)
+int swarmkv_msg_send(int sockfd, char* msg, size_t msg_len, char* peer_ip, uint16_t peer_port)
 {
     struct sockaddr_in peer_addr;
 	memset(&peer_addr,0,sizeof(peer_addr));
 	peer_addr.sin_family = AF_INET;
 	peer_addr.sin_port = htons(peer_port);
 	peer_addr.sin_addr.s_addr = inet_addr(peer_ip);
-
+	printf("test\n");
+	//if(sendto(sockfd, msg, msg_len, 0, (struct sockaddr*)&peer_addr, sizeof(peer_addr)) < 0) 
+	//printf("check msg!!! %s\n",msg);
     if(sendto(sockfd, msg, strlen(msg), 0, (struct sockaddr*)&peer_addr, sizeof(peer_addr)) < 0) 
     {
-		printf("snedto error: %s\n", strerror(errno));
+		printf("sendto error: %s\n", strerror(errno));
         return -1;
     }
+	//printf("send a msg\n");
     return 1;
 }

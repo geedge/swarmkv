@@ -14,20 +14,20 @@
 
 enum swarmkv_msg_type
 {
-	MSG_PING,
-	MSG_PONG,
-	MSG_MEET_REQ,
-	MSG_MEET_RESP,
-	MSG_FAIL_REQ,
-	MSG_FAIL_RESP,
-	MSG_MIGRATE_REQ,
-	MSG_MIGRATE_RESP,
-	MSG_PUT_REQ,
-	MSG_PUT_RESP,
-	MSG_GET_REQ,
-	MSG_GET_RESP,
-	MSG_INVALIDATE_KEYS_REQ,
-	MSG_INVALIDATE_KEYS_RESP,
+	MSG_PING,                      //0
+	MSG_PONG,                      //1
+	MSG_MEET_REQ,                  //2
+	MSG_MEET_RESP,                 //3
+	MSG_FAIL_REQ,                  //4
+	MSG_FAIL_RESP,                 //5
+	MSG_MIGRATE_REQ,               //6
+	MSG_MIGRATE_RESP,              //7
+	MSG_PUT_REQ,                   //8
+	MSG_PUT_RESP,                  //9
+	MSG_GET_REQ,                   //10
+	MSG_GET_RESP,                  //11    
+	MSG_INVALIDATE_KEYS_REQ,       //12
+	MSG_INVALIDATE_KEYS_RESP,      //13
 };
 
 
@@ -158,10 +158,9 @@ struct swarmkv_msg
 };
 
 
-
-size_t swarmkv_msg_pack_meet_req(struct swarmkv_store *store, char *buff, size_t buff_size);
 size_t swarmkv_msg_pack_ping(struct swarmkv_store *store, char *buff, size_t buff_size);
 size_t swarmkv_msg_pack_pong(struct swarmkv_store *store, char *buff, size_t buff_size);
+size_t swarmkv_msg_pack_meet_req(struct swarmkv_store *store, char *buff, size_t buff_size);
 size_t swarmkv_msg_pack_meet_resp(struct swarmkv_store *store, char *buff, size_t buff_size);
 size_t swarmkv_msg_pack_fail_req(struct swarmkv_store *store, char *buff, size_t buff_size, int fail_node_id);
 size_t swarmkv_msg_pack_fail_response(struct swarmkv_store *store, char *buff, size_t buff_size, int fail_node_id, int op_result);

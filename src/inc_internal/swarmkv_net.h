@@ -11,4 +11,4 @@
 
 char* get_local_ip(const char *eth_inf);
 int swarmkv_create_socket(int port);
-int swarmkv_msg_send(int sockfd, char* msg, char* peer_ip, uint16_t peer_port);
+int swarmkv_msg_send(int sockfd, char* msg, size_t msg_len, char* peer_ip, uint16_t peer_port);
