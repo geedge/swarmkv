@@ -40,8 +40,11 @@ struct node
 };
 
 //ping, pong, meet resp
-struct swarmkv_health_check
+//struct swarmkv_health_check
+struct swarmkv_basic_infomation
 {
+	int node_version;
+	int slot_version;
 	int node_num;
 	struct node nodes[SWARMKV_DEFAULT_NODE_NUM];
 	int slot_num;
@@ -133,7 +136,7 @@ struct swarmkv_migrate_resp
 
 union MsgData
 {
-	struct swarmkv_health_check health_check_data;
+	struct swarmkv_basic_infomation swarmkv_basic_info;
 	struct swarmkv_fail_req fail_req_data;
 	struct swarmkv_fail_resp fail_resp_data;
 	struct swarmkv_put_req put_req_data;

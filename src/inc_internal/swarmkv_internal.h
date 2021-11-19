@@ -5,6 +5,7 @@
 #include "./uthash/uthash.h"
 #include "./uthash/utarray.h"
 #include "swarmkv_utils.h"
+#include "swarmkv_net.h"
 
 //#define SWARMKV_DEFAULT_SLOT_NUM 65536    //redis 16284
 #define SWARMKV_DEFAULT_SLOT_NUM 128
@@ -66,6 +67,8 @@ struct swarmkv_store
 	uint16_t my_port;  
 	//uuid_t uuid;
 	char uuid[32];
+	int node_version;     //数据的版本号，单调递增
+	int slot_version;     //数据的版本号，单调递增
 	struct swarmkv_slot slots[SWARMKV_DEFAULT_SLOT_NUM];
 	struct swarmkv_table *table_hash; //key: char table_name[256], value: struct swarmkv_table*
 	struct swarmkv_node *nodes;		  //key: int node_id, value: struct swarmkv_node*
@@ -84,3 +87,23 @@ struct config_information
 
 struct swarmkv_readoptions{};
 struct swarmkv_writeoptions{};
+
+struct msg_count
+{
+	int total_cnt;
+	int ping_cnt;
+	int pong_cnt;
+	int meet_req_cnt;
+	int meet_resp_cnt;
+	int fail_req_cnt;
+	int fail_resp_cnt;
+	int migrate_req_cnt;
+	int migrate_resp_cnt;
+	int put_req_cnt;
+	int put_resp_cnt;
+	int get_req_cnt;
+	int get_resp_cnt;
+	int invalidate_req_cnt;
+	int invalidate_resp_cnt;
+};
+

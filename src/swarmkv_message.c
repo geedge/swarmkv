@@ -33,6 +33,8 @@ static void *swarmkv_msg_pack_basic_info(struct swarmkv_store *store, cJSON *js_
 	cJSON_AddStringToObject(js_msg, "uuid", store->uuid);
 	cJSON_AddNumberToObject(js_msg, "TTL", SWARMKV_DEFAULT_TTL);
 	cJSON_AddNumberToObject(js_msg, "msg_type", type);
+	cJSON_AddNumberToObject(js_msg, "node_version", store->node_version);
+	cJSON_AddNumberToObject(js_msg, "slot_version", store->slot_version);
 }
 
 //pack store->nodes into msg
@@ -64,13 +66,20 @@ static void *swarmkv_msg_pack_slot_list(struct swarmkv_store *store, cJSON *js_m
 	cJSON_AddItemToObject(js_msg,"slot_list", js_slot_list = cJSON_CreateArray());
 	for(i=0;i<SWARMKV_DEFAULT_SLOT_NUM;i++)
 	{
+		/*
 		if(store->slots[i].owner_node_id == store->my_node_id)
 		{
 			//printf("@@@@@@@@ %d\n", store->my_node_id);
+			//因为只传输属于自己的slot, 所以不需要再携带owner_id, 本来字节数就不太够
 			cJSON_AddItemToArray(js_slot_list, js_slot = cJSON_CreateObject());
 			cJSON_AddNumberToObject(js_slot,"slot_id", store->slots[i].slot_id);
 			cJSON_AddNumberToObject(js_slot,"owner_id", store->slots[i].owner_node_id);
 		}
+		*/
+		//meet response还是需要所有的slot信息
+		cJSON_AddItemToArray(js_slot_list, js_slot = cJSON_CreateObject());
+		cJSON_AddNumberToObject(js_slot,"slot_id", store->slots[i].slot_id);
+		cJSON_AddNumberToObject(js_slot,"owner_id", store->slots[i].owner_node_id);
 	}
 }
 
@@ -486,25 +495,30 @@ int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg *msg)
 	cJSON *slot_id = NULL;
 	cJSON *kv_num = NULL;
 	cJSON *kv_list = NULL;
+	cJSON *node_version = NULL;
+	cJSON *slot_version = NULL;
 	int node_num = 0;
 	int slot_num = 0;
 	int tb_name_len = 0;
 	int key_len = 0;
 	int val_len = 0;
 	int i = 0;
-	printf("next\n");
+	//printf("next\n");
 	switch(msg->type)
 	{
 		case MSG_PING:
 		case MSG_PONG:
 		case MSG_MEET_RESP:
+			node_version = cJSON_GetObjectItem(js_msg, "node_version");
+			msg->data.swarmkv_basic_info.node_version = node_version->valueint;
+			slot_version = cJSON_GetObjectItem(js_msg, "slot_version");
+			msg->data.swarmkv_basic_info.slot_version = slot_version->valueint;
 			node_list = cJSON_GetObjectItem(js_msg, "node_list");
 			slot_list = cJSON_GetObjectItem(js_msg, "slot_list");
 			node_num = cJSON_GetArraySize(node_list);
-			msg->data.health_check_data.node_num = node_num;
+			msg->data.swarmkv_basic_info.node_num = node_num;
 			slot_num = cJSON_GetArraySize(slot_list);
-			msg->data.health_check_data.slot_num = slot_num;
-			
+			msg->data.swarmkv_basic_info.slot_num = slot_num;
 			i = 0;
 			if(node_list != NULL){
 				cJSON *node_item  = node_list->child;
@@ -514,13 +528,13 @@ int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg *msg)
 					cJSON *node_status = cJSON_GetObjectItem(node_item, "node_status");
 					cJSON *node_ip = cJSON_GetObjectItem(node_item, "node_ip");
 					cJSON *node_port = cJSON_GetObjectItem(node_item, "node_port");	
-					msg->data.health_check_data.nodes[i].node_id = node_id->valueint;
+					msg->data.swarmkv_basic_info.nodes[i].node_id = node_id->valueint;
 					int ip_len = strlen(node_ip->valuestring);
-					msg->data.health_check_data.nodes[i].ip = ALLOC(char, ip_len);
-					memcpy(msg->data.health_check_data.nodes[i].ip, node_ip->valuestring, ip_len);
-					//msg->data.health_check_data.nodes[i].ip = node_ip->valuestring;
-					msg->data.health_check_data.nodes[i].port = node_port->valueint;
-					msg->data.health_check_data.nodes[i].status = node_status->valueint;
+					msg->data.swarmkv_basic_info.nodes[i].ip = ALLOC(char, ip_len);
+					memcpy(msg->data.swarmkv_basic_info.nodes[i].ip, node_ip->valuestring, ip_len);
+					//msg->data.swarmkv_basic_info.nodes[i].ip = node_ip->valuestring;
+					msg->data.swarmkv_basic_info.nodes[i].port = node_port->valueint;
+					msg->data.swarmkv_basic_info.nodes[i].status = node_status->valueint;
 					i++;
 					node_item = node_item->next;
 				}
@@ -533,8 +547,8 @@ int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg *msg)
 				{
 					cJSON *slot_id = cJSON_GetObjectItem(slot_item, "slot_id");
 					cJSON *owner_id = cJSON_GetObjectItem(slot_item, "owner_id");
-					msg->data.health_check_data.slots[i].slot_id = slot_id->valueint;
-					msg->data.health_check_data.slots[i].owner_node_id = owner_id->valueint;
+					msg->data.swarmkv_basic_info.slots[i].slot_id = slot_id->valueint;
+					msg->data.swarmkv_basic_info.slots[i].owner_node_id = owner_id->valueint;
 					i++;
 					slot_item = slot_item->next;
 				}
