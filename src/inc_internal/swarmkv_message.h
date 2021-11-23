@@ -22,12 +22,14 @@ enum swarmkv_msg_type
 	MSG_FAIL_RESP,                 //5
 	MSG_MIGRATE_REQ,               //6
 	MSG_MIGRATE_RESP,              //7
-	MSG_PUT_REQ,                   //8
-	MSG_PUT_RESP,                  //9
-	MSG_GET_REQ,                   //10
-	MSG_GET_RESP,                  //11    
-	MSG_INVALIDATE_KEYS_REQ,       //12
-	MSG_INVALIDATE_KEYS_RESP,      //13
+	MSG_DEL_KV,                    //8
+	MSG_SLOT_OWNER_CHANGE,         //9
+	MSG_PUT_REQ,                   //10
+	MSG_PUT_RESP,                  //11
+	MSG_GET_REQ,                   //12
+	MSG_GET_RESP,                  //13   
+	MSG_INVALIDATE_KEYS_REQ,       //14
+	MSG_INVALIDATE_KEYS_RESP,      //15
 };
 
 
@@ -43,8 +45,8 @@ struct node
 //struct swarmkv_health_check
 struct swarmkv_basic_infomation
 {
-	int node_version;
-	int slot_version;
+	//int node_version;
+	//int slot_version;
 	int node_num;
 	struct node nodes[SWARMKV_DEFAULT_NODE_NUM];
 	int slot_num;
@@ -134,6 +136,19 @@ struct swarmkv_migrate_resp
 	struct swarmkv_migrate_kv *mkv;
 };
 
+struct swarmkv_del_req
+{
+	char *table_name;
+	char *key;
+	char *value;
+};
+
+struct swarmkv_slot_owner_change
+{
+	int slot_id;
+	int new_owner_id;
+};
+
 union MsgData
 {
 	struct swarmkv_basic_infomation swarmkv_basic_info;
@@ -147,6 +162,8 @@ union MsgData
 	struct swarmkv_invalidate_resp invalidate_resp_data;
 	struct swarmkv_migrate_req migrate_req_data;
 	struct swarmkv_migrate_resp migrate_resp_data;
+	struct swarmkv_del_req del_req_data;
+	struct swarmkv_slot_owner_change slot_owner_change_data;
 };
 
 struct swarmkv_msg
@@ -167,6 +184,8 @@ size_t swarmkv_msg_pack_meet_req(struct swarmkv_store *store, char *buff, size_t
 size_t swarmkv_msg_pack_meet_resp(struct swarmkv_store *store, char *buff, size_t buff_size);
 size_t swarmkv_msg_pack_fail_req(struct swarmkv_store *store, char *buff, size_t buff_size, int fail_node_id);
 size_t swarmkv_msg_pack_fail_response(struct swarmkv_store *store, char *buff, size_t buff_size, int fail_node_id, int op_result);
+size_t swarmkv_msg_pack_del_msg(struct swarmkv_store *store, char *buff, size_t buff_size,
+					 const char* tb_name, const char* key, const char* value);
 
 //get
 size_t swarmkv_msg_pack_get_req(struct swarmkv_store *store, char *buff, size_t buff_size, const char *table_name, 
@@ -193,3 +212,5 @@ size_t swarmkv_msg_pack_migration_resp(struct swarmkv_store *store, char *buff, 
 										struct swarmkv_migrate_kv mkv[], int mkv_num);
 size_t swarmkv_msg_repack_ttl(char *raw_msg, char *buff, size_t buff_size);
 int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg* msg);
+
+size_t swarmkv_msg_pack_slot_owner_change(struct swarmkv_store *store, char *buff, size_t buff_size, int slot_id, int new_owner_id);

@@ -33,8 +33,8 @@ static void *swarmkv_msg_pack_basic_info(struct swarmkv_store *store, cJSON *js_
 	cJSON_AddStringToObject(js_msg, "uuid", store->uuid);
 	cJSON_AddNumberToObject(js_msg, "TTL", SWARMKV_DEFAULT_TTL);
 	cJSON_AddNumberToObject(js_msg, "msg_type", type);
-	cJSON_AddNumberToObject(js_msg, "node_version", store->node_version);
-	cJSON_AddNumberToObject(js_msg, "slot_version", store->slot_version);
+	//cJSON_AddNumberToObject(js_msg, "node_version", store->node_version);
+	//cJSON_AddNumberToObject(js_msg, "slot_version", store->slot_version);
 }
 
 //pack store->nodes into msg
@@ -56,7 +56,7 @@ static void *swarmkv_msg_pack_node_list(struct swarmkv_store *store, cJSON *js_m
 }
 
 //pack store->slots[SWARMKV_DEFAULT_SLOT_NUM] into msg
-static void *swarmkv_msg_pack_slot_list(struct swarmkv_store *store, cJSON *js_msg)
+static void *swarmkv_msg_pack_my_slot(struct swarmkv_store *store, cJSON *js_msg)
 {
 	cJSON* js_slot_list = NULL;
 	cJSON* js_slot = NULL;
@@ -66,16 +66,32 @@ static void *swarmkv_msg_pack_slot_list(struct swarmkv_store *store, cJSON *js_m
 	cJSON_AddItemToObject(js_msg,"slot_list", js_slot_list = cJSON_CreateArray());
 	for(i=0;i<SWARMKV_DEFAULT_SLOT_NUM;i++)
 	{
-		/*
+		
 		if(store->slots[i].owner_node_id == store->my_node_id)
 		{
+			if(store->slots[i].status == 1)
+			{
+				continue;         //正在迁移中的slot不再对外宣告
+			}
 			//printf("@@@@@@@@ %d\n", store->my_node_id);
 			//因为只传输属于自己的slot, 所以不需要再携带owner_id, 本来字节数就不太够
 			cJSON_AddItemToArray(js_slot_list, js_slot = cJSON_CreateObject());
 			cJSON_AddNumberToObject(js_slot,"slot_id", store->slots[i].slot_id);
 			cJSON_AddNumberToObject(js_slot,"owner_id", store->slots[i].owner_node_id);
 		}
-		*/
+	}
+}
+
+static void *swarmkv_msg_pack_all_slot(struct swarmkv_store *store, cJSON *js_msg)
+{
+	cJSON* js_slot_list = NULL;
+	cJSON* js_slot = NULL;
+	int i = 0;
+
+	//js_slot_list = cJSON_CreateArray();
+	cJSON_AddItemToObject(js_msg,"slot_list", js_slot_list = cJSON_CreateArray());
+	for(i=0;i<SWARMKV_DEFAULT_SLOT_NUM;i++)
+	{	
 		//meet response还是需要所有的slot信息
 		cJSON_AddItemToArray(js_slot_list, js_slot = cJSON_CreateObject());
 		cJSON_AddNumberToObject(js_slot,"slot_id", store->slots[i].slot_id);
@@ -86,7 +102,7 @@ static void *swarmkv_msg_pack_slot_list(struct swarmkv_store *store, cJSON *js_m
 static void *pack_cluster_status_json(struct swarmkv_store *store, cJSON *js_msg)
 {	
 	swarmkv_msg_pack_node_list(store, js_msg);
-	swarmkv_msg_pack_slot_list(store, js_msg);
+	swarmkv_msg_pack_my_slot(store, js_msg);
 }
 
 static size_t serialization_msg(cJSON *js_msg, char *buff, size_t buff_size)
@@ -128,7 +144,9 @@ size_t swarmkv_msg_pack_meet_resp(struct swarmkv_store *store, char *buff, size_
 	enum swarmkv_msg_type type = MSG_MEET_RESP;
 
 	swarmkv_msg_pack_basic_info(store, js_msg, type);
-	pack_cluster_status_json(store, js_msg);
+	//pack_cluster_status_json(store, js_msg);
+	swarmkv_msg_pack_node_list(store, js_msg);
+	swarmkv_msg_pack_all_slot(store, js_msg);
 
 	msg_len = serialization_msg(js_msg, buff, buff_size);
 
@@ -238,8 +256,7 @@ size_t swarmkv_msg_pack_fail_response(struct swarmkv_store *store, char *buff, s
 	return msg_len;	
 }
 
-//pack put req msg
-static void *swarmkv_msg_pack_put_object(struct swarmkv_store *store, cJSON *js_msg, enum swarmkv_msg_type type, 
+static void *swarmkv_msg_pack_kv_object(struct swarmkv_store *store, cJSON *js_msg, enum swarmkv_msg_type type, 
 											const char* tb_name, const char* key, const char* value)
 {
 	swarmkv_msg_pack_basic_info(store, js_msg, type);
@@ -248,6 +265,7 @@ static void *swarmkv_msg_pack_put_object(struct swarmkv_store *store, cJSON *js_
 	cJSON_AddStringToObject(js_msg, "value", value);
 }
 
+//pack put req msg
 size_t swarmkv_msg_pack_put_req(struct swarmkv_store *store, enum swarmkv_msg_type type, char *buff, size_t buff_size,
 					 const char* tb_name, const char* key, const char* value)
 {
@@ -255,7 +273,7 @@ size_t swarmkv_msg_pack_put_req(struct swarmkv_store *store, enum swarmkv_msg_ty
 	js_msg = cJSON_CreateObject();
 	size_t msg_len = 0;
 	
-	swarmkv_msg_pack_put_object(store, js_msg, type, tb_name, key, value);
+	swarmkv_msg_pack_kv_object(store, js_msg, type, tb_name, key, value);
 	
 	msg_len = serialization_msg(js_msg, buff, buff_size);
 	
@@ -269,7 +287,7 @@ size_t swarmkv_msg_pack_put_req_with_cb(struct swarmkv_store *store, enum swarmk
 	cJSON* js_msg = NULL;
 	size_t msg_len = 0;
 	
-	swarmkv_msg_pack_put_object(store, js_msg, type, tb_name, key, value);
+	swarmkv_msg_pack_kv_object(store, js_msg, type, tb_name, key, value);
 	cJSON_AddNumberToObject(js_msg, "callback_func", callback_func_addr);
 	cJSON_AddNumberToObject(js_msg, "callback_func_arg", callback_arg_addr);
 	
@@ -286,7 +304,7 @@ size_t swarmkv_msg_pack_put_resp(struct swarmkv_store *store, enum swarmkv_msg_t
 	cJSON* js_msg = NULL;
 	size_t msg_len = 0;
 	
-	swarmkv_msg_pack_put_object(store, js_msg, type, tb_name, key, value);
+	swarmkv_msg_pack_kv_object(store, js_msg, type, tb_name, key, value);
 	cJSON_AddNumberToObject(js_msg, "op_result", op_result);
 	
 	msg_len = serialization_msg(js_msg, buff, buff_size);
@@ -301,7 +319,7 @@ size_t swarmkv_msg_pack_put_resp_with_cb(struct swarmkv_store *store, enum swarm
 	cJSON* js_msg = NULL;
 	size_t msg_len = 0;
 	
-	swarmkv_msg_pack_put_object(store, js_msg, type, tb_name, key, value);
+	swarmkv_msg_pack_kv_object(store, js_msg, type, tb_name, key, value);
 	cJSON_AddNumberToObject(js_msg, "op_result", op_result);
 	cJSON_AddNumberToObject(js_msg, "callback_func", callback_func_addr);
 	cJSON_AddNumberToObject(js_msg, "callback_func_arg", callback_arg_addr);
@@ -436,6 +454,41 @@ size_t swarmkv_msg_pack_migration_resp(struct swarmkv_store *store, char *buff, 
 	return msg_len;
 }
 
+
+//pack del msg
+size_t swarmkv_msg_pack_del_msg(struct swarmkv_store *store, char *buff, size_t buff_size,
+					 const char* tb_name, const char* key, const char* value)
+{
+	cJSON* js_msg = NULL;
+	js_msg = cJSON_CreateObject();
+	size_t msg_len = 0;
+	enum swarmkv_msg_type type = MSG_DEL_KV;
+	
+	swarmkv_msg_pack_kv_object(store, js_msg, type, tb_name, key, value);
+	
+	msg_len = serialization_msg(js_msg, buff, buff_size);
+	
+	cJSON_Delete(js_msg);
+	return msg_len;
+}
+
+//slot owner change
+size_t swarmkv_msg_pack_slot_owner_change(struct swarmkv_store *store, char *buff, size_t buff_size, int slot_id, int new_owner_id)
+{
+	cJSON* js_msg = NULL;
+	js_msg = cJSON_CreateObject();
+	size_t msg_len = 0;
+	enum swarmkv_msg_type type = MSG_SLOT_OWNER_CHANGE;
+
+	swarmkv_msg_pack_basic_info(store, js_msg, type);
+	cJSON_AddNumberToObject(js_msg, "slot_id", slot_id);
+	cJSON_AddNumberToObject(js_msg, "new_owner", new_owner_id);
+	msg_len = serialization_msg(js_msg, buff, buff_size);
+
+	cJSON_Delete(js_msg);
+	return msg_len;
+}
+
 size_t swarmkv_msg_repack_ttl(char *raw_msg, char *buff, size_t buff_size)
 {
 	cJSON* js_msg = cJSON_Parse(raw_msg);
@@ -493,10 +546,11 @@ int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg *msg)
 	cJSON *op_result = NULL;
 	cJSON *uuid_version = NULL;
 	cJSON *slot_id = NULL;
+	cJSON *new_owner = NULL;
 	cJSON *kv_num = NULL;
 	cJSON *kv_list = NULL;
-	cJSON *node_version = NULL;
-	cJSON *slot_version = NULL;
+	//cJSON *node_version = NULL;
+	//cJSON *slot_version = NULL;
 	int node_num = 0;
 	int slot_num = 0;
 	int tb_name_len = 0;
@@ -509,10 +563,10 @@ int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg *msg)
 		case MSG_PING:
 		case MSG_PONG:
 		case MSG_MEET_RESP:
-			node_version = cJSON_GetObjectItem(js_msg, "node_version");
-			msg->data.swarmkv_basic_info.node_version = node_version->valueint;
-			slot_version = cJSON_GetObjectItem(js_msg, "slot_version");
-			msg->data.swarmkv_basic_info.slot_version = slot_version->valueint;
+			//node_version = cJSON_GetObjectItem(js_msg, "node_version");
+			//msg->data.swarmkv_basic_info.node_version = node_version->valueint;
+			//slot_version = cJSON_GetObjectItem(js_msg, "slot_version");
+			//msg->data.swarmkv_basic_info.slot_version = slot_version->valueint;
 			node_list = cJSON_GetObjectItem(js_msg, "node_list");
 			slot_list = cJSON_GetObjectItem(js_msg, "slot_list");
 			node_num = cJSON_GetArraySize(node_list);
@@ -566,7 +620,29 @@ int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg *msg)
 			msg->data.fail_resp_data.failed_node_id = failed_node_id->valueint;
 			msg->data.fail_resp_data.op_result = op_result->valueint;
 			break;
+
+		case MSG_DEL_KV:
+			tb_name = cJSON_GetObjectItem(js_msg, "table_name");
+			key = cJSON_GetObjectItem(js_msg, "table_name");
+			value = cJSON_GetObjectItem(js_msg, "value");
+			tb_name_len = strlen(tb_name->valuestring);
+			key_len = strlen(key->valuestring);
+			val_len = strlen(value->valuestring);
+			msg->data.del_req_data.table_name = ALLOC(char, tb_name_len);
+			msg->data.del_req_data.key = ALLOC(char, key_len);
+			msg->data.del_req_data.value = ALLOC(char, val_len);
+			memcpy(msg->data.del_req_data.table_name, tb_name->valuestring, tb_name_len);
+			memcpy(msg->data.del_req_data.key, key->valuestring, key_len);
+			memcpy(msg->data.del_req_data.value, value->valuestring, val_len);
+			break;
 		
+		case MSG_SLOT_OWNER_CHANGE:
+			slot_id = cJSON_GetObjectItem(js_msg, "slot_id");
+			msg->data.slot_owner_change_data.slot_id = slot_id->valueint;
+			new_owner = cJSON_GetObjectItem(js_msg, "new_owner");
+			msg->data.slot_owner_change_data.new_owner_id = new_owner->valueint;
+			break;
+
 		case MSG_PUT_REQ:
 			tb_name = cJSON_GetObjectItem(js_msg, "table_name");
 			key = cJSON_GetObjectItem(js_msg, "table_name");

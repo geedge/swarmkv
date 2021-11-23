@@ -24,6 +24,7 @@ struct swarmkv_key_value
 	size_t keylen;
 	char *value;
 	size_t vallen;
+	int migrate_flag;     //0未迁移/1已迁移未应答
 	UT_array *nodes_have_key_cached; //for key invalidation
 	UT_hash_handle hh;
 };
@@ -32,7 +33,8 @@ struct swarmkv_slot
 {
 	int slot_id;
 	int owner_node_id;
-	int migrate_id;          //migrate to a new node
+	int last_owner_id;          //迁移之前的上一个持有者
+	int status;                 //0 normal/1 migrating
 	int replica_node_id[16];
 };
 
@@ -67,8 +69,8 @@ struct swarmkv_store
 	uint16_t my_port;  
 	//uuid_t uuid;
 	char uuid[32];
-	int node_version;     //数据的版本号，单调递增
-	int slot_version;     //数据的版本号，单调递增
+	//int node_version;     //集群中node信息的版本号，单调递增
+	//int slot_version;     //slot的版本号，单调递增，只有版本号比自己大才修改
 	struct swarmkv_slot slots[SWARMKV_DEFAULT_SLOT_NUM];
 	struct swarmkv_table *table_hash; //key: char table_name[256], value: struct swarmkv_table*
 	struct swarmkv_node *nodes;		  //key: int node_id, value: struct swarmkv_node*
@@ -99,6 +101,8 @@ struct msg_count
 	int fail_resp_cnt;
 	int migrate_req_cnt;
 	int migrate_resp_cnt;
+	int del_kv_cnt;
+	int slot_owner_change_cnt;
 	int put_req_cnt;
 	int put_resp_cnt;
 	int get_req_cnt;

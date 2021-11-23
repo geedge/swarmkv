@@ -113,6 +113,19 @@ Reponse
     ]
 }
 ```
+### DEL Key-Value
+```
+{
+    "my_id": 102,
+    "my_ip": "192.168.0.1",
+    "my_port": 8323,
+    "msg_type":" "del_kv",  
+    "table_name": "tb1",
+    "key": "key0",
+    "value": "value0"
+}
+
+```
 ### PUT Keys
 Request
 ```

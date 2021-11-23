@@ -6,6 +6,35 @@
 #include "../src/inc_internal/swarmkv_internal.h"
 #include "swarmkv.h"
 
+/*
+struct my_struct {
+    int id;                    //first key 
+    //char *username;         //second key   指针的时候不能用HASH_ADD
+	char username[10];         // second key 
+    UT_hash_handle hh;        // handle for first hash table 
+};
+void test()
+{
+	struct my_struct *users_by_id = NULL, *users_by_name = NULL, *s;
+    int i;
+    char *name;
+
+    s = malloc(sizeof *s);
+    s->id = 1;
+	//s->username = ALLOC(char, 10);
+    strcpy(s->username, "thanson");
+    //add the structure to both hash tables
+    HASH_ADD(hh, users_by_name, username, strlen(s->username), s);
+
+	name = "thanson";
+    HASH_FIND(hh, users_by_name, name, strlen(name), s);
+    if (s)
+	{
+		printf("found user %s: %d\n", name, s->id);
+	}
+}
+*/
+
 int main(int argc, char **argv)
 {
 	//printf("%d\n",argc);
@@ -18,14 +47,13 @@ int main(int argc, char **argv)
 
 	swarmkv_open(store, bootstraps, config, &err);
 
-	sleep(15);
-	/*
-	printf("******test PUT\n");
+	//sleep(8);
+	printf("******test PUT******\n");
 	const char* tb_name = "table0";
 	const char *key = "key0";
-	size_t keylen = sizeof(key);
+	size_t keylen = strlen(key);
 	const char *value = "val0";
-	size_t vallen = sizeof(value);
+	size_t vallen = strlen(value);
 	swarmkv_put(store, tb_name, NULL, key, keylen, value, vallen, NULL);
 	
 	sleep(1);
@@ -33,7 +61,7 @@ int main(int argc, char **argv)
 	size_t *get_vallen;
 	get_val = swarmkv_get(store, tb_name, NULL, key, keylen, get_vallen, NULL);
 	printf("%s\n",get_val);
-	*/
+	
 
 	swarmkv_close(store);
 	//close(store->sockfd);

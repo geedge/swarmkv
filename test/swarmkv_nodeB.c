@@ -17,7 +17,7 @@ int main(int argc, char **argv)
 
 	swarmkv_open(store, bootstraps, config, &err);
 	
-	sleep(15);
+	sleep(8);
 
 	swarmkv_close(store);
 	return 1;
