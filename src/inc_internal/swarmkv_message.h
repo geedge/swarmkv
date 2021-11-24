@@ -136,6 +136,7 @@ struct swarmkv_migrate_resp
 	struct swarmkv_migrate_kv *mkv;
 };
 
+//因为decode过程可以算出来长度，所以不用把长度也带上
 struct swarmkv_del_req
 {
 	char *table_name;
@@ -193,7 +194,7 @@ size_t swarmkv_msg_pack_get_req(struct swarmkv_store *store, char *buff, size_t 
 size_t swarmkv_msg_pack_get_req_with_cb(struct swarmkv_store *store, char *buff, size_t buff_size, const char *table_name, 
 									const char* key, long unsigned int callback_func_addr, long unsigned int callback_arg_addr);
 size_t swarmkv_msg_pack_get_resp(struct swarmkv_store *store, char *buff, size_t buff_size, const char *table_name, 
-									const char* key, char* value, int op_result);
+									const char* key, const char* value, int op_result);
 size_t swarmkv_msg_pack_get_resp_with_cb(struct swarmkv_store *store, char *buff, size_t buff_size, const char *table_name, const char* key, 
 									const char* value, int op_result, const char* uuid_version, long unsigned int callback_func_addr, long unsigned int callback_arg_addr);
 

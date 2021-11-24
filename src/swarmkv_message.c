@@ -332,7 +332,7 @@ size_t swarmkv_msg_pack_put_resp_with_cb(struct swarmkv_store *store, enum swarm
 }
 
 //pack get req msg
-static void *swarmkv_msg_pack_get_object(struct swarmkv_store *store, cJSON *js_msg, const char *table_name, const char* key)
+static void *swarmkv_msg_pack_get_req_object(struct swarmkv_store *store, cJSON *js_msg, const char *table_name, const char* key)
 {
 	enum swarmkv_msg_type type = MSG_GET_REQ;
 
@@ -348,7 +348,7 @@ size_t swarmkv_msg_pack_get_req(struct swarmkv_store *store, char *buff, size_t 
 	js_msg = cJSON_CreateObject();
 	size_t msg_len = 0;
 
-	swarmkv_msg_pack_get_object(store, js_msg, table_name, key);
+	swarmkv_msg_pack_get_req_object(store, js_msg, table_name, key);
 	
 	msg_len = serialization_msg(js_msg, buff, buff_size);
 	
@@ -359,9 +359,10 @@ size_t swarmkv_msg_pack_get_req_with_cb(struct swarmkv_store *store, char *buff,
 									const char* key, long unsigned int callback_func_addr, long unsigned int callback_arg_addr)
 {
 	cJSON* js_msg = NULL;
+	js_msg = cJSON_CreateObject();
 	size_t msg_len = 0;
 
-	swarmkv_msg_pack_get_object(store, js_msg, table_name, key);
+	swarmkv_msg_pack_get_req_object(store, js_msg, table_name, key);
 	cJSON_AddNumberToObject(js_msg, "callback_func", callback_func_addr);
 	cJSON_AddNumberToObject(js_msg, "callback_func_arg", callback_arg_addr);
 
@@ -372,18 +373,26 @@ size_t swarmkv_msg_pack_get_req_with_cb(struct swarmkv_store *store, char *buff,
 }
 
 //pack get resp msg
-size_t swarmkv_msg_pack_get_resp(struct swarmkv_store *store, char *buff, size_t buff_size, const char *table_name, 
-									const char* key, char* value, int op_result)
+static void *swarmkv_msg_pack_get_resp_object(struct swarmkv_store *store, cJSON *js_msg, const char *table_name, const char* key, const char* value, int op_result)
 {
-	cJSON* js_msg = NULL;
-	size_t msg_len = 0;
+	enum swarmkv_msg_type type = MSG_GET_RESP;
 
-	swarmkv_msg_pack_get_object(store, js_msg, table_name, key);
+	swarmkv_msg_pack_basic_info(store, js_msg, type);
+	cJSON_AddStringToObject(js_msg, "table_name", table_name);
+	cJSON_AddStringToObject(js_msg, "key", key);
 	cJSON_AddStringToObject(js_msg, "value", value);
 	cJSON_AddNumberToObject(js_msg, "op_result", op_result);
+}
 
+size_t swarmkv_msg_pack_get_resp(struct swarmkv_store *store, char *buff, size_t buff_size, const char *table_name, 
+									const char* key, const char* value, int op_result)
+{
+	cJSON* js_msg = NULL;
+	js_msg = cJSON_CreateObject();
+	size_t msg_len = 0;
+
+	swarmkv_msg_pack_get_resp_object(store, js_msg, table_name, key, value, op_result);
 	msg_len = serialization_msg(js_msg, buff, buff_size);
-
 	cJSON_Delete(js_msg);
 	return msg_len;
 }
@@ -392,12 +401,10 @@ size_t swarmkv_msg_pack_get_resp_with_cb(struct swarmkv_store *store, char *buff
 									const char* value, int op_result, const char* uuid_version, long unsigned int callback_func_addr, long unsigned int callback_arg_addr)
 {
 	cJSON* js_msg = NULL;
+	js_msg = cJSON_CreateObject();
 	size_t msg_len = 0;
 
-	swarmkv_msg_pack_get_object(store, js_msg, table_name, key);
-	cJSON_AddStringToObject(js_msg, "value", value);
-	cJSON_AddNumberToObject(js_msg, "op_result", op_result);
-
+	swarmkv_msg_pack_get_resp_object(store, js_msg, table_name, key, value, op_result);
 	cJSON_AddStringToObject(js_msg, "uuid_version", uuid_version);
 	cJSON_AddNumberToObject(js_msg, "callback_func", callback_func_addr);
 	cJSON_AddNumberToObject(js_msg, "callback_func_arg", callback_arg_addr);
@@ -623,7 +630,7 @@ int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg *msg)
 
 		case MSG_DEL_KV:
 			tb_name = cJSON_GetObjectItem(js_msg, "table_name");
-			key = cJSON_GetObjectItem(js_msg, "table_name");
+			key = cJSON_GetObjectItem(js_msg, "key");
 			value = cJSON_GetObjectItem(js_msg, "value");
 			tb_name_len = strlen(tb_name->valuestring);
 			key_len = strlen(key->valuestring);
@@ -660,8 +667,9 @@ int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg *msg)
 			cb_arg = cJSON_GetObjectItem(js_msg, "callback_arg");
 			if(cb_function == NULL)
 			{
-				msg->data.put_req_data.cb_function = -1;
-				msg->data.put_req_data.cb_arg = -1;
+				//msg->data.put_req_data.cb_function = -1;    //cb_function设置了无符号长整形呀！！！！！不能是负数-1！笨不笨！
+				msg->data.put_req_data.cb_function = 0; 
+				msg->data.put_req_data.cb_arg = 0;
 			}
 			else
 			{
@@ -689,8 +697,8 @@ int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg *msg)
 			uuid_version = cJSON_GetObjectItem(js_msg, "uuid_version");
 			if(cb_function == NULL)
 			{
-				msg->data.put_resp_data.cb_function = -1;
-				msg->data.put_resp_data.cb_arg = -1;
+				msg->data.put_resp_data.cb_function = 0;
+				msg->data.put_resp_data.cb_arg = 0;
 			}
 			else
 			{
@@ -713,11 +721,12 @@ int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg *msg)
 			cb_arg = cJSON_GetObjectItem(js_msg, "callback_arg");
 			if(cb_function == NULL)
 			{
-				msg->data.get_req_data.cb_function = -1;
-				msg->data.get_req_data.cb_arg = -1;
+				msg->data.get_req_data.cb_function = 0;
+				msg->data.get_req_data.cb_arg = 0;
 			}
 			else
 			{
+				printf("callback %d\n",cb_function->valueint);
 				msg->data.get_req_data.cb_function = cb_function->valueint;
 				msg->data.get_req_data.cb_arg = cb_arg->valueint;
 			}
@@ -740,8 +749,8 @@ int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg *msg)
 			uuid_version = cJSON_GetObjectItem(js_msg, "uuid_version");
 			if(cb_function == NULL)
 			{
-				msg->data.get_resp_data.cb_function = -1;
-				msg->data.get_resp_data.cb_arg = -1;
+				msg->data.get_resp_data.cb_function = 0;
+				msg->data.get_resp_data.cb_arg = 0;
 			}
 			else
 			{
