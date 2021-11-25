@@ -38,9 +38,9 @@ typedef void swarmkv_callback_func_t(const char *table, const char *key, size_t 
 										const char *value, size_t vallen, void *arg);
 void swarmkv_get_with_callback(struct swarmkv_store *store, const char *table, const struct swarmkv_readoptions *options, 
 								const char *key, size_t keylen, swarmkv_callback_func_t *cb, void *arg);
-int swarmkv_set_callback(struct swarmkv_store *store, const char *table, const struct swarmkv_writeoptions *options,
-							const char *key, size_t keylen, const char *value, size_t vallen, swarmkv_callback_func_t *cb, void *arg);
-
+int swarmkv_put_with_callback(struct swarmkv_store *store, const char *tb_name, const struct swarmkv_writeoptions *options,
+							const char *key, size_t keylen, const char *value, size_t vallen, swarmkv_callback_func_t *cb, void *cb_arg);
+							
 long long swarmkv_incrby(struct swarmkv_store *store, const char *key, const struct swarmkv_writeoptions *options, size_t key_sz, long long increment);
 
 void swarmkv_hset(struct swarmkv_store *store, const struct swarmkv_writeoptions *options, const char *key, size_t keylen, const char *field, const char *value, size_t vallen);

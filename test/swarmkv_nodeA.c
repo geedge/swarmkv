@@ -34,6 +34,7 @@ int main(int argc, char **argv)
 		return -1;
 	}
 
+/*
 	const char* tb_name = "table0";
 	const char *key = "key3";
 	size_t keylen = strlen(key);
@@ -62,7 +63,25 @@ int main(int argc, char **argv)
 	printf("******test GET_REMOTE with callback******\n");
 	swarmkv_get_with_callback(store, tb_name, NULL, key, keylen, get_callback_print, NULL);
 	printf("wait response\n");
-	
+*/
+
+
+	sleep(3);
+	const char* tb_name = "table0";
+	const char *key = "key3";
+	size_t keylen = strlen(key);
+	const char *value = "val0";
+	size_t vallen = strlen(value);
+
+/*
+	printf("******test PUT Remote******\n");
+	swarmkv_put(store, tb_name, NULL, key, keylen, value, vallen, NULL);
+	printf("wait response\n");
+*/	
+
+	printf("******test PUT Remote with Callback******\n");
+	swarmkv_put_with_callback(store, tb_name, NULL, key, keylen, value, vallen, get_callback_print, NULL);
+	printf("wait response\n");
 
 	/*
 	sleep(3);
@@ -78,10 +97,7 @@ int main(int argc, char **argv)
 	*/
 
 	sleep(10);
-
 	swarmkv_close(store);
-	//close(store->sockfd);
-	//free(store);
 	return 1;
 }
 

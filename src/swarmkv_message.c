@@ -285,6 +285,7 @@ size_t swarmkv_msg_pack_put_req_with_cb(struct swarmkv_store *store, enum swarmk
 					 const char* tb_name, const char* key, const char* value, long unsigned int callback_func_addr, long unsigned int callback_arg_addr)
 {
 	cJSON* js_msg = NULL;
+	js_msg = cJSON_CreateObject();
 	size_t msg_len = 0;
 	
 	swarmkv_msg_pack_kv_object(store, js_msg, type, tb_name, key, value);
@@ -302,6 +303,7 @@ size_t swarmkv_msg_pack_put_resp(struct swarmkv_store *store, enum swarmkv_msg_t
 					 const char* tb_name, const char* key, const char* value, int op_result)
 {
 	cJSON* js_msg = NULL;
+	js_msg = cJSON_CreateObject();
 	size_t msg_len = 0;
 	
 	swarmkv_msg_pack_kv_object(store, js_msg, type, tb_name, key, value);
@@ -317,6 +319,7 @@ size_t swarmkv_msg_pack_put_resp_with_cb(struct swarmkv_store *store, enum swarm
 					 const char* tb_name, const char* key, const char* value, int op_result, const char* uuid_version, long unsigned int callback_func_addr, long unsigned int callback_arg_addr)
 {
 	cJSON* js_msg = NULL;
+	js_msg = cJSON_CreateObject();
 	size_t msg_len = 0;
 	
 	swarmkv_msg_pack_kv_object(store, js_msg, type, tb_name, key, value);
@@ -652,7 +655,7 @@ int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg *msg)
 
 		case MSG_PUT_REQ:
 			tb_name = cJSON_GetObjectItem(js_msg, "table_name");
-			key = cJSON_GetObjectItem(js_msg, "table_name");
+			key = cJSON_GetObjectItem(js_msg, "key");
 			value = cJSON_GetObjectItem(js_msg, "value");
 			tb_name_len = strlen(tb_name->valuestring);
 			key_len = strlen(key->valuestring);
@@ -675,6 +678,8 @@ int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg *msg)
 			{
 				msg->data.put_req_data.cb_function = cb_function->valueint;
 				msg->data.put_req_data.cb_arg = cb_arg->valueint;
+				//printf("unpack cb_function->valueint: %ld\n", msg->data.put_req_data.cb_function);
+				//printf("unpack cb_arg->valueint: %ld\n", msg->data.put_req_data.cb_arg);
 			}
 			break;
 		case MSG_PUT_RESP:

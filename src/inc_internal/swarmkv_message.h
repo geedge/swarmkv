@@ -9,7 +9,7 @@
 #define SWARMKV_MAX_MSG_SIZE 65500
 #define OP_SUCCESS 1
 #define OP_UNSUCCESS -1
-#define REQ_ERROR 0      //I am not the owner of the key
+#define REQ_NODE_ERROR 0      //I am not the owner of the key
 #define SWARMKV_DEFAULT_TTL 1
 
 enum swarmkv_msg_type
