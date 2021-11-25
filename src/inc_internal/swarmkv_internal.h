@@ -16,7 +16,7 @@
 #define ON 1
 #define SWARMKV_POINTS_PER_NODE_ON_CHR 3
 #define SWARMKV_MAX_MIGRATE_KV_NUM 1000
-#define TOKEN_LEN 32
+#define TOKEN_LEN 36
 
 struct swarmkv_key_value
 {
@@ -68,7 +68,8 @@ struct swarmkv_store
 	char* my_ip;
 	uint16_t my_port;  
 	//uuid_t uuid;
-	char uuid[32];
+	char uuid[37];
+	//char*
 	//int node_version;     //集群中node信息的版本号，单调递增
 	//int slot_version;     //slot的版本号，单调递增，只有版本号比自己大才修改
 	struct swarmkv_slot slots[SWARMKV_DEFAULT_SLOT_NUM];

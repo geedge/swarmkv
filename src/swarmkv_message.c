@@ -535,7 +535,7 @@ int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg *msg)
 	msg->src_ip = ALLOC(char, strlen(src_ip->valuestring));
 	memcpy(msg->src_ip, src_ip->valuestring, strlen(src_ip->valuestring));
 	msg->src_port = src_port->valueint;
-	memcpy(msg->src_uuid, src_uuid->valuestring, 32);
+	memcpy(msg->src_uuid, src_uuid->valuestring, 36);
 	msg->ttl = ttl->valueint;
 	msg->type = msg_type->valueint;
 
@@ -663,8 +663,8 @@ int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg *msg)
 			memcpy(msg->data.put_req_data.table_name, tb_name->valuestring, tb_name_len);
 			memcpy(msg->data.put_req_data.key, key->valuestring, key_len);
 			memcpy(msg->data.put_req_data.value, value->valuestring, val_len);
-			cb_function = cJSON_GetObjectItem(js_msg, "callback");
-			cb_arg = cJSON_GetObjectItem(js_msg, "callback_arg");
+			cb_function = cJSON_GetObjectItem(js_msg, "callback_func");
+			cb_arg = cJSON_GetObjectItem(js_msg, "callback_func_arg");
 			if(cb_function == NULL)
 			{
 				//msg->data.put_req_data.cb_function = -1;    //cb_function设置了无符号长整形呀！！！！！不能是负数-1！笨不笨！
@@ -692,8 +692,8 @@ int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg *msg)
 			memcpy(msg->data.put_resp_data.value, value->valuestring, val_len);
 			op_result = cJSON_GetObjectItem(js_msg, "op_result");
 			msg->data.put_resp_data.op_result = op_result->valueint;
-			cb_function = cJSON_GetObjectItem(js_msg, "callback");
-			cb_arg = cJSON_GetObjectItem(js_msg, "callback_arg");
+			cb_function = cJSON_GetObjectItem(js_msg, "callback_func");
+			cb_arg = cJSON_GetObjectItem(js_msg, "callback_func_arg");
 			uuid_version = cJSON_GetObjectItem(js_msg, "uuid_version");
 			if(cb_function == NULL)
 			{
@@ -704,7 +704,7 @@ int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg *msg)
 			{
 				msg->data.put_resp_data.cb_function = cb_function->valueint;
 				msg->data.put_resp_data.cb_arg = cb_arg->valueint;
-				memcpy(msg->data.put_resp_data.uuid_version, uuid_version->valuestring, 32);
+				memcpy(msg->data.put_resp_data.uuid_version, uuid_version->valuestring, 36);
 			}
 			break;
 		
@@ -717,8 +717,8 @@ int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg *msg)
 			msg->data.get_req_data.key = ALLOC(char, key_len);
 			memcpy(msg->data.get_req_data.table_name, tb_name->valuestring, tb_name_len);
 			memcpy(msg->data.get_req_data.key, key->valuestring, key_len);
-			cb_function = cJSON_GetObjectItem(js_msg, "callback");
-			cb_arg = cJSON_GetObjectItem(js_msg, "callback_arg");
+			cb_function = cJSON_GetObjectItem(js_msg, "callback_func");
+			cb_arg = cJSON_GetObjectItem(js_msg, "callback_func_arg");
 			if(cb_function == NULL)
 			{
 				msg->data.get_req_data.cb_function = 0;
@@ -726,7 +726,6 @@ int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg *msg)
 			}
 			else
 			{
-				printf("callback %d\n",cb_function->valueint);
 				msg->data.get_req_data.cb_function = cb_function->valueint;
 				msg->data.get_req_data.cb_arg = cb_arg->valueint;
 			}
@@ -744,8 +743,8 @@ int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg *msg)
 			memcpy(msg->data.get_resp_data.table_name, tb_name->valuestring, tb_name_len);
 			memcpy(msg->data.get_resp_data.key, key->valuestring, key_len);
 			memcpy(msg->data.get_resp_data.value, value->valuestring, val_len);
-			cb_function = cJSON_GetObjectItem(js_msg, "callback");
-			cb_arg = cJSON_GetObjectItem(js_msg, "callback_arg");
+			cb_function = cJSON_GetObjectItem(js_msg, "callback_func");
+			cb_arg = cJSON_GetObjectItem(js_msg, "callback_func_arg");
 			uuid_version = cJSON_GetObjectItem(js_msg, "uuid_version");
 			if(cb_function == NULL)
 			{
@@ -756,7 +755,10 @@ int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg *msg)
 			{
 				msg->data.get_resp_data.cb_function = cb_function->valueint;
 				msg->data.get_resp_data.cb_arg = cb_arg->valueint;
-				memcpy(msg->data.get_resp_data.uuid_version, uuid_version->valuestring, 32);
+				printf("uuid_version->valuestring: %ld\n", strlen(uuid_version->valuestring));
+				memset(msg->data.get_resp_data.uuid_version, 0, sizeof(msg->data.get_resp_data.uuid_version));
+				memcpy(msg->data.get_resp_data.uuid_version, uuid_version->valuestring, strlen(uuid_version->valuestring));
+				printf("msg->data.get_resp_data.uuid_version: %s\n", msg->data.get_resp_data.uuid_version);
 			}
 			break;	
 		

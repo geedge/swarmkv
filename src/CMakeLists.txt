@@ -23,6 +23,7 @@ set_target_properties(swarmkv_frame_static PROPERTIES OUTPUT_NAME swarmkv)
 
 target_link_libraries(swarmkv_frame_static cjson-static)
 target_link_libraries(swarmkv_frame_static uuid-static)
+target_link_libraries(swarmkv_frame_static gtest) 
 #link_directories(/usr/local/lib)
 target_link_libraries(swarmkv_frame_static pthread)
 target_link_libraries(swarmkv_frame_static crypto)

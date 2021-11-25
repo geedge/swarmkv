@@ -20,8 +20,8 @@ struct swarmkv_store;
 // config example: "node_id=1;token=49ffb3ae-8e7e-40ab-bc3f-824567e932fe,db=0";
 // bootstraps example: "self=0.0.0.0:8323;peers=192.168.0.100:8323,192.168.0.101:8323"
 // bootstraps example: "self=0.0.0.0:8323;peers=tcp://192.168.0.100:8323,tcp://192.168.0.101:8323"
-//struct swarmkv_store *swarmkv_open(const char *bootstraps, const char *config, char **err);
-int swarmkv_open(struct swarmkv_store *stroe, const char *bootstraps, const char *config, char **err);
+struct swarmkv_store *swarmkv_open(const char *bootstraps, const char *config, char **err);
+//int swarmkv_open(struct swarmkv_store *stroe, const char *bootstraps, const char *config, char **err);
 //void *swarmkv_msg_processing_thread(void *arg);
 void swarmkv_close(struct swarmkv_store *store);
 int swarmkv_set(struct swarmkv_store *store, const char *table, const struct swarmkv_writeoptions *options,
@@ -35,8 +35,9 @@ char *swarmkv_delete(struct swarmkv_store *store, const char *table, const struc
 						const char *key, size_t keylen);
 
 typedef void swarmkv_callback_func_t(const char *table, const char *key, size_t keylen,
-										const char *val, size_t vallen, void *arg);
-void swarmkv_get_callback(struct swarmkv_store *store, const struct swarmkv_readoptions *options, const char *key, size_t keylen, swarmkv_callback_func_t *cb, void *arg);
+										const char *value, size_t vallen, void *arg);
+void swarmkv_get_with_callback(struct swarmkv_store *store, const char *table, const struct swarmkv_readoptions *options, 
+								const char *key, size_t keylen, swarmkv_callback_func_t *cb, void *arg);
 int swarmkv_set_callback(struct swarmkv_store *store, const char *table, const struct swarmkv_writeoptions *options,
 							const char *key, size_t keylen, const char *value, size_t vallen, swarmkv_callback_func_t *cb, void *arg);
 
@@ -48,7 +49,6 @@ void swarmkv_hset(struct swarmkv_store *store, const struct swarmkv_writeoptions
 //struct swarmkv_reply *swarmkv_command(struct swarmkv_store *store, const char *format, ...);
 //value = swarm_kv_command(store, "hget %s %s", key, mbr);
 //void swarmkv_close(struct swarmkv_store *store);
-void swarmkv_close();
 
 #ifdef __cplusplus
 } /* end extern "C" */

@@ -11,3 +11,11 @@ target_link_libraries(swarmkv_nodeA swarmkv_frame_static)
 
 add_executable(swarmkv_nodeB swarmkv_nodeB.c)
 target_link_libraries(swarmkv_nodeB swarmkv_frame_static)
+
+add_executable(swarmkv_gtest swarmkv_gtest.cpp)
+target_link_libraries(swarmkv_gtest swarmkv_frame_static)
+
+#target_link_libraries(MyTests ${GTEST_BOTH_LIBRARIES})
+#target_link_libraries(MyTests ${CMAKE_THREAD_LIBS_INIT})
+#add_test(Test MyTests)
+#enable_testing()

@@ -94,7 +94,7 @@ struct swarmkv_put_resp
 	char *key;
 	char *value;
 	int op_result;
-	char uuid_version[32];
+	char uuid_version[37];
 	long unsigned int cb_function; 
 	long unsigned int cb_arg;
 };
@@ -112,7 +112,7 @@ struct swarmkv_get_resp
 	char *key;
 	char *value;
 	int op_result;
-	char uuid_version[32];
+	char uuid_version[37];
 	long unsigned int cb_function; 
 	long unsigned int cb_arg;
 };
@@ -172,7 +172,7 @@ struct swarmkv_msg
 	int src_node_id;
 	char *src_ip;
 	uint16_t src_port;
-	char src_uuid[32];
+	char src_uuid[37];
 	enum swarmkv_msg_type type;
 	int ttl;
 	union MsgData data;
