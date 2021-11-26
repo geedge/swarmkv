@@ -8,21 +8,17 @@
 
 void get_callback_print(const char *table, const char *key, size_t keylen, const char *value, size_t vallen, void *arg)
 {
-	printf("print callback result\n");
-	printf("table: %s\n", table);
-	printf("key: %ld %s\n", keylen, key);
-	printf("value: %ld %s\n", vallen, value);
+	printf("\n-----print callback result-----\n");
+	printf(" table: %s\n", table);
+	printf("   key: %s\n", key);
+	printf("keylen: %ld\n", keylen);
+	printf(" value: %s\n", value);
+	printf("vallen: %ld\n", vallen);
+	printf("\n");
 }
 
 int main(int argc, char **argv)
-{
-	//printf("%d\n",argc);
-	/*
-	swarmkv_callback_func_t *cb_f;
-	cb_f = get_callback_print;
-	printf("%ld\n", (unsigned long int)cb_f);
-	*/
-	
+{	
 	const char *bootstraps = "self=172.16.225.2:8323;peers=172.16.225.2:6323,172.16.225.2:7323,172.16.225.2:18323";
 	const char *config = "node_id=0;token=49ffb3ae-8e7e-40ab-bc3f-824567e932fe,db=0";
 	char *err = NULL;
@@ -34,16 +30,37 @@ int main(int argc, char **argv)
 		return -1;
 	}
 
-/*
 	const char* tb_name = "table0";
 	const char *key = "key3";
 	size_t keylen = strlen(key);
 	const char *value = "val0";
 	size_t vallen = strlen(value);
 
-	printf("******test PUT******\n");
+	sleep(3);
+
+	printf("******test PUT Remote******\n");
 	swarmkv_put(store, tb_name, NULL, key, keylen, value, vallen, NULL);
+	printf("wait response\n");
+
+	sleep(1);
+	printf("******test GET_REMOTE******\n");
+	char *get_val = NULL;
+	size_t *get_vallen;
+	get_val = swarmkv_get(store, tb_name, NULL, key, keylen, get_vallen, NULL);
+	if(get_val!=NULL)
+	{
+		printf("%s\n",get_val);
+	}
+	printf("wait response\n");
 	
+	sleep(1);
+	printf("******test Update_REMOTE******\n");
+	const char *new_value = "val0_1";
+	size_t new_vallen = strlen(value);
+	swarmkv_put(store, tb_name, NULL, key, keylen, new_value, new_vallen, NULL);
+	printf("wait response\n");
+	
+	/*
 	sleep(1);
 	printf("******test GET_LOCAL******\n");
 	char *get_val = NULL;
@@ -53,36 +70,50 @@ int main(int argc, char **argv)
 	printf("%s\n",get_val);
 	free(get_val);
 	get_val = NULL;
-
+	*/
+/*
 	sleep(1);
 	printf("******test GET_LOCAL with callback******\n");
 	swarmkv_get_with_callback(store, tb_name, NULL, key, keylen, get_callback_print, NULL);
 
-	
+
+	const char *new_value = "val0_1";
+	size_t new_vallen = strlen(new_value);
+	printf("******test Update******\n");
+	swarmkv_put(store, tb_name, NULL, key, keylen, new_value, new_vallen, NULL);
+
+	sleep(1);
+	printf("******test GET_LOCAL with callback after update******\n");
+	swarmkv_get_with_callback(store, tb_name, NULL, key, keylen, get_callback_print, NULL);
+*/
+	/*
 	sleep(5);
 	printf("******test GET_REMOTE with callback******\n");
 	swarmkv_get_with_callback(store, tb_name, NULL, key, keylen, get_callback_print, NULL);
 	printf("wait response\n");
-*/
+	*/
 
 
-	sleep(3);
+/*
+	//sleep(3);
 	const char* tb_name = "table0";
 	const char *key = "key3";
 	size_t keylen = strlen(key);
 	const char *value = "val0";
 	size_t vallen = strlen(value);
 
+	printf("******test PUT Local with callback******\n");
+	swarmkv_put_with_callback(store, tb_name, NULL, key, keylen, value, vallen, get_callback_print, NULL);
+*/
 /*
 	printf("******test PUT Remote******\n");
 	swarmkv_put(store, tb_name, NULL, key, keylen, value, vallen, NULL);
 	printf("wait response\n");
-*/	
 
 	printf("******test PUT Remote with Callback******\n");
 	swarmkv_put_with_callback(store, tb_name, NULL, key, keylen, value, vallen, get_callback_print, NULL);
 	printf("wait response\n");
-
+*/
 	/*
 	sleep(3);
 	char *get_val_1 = NULL;

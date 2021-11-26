@@ -234,6 +234,7 @@ int swarmkv_put_with_callback(struct swarmkv_store *store, const char *tb_name, 
 		//local put a key-value
 		swarmkv_owner_put_kv(store, tb_name, key, keylen, value, vallen);
 		swarmkv_msg_send_invalidate_key_req(store, tb_name, key, keylen, value, vallen);
+		printf("start callback\n");
 		cb(tb_name, key, keylen, value, vallen, cb_arg);
 	}
 	else
@@ -960,6 +961,26 @@ void process_migrate_resp_msg(struct swarmkv_store* store, struct swarmkv_msg *m
 	pthread_rwlock_unlock(&store->rwlock);
 }
 
+void del_owned_kv(struct swarmkv_store* store, const char *table_name, const char* key, size_t keylen)
+{
+	struct swarmkv_table *table = NULL;
+	struct swarmkv_key_value *kv = NULL;
+	HASH_FIND_STR(store->table_hash, table_name, table);
+	if(table != NULL)
+	{
+		HASH_FIND(hh, table->owned_value_hash, key, keylen, kv);
+		if(kv != NULL)
+		{
+			if(strcmp(kv->key, key)==0)
+			{
+				HASH_DEL(table->owned_value_hash, kv);
+				free(kv);
+				kv = NULL;
+			}
+		}
+	}
+}
+
 void process_del_kv_msg(struct swarmkv_store* store, struct swarmkv_msg *msg, struct swarmkv_node *src_node)
 {
 	char *key = NULL;
@@ -969,7 +990,6 @@ void process_del_kv_msg(struct swarmkv_store* store, struct swarmkv_msg *msg, st
 	size_t keylen = base64_decode(msg->data.del_req_data.key, strlen(msg->data.del_req_data.key), key);
 	size_t vallen = base64_decode(msg->data.del_req_data.value, strlen(msg->data.del_req_data.value), value);
 	int slot_owner_id = caculate_key_slot_owner(store, key, keylen);
-	//printf("%d %d\n",slot_owner_id, src_node->node_id);
 	if(slot_owner_id == src_node->node_id)
 	{	
 		pthread_rwlock_wrlock(&store->rwlock);
@@ -1293,6 +1313,111 @@ void process_put_resp_msg(struct swarmkv_store* store, struct swarmkv_msg *msg, 
 	}
 }
 
+int del_cache_kv(struct swarmkv_store* store, const char *table_name, const char* key, size_t keylen)
+{
+	pthread_rwlock_wrlock(&store->rwlock);
+	struct swarmkv_table *table = NULL;
+	struct swarmkv_key_value *kv = NULL;
+	HASH_FIND_STR(store->table_hash, table_name, table);
+	if(table != NULL)
+	{
+		HASH_FIND(hh, table->cached_value_hash, key, keylen, kv);
+		if(kv != NULL)
+		{
+			if(strcmp(kv->key, key)==0)
+			{
+				HASH_DEL(table->cached_value_hash, kv);
+				free(kv);
+				kv = NULL;
+				pthread_rwlock_unlock(&store->rwlock);
+				return 1;
+			}
+		}
+	}
+	pthread_rwlock_unlock(&store->rwlock);
+	return -1;
+}
+
+void process_invalidate_req_msg(struct swarmkv_store* store, struct swarmkv_msg *msg, struct swarmkv_node *src_node)
+{	
+	struct swarmkv_table *table = NULL;
+	//decode key and value
+	char *key = ALLOC(char, SWARMKV_MAX_KEY_LEN);
+	char *value = ALLOC(char, SWARMKV_MAX_KEY_LEN);
+	size_t keylen = base64_decode(msg->data.invalidate_req_data.key, strlen(msg->data.invalidate_req_data.key), key);
+	size_t vallen = base64_decode(msg->data.invalidate_req_data.value, strlen(msg->data.invalidate_req_data.value), value);
+
+	int del_ret = del_cache_kv(store, msg->data.invalidate_req_data.table_name, key, keylen);
+	
+	char *invalidate_key_resp_msg = ALLOC(char, SWARMKV_MAX_MSG_SIZE);
+	int msg_len = -1;
+	if(del_ret > 0)
+	{
+		msg_len = swarmkv_msg_pack_put_resp(store, MSG_INVALIDATE_KEYS_RESP, invalidate_key_resp_msg, SWARMKV_MAX_MSG_SIZE, 
+						msg->data.invalidate_req_data.table_name, msg->data.invalidate_req_data.key, msg->data.invalidate_req_data.value, OP_SUCCESS);
+		assert(msg_len > 0);
+	}
+	else
+	{
+		msg_len = swarmkv_msg_pack_put_resp(store, MSG_INVALIDATE_KEYS_RESP, invalidate_key_resp_msg, SWARMKV_MAX_MSG_SIZE, 
+						msg->data.invalidate_req_data.table_name, msg->data.invalidate_req_data.key, msg->data.invalidate_req_data.value, REQ_NODE_ERROR);
+		assert(msg_len > 0);
+	}
+	swarmkv_msg_send(store->sockfd, invalidate_key_resp_msg, msg_len, src_node->ip, src_node->port);
+	free(invalidate_key_resp_msg);
+	invalidate_key_resp_msg = NULL;
+	
+}
+
+void process_invalidate_resp_msg(struct swarmkv_store* store, struct swarmkv_msg *msg, struct swarmkv_node *src_node)
+{
+	pthread_rwlock_wrlock(&store->rwlock);
+	char *key = ALLOC(char, SWARMKV_MAX_KEY_LEN);
+	char *value = ALLOC(char, SWARMKV_MAX_KEY_LEN);
+	size_t keylen = base64_decode(msg->data.invalidate_req_data.key, strlen(msg->data.invalidate_req_data.key), key);
+	size_t vallen = base64_decode(msg->data.invalidate_req_data.value, strlen(msg->data.invalidate_req_data.value), value);
+	struct swarmkv_table *table = NULL;
+	struct swarmkv_key_value *kv = NULL;
+	HASH_FIND_STR(store->table_hash, msg->data.invalidate_req_data.table_name, table);
+	if(table != NULL)
+	{
+		HASH_FIND(hh, table->owned_value_hash, key, keylen, kv);
+		if(kv != NULL)
+		{
+			if(strcmp(kv->key, key)==0)
+			{
+				int *node_id = NULL;
+				for(node_id=(int*)utarray_front(kv->nodes_have_key_cached); node_id!= NULL; node_id=(int*)utarray_next(kv->nodes_have_key_cached,node_id)) 
+				{
+					if(*node_id == src_node->node_id)
+					{
+						int index = utarray_eltidx(kv->nodes_have_key_cached, node_id);
+						utarray_erase(kv->nodes_have_key_cached, index, 1);
+						break;
+					}
+				}
+				/*
+				//检查是不是删掉了
+				int *tmp_node = NULL;
+				for(tmp_node=(int*)utarray_front(kv->nodes_have_key_cached); tmp_node!= NULL; tmp_node=(int*)utarray_next(kv->nodes_have_key_cached,tmp_node)) 
+				{
+					printf("after delete\n");
+					if(*tmp_node == src_node->node_id)
+					{
+						printf("delete failed\n");
+					}
+					else
+					{
+						printf("delete success\n");
+					}
+				}
+				*/
+			}
+		}
+	}
+	pthread_rwlock_unlock(&store->rwlock);
+}
+
 int swarmkv_msg_unpack(struct swarmkv_store* store, char *buf)
 {
 	//parse cjson message to swarmkv_msg struct
@@ -1373,87 +1498,15 @@ int swarmkv_msg_unpack(struct swarmkv_store* store, char *buf)
 		case MSG_PUT_REQ:
 			process_put_req_msg(store, buf, msg, src_node);
 			break;
-			/*
-			key = ALLOC(char, SWARMKV_MAX_KEY_LEN);
-			keylen = base64_decode(msg->data.put_req_data.key, strlen(msg->data.put_req_data.key), key);
-			//check slot is belong to me.
-			slot_owner_id = caculate_key_slot_owner(store, key, keylen);
-			char *put_resp_msg = ALLOC(char, SWARMKV_MAX_MSG_SIZE);
-			if(slot_owner_id != store->my_node_id)
-			{
-				if(msg->ttl > 0)
-				{
-					struct swarmkv_node *own_node = NULL;
-					HASH_FIND_INT(store->nodes, &slot_owner_id, own_node);
-					if(own_node == NULL)
-					{
-						printf("put error.\n");
-						return -1;
-					}
-					msg_len = swarmkv_msg_repack_ttl(buf, put_resp_msg, SWARMKV_MAX_MSG_SIZE);
-					swarmkv_msg_send(store->sockfd, buf, msg_len, own_node->ip, own_node->port);
-					break;
-				}
-				else
-				{
-					//返回REQ_NODE_ERROR消息
-					msg_len = swarmkv_msg_pack_put_resp(store, MSG_PUT_RESP, put_resp_msg, SWARMKV_MAX_MSG_SIZE, msg->data.put_req_data.table_name, 
-																msg->data.put_req_data.key, msg->data.put_req_data.value, REQ_NODE_ERROR);
-				}
-			}
-			else
-			{
-				value = ALLOC(char, SWARMKV_MAX_KEY_LEN);
-				vallen = base64_decode(msg->data.put_req_data.value, strlen(msg->data.put_req_data.value), value);
-				//put the key-value into my store and send invalidate request msg
-				swarmkv_owner_put_kv(store, msg->data.put_req_data.table_name, key, keylen, value, vallen);
-				swarmkv_msg_send_invalidate_key_req(store, msg->data.put_req_data.table_name, key, keylen, value, vallen);
-
-				//send a put response
-				if(msg->data.get_req_data.cb_function==0)
-				{
-					msg_len = swarmkv_msg_pack_put_resp(store, MSG_PUT_RESP, put_resp_msg, SWARMKV_MAX_MSG_SIZE, msg->data.put_req_data.table_name, 
-																	msg->data.put_req_data.key, msg->data.put_req_data.value, OP_SUCCESS);
-				}
-				else
-				{
-					msg_len = swarmkv_msg_pack_put_resp_with_cb(store, MSG_PUT_RESP, put_resp_msg, SWARMKV_MAX_MSG_SIZE, msg->data.put_req_data.table_name, 
-																	msg->data.put_req_data.key, msg->data.put_req_data.value, OP_SUCCESS, msg->src_uuid, 
-																	msg->data.get_req_data.cb_function, msg->data.get_req_data.cb_arg);
-				}
-			}
-			if(msg_len <= 0)
-			{
-				printf("Pack put response message error.\n");
-				return -1;
-			}
-			swarmkv_msg_send(store->sockfd, put_resp_msg, msg_len, src_node->ip, src_node->port);
-			free(put_resp_msg);
-			put_resp_msg = NULL;
-			*/	
 
 		case MSG_PUT_RESP:
 			process_put_resp_msg(store, msg, src_node);
 			break;
-			/*
-			if(msg->data.put_resp_data.op_result == OP_SUCCESS)
-			{
-				if(msg->data.put_resp_data.uuid_version == store->uuid)
-				{
-					swarmkv_callback_func_t *cb_func = (swarmkv_callback_func_t*)msg->data.put_resp_data.cb_function;
-					void *cb_arg = (void*)((unsigned long int)msg->data.put_resp_data.cb_arg);
-					cb_func(table->table_name, key, keylen, value, vallen, cb_arg);
-				}
-			}
-			else if(msg->data.put_resp_data.op_result == REQ_NODE_ERROR)
-			{
-				printf("The key owner you requested is wrong.\n");
-			}
-			*/
-			
 		
 		case MSG_INVALIDATE_KEYS_REQ:
-			//update the cached_value_hash
+			process_invalidate_req_msg(store, msg, src_node);
+			break;
+			/*
 			pthread_rwlock_wrlock(&store->rwlock);
 			HASH_FIND_STR(store->table_hash, msg->data.invalidate_req_data.table_name, table);
 			if(table != NULL)
@@ -1485,208 +1538,26 @@ int swarmkv_msg_unpack(struct swarmkv_store* store, char *buf)
 				}
 			}
 			pthread_rwlock_unlock(&store->rwlock);
-			break;
+			*/
 
 		case MSG_INVALIDATE_KEYS_RESP:
+			process_invalidate_resp_msg(store, msg, src_node);
 			break;
 		
 		case MSG_GET_REQ:	
 			process_get_req_msg(store, buf, msg, src_node);
 			break;
-			/*
-			//decode key
-			key = ALLOC(char, SWARMKV_MAX_KEY_LEN);
-			keylen = base64_decode(msg->data.get_req_data.key, strlen(msg->data.get_req_data.key), key);
-			//check the key is belong to me?
-			slot_owner_id = caculate_key_slot_owner(store, key, keylen);
-			char *get_resp_msg = ALLOC(char, SWARMKV_MAX_MSG_SIZE);
-			if(slot_owner_id != store->my_node_id)
-			{
-				if(msg->ttl > 0)
-				{
-					struct swarmkv_node *own_node = NULL;
-					HASH_FIND_INT(store->nodes, &slot_owner_id, own_node);
-					if(own_node == NULL)
-					{
-						printf("put error.\n");
-						return -1;
-					}
-					msg_len = swarmkv_msg_repack_ttl(buf, get_resp_msg, SWARMKV_MAX_MSG_SIZE);
-					//Forward to the node which I think the slot is belong to.
-					swarmkv_msg_send(store->sockfd, get_resp_msg, msg_len, own_node->ip, own_node->port);
-					break;
-				}
-				else
-				{
-					swarmkv_msg_pack_get_resp(store, get_resp_msg, SWARMKV_MAX_MSG_SIZE, msg->data.get_req_data.table_name, 
-												msg->data.get_req_data.key, NULL, REQ_NODE_ERROR);
-				}
-			}
-			size_t *value_len = NULL;
-			value_len = ALLOC(size_t, 1);
-			value = swarmkv_owner_get_kv(store, msg->data.get_req_data.table_name, key, keylen, value_len, src_node->node_id);
-			if(value == NULL)
-			{
-				printf("get key %s from my store for node %d error.\n", key, src_node->node_id);
-				break;
-			}
-			//encode value
-			char *value_base64 = ALLOC(char, SWARMKV_MAX_VAL_LEN);
-			base64_encode(value, *value_len, value_base64);
-			if(msg->data.get_req_data.cb_function==0)
-			{
-				msg_len = swarmkv_msg_pack_get_resp(store, get_resp_msg, SWARMKV_MAX_MSG_SIZE, msg->data.get_req_data.table_name, msg->data.get_req_data.key, value_base64, OP_SUCCESS);
-			}
-			else
-			{
-				msg_len = swarmkv_msg_pack_get_resp_with_cb(store, get_resp_msg, SWARMKV_MAX_MSG_SIZE, msg->data.get_req_data.table_name, msg->data.get_req_data.key, 
-									value_base64, OP_SUCCESS, msg->src_uuid, msg->data.get_req_data.cb_function, msg->data.get_req_data.cb_arg);
-			}
-			if(msg_len <= 0 )
-			{
-				printf("pack a get response message error.\n");
-				return -1;
-			}
-			swarmkv_msg_send(store->sockfd, get_resp_msg, msg_len, src_node->ip, src_node->port);
-			free(get_resp_msg);
-			get_resp_msg = NULL;
-			free(value_len);
-			value_len = NULL;
-			*/	
 
 		case MSG_GET_RESP:
 			process_get_resp_msg(store, msg, src_node);
 			break;
-			/*
-			//decode key and value
-			key = ALLOC(char, SWARMKV_MAX_KEY_LEN);
-			value = ALLOC(char, SWARMKV_MAX_KEY_LEN);
-			keylen = base64_decode(msg->data.get_resp_data.key, strlen(msg->data.get_resp_data.key), key);
-			vallen = base64_decode(msg->data.get_resp_data.value, strlen(msg->data.get_resp_data.value), value);
-			
-			//update my cache	
-			pthread_rwlock_wrlock(&store->rwlock);
-			HASH_FIND_STR(store->table_hash, msg->data.get_resp_data.table_name, table);
-			if(table == NULL)
-			{
-				//add a new table in my swarmkv_store
-				table = ALLOC(struct swarmkv_table, 1);
-				memcpy(table->table_name, msg->data.get_resp_data.table_name, strlen(msg->data.get_resp_data.table_name));
-				HASH_ADD_STR(store->table_hash, table_name, table);
-				//add a new key
-				kv = ALLOC(struct swarmkv_key_value, 1);
-				kv->key = key;
-				//HASH_ADD(hh, table->cached_value_hash, key, keylen, kv);
-				HASH_ADD_KEYPTR(hh, table->cached_value_hash, kv->key, keylen, kv);
-			}
-			HASH_FIND(hh, table->cached_value_hash, key, keylen, kv);
-			if(kv == NULL)
-			{
-				//add a new key
-				kv = ALLOC(struct swarmkv_key_value, 1);
-				kv->key = key;
-				//HASH_ADD(hh, table->cached_value_hash, key, keylen, kv);
-				HASH_ADD_KEYPTR(hh, table->cached_value_hash, kv->key, keylen, kv);
-			}
-			kv->keylen = keylen;
-			kv->value = value;
-			kv->vallen = vallen;
-			pthread_rwlock_unlock(&store->rwlock);
-			//callback
-			if(msg->data.get_resp_data.cb_function > 0)
-			{
-				if(msg->data.get_resp_data.uuid_version == store->uuid)
-				{
-					swarmkv_callback_func_t *cb_func = (swarmkv_callback_func_t*)msg->data.get_resp_data.cb_function;
-					void *cb_arg = (void*)((unsigned long int)msg->data.get_resp_data.cb_arg);
-					cb_func(table->table_name, key, keylen, value, vallen, cb_arg);
-				}
-			}*/
 
 		case MSG_MIGRATE_REQ:
 			process_migrate_req_msg(store, msg, src_node);
-			/*
-			i = 0;
-			pthread_rwlock_wrlock(&store->rwlock);
-			for(table=store->table_hash; table!=NULL; table=(struct swarmkv_table *)(table->hh.next))
-			{
-				struct swarmkv_key_value *owned_kv = NULL;
-				for(owned_kv=table->owned_value_hash; owned_kv!=NULL; owned_kv=(struct swarmkv_key_value *)(owned_kv->hh.next))
-				{
-					int slot_id = caculate_key_slot_owner(store, owned_kv->key, owned_kv->keylen);
-					if(msg->data.migrate_req_data.slot_id == slot_id)
-					{
-						//base64 encode key and value
-						key = ALLOC(char, owned_kv->keylen*2);
-						value = ALLOC(char, owned_kv->vallen*2);
-						base64_encode(owned_kv->key, owned_kv->keylen, key);
-						base64_encode(owned_kv->value, owned_kv->vallen, value);
-						mkv[i].key = key;
-						mkv[i].value = value;
-						mkv[i].table_name = table->table_name;
-						i++;
-					}
-				}
-			}
-			//迁移完就把slot_owner_id改为请求者的id
-			//change the slot owner on my store->slots
-			store->slots[msg->data.migrate_req_data.slot_id].owner_node_id = src_node->node_id;
-			//send a migrate response
-			char *migrate_resp_msg = ALLOC(char, SWARMKV_MAX_MSG_SIZE);
-			msg_len = swarmkv_msg_pack_migration_resp(store, migrate_resp_msg, SWARMKV_MAX_MSG_SIZE, msg->data.migrate_req_data.slot_id, mkv, i);
-			
-			if(msg_len <= 0)
-			{
-				printf("pack a migrate response message error.\n");
-				return -1;
-			}
-			
-			swarmkv_msg_send(store->sockfd, migrate_resp_msg, msg_len, src_node->ip, src_node->port);
-			
-			pthread_rwlock_unlock(&store->rwlock);
-			free(migrate_resp_msg);
-			migrate_resp_msg = NULL;
-			*/
 			break;
 
 		case MSG_MIGRATE_RESP:
 			process_migrate_resp_msg(store, msg, src_node);
-			/*
-			pthread_rwlock_wrlock(&store->rwlock);
-			for(i=0; i<msg->data.migrate_resp_data.kv_num; i++)
-			{
-				//decode key and value
-				key = ALLOC(char, SWARMKV_MAX_KEY_LEN);
-				value = ALLOC(char, SWARMKV_MAX_KEY_LEN);
-				keylen = base64_decode(msg->data.migrate_resp_data.mkv[i].key, strlen(msg->data.migrate_resp_data.mkv[i].key), key);
-				vallen = base64_decode(msg->data.migrate_resp_data.mkv[i].value, strlen(msg->data.migrate_resp_data.mkv[i].value), value);
-
-				HASH_FIND_STR(store->table_hash, msg->data.migrate_resp_data.mkv[i].table_name, table);
-				if(table == NULL)
-				{
-					table = ALLOC(struct swarmkv_table, 1);
-					memcpy(table->table_name, msg->data.get_resp_data.table_name, strlen(msg->data.migrate_resp_data.mkv[i].table_name));
-					HASH_ADD_STR(store->table_hash, table_name, table);
-					//add a new key
-					kv = ALLOC(struct swarmkv_key_value, 1);
-					kv->key = key;
-					HASH_ADD(hh, table->cached_value_hash, key, keylen, kv);
-				}
-				HASH_FIND(hh, table->cached_value_hash, key, keylen, kv);
-				if(kv == NULL)
-				{
-					//add a new key
-					kv = ALLOC(struct swarmkv_key_value, 1);
-					kv->key = key;
-					HASH_ADD(hh, table->cached_value_hash, key, keylen, kv);
-				}
-				kv->keylen = keylen;
-				kv->value = value;
-				kv->vallen = vallen;
-			}
-			store->slots[msg->data.migrate_resp_data.slot_id].owner_node_id = store->my_node_id;
-			pthread_rwlock_unlock(&store->rwlock);
-			*/
 			break;
 		case MSG_DEL_KV:
 			process_del_kv_msg(store, msg, src_node);
