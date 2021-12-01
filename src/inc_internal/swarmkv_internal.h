@@ -11,12 +11,21 @@
 #define SWARMKV_DEFAULT_SLOT_NUM 128
 #define SWARMKV_DEFAULT_NODE_NUM 32
 #define BOOTSTRAPS_NUM 5
+
 #define PFAIL 0
 #define FAIL -1
 #define ON 1
+#define WAITMEET 2
+
 #define SWARMKV_POINTS_PER_NODE_ON_CHR 3
 #define SWARMKV_MAX_MIGRATE_KV_NUM 1000
 #define TOKEN_LEN 36
+
+#define BUFSIZE 65500
+#define SWARMKV_DEFAULT_LISTEN_PORT 8323
+#define SWARMKV_MAX_KEY_LEN 512
+#define SWARMKV_MAX_VAL_LEN 2048
+#define SWARMKV_ONCE_MIGRATE_KV_NUM 20
 
 struct swarmkv_key_value
 {
@@ -59,6 +68,7 @@ struct swarmkv_node
 	uint32_t pong_received_time;
 	int status;        //ONLINE/PFAIL/FAIL
 	int pfail_cnt;
+	int meet_cnt;
 	UT_hash_handle hh;
 };
 
@@ -69,11 +79,11 @@ struct swarmkv_store
 	uint16_t my_port;  
 	//uuid_t uuid;
 	char uuid[37];
-	//char*
 	//int node_version;     //集群中node信息的版本号，单调递增
 	//int slot_version;     //slot的版本号，单调递增，只有版本号比自己大才修改
 	struct swarmkv_slot slots[SWARMKV_DEFAULT_SLOT_NUM];
 	struct swarmkv_table *table_hash; //key: char table_name[256], value: struct swarmkv_table*
+	int cluster_size;
 	struct swarmkv_node *nodes;		  //key: int node_id, value: struct swarmkv_node*
 	int sockfd;
 	//struct swarmkv_transaction *on_fly_transactions;
@@ -103,7 +113,7 @@ struct msg_count
 	int migrate_req_cnt;
 	int migrate_resp_cnt;
 	int del_kv_cnt;
-	int slot_owner_change_cnt;
+	int slot_moved_cnt;
 	int put_req_cnt;
 	int put_resp_cnt;
 	int get_req_cnt;

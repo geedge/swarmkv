@@ -42,11 +42,26 @@ long long swarmkv_incrby(struct swarmkv_store *store, const char *key, const str
 
 void swarmkv_hset(struct swarmkv_store *store, const struct swarmkv_writeoptions *options, const char *key, size_t keylen, const char *field, const char *value, size_t vallen);
 
+//测试辅助函数
+char *swarmkv_cache_get_kv(struct swarmkv_store *store, const char *tb_name, const char *key, size_t keylen, size_t *vallen);
+char *swarmkv_GetKeyOpt(struct swarmkv_store *store, const char *tb_name, const char *key, size_t keylen, size_t *vallen);
+char *swarmkv_GetSlotAssign(struct swarmkv_store *store);
+int swarmkv_cluster_open(const char *bootstraps, const char *config, char **err);
 //int swarmkv_subscribe(struct swarmkv_store *store, const char *table, cb_func callback);
 //struct swarmkv_reply *swarmkv_command(struct swarmkv_store *store, const char *format, ...);
 //value = swarm_kv_command(store, "hget %s %s", key, mbr);
 //void swarmkv_close(struct swarmkv_store *store);
 
+void test();
+
 #ifdef __cplusplus
 } /* end extern "C" */
 #endif
+
+
+//https://sysdig.com/blog/redis-prometheus/ redis统计信息
+//https://git.mesalab.cn/MESA_framework/FieldStat2/-/blob/master/test/fs2_test.cpp 可用参考库
+
+//查看当前本节点持有kv的状态，本地/缓存/没有等，不能把测试代码写到swarmkv源码里
+//swarmkv_getkeyopt(kv, key, SWMKV_OPT_KEY_LOCATION, *value);
+//EXPECT_EQ (value, LOCAL_KEY);

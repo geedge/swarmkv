@@ -30,35 +30,39 @@ int main(int argc, char **argv)
 		return -1;
 	}
 
+	
 	const char* tb_name = "table0";
 	const char *key = "key3";
 	size_t keylen = strlen(key);
 	const char *value = "val0";
 	size_t vallen = strlen(value);
 
-	sleep(3);
+	//sleep(3);
 
-	printf("******test PUT Remote******\n");
+	printf("******test PUT Local******\n");
 	swarmkv_put(store, tb_name, NULL, key, keylen, value, vallen, NULL);
-	printf("wait response\n");
+	//printf("wait response\n");
 
-	sleep(1);
+	/*
+	sleep(3);
 	printf("******test GET_REMOTE******\n");
 	char *get_val = NULL;
-	size_t *get_vallen;
-	get_val = swarmkv_get(store, tb_name, NULL, key, keylen, get_vallen, NULL);
+	size_t get_vallen;
+	get_val = swarmkv_get(store, tb_name, NULL, key, keylen, &get_vallen, NULL);
 	if(get_val!=NULL)
 	{
 		printf("%s\n",get_val);
 	}
 	printf("wait response\n");
-	
+	*/
+	/*
 	sleep(1);
 	printf("******test Update_REMOTE******\n");
 	const char *new_value = "val0_1";
 	size_t new_vallen = strlen(value);
 	swarmkv_put(store, tb_name, NULL, key, keylen, new_value, new_vallen, NULL);
 	printf("wait response\n");
+	*/
 	
 	/*
 	sleep(1);
@@ -127,7 +131,8 @@ int main(int argc, char **argv)
 	printf("wait response\n");
 	*/
 
-	sleep(10);
+	sleep(6);
+	swarmkv_GetSlotAssign(store);
 	swarmkv_close(store);
 	return 1;
 }

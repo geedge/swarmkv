@@ -113,6 +113,30 @@ Reponse
     ]
 }
 ```
+```
+{
+    "my_id": 102,
+    "my_ip": "192.168.0.1",
+    "my_port": 8323,
+    "msg_type":" "migrate_moved",  
+    "slot_id": 102,
+    "new_owner": 1
+}
+```
+
+
+### Slot MOVED
+MOVED
+```
+{
+    "my_id": 102,
+    "my_ip": "192.168.0.1",
+    "my_port": 8323,
+    "msg_type":" "slot_moved",  
+    "slot_id": 102,
+    "new_owner": 1
+}
+```
 ### DEL Key-Value
 ```
 {

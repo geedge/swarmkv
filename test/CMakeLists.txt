@@ -2,6 +2,10 @@ cmake_minimum_required (VERSION 2.8)
 
 #message("test_dir: ${CMAKE_CURRENT_SOURCE_DIR}")
 
+SET(CMAKE_BUILD_TYPE "Debug")
+SET(CMAKE_CXX_FLAGS_DEBUG "$ENV{CXXFLAGS} -O0 -Wall -g2 -ggdb")
+SET(CMAKE_CXX_FLAGS_RELEASE "$ENV{CXXFLAGS} -O3 -Wall")
+
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}../include)
 
 # 创建可执行程序
@@ -11,6 +15,9 @@ target_link_libraries(swarmkv_nodeA swarmkv_frame_static)
 
 add_executable(swarmkv_nodeB swarmkv_nodeB.c)
 target_link_libraries(swarmkv_nodeB swarmkv_frame_static)
+
+add_executable(swarmkv_nodeC swarmkv_nodeC.c)
+target_link_libraries(swarmkv_nodeC swarmkv_frame_static)
 
 add_executable(swarmkv_gtest swarmkv_gtest.cpp)
 target_link_libraries(swarmkv_gtest swarmkv_frame_static)

@@ -23,6 +23,17 @@ int min(int a, int b)
 	return b;
 }
 
+void test_cjson()
+{
+	cJSON* js_msg = NULL;
+	js_msg = cJSON_CreateObject();
+	char* str = (char*)malloc(sizeof(char)*20);
+	str = "hello";
+	cJSON_AddStringToObject(js_msg, "str", str);
+	free(str);
+	cJSON_Delete(js_msg);	
+}
+
 //pack basic information: my id, ip, port, and msg_type
 static void *swarmkv_msg_pack_basic_info(struct swarmkv_store *store, cJSON *js_msg, enum swarmkv_msg_type type)
 {
@@ -47,11 +58,14 @@ static void *swarmkv_msg_pack_node_list(struct swarmkv_store *store, cJSON *js_m
 	cJSON_AddItemToObject(js_msg,"node_list", js_node_list = cJSON_CreateArray());
 	struct swarmkv_node* node;
 	for (node = store->nodes; node != NULL; node = (struct swarmkv_node*)(node->hh.next)) {
-		cJSON_AddItemToArray(js_node_list, js_node = cJSON_CreateObject());
-		cJSON_AddNumberToObject(js_node,"node_id", node->node_id);
-		cJSON_AddStringToObject(js_node, "node_ip", node->ip);
-		cJSON_AddNumberToObject(js_node,"node_port", node->port);
-		cJSON_AddNumberToObject(js_node,"node_status", node->status);
+		if(node->status != FAIL)
+		{
+			cJSON_AddItemToArray(js_node_list, js_node = cJSON_CreateObject());
+			cJSON_AddNumberToObject(js_node,"node_id", node->node_id);
+			cJSON_AddStringToObject(js_node, "node_ip", node->ip);
+			cJSON_AddNumberToObject(js_node,"node_port", node->port);
+			cJSON_AddNumberToObject(js_node,"node_status", node->status);
+		}
 	}
 }
 
@@ -116,6 +130,7 @@ static size_t serialization_msg(cJSON *js_msg, char *buff, size_t buff_size)
 	msg_len = min(buff_size, strlen(msg));
 	memcpy(buff, msg, msg_len);
 	free(msg);
+	msg = NULL;
 	
 	return msg_len;
 }
@@ -483,12 +498,28 @@ size_t swarmkv_msg_pack_del_msg(struct swarmkv_store *store, char *buff, size_t 
 }
 
 //slot owner change
-size_t swarmkv_msg_pack_slot_owner_change(struct swarmkv_store *store, char *buff, size_t buff_size, int slot_id, int new_owner_id)
+size_t swarmkv_msg_pack_slot_moved(struct swarmkv_store *store, char *buff, size_t buff_size, int slot_id, int new_owner_id)
 {
 	cJSON* js_msg = NULL;
 	js_msg = cJSON_CreateObject();
 	size_t msg_len = 0;
-	enum swarmkv_msg_type type = MSG_SLOT_OWNER_CHANGE;
+	enum swarmkv_msg_type type = MSG_SLOT_MOVED;
+
+	swarmkv_msg_pack_basic_info(store, js_msg, type);
+	cJSON_AddNumberToObject(js_msg, "slot_id", slot_id);
+	cJSON_AddNumberToObject(js_msg, "new_owner", new_owner_id);
+	msg_len = serialization_msg(js_msg, buff, buff_size);
+
+	cJSON_Delete(js_msg);
+	return msg_len;
+}
+
+size_t swarmkv_msg_pack_migrate_moved(struct swarmkv_store *store, char *buff, size_t buff_size, int slot_id, int new_owner_id)
+{
+	cJSON* js_msg = NULL;
+	js_msg = cJSON_CreateObject();
+	size_t msg_len = 0;
+	enum swarmkv_msg_type type = MSG_MIGRATE_MOVED;
 
 	swarmkv_msg_pack_basic_info(store, js_msg, type);
 	cJSON_AddNumberToObject(js_msg, "slot_id", slot_id);
@@ -541,10 +572,7 @@ int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg *msg)
 	memcpy(msg->src_uuid, src_uuid->valuestring, 36);
 	msg->ttl = ttl->valueint;
 	msg->type = msg_type->valueint;
-
-	printf("msg->src_ip: %s\n", msg->src_ip);
 	
-
 	cJSON *tb_name = NULL;
 	cJSON *key = NULL;
 	cJSON *value = NULL;
@@ -646,11 +674,11 @@ int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg *msg)
 			memcpy(msg->data.del_req_data.value, value->valuestring, val_len);
 			break;
 		
-		case MSG_SLOT_OWNER_CHANGE:
+		case MSG_SLOT_MOVED:
 			slot_id = cJSON_GetObjectItem(js_msg, "slot_id");
-			msg->data.slot_owner_change_data.slot_id = slot_id->valueint;
+			msg->data.slot_moved_data.slot_id = slot_id->valueint;
 			new_owner = cJSON_GetObjectItem(js_msg, "new_owner");
-			msg->data.slot_owner_change_data.new_owner_id = new_owner->valueint;
+			msg->data.slot_moved_data.new_owner_id = new_owner->valueint;
 			break;
 
 		case MSG_PUT_REQ:
@@ -831,6 +859,13 @@ int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg *msg)
 				}
 			}
 			break;
+		case MSG_MIGRATE_MOVED:
+			slot_id = cJSON_GetObjectItem(js_msg, "slot_id");
+			msg->data.slot_moved_data.slot_id = slot_id->valueint;
+			new_owner = cJSON_GetObjectItem(js_msg, "new_owner");
+			msg->data.slot_moved_data.new_owner_id = new_owner->valueint;
+			break;
+
 		default:
 			printf("UNKNOWN msg\n");
 	}

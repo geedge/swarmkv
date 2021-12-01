@@ -22,14 +22,15 @@ enum swarmkv_msg_type
 	MSG_FAIL_RESP,                 //5
 	MSG_MIGRATE_REQ,               //6
 	MSG_MIGRATE_RESP,              //7
-	MSG_DEL_KV,                    //8
-	MSG_SLOT_OWNER_CHANGE,         //9
-	MSG_PUT_REQ,                   //10
-	MSG_PUT_RESP,                  //11
-	MSG_GET_REQ,                   //12
-	MSG_GET_RESP,                  //13   
-	MSG_INVALIDATE_KEYS_REQ,       //14
-	MSG_INVALIDATE_KEYS_RESP,      //15
+	MSG_MIGRATE_MOVED,             //8
+	MSG_DEL_KV,                    //9
+	MSG_SLOT_MOVED,                //10
+	MSG_PUT_REQ,                   //11
+	MSG_PUT_RESP,                  //12
+	MSG_GET_REQ,                   //13
+	MSG_GET_RESP,                  //14   
+	MSG_INVALIDATE_KEYS_REQ,       //15
+	MSG_INVALIDATE_KEYS_RESP,      //16
 };
 
 
@@ -144,7 +145,13 @@ struct swarmkv_del_req
 	char *value;
 };
 
-struct swarmkv_slot_owner_change
+struct slot_moved
+{
+	int slot_id;
+	int new_owner_id;
+};
+
+struct migrate_moved
 {
 	int slot_id;
 	int new_owner_id;
@@ -164,7 +171,8 @@ union MsgData
 	struct swarmkv_migrate_req migrate_req_data;
 	struct swarmkv_migrate_resp migrate_resp_data;
 	struct swarmkv_del_req del_req_data;
-	struct swarmkv_slot_owner_change slot_owner_change_data;
+	struct slot_moved slot_moved_data;
+	struct migrate_moved migrate_moved_data;
 };
 
 struct swarmkv_msg
@@ -214,4 +222,10 @@ size_t swarmkv_msg_pack_migration_resp(struct swarmkv_store *store, char *buff, 
 size_t swarmkv_msg_repack_ttl(char *raw_msg, char *buff, size_t buff_size);
 int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg* msg);
 
-size_t swarmkv_msg_pack_slot_owner_change(struct swarmkv_store *store, char *buff, size_t buff_size, int slot_id, int new_owner_id);
+size_t swarmkv_msg_pack_slot_moved(struct swarmkv_store *store, char *buff, size_t buff_size, int slot_id, int new_owner_id);
+size_t swarmkv_msg_pack_migrate_moved(struct swarmkv_store *store, char *buff, size_t buff_size, int slot_id, int new_owner_id);
+
+
+void test_cjson();
+
+
