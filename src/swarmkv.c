@@ -430,7 +430,7 @@ void swarmkv_get_with_callback(struct swarmkv_store *store, const char *table, c
 				base64_encode(key, keylen, key_base64);
 
 				char *get_req_msg = ALLOC(char, SWARMKV_MAX_MSG_SIZE);
-				printf("callback address: %ld\n", (unsigned long int)cb);
+				printf("callback address: %lu\n", (unsigned long )cb);
 				size_t msg_len = swarmkv_msg_pack_get_req_with_cb(store, get_req_msg, SWARMKV_MAX_MSG_SIZE, table, key_base64, (unsigned long int)cb, (unsigned long int)cb_arg);
 				assert(msg_len > 0);
 				swarmkv_msg_send(store->sockfd, get_req_msg, msg_len, peer_node->ip, peer_node->port);
@@ -1384,7 +1384,7 @@ void process_put_resp_msg(struct swarmkv_store* store, struct swarmkv_msg *msg, 
 		if(msg->data.put_resp_data.cb_function > 0)
 		{
 			printf("put callback\n");
-			printf("%ld\n", msg->data.put_resp_data.cb_function);
+			printf("%lu\n", msg->data.put_resp_data.cb_function);
 			char *key = NULL;
 			char *value = NULL;
 			key = ALLOC(char, SWARMKV_MAX_KEY_LEN);
