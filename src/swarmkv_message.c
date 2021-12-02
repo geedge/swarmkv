@@ -23,14 +23,11 @@ int min(int a, int b)
 	return b;
 }
 
-void test_cjson()
+void test_cjson(const char *str)
 {
 	cJSON* js_msg = NULL;
 	js_msg = cJSON_CreateObject();
-	char* str = (char*)malloc(sizeof(char)*20);
-	str = "hello";
 	cJSON_AddStringToObject(js_msg, "str", str);
-	free(str);
 	cJSON_Delete(js_msg);	
 }
 
@@ -88,7 +85,6 @@ static void *swarmkv_msg_pack_my_slot(struct swarmkv_store *store, cJSON *js_msg
 				continue;         //正在迁移中的slot不再对外宣告
 			}
 			//printf("@@@@@@@@ %d\n", store->my_node_id);
-			//因为只传输属于自己的slot, 所以不需要再携带owner_id, 本来字节数就不太够
 			cJSON_AddItemToArray(js_slot_list, js_slot = cJSON_CreateObject());
 			cJSON_AddNumberToObject(js_slot,"slot_id", store->slots[i].slot_id);
 			cJSON_AddNumberToObject(js_slot,"owner_id", store->slots[i].owner_node_id);
