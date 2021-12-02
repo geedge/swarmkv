@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <uuid/uuid.h>
+#include "swarmkv.h"
 #include "./uthash/uthash.h"
 #include "./uthash/utarray.h"
 #include "swarmkv_utils.h"

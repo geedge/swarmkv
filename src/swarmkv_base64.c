@@ -66,7 +66,7 @@ size_t base64_decode(const char *indata, size_t inlen, char *outdata)
 {
     size_t out_len = -1;
     int ret = 0;
-    if (indata == NULL || inlen <= 0 || outdata == NULL)
+    if (indata == NULL || outdata == NULL)
     {
         return out_len;
     }
