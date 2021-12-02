@@ -10,9 +10,14 @@ find_program(CMAKE_CXX_CPPCHECK NAMES cppcheck)
 if (CMAKE_CXX_CPPCHECK)
     list(
         APPEND CMAKE_CXX_CPPCHECK 
-            "--enable=warning"
+            "--enable=all"
             "--force"
+            "--std=c99"
             "--error-exitcode=1"
+            "--suppress=unreadVariable"
+            "--suppress=variableScope"
+            "--suppress=ConfigurationNotChecked"
+            "--suppress=unreachableCode"
             "--suppress=unusedFunction"
             "--suppress=missingInclude"
             "--suppress=uselessAssignmentPtrArg"
