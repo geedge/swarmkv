@@ -1976,7 +1976,6 @@ int swarmkv_parse_bootstrap_info(struct swarmkv_store *store, const char *bootst
 	return 1;
 }
 
-
 //int swarmkv_open(struct swarmkv_store *store, const char *bootstraps, const char *config, char **err)
 struct swarmkv_store *swarmkv_open(const char *bootstraps, const char *config, char **err)
 {
