@@ -33,7 +33,6 @@ enum swarmkv_msg_type
 	MSG_INVALIDATE_KEYS_RESP,      //16
 };
 
-
 struct node
 {
 	int node_id;       //Key
@@ -226,6 +225,6 @@ size_t swarmkv_msg_pack_slot_moved(struct swarmkv_store *store, char *buff, size
 size_t swarmkv_msg_pack_migrate_moved(struct swarmkv_store *store, char *buff, size_t buff_size, int slot_id, int new_owner_id);
 
 
-void test_cjson(const char *str);
+void test_cjson();
 
 

@@ -22,8 +22,6 @@ struct swarmkv_store;
 // bootstraps example: "self=0.0.0.0:8323;peers=tcp://192.168.0.100:8323,tcp://192.168.0.101:8323"
 struct swarmkv_store *swarmkv_open(const char *bootstraps, const char *config, char **err);
 void swarmkv_close(struct swarmkv_store *store);
-int swarmkv_set(struct swarmkv_store *store, const char *table, const struct swarmkv_writeoptions *options,
-				const char *key, size_t keylen, const char *value, size_t vallen, char **errptr);
 //Returend value MUST Be freed by caller.
 char *swarmkv_get(struct swarmkv_store *store, const char *table, const struct swarmkv_readoptions *options,
 					const char *key, size_t keylen, size_t *vallen, char **errptr);

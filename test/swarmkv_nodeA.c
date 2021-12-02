@@ -11,9 +11,9 @@ void get_callback_print(const char *table, const char *key, size_t keylen, const
 	printf("\n-----print callback result-----\n");
 	printf(" table: %s\n", table);
 	printf("   key: %s\n", key);
-	printf("keylen: %ld\n", keylen);
+	printf("keylen: %zu\n", keylen);
 	printf(" value: %s\n", value);
-	printf("vallen: %ld\n", vallen);
+	printf("vallen: %zu\n", vallen);
 	printf("\n");
 }
 
@@ -30,7 +30,6 @@ int main(int argc, char **argv)
 		return -1;
 	}
 
-	
 	const char* tb_name = "table0";
 	const char *key = "key3";
 	size_t keylen = strlen(key);

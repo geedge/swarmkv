@@ -23,14 +23,6 @@ int min(int a, int b)
 	return b;
 }
 
-void test_cjson(const char *str)
-{
-	cJSON* js_msg = NULL;
-	js_msg = cJSON_CreateObject();
-	cJSON_AddStringToObject(js_msg, "str", str);
-	cJSON_Delete(js_msg);	
-}
-
 //pack basic information: my id, ip, port, and msg_type
 static void *swarmkv_msg_pack_basic_info(struct swarmkv_store *store, cJSON *js_msg, enum swarmkv_msg_type type)
 {
@@ -562,7 +554,7 @@ int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg *msg)
 	cJSON* msg_type = cJSON_GetObjectItem(js_msg, "msg_type");
 	
 	msg->src_node_id = src_id->valueint;
-	msg->src_ip = ALLOC(char, strlen(src_ip->valuestring));
+	msg->src_ip = ALLOC(char, strlen(src_ip->valuestring)+1);
 	memcpy(msg->src_ip, src_ip->valuestring, strlen(src_ip->valuestring));
 	msg->src_port = src_port->valueint;
 	memcpy(msg->src_uuid, src_uuid->valuestring, 36);
@@ -583,8 +575,6 @@ int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg *msg)
 	cJSON *new_owner = NULL;
 	cJSON *kv_num = NULL;
 	cJSON *kv_list = NULL;
-	//cJSON *node_version = NULL;
-	//cJSON *slot_version = NULL;
 	int node_num = 0;
 	int slot_num = 0;
 	int tb_name_len = 0;
@@ -597,10 +587,6 @@ int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg *msg)
 		case MSG_PING:
 		case MSG_PONG:
 		case MSG_MEET_RESP:
-			//node_version = cJSON_GetObjectItem(js_msg, "node_version");
-			//msg->data.swarmkv_basic_info.node_version = node_version->valueint;
-			//slot_version = cJSON_GetObjectItem(js_msg, "slot_version");
-			//msg->data.swarmkv_basic_info.slot_version = slot_version->valueint;
 			node_list = cJSON_GetObjectItem(js_msg, "node_list");
 			slot_list = cJSON_GetObjectItem(js_msg, "slot_list");
 			node_num = cJSON_GetArraySize(node_list);
@@ -618,7 +604,7 @@ int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg *msg)
 					cJSON *node_port = cJSON_GetObjectItem(node_item, "node_port");	
 					msg->data.swarmkv_basic_info.nodes[i].node_id = node_id->valueint;
 					int ip_len = strlen(node_ip->valuestring);
-					msg->data.swarmkv_basic_info.nodes[i].ip = ALLOC(char, ip_len);
+					msg->data.swarmkv_basic_info.nodes[i].ip = ALLOC(char, ip_len+1);
 					memcpy(msg->data.swarmkv_basic_info.nodes[i].ip, node_ip->valuestring, ip_len);
 					//msg->data.swarmkv_basic_info.nodes[i].ip = node_ip->valuestring;
 					msg->data.swarmkv_basic_info.nodes[i].port = node_port->valueint;
@@ -662,9 +648,9 @@ int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg *msg)
 			tb_name_len = strlen(tb_name->valuestring);
 			key_len = strlen(key->valuestring);
 			val_len = strlen(value->valuestring);
-			msg->data.del_req_data.table_name = ALLOC(char, tb_name_len);
-			msg->data.del_req_data.key = ALLOC(char, key_len);
-			msg->data.del_req_data.value = ALLOC(char, val_len);
+			msg->data.del_req_data.table_name = ALLOC(char, tb_name_len+1);
+			msg->data.del_req_data.key = ALLOC(char, key_len+1);
+			msg->data.del_req_data.value = ALLOC(char, val_len+1);
 			memcpy(msg->data.del_req_data.table_name, tb_name->valuestring, tb_name_len);
 			memcpy(msg->data.del_req_data.key, key->valuestring, key_len);
 			memcpy(msg->data.del_req_data.value, value->valuestring, val_len);
@@ -684,9 +670,9 @@ int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg *msg)
 			tb_name_len = strlen(tb_name->valuestring);
 			key_len = strlen(key->valuestring);
 			val_len = strlen(value->valuestring);
-			msg->data.put_req_data.table_name = ALLOC(char, tb_name_len);
-			msg->data.put_req_data.key = ALLOC(char, key_len);
-			msg->data.put_req_data.value = ALLOC(char, val_len);
+			msg->data.put_req_data.table_name = ALLOC(char, tb_name_len+1);
+			msg->data.put_req_data.key = ALLOC(char, key_len+1);
+			msg->data.put_req_data.value = ALLOC(char, val_len+1);
 			memcpy(msg->data.put_req_data.table_name, tb_name->valuestring, tb_name_len);
 			memcpy(msg->data.put_req_data.key, key->valuestring, key_len);
 			memcpy(msg->data.put_req_data.value, value->valuestring, val_len);
@@ -713,9 +699,9 @@ int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg *msg)
 			tb_name_len = strlen(tb_name->valuestring);
 			key_len = strlen(key->valuestring);
 			val_len = strlen(value->valuestring);
-			msg->data.put_resp_data.table_name = ALLOC(char, tb_name_len);
-			msg->data.put_resp_data.key = ALLOC(char, key_len);
-			msg->data.put_resp_data.value = ALLOC(char, val_len);
+			msg->data.put_resp_data.table_name = ALLOC(char, tb_name_len+1);
+			msg->data.put_resp_data.key = ALLOC(char, key_len+1);
+			msg->data.put_resp_data.value = ALLOC(char, val_len+1);
 			memcpy(msg->data.put_resp_data.table_name, tb_name->valuestring, tb_name_len);
 			memcpy(msg->data.put_resp_data.key, key->valuestring, key_len);
 			memcpy(msg->data.put_resp_data.value, value->valuestring, val_len);
@@ -742,8 +728,8 @@ int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg *msg)
 			key = cJSON_GetObjectItem(js_msg, "key");
 			tb_name_len = strlen(tb_name->valuestring);
 			key_len = strlen(key->valuestring);
-			msg->data.get_req_data.table_name = ALLOC(char, tb_name_len);
-			msg->data.get_req_data.key = ALLOC(char, key_len);
+			msg->data.get_req_data.table_name = ALLOC(char, tb_name_len+1);
+			msg->data.get_req_data.key = ALLOC(char, key_len+1);
 			memcpy(msg->data.get_req_data.table_name, tb_name->valuestring, tb_name_len);
 			memcpy(msg->data.get_req_data.key, key->valuestring, key_len);
 			cb_function = cJSON_GetObjectItem(js_msg, "callback_func");
@@ -766,9 +752,9 @@ int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg *msg)
 			tb_name_len = strlen(tb_name->valuestring);
 			key_len = strlen(key->valuestring);
 			val_len = strlen(value->valuestring);
-			msg->data.get_resp_data.table_name = ALLOC(char, tb_name_len);
-			msg->data.get_resp_data.key = ALLOC(char, key_len);
-			msg->data.get_resp_data.value = ALLOC(char, val_len);
+			msg->data.get_resp_data.table_name = ALLOC(char, tb_name_len+1);
+			msg->data.get_resp_data.key = ALLOC(char, key_len+1);
+			msg->data.get_resp_data.value = ALLOC(char, val_len+1);
 			memcpy(msg->data.get_resp_data.table_name, tb_name->valuestring, tb_name_len);
 			memcpy(msg->data.get_resp_data.key, key->valuestring, key_len);
 			memcpy(msg->data.get_resp_data.value, value->valuestring, val_len);
@@ -798,9 +784,9 @@ int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg *msg)
 			tb_name_len = strlen(tb_name->valuestring);
 			key_len = strlen(key->valuestring);
 			val_len = strlen(value->valuestring);
-			msg->data.invalidate_req_data.table_name = ALLOC(char, tb_name_len);
-			msg->data.invalidate_req_data.key = ALLOC(char, key_len);
-			msg->data.invalidate_req_data.value = ALLOC(char, val_len);
+			msg->data.invalidate_req_data.table_name = ALLOC(char, tb_name_len+1);
+			msg->data.invalidate_req_data.key = ALLOC(char, key_len+1);
+			msg->data.invalidate_req_data.value = ALLOC(char, val_len+1);
 			memcpy(msg->data.invalidate_req_data.table_name, tb_name->valuestring, tb_name_len);
 			memcpy(msg->data.invalidate_req_data.key, key->valuestring, key_len);
 			memcpy(msg->data.invalidate_req_data.value, value->valuestring, val_len);
@@ -812,9 +798,9 @@ int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg *msg)
 			tb_name_len = strlen(tb_name->valuestring);
 			key_len = strlen(key->valuestring);
 			val_len = strlen(value->valuestring);
-			msg->data.invalidate_resp_data.table_name = ALLOC(char, tb_name_len);
-			msg->data.invalidate_resp_data.key = ALLOC(char, key_len);
-			msg->data.invalidate_resp_data.value = ALLOC(char, val_len);
+			msg->data.invalidate_resp_data.table_name = ALLOC(char, tb_name_len+1);
+			msg->data.invalidate_resp_data.key = ALLOC(char, key_len+1);
+			msg->data.invalidate_resp_data.value = ALLOC(char, val_len+1);
 			memcpy(msg->data.invalidate_resp_data.table_name, tb_name->valuestring, tb_name_len);
 			memcpy(msg->data.invalidate_resp_data.key, key->valuestring, key_len);
 			memcpy(msg->data.invalidate_resp_data.value, value->valuestring, val_len);
@@ -844,9 +830,9 @@ int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg *msg)
 					tb_name_len = strlen(tb_name->valuestring);
 					key_len = strlen(key->valuestring);
 					val_len = strlen(value->valuestring);
-					msg->data.migrate_resp_data.mkv[i].table_name = ALLOC(char, tb_name_len);
-					msg->data.migrate_resp_data.mkv[i].key = ALLOC(char, key_len);
-					msg->data.migrate_resp_data.mkv[i].value = ALLOC(char, val_len);
+					msg->data.migrate_resp_data.mkv[i].table_name = ALLOC(char, tb_name_len+1);
+					msg->data.migrate_resp_data.mkv[i].key = ALLOC(char, key_len+1);
+					msg->data.migrate_resp_data.mkv[i].value = ALLOC(char, val_len+1);
 					memcpy(msg->data.migrate_resp_data.mkv[i].table_name, tb_name->valuestring, tb_name_len);
 					memcpy(msg->data.migrate_resp_data.mkv[i].key, key->valuestring, key_len);
 					memcpy(msg->data.migrate_resp_data.mkv[i].value, value->valuestring, val_len);
