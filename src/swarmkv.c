@@ -1990,6 +1990,7 @@ struct swarmkv_store *swarmkv_open(const char *bootstraps, const char *config, c
 	{
 		printf("Startup failed, please reconfigure. Format: node_id=id;token=xxxxx,db=0\n");
 		free(config_info);
+		free(store);
 		return NULL;
 	}
 	store->my_node_id = config_info->node_id;
