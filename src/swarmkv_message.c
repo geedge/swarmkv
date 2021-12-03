@@ -5,10 +5,6 @@
 //check buff_size
 int buff_check(size_t buff_size)
 {
-	if(buff_size < 0)
-	{
-		return -1;
-	}
 	if(buff_size == 0)
 	{
 		return 0;
@@ -619,7 +615,7 @@ int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg *msg)
 				cJSON *slot_item = slot_list->child;
 				while(slot_item)
 				{
-					cJSON *slot_id = cJSON_GetObjectItem(slot_item, "slot_id");
+					slot_id = cJSON_GetObjectItem(slot_item, "slot_id");
 					cJSON *owner_id = cJSON_GetObjectItem(slot_item, "owner_id");
 					msg->data.swarmkv_basic_info.slots[i].slot_id = slot_id->valueint;
 					msg->data.swarmkv_basic_info.slots[i].owner_node_id = owner_id->valueint;
@@ -770,7 +766,7 @@ int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg *msg)
 			{
 				msg->data.get_resp_data.cb_function = cb_function->valueint;
 				msg->data.get_resp_data.cb_arg = cb_arg->valueint;
-				printf("uuid_version->valuestring: %ld\n", strlen(uuid_version->valuestring));
+				printf("uuid_version->valuestring: %lu\n", (unsigned long)strlen(uuid_version->valuestring));
 				memset(msg->data.get_resp_data.uuid_version, 0, sizeof(msg->data.get_resp_data.uuid_version));
 				memcpy(msg->data.get_resp_data.uuid_version, uuid_version->valuestring, strlen(uuid_version->valuestring));
 				printf("msg->data.get_resp_data.uuid_version: %s\n", msg->data.get_resp_data.uuid_version);

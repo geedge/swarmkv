@@ -4,7 +4,7 @@
 char* get_local_ip(const char *eth_inf)
 {
     int sd;
-    struct sockaddr_in sin;
+    //struct sockaddr_in sin;
     struct ifreq ifr;
  
     sd = socket(AF_INET, SOCK_DGRAM, 0);
@@ -31,7 +31,7 @@ char* get_local_ip(const char *eth_inf)
 int swarmkv_create_socket(int port)
 {
 	int sockfd;
-	char recvbuf[BUFSIZ];
+	//char recvbuf[BUFSIZ];
 	struct sockaddr_in my_addr;
 	memset(&my_addr, 0, sizeof(my_addr));
 	my_addr.sin_family = AF_INET;

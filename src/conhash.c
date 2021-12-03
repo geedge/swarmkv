@@ -1,4 +1,4 @@
-#include "swarmkv_conhash.h"
+#include "inc_internal/swarmkv_conhash.h"
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>

@@ -30,18 +30,18 @@ set_property(TARGET gtest PROPERTY INTERFACE_LINK_LIBRARIES pthread)
 ExternalProject_Add(cJSON PREFIX cJSON
         URL ${CMAKE_CURRENT_SOURCE_DIR}/cJSON-1.7.14.zip
         URL_MD5 5fc6b4bb6134f7c3bfaca9d260f294d7
-        CONFIGURE_COMMAND cmake
+        CONFIGURE_COMMAND cmake -DBUILD_SHARED_AND_STATIC_LIBS=On -DENABLE_CJSON_TEST=Off
         BUILD_COMMAND make
-        INSTALL_COMMAND make install
+        INSTALL_COMMAND ""
         BUILD_IN_SOURCE 1)
 
 ExternalProject_Get_Property(cJSON INSTALL_DIR)
-file(MAKE_DIRECTORY ${INSTALL_DIR}/include)
 message("INSTALL_DIR: ${INSTALL_DIR}")    #/build/vendor/cJSON
 
 add_library(cjson-static STATIC IMPORTED GLOBAL)
+add_dependencies(cjson-static cJSON)
 set_property(TARGET cjson-static PROPERTY IMPORTED_LOCATION ${INSTALL_DIR}/src/cJSON/libcjson.a)
-set_property(TARGET cjson-static PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${INSTALL_DIR}/include)
+set_property(TARGET cjson-static PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${INSTALL_DIR}/src/cJSON/)
 
 
 #uuid
@@ -50,7 +50,7 @@ ExternalProject_Add(uuid PREFIX uuid
         URL ${CMAKE_CURRENT_SOURCE_DIR}/libuuid-1.0.3.tar.gz
         URL_MD5 d44d866d06286c08ba0846aba1086d68
         CONFIGURE_COMMAND ./configure --prefix=<INSTALL_DIR> --disable-shared --with-pic
-        BUILD_COMMAND make
+        BUILD_COMMAND make 
         INSTALL_COMMAND make install
         BUILD_IN_SOURCE 1)
 
@@ -60,7 +60,7 @@ ExternalProject_Get_Property(uuid INSTALL_DIR)
 file(MAKE_DIRECTORY ${INSTALL_DIR}/include)
 
 add_library(uuid-static STATIC IMPORTED GLOBAL)
-#add_dependencies(uuid-static uuid)
+add_dependencies(cjson-static cJSON)
 set_property(TARGET uuid-static PROPERTY IMPORTED_LOCATION ${INSTALL_DIR}/src/uuid/.libs/libuuid.a)
 set_property(TARGET uuid-static PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${INSTALL_DIR}/include)
 
@@ -75,6 +75,7 @@ ExternalProject_Get_Property(GoogleTest INSTALL_DIR)
 file(MAKE_DIRECTORY ${INSTALL_DIR}/include)
 
 add_library(gtest STATIC IMPORTED GLOBAL)
+add_dependencies(gtest GoogleTest)
 set_property(TARGET gtest PROPERTY IMPORTED_LOCATION ${INSTALL_DIR}/lib/libgtest.a)
 set_property(TARGET gtest PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${INSTALL_DIR}/include)
 set_property(TARGET gtest PROPERTY INTERFACE_LINK_LIBRARIES pthread)
