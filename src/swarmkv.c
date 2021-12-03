@@ -14,9 +14,9 @@
 #include <netdb.h>  
 #include <sys/types.h>  
 #include <sys/ioctl.h> 
-#include <cjson/cJSON.h> 
 #include <pthread.h>
 
+#include "cJSON.h"
 #include "swarmkv_internal.h"
 #include "swarmkv_message.h"
 #include "uthash/uthash.h"

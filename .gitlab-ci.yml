@@ -12,6 +12,7 @@ stages:
 .build_by_travis:
   before_script:
   - yum makecache
+  - yum install -y openssl-devel
   - mkdir build || true
   tags:
   - share
@@ -30,7 +31,10 @@ run_test:
   stage: test
   extends: .build_by_travis
   script:
-    - cd build/test
+    - cd build/
+    - cmake3 -DCMAKE_BUILD_TYPE=Debug ..
+    - make
+    - cd test
     - ./swarmkv_gtest
 
 
