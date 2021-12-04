@@ -10,21 +10,7 @@ MESSAGE("CMAKE_CURRENT_SOURCE_DIR: ${CMAKE_CURRENT_SOURCE_DIR}")   #/home/janess
 ]]
 
 #caculate md5: md5sum filename
-#[[
-ExternalProject_Add(GoogleTest PREFIX GoogleTest
-        URL ${CMAKE_CURRENT_SOURCE_DIR}/googletest-release-1.8.0.tar.gz
-        URL_MD5 16877098823401d1bf2ed7891d7dce36
-        CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR> -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE})
 
-ExternalProject_Get_Property(GoogleTest INSTALL_DIR)
-message("INSTALL_DIR: ${INSTALL_DIR}")
-file(MAKE_DIRECTORY ${INSTALL_DIR}/include)
-
-add_library(gtest STATIC IMPORTED GLOBAL)
-set_property(TARGET gtest PROPERTY IMPORTED_LOCATION ${INSTALL_DIR}/lib/libgtest.a)
-set_property(TARGET gtest PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${INSTALL_DIR}/include)
-set_property(TARGET gtest PROPERTY INTERFACE_LINK_LIBRARIES pthread)
-]]
 
 #cjson
 ExternalProject_Add(cJSON PREFIX cJSON
@@ -60,7 +46,7 @@ ExternalProject_Get_Property(uuid INSTALL_DIR)
 file(MAKE_DIRECTORY ${INSTALL_DIR}/include)
 
 add_library(uuid-static STATIC IMPORTED GLOBAL)
-add_dependencies(cjson-static cJSON)
+add_dependencies(uuid-static uuid)
 set_property(TARGET uuid-static PROPERTY IMPORTED_LOCATION ${INSTALL_DIR}/src/uuid/.libs/libuuid.a)
 set_property(TARGET uuid-static PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${INSTALL_DIR}/include)
 
@@ -79,6 +65,20 @@ add_dependencies(gtest GoogleTest)
 set_property(TARGET gtest PROPERTY IMPORTED_LOCATION ${INSTALL_DIR}/lib/libgtest.a)
 set_property(TARGET gtest PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${INSTALL_DIR}/include)
 set_property(TARGET gtest PROPERTY INTERFACE_LINK_LIBRARIES pthread)
+
+#nanomsg
+ExternalProject_Add(cJSON PREFIX nng
+        URL ${CMAKE_CURRENT_SOURCE_DIR}/nng-1.4.0.zip 
+        URL_MD5 638e135b210197385cb7c8ae51095eb6
+        CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR> -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE})
+
+ExternalProject_Get_Property(nng INSTALL_DIR)
+file(MAKE_DIRECTORY ${INSTALL_DIR}/include)
+
+add_library(nng-static STATIC IMPORTED GLOBAL)
+add_dependencies(nng-static nng)
+set_property(TARGET nng-static PROPERTY IMPORTED_LOCATION ${INSTALL_DIR}/lib/libnng.a)
+set_property(TARGET nng-static PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${INSTALL_DIR}/include)
 
 #[[
 #openssl-3.0.0

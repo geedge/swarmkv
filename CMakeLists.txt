@@ -10,6 +10,7 @@ find_program(CMAKE_CXX_CPPCHECK NAMES cppcheck)
 if (CMAKE_CXX_CPPCHECK)
     list(
         APPEND CMAKE_CXX_CPPCHECK 
+            "--enable=warning"
             "--enable=all"
             "--force"
             "--std=c99"
@@ -21,7 +22,7 @@ if (CMAKE_CXX_CPPCHECK)
             "--suppress=unusedFunction"
             "--suppress=missingInclude"
             "--suppress=uselessAssignmentPtrArg"
-            "--suppress=unmatchedSuppression"
+
     )
     set(CMAKE_C_CPPCHECK ${CMAKE_CXX_CPPCHECK})
 else()

@@ -46,41 +46,29 @@ int cmp_by_bucket(const void* a, const void* b)
 void *swarmkv_conhash_create(struct swarmkv_node *nodes, uint32_t points_per_bucket)
 {
 	struct conhash* ch=NULL;
-	int node_num = 0;
-	struct swarmkv_node *node = NULL;
-	struct swarmkv_node *node_tmp = NULL;	
-	HASH_ITER(hh, nodes, node, node_tmp)
-	{
-		node_num++;
-	}
-	//int node_num = HASH_COUNT(nodes);
-	int i=0,j=0;
+	int node_num = HASH_COUNT(nodes);
+	int j=0;
 	uint32_t randval;
 	ch			   = (struct conhash *)calloc( sizeof( struct conhash ), 1 );
 	ch->point	   = (struct ch_point*)calloc( sizeof( struct ch_point ), node_num * points_per_bucket);
-	//ch			   = (struct conhash *)calloc( 1, sizeof( struct conhash ) );
-	//ch->point	   = (struct ch_point*)calloc( node_num * points_per_bucket, sizeof( struct ch_point ) );
 	ch->bucket_id_upbound = node_num;
 	ch->bucket_cnt = node_num;
-	ch->bucket_hit = (uint32_t*)calloc(sizeof(uint32_t), node_num);
+	ch->bucket_hit = (uint32_t*)calloc(sizeof(uint32_t),node_num);
 	ch->points_per_bucket = points_per_bucket;
 	ch->point_num = points_per_bucket*node_num;
 
-	node = NULL;
-	node_tmp = NULL;
-	HASH_ITER(hh, nodes, node, node_tmp)
+	struct swarmkv_node *nd;
+	for(nd = nodes; nd!=NULL; nd = (struct swarmkv_node *)(nd->hh.next))
 	{
-		if(node->status != FAIL)
+		int i=0;
+		for(i=0;i<ch->points_per_bucket;i++)
 		{
-			for(i=0;i<ch->points_per_bucket;i++)
-			{
-				randval=(((uint32_t)(-1))/ch->point_num)*(i*ch->bucket_id_upbound+node->node_id);
-				ch->point[j*ch->bucket_id_upbound+i].node_id=node->node_id;
-				ch->point[j*ch->bucket_id_upbound+i].point_val=randval%SWARMKV_DEFAULT_SLOT_NUM;
-				ch->point[j*ch->bucket_id_upbound+i].hit_cnt=0;
-			}
-			j++;
+			randval=(((uint32_t)(-1))/ch->point_num)*(i*ch->bucket_id_upbound+nd->node_id);
+            ch->point[j*ch->bucket_id_upbound+i].node_id=nd->node_id;
+            ch->point[j*ch->bucket_id_upbound+i].point_val=randval%SWARMKV_DEFAULT_SLOT_NUM;
+			ch->point[j*ch->bucket_id_upbound+i].hit_cnt=0;
 		}
+		j++;
 	}
 	qsort(ch->point,ch->point_num, sizeof(struct ch_point),cmp_by_key);
 	return ch;

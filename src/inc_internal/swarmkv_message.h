@@ -6,10 +6,20 @@
 
 #include "swarmkv_internal.h"
 
-#define SWARMKV_MAX_MSG_SIZE 65500
-#define OP_SUCCESS 1
+//UDP数据包的最大理论长度是 65535 - 8 - 20 = 65507B,UDP包头有16bit的数据包长度字段，所以是2^16
+//但是最大MTU是1500, UDP_len = 1500-20-8 = 1472B
+//Internet上的标准MTU大多是576B，UDP_len=576-20-8=548B
+//超过MTU的UDP包在IP层会分片然后重组，如果分片丢失就会直接丢弃这个UDP数据包
+//考虑MTU TCP数据包的大小，TCP_len=1500-20-20 = 1460，不考虑则无限制
+#define SWARMKV_MAX_MSG_SIZE 65507
+
 #define OP_UNSUCCESS -1
 #define REQ_NODE_ERROR 0      //I am not the owner of the key
+#define OP_SUCCESS 1
+#define MEET_RECIEVE 2
+#define MEET_REJECT 3
+#define MEET_ID_CONFLICT 2
+
 #define SWARMKV_DEFAULT_TTL 1
 
 enum swarmkv_msg_type
@@ -24,7 +34,7 @@ enum swarmkv_msg_type
 	MSG_MIGRATE_RESP,              //7
 	MSG_MIGRATE_MOVED,             //8
 	MSG_DEL_KV,                    //9
-	MSG_SLOT_MOVED,                //10
+	MSG_SLOT_OWNER_CHANGE,         //10
 	MSG_PUT_REQ,                   //11
 	MSG_PUT_RESP,                  //12
 	MSG_GET_REQ,                   //13
@@ -32,6 +42,7 @@ enum swarmkv_msg_type
 	MSG_INVALIDATE_KEYS_REQ,       //15
 	MSG_INVALIDATE_KEYS_RESP,      //16
 };
+
 
 struct node
 {
@@ -45,8 +56,15 @@ struct node
 //struct swarmkv_health_check
 struct swarmkv_basic_infomation
 {
-	//int node_version;
-	//int slot_version;
+	int node_num;
+	struct node nodes[SWARMKV_DEFAULT_NODE_NUM];
+	int slot_num;
+	struct swarmkv_slot slots[SWARMKV_DEFAULT_SLOT_NUM];
+};
+
+struct swarmkv_meet_resp
+{
+	int op_result;
 	int node_num;
 	struct node nodes[SWARMKV_DEFAULT_NODE_NUM];
 	int slot_num;
@@ -159,6 +177,7 @@ struct migrate_moved
 union MsgData
 {
 	struct swarmkv_basic_infomation swarmkv_basic_info;
+	struct swarmkv_meet_resp meet_resp_data;
 	struct swarmkv_fail_req fail_req_data;
 	struct swarmkv_fail_resp fail_resp_data;
 	struct swarmkv_put_req put_req_data;
@@ -189,7 +208,8 @@ struct swarmkv_msg
 size_t swarmkv_msg_pack_ping(struct swarmkv_store *store, char *buff, size_t buff_size);
 size_t swarmkv_msg_pack_pong(struct swarmkv_store *store, char *buff, size_t buff_size);
 size_t swarmkv_msg_pack_meet_req(struct swarmkv_store *store, char *buff, size_t buff_size);
-size_t swarmkv_msg_pack_meet_resp(struct swarmkv_store *store, char *buff, size_t buff_size);
+//size_t swarmkv_msg_pack_meet_resp(struct swarmkv_store *store, char *buff, size_t buff_size);
+size_t swarmkv_msg_pack_meet_resp(struct swarmkv_store *store, char *buff, size_t buff_size, int op_result);
 size_t swarmkv_msg_pack_fail_req(struct swarmkv_store *store, char *buff, size_t buff_size, int fail_node_id);
 size_t swarmkv_msg_pack_fail_response(struct swarmkv_store *store, char *buff, size_t buff_size, int fail_node_id, int op_result);
 size_t swarmkv_msg_pack_del_msg(struct swarmkv_store *store, char *buff, size_t buff_size,
@@ -223,8 +243,5 @@ int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg* msg);
 
 size_t swarmkv_msg_pack_slot_moved(struct swarmkv_store *store, char *buff, size_t buff_size, int slot_id, int new_owner_id);
 size_t swarmkv_msg_pack_migrate_moved(struct swarmkv_store *store, char *buff, size_t buff_size, int slot_id, int new_owner_id);
-
-
-void test_cjson();
 
 

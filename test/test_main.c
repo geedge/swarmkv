@@ -6,5 +6,5 @@
 
 int main(int argc, char **argv)
 {
-    test_cjson();
+    //test_cjson();
 }
