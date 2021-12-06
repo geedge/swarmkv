@@ -19,7 +19,7 @@ int min(int a, int b)
 	return b;
 }
 
-//pack basic information: my id, ip, port, and msg_type
+//pack basic inforswarmkv_msg_pack_slot_owner_changetion: my id, ip, port, and msg_type
 static void *swarmkv_msg_pack_basic_info(struct swarmkv_store *store, cJSON *js_msg, enum swarmkv_msg_type type)
 {
 	cJSON_AddNumberToObject(js_msg, "my_id", store->my_node_id);
@@ -136,6 +136,18 @@ size_t swarmkv_msg_pack_meet_resp(struct swarmkv_store *store, char *buff, size_
 		swarmkv_msg_pack_node_list(store, js_msg);
 		swarmkv_msg_pack_all_slot(store, js_msg);
 	}
+	size_t msg_len = serialization_msg(js_msg, buff, buff_size);
+	cJSON_Delete(js_msg);
+	return msg_len;
+}
+
+//pack meet_req msg
+size_t swarmkv_msg_pack_join_complete(struct swarmkv_store *store, char *buff, size_t buff_size)
+{	
+	cJSON* js_msg = NULL;
+	js_msg = cJSON_CreateObject();
+	enum swarmkv_msg_type type = MSG_JOIN_COMPPLETE;
+	swarmkv_msg_pack_basic_info(store, js_msg, type);
 	size_t msg_len = serialization_msg(js_msg, buff, buff_size);
 	cJSON_Delete(js_msg);
 	return msg_len;
@@ -608,7 +620,8 @@ int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg *msg)
 				}
 			}
 			break;
-
+		case MSG_JOIN_COMPPLETE:
+			break;
 		case MSG_FAIL_REQ:
 			failed_node_id = cJSON_GetObjectItem(js_msg, "node_id");
 			msg->data.fail_req_data.failed_node_id = failed_node_id->valueint;

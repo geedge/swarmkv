@@ -28,7 +28,7 @@ int nng_create_socket_to_connect(const char* url)
         printf("create server socket failed!\n");
         return -1;
     }
-    if (nn_connec(socket, url) < 0)
+    if (nn_connect(socket, url) < 0)
     {
         printf("connect server sock failed!\r\n");
         nn_close(socket);

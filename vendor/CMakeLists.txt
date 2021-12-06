@@ -66,19 +66,48 @@ set_property(TARGET gtest PROPERTY IMPORTED_LOCATION ${INSTALL_DIR}/lib/libgtest
 set_property(TARGET gtest PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${INSTALL_DIR}/include)
 set_property(TARGET gtest PROPERTY INTERFACE_LINK_LIBRARIES pthread)
 
+
+#[[
 #nanomsg
-ExternalProject_Add(cJSON PREFIX nng
-        URL ${CMAKE_CURRENT_SOURCE_DIR}/nng-1.4.0.zip 
-        URL_MD5 638e135b210197385cb7c8ae51095eb6
+#nanomsg在运行时需要glibc中的动态链接库
+ExternalProject_Add(nanomsg PREFIX nanomsg
+        URL ${CMAKE_CURRENT_SOURCE_DIR}/nanomsg.zip
+        URL_MD5 1fe1f872bf9c83258d642b47d9cd1f1b
+        CONFIGURE_COMMAND cmake -DBUILD_SHARED_AND_STATIC_LIBS=On -DENABLE_NNG_TEST=Off -DNN_ENABLE_GETADDRINFO_A=OFF
+        BUILD_COMMAND make
+        INSTALL_COMMAND ""
+        BUILD_IN_SOURCE 1)
+
+ExternalProject_Get_Property(nanomsg INSTALL_DIR)
+add_library(nanomsg-static STATIC IMPORTED GLOBAL)
+add_dependencies(nanomsg-static nanomsg)
+set_property(TARGET nanomsg-static PROPERTY IMPORTED_LOCATION ${INSTALL_DIR}/src/nanomsg/libnanomsg.a)
+set_property(TARGET nanomsg-static PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${INSTALL_DIR}/src/nanomsg/)
+]]
+#[[
+ExternalProject_Add(nanomsg PREFIX nanomsg
+        URL ${CMAKE_CURRENT_SOURCE_DIR}/nanomsg-1.1.5.tar.gz
+        URL_MD5 272db464bac1339b6cea060dd63b22d4
         CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR> -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE})
+]]
+
+
+ExternalProject_Add(nng PREFIX nng
+        URL ${CMAKE_CURRENT_SOURCE_DIR}/nng-1.5.2.tar.gz 
+        URL_MD5 8adba2c9396dd0648bcfd7280bc48679
+        CONFIGURE_COMMAND cmake -DBUILD_SHARED_AND_STATIC_LIBS=On -DENABLE_NNG_TEST=Off
+        BUILD_COMMAND make
+        INSTALL_COMMAND ""
+        BUILD_IN_SOURCE 1)
 
 ExternalProject_Get_Property(nng INSTALL_DIR)
 file(MAKE_DIRECTORY ${INSTALL_DIR}/include)
 
 add_library(nng-static STATIC IMPORTED GLOBAL)
 add_dependencies(nng-static nng)
-set_property(TARGET nng-static PROPERTY IMPORTED_LOCATION ${INSTALL_DIR}/lib/libnng.a)
-set_property(TARGET nng-static PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${INSTALL_DIR}/include)
+set_property(TARGET nng-static PROPERTY IMPORTED_LOCATION ${INSTALL_DIR}/src/nng/libnng.a)
+set_property(TARGET nng-static PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${INSTALL_DIR}/src/nng)
+
 
 #[[
 #openssl-3.0.0

@@ -3,9 +3,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <nanomsg/pair.h>
-#include <nanomsg/bus.h>
-#include <nanomsg/nn.h>
+//#include "nanomsg/pair.h"
+//#include "nanomsg/nn.h"
+//#include "nanomsg/pair.h"
+#include "nanomsg/nn.h"
+#include "nanomsg/pair.h"
+#include "nanomsg/tcp.h"
 
 #define BUF_LEN 100
 

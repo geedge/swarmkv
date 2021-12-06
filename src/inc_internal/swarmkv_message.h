@@ -41,6 +41,7 @@ enum swarmkv_msg_type
 	MSG_GET_RESP,                  //14   
 	MSG_INVALIDATE_KEYS_REQ,       //15
 	MSG_INVALIDATE_KEYS_RESP,      //16
+	MSG_JOIN_COMPPLETE,            //17
 };
 
 
@@ -243,5 +244,7 @@ int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg* msg);
 
 size_t swarmkv_msg_pack_slot_moved(struct swarmkv_store *store, char *buff, size_t buff_size, int slot_id, int new_owner_id);
 size_t swarmkv_msg_pack_migrate_moved(struct swarmkv_store *store, char *buff, size_t buff_size, int slot_id, int new_owner_id);
+size_t swarmkv_msg_pack_join_complete(struct swarmkv_store *store, char *buff, size_t buff_size);
+size_t swarmkv_msg_pack_slot_owner_change(struct swarmkv_store *store, char *buff, size_t buff_size, int slot_id, int new_owner_id);
 
 

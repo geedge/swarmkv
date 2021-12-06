@@ -6,7 +6,7 @@ SET(CMAKE_BUILD_TYPE "Debug")
 SET(CMAKE_CXX_FLAGS_DEBUG "$ENV{CXXFLAGS} -O0 -Wall -g2 -ggdb")
 SET(CMAKE_CXX_FLAGS_RELEASE "$ENV{CXXFLAGS} -O3 -Wall")
 
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}../include)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../include)
 
 # 创建可执行程序
 add_executable(swarmkv_nodeA swarmkv_nodeA.c)

@@ -22,7 +22,7 @@ if (CMAKE_CXX_CPPCHECK)
             "--suppress=unusedFunction"
             "--suppress=missingInclude"
             "--suppress=uselessAssignmentPtrArg"
-
+            "--suppress=unmatchedSuppression"
     )
     set(CMAKE_C_CPPCHECK ${CMAKE_CXX_CPPCHECK})
 else()
