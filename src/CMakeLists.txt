@@ -14,7 +14,8 @@ MESSAGE("CMAKE_CURRENT_SOURCE_DIR: ${CMAKE_CURRENT_SOURCE_DIR}")  #/home/janessa
 #set(${SWARMKV_SRC} swarmkv.c swarmkv_net.c swarmkv_message.c)
 aux_source_directory(. SWARMKV_SRC)
 message("***swarmkv_src: ${SWARMKV_SRC}")
-include_directories(${PROJECT_SOURCE_DIR}/include)
+message("***swarmkv_src: ${PROJECT_SOURCE_DIR}")  #/home/janessa/Desktop/swarmkv_cppcheck/src
+include_directories(${PROJECT_SOURCE_DIR}/../include)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/inc_internal)
 
 add_library(swarmkv_frame_static STATIC ${SWARMKV_SRC})

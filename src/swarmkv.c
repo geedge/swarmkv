@@ -1188,8 +1188,9 @@ void process_meet_resp_msg(struct swarmkv_store* store, struct swarmkv_msg *msg,
 		}
 		swarmkv_init_node(store, msg->data.swarmkv_basic_info);
 		swarmkv_init_slot_table(store, msg->data.swarmkv_basic_info);
+		/*
 		struct swarmkv_node *node = NULL;	
-		struct swarmkv_node *tmp = NULL;	
+		struct swarmkv_node *tmp = NULL;
 		int wait_meet_node = 0;
 		HASH_ITER(hh, store->nodes, node, tmp)
 		{
@@ -1198,6 +1199,7 @@ void process_meet_resp_msg(struct swarmkv_store* store, struct swarmkv_msg *msg,
 				wait_meet_node++;
 			}
 		}
+		*/
 		store->meet_recieve_cnt++;
 		//超过半数的节点接受了我的meet，可以发起迁移slot的请求
 		if(store->meet_recieve_cnt > store->cluster_size/2)
