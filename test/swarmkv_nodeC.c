@@ -19,7 +19,7 @@ int main(int argc, char **argv)
 		return -1;
 	}
 	
-	sleep(4);
+	sleep(20);
     swarmkv_GetSlotAssign(store);
 	swarmkv_close(store);
 	return 1;

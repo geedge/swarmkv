@@ -146,7 +146,7 @@ size_t swarmkv_msg_pack_join_complete(struct swarmkv_store *store, char *buff, s
 {	
 	cJSON* js_msg = NULL;
 	js_msg = cJSON_CreateObject();
-	enum swarmkv_msg_type type = MSG_JOIN_COMPPLETE;
+	enum swarmkv_msg_type type = MSG_JOIN_COMPLETE;
 	swarmkv_msg_pack_basic_info(store, js_msg, type);
 	size_t msg_len = serialization_msg(js_msg, buff, buff_size);
 	cJSON_Delete(js_msg);
@@ -620,7 +620,7 @@ int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg *msg)
 				}
 			}
 			break;
-		case MSG_JOIN_COMPPLETE:
+		case MSG_JOIN_COMPLETE:
 			break;
 		case MSG_FAIL_REQ:
 			failed_node_id = cJSON_GetObjectItem(js_msg, "node_id");

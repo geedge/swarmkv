@@ -75,7 +75,6 @@ int swarmkv_msg_send(int sockfd, char* msg, size_t msg_len, char* peer_ip, uint1
 	peer_addr.sin_family = AF_INET;
 	peer_addr.sin_port = htons(peer_port);
 	peer_addr.sin_addr.s_addr = inet_addr(peer_ip);
-	//printf("test\n");
 	//if(sendto(sockfd, msg, msg_len, 0, (struct sockaddr*)&peer_addr, sizeof(peer_addr)) < 0) 
 	//printf("check msg!!! %s\n",msg);
     if(sendto(sockfd, msg, strlen(msg), 0, (struct sockaddr*)&peer_addr, sizeof(peer_addr)) < 0) 
@@ -83,6 +82,6 @@ int swarmkv_msg_send(int sockfd, char* msg, size_t msg_len, char* peer_ip, uint1
 		printf("sendto error: %s\n", strerror(errno));
         return -1;
     }
-	//printf("send a msg\n");
     return 1;
 }
+

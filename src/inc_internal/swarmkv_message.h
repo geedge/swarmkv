@@ -18,7 +18,7 @@
 #define OP_SUCCESS 1
 #define MEET_RECIEVE 2
 #define MEET_REJECT 3
-#define MEET_ID_CONFLICT 2
+#define MEET_ID_CONFLICT 4
 
 #define SWARMKV_DEFAULT_TTL 1
 
@@ -41,7 +41,7 @@ enum swarmkv_msg_type
 	MSG_GET_RESP,                  //14   
 	MSG_INVALIDATE_KEYS_REQ,       //15
 	MSG_INVALIDATE_KEYS_RESP,      //16
-	MSG_JOIN_COMPPLETE,            //17
+	MSG_JOIN_COMPLETE,            //17
 };
 
 

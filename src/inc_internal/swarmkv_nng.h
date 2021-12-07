@@ -14,3 +14,4 @@
 
 int nng_create_socket_to_listen(const char* url);
 int nng_create_socket_to_connect(const char* url);
+int swarmkv_msg_nng_send(int sockfd, const char* msg, size_t msg_len);

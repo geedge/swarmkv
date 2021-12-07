@@ -34,10 +34,18 @@ int nng_create_socket_to_connect(const char* url)
         nn_close(socket);
         return -1;
     }
-    printf("server init success!\n");
+    printf("client init success!\n");
     return socket;
 }
 
+int swarmkv_msg_nng_send(int sockfd, const char* msg, size_t msg_len)
+{
+    if(nn_send(sockfd, msg, msg_len, 0)<0)
+    {
+        return -1;
+    }
+    return 0;
+}
 /*
 int nng_socket(int nng_socket)
 {

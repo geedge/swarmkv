@@ -94,7 +94,7 @@ struct swarmkv_store
 	int cluster_size;
 	int cluster_state;     //0 STABLE || 1 MEETING
 	int meet_recieve_cnt;
-	uint32_t start_time;    //meet不能超时
+	uint32_t meet_time;    //meet不能超时
 	struct swarmkv_node *nodes;		  //key: int node_id, value: struct swarmkv_node*
 	int sockfd;
 	int nng_socket;
@@ -134,5 +134,6 @@ struct msg_count
 	int get_resp_cnt;
 	int invalidate_req_cnt;
 	int invalidate_resp_cnt;
+	int join_complete_cnt;
 };
 

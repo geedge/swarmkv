@@ -117,7 +117,6 @@ int swarmkv_msg_send_invalidate_key_req(struct swarmkv_store *store, const char 
 		base64_encode(value, vallen, value_base64);
 
 		int* cached_node_id = NULL;
-		struct swarmkv_node* cache_node = NULL;
 		cached_node_id=(int*)utarray_front(kv->nodes_have_key_cached);
 		if(cached_node_id == NULL)
 		{
@@ -130,6 +129,7 @@ int swarmkv_msg_send_invalidate_key_req(struct swarmkv_store *store, const char 
 		{
 			for(cached_node_id=(int*)utarray_front(kv->nodes_have_key_cached); cached_node_id!= NULL; cached_node_id=(int*)utarray_next(kv->nodes_have_key_cached,cached_node_id)) 
 			{
+				struct swarmkv_node* cache_node = NULL;
 				HASH_FIND_INT(store->nodes, cached_node_id, cache_node);
 				if(cache_node != NULL)
 				{
@@ -171,6 +171,37 @@ int caculate_key_slot_id(struct swarmkv_store *store, const char *key, size_t ke
 	assert(slot_id == slot.slot_id);
 	//printf("***slot_id:%d\n",slot.slot_id);
 	return slot.slot_id;
+}
+
+//broadcast
+int swarmkv_msg_udp_broadcast(struct swarmkv_store* store, char* msg, size_t msg_len, struct swarmkv_node *except_node)
+{
+	struct swarmkv_node *node = NULL;
+	struct swarmkv_node *node_tmp = NULL;
+	HASH_ITER(hh, store->nodes, node, node_tmp)
+	{
+		if(node->node_id != store->my_node_id)
+		{
+			if(except_node != NULL)
+			{
+				if(node->node_id != except_node->node_id)
+				{
+					if(swarmkv_msg_send(store->sockfd, msg, msg_len, node->ip, node->port) < 0)
+					{
+						return -1;
+					}
+				}
+			}
+			else
+			{
+				if(swarmkv_msg_send(store->sockfd, msg, msg_len, node->ip, node->port) < 0 )
+				{
+					return -1;
+				}
+			}
+		}	
+	}
+	return 1;
 }
 
 //put
@@ -468,8 +499,8 @@ int swarmkv_parse_node(struct swarmkv_store *store, struct swarmkv_basic_infomat
 			new_node->ping_sent_time = 0;
 			new_node->pong_received_time = 0;
 			new_node->pfail_cnt = 0;
-			//new_node->status = swarmkv_basic_info.nodes[i].status;
-			new_node->status = WAITMEET;
+			new_node->status = swarmkv_basic_info.nodes[i].status;
+			//new_node->status = WAITMEET;
 			HASH_ADD_INT(store->nodes, node_id, new_node);
 			store->cluster_size++;
 		}
@@ -492,11 +523,14 @@ int swarmkv_parse_node(struct swarmkv_store *store, struct swarmkv_basic_infomat
 					size_t msg_len = swarmkv_msg_pack_fail_req(store, fail_req_msg, SWARMKV_MAX_MSG_SIZE, swarmkv_basic_info.nodes[i].node_id);
 					//swarmkv_msg_pack_fail_req(store, id);
 					assert(msg_len > 0);
+					swarmkv_msg_udp_broadcast(store, fail_req_msg, msg_len, NULL);
+					/*
 					struct swarmkv_node *node = NULL;
 					for(node = store->nodes; node != NULL; node = (struct swarmkv_node*)(node->hh.next)) 
 					{
 						swarmkv_msg_send(store->sockfd, fail_req_msg, msg_len, node->ip, node->port);
 					}
+					*/
 					free(fail_req_msg);
 					fail_req_msg = NULL;
 				}			
@@ -529,7 +563,7 @@ int swarmkv_parse_slot(struct swarmkv_store *store, struct swarmkv_basic_infomat
 
 int swarmkv_init_node(struct swarmkv_store *store, struct swarmkv_basic_infomation swarmkv_basic_info)
 {
-	pthread_rwlock_wrlock(&store->rwlock);
+	//pthread_rwlock_wrlock(&store->rwlock);
 	struct swarmkv_node* new_node = NULL;
 	for (int i = 0; i < swarmkv_basic_info.node_num; i++)
 	{	
@@ -557,13 +591,13 @@ int swarmkv_init_node(struct swarmkv_store *store, struct swarmkv_basic_infomati
 			meet_req = NULL;
 		}
 	}
-	pthread_rwlock_unlock(&store->rwlock);
+	//pthread_rwlock_unlock(&store->rwlock);
 	return 1;
 }
 
 void swarmkv_init_slot_table(struct swarmkv_store *store, struct swarmkv_basic_infomation swarmkv_basic_info)
 {
-	pthread_rwlock_wrlock(&store->rwlock);
+	//pthread_rwlock_wrlock(&store->rwlock);
 	int i=0;
 	for (i = 0; i < swarmkv_basic_info.slot_num; i++)
 	{
@@ -573,12 +607,21 @@ void swarmkv_init_slot_table(struct swarmkv_store *store, struct swarmkv_basic_i
 			store->slots[slot_id].owner_node_id = swarmkv_basic_info.slots[i].owner_node_id;
 		}
 	}
-	pthread_rwlock_unlock(&store->rwlock);
+	//pthread_rwlock_unlock(&store->rwlock);
 }
 
 
 int caculate_slot_table(struct swarmkv_store *store, struct swarmkv_slot *new_slots)
 {
+	/*
+	struct swarmkv_node *node = NULL;
+	struct swarmkv_node *node_tmp = NULL;
+	HASH_ITER(hh, store->nodes, node, node_tmp)
+	{
+		printf("caculate: %d ", node->node_id);
+	}
+	printf("\n");
+	*/
 	int node_num = HASH_COUNT(store->nodes);
 	int point_num = node_num * SWARMKV_POINTS_PER_NODE_ON_CHR;
 	struct conhash* ch=NULL;
@@ -587,7 +630,7 @@ int caculate_slot_table(struct swarmkv_store *store, struct swarmkv_slot *new_sl
 	int j = 0;
 	for(i=0; i<point_num; i++)
 	{
-		//printf("%d ", ch->point[i].point_val);
+		//printf("%u/%u ", ch->point[i].point_val, ch->point[i].node_id);
 		if( i == 0)
 		{
 			for(j = 0; j<=ch->point[i].point_val; j++)
@@ -606,7 +649,6 @@ int caculate_slot_table(struct swarmkv_store *store, struct swarmkv_slot *new_sl
 			for(j = ch->point[i-1].point_val+1; j<=ch->point[i].point_val; j++)
 			{
 				new_slots[j].slot_id = j;
-				//printf("%d ", new_slots[j].slot_id);
 				new_slots[j].owner_node_id = ch->point[i].node_id;
 			}
 		}
@@ -643,6 +685,10 @@ void msg_statistics(int msg_type)
 		case MSG_MEET_RESP:  
 			printf("It is a MEET RESPONSE msg\n");
 			msg_cnt.meet_resp_cnt++;
+			break;
+		case MSG_JOIN_COMPLETE:
+			printf("It is a JOIN COMPLETE msg\n");
+			msg_cnt.join_complete_cnt++;
 			break;
 		case MSG_FAIL_REQ:
 			printf("It is a FAIL REQUEST msg\n");
@@ -727,8 +773,6 @@ void process_pong_msg(struct swarmkv_store* store, struct swarmkv_msg *msg, stru
 		src_node->status = PFAIL;
 		src_node->pfail_cnt = 0;
 	}
-	//parse and compare nodes and slots infomation with my store
-	//swarmkv_parse_node_and_slot(store, msg->data.swarmkv_basic_info);
 	swarmkv_parse_node(store, msg->data.swarmkv_basic_info);
 	swarmkv_parse_slot(store, msg->data.swarmkv_basic_info);
 }
@@ -737,16 +781,8 @@ void process_pong_msg(struct swarmkv_store* store, struct swarmkv_msg *msg, stru
 void process_slot_owner_change_msg(struct swarmkv_store* store, struct swarmkv_msg *msg, struct swarmkv_node *src_node)
 {
 	pthread_rwlock_wrlock(&store->rwlock);
-
 	int slot_id = msg->data.slot_moved_data.slot_id;
 	store->slots[slot_id].owner_node_id = msg->data.slot_moved_data.new_owner_id;
-	/*
-	//只能接受原来的slot持有者的更新广播
-	if(store->slots[slot_id].owner_node_id == src_node->node_id)
-	{
-		store->slots[slot_id].owner_node_id = msg->data.slot_moved_data.new_owner_id;
-	}
-	*/
 	pthread_rwlock_unlock(&store->rwlock);
 }
 
@@ -761,25 +797,26 @@ void process_migrate_req_msg(struct swarmkv_store* store, struct swarmkv_msg *ms
 		//建立一个TCP连接到请求迁移的节点
 		char node_url[64];
 		int n = snprintf(node_url, sizeof(node_url), "tcp://%s:%d", src_node->ip, src_node->port);
+		printf("%s\n",node_url);
 		assert(n > 0);
-		if(n >= sizeof(node_url))
-		{
-			printf("too big\n");
-		}
 		store->nng_socket = nng_create_socket_to_connect(node_url);
 		assert(store->nng_socket >= 0);
-		printf("store->nng_socket : %d\n", store->nng_socket);
 
 		struct swarmkv_slot *new_slots = ALLOC(struct swarmkv_slot, SWARMKV_DEFAULT_SLOT_NUM);
 		caculate_slot_table(store, new_slots);
+		/*
+		for(int i=0; i<SWARMKV_DEFAULT_SLOT_NUM; i++)
+		{
+			printf("%d:%d  ", new_slots[i].slot_id, new_slots[i].owner_node_id);
+		}
+		printf("\n");
+		*/
 		if(new_slots[migrate_slot_id].owner_node_id == src_node->node_id)
 		{
 			store->slots[migrate_slot_id].status = 1;  //migrating,该状态的slot不会再对外宣称是自己的slot
 			struct swarmkv_table* table = NULL;
 			struct swarmkv_table *tmp = NULL;
 			struct swarmkv_migrate_kv mkv[SWARMKV_ONCE_MIGRATE_KV_NUM];
-			//struct swarmkv_key_value total_mkv_record[SWARMKV_MAX_SLOT_KVNUM];
-			//int total_mkv_cnt = 0;
 			char *migrate_resp_msg = ALLOC(char, SWARMKV_MAX_MSG_SIZE);
 			size_t msg_len = 0;
 			int i=0;
@@ -790,37 +827,31 @@ void process_migrate_req_msg(struct swarmkv_store* store, struct swarmkv_msg *ms
 				HASH_ITER(hh, table->owned_value_hash, owned_kv, owned_kv_tmp)
 				{
 					int slot_id = caculate_key_slot_id(store, owned_kv->key, owned_kv->keylen);
-					//printf("----------------  %d==%d\n",migrate_slot_id,slot_id);
 					if(migrate_slot_id == slot_id)
 					{
 						//total_mkv_record[total_mkv_cnt] = owned_kv;
 						//total_mkv_cnt++;
 						mkv[i].table_name = ALLOC(char, strlen(table->table_name)+1);
 						memcpy(mkv[i].table_name, table->table_name, strlen(table->table_name));
-						//mkv[i].table_name = table->table_name;
 						mkv[i].key = ALLOC(char, SWARMKV_MAX_KEY_LEN);
 						mkv[i].value = ALLOC(char, SWARMKV_MAX_VAL_LEN);
 						base64_encode(owned_kv->key, owned_kv->keylen, mkv[i].key);
-						base64_encode(owned_kv->value, owned_kv->vallen, mkv[i].value);
-						
+						base64_encode(owned_kv->value, owned_kv->vallen, mkv[i].value);	
 						if(i == SWARMKV_ONCE_MIGRATE_KV_NUM-1)
 						{
 							printf("mkv_num: %d\n", i);
-							//发包
 							msg_len = swarmkv_msg_pack_migration_resp(store, migrate_resp_msg, SWARMKV_MAX_MSG_SIZE, migrate_slot_id, mkv, i);
 							assert(msg_len>0);
-							nn_send(store->nng_socket, migrate_resp_msg, msg_len, 0);
-							//swarmkv_msg_send(store->sockfd, migrate_resp_msg, msg_len, src_node->ip, src_node->port);
+							swarmkv_msg_nng_send(store->nng_socket, migrate_resp_msg, msg_len);
 							memset(migrate_resp_msg, 0, SWARMKV_MAX_MSG_SIZE);
-							
 							for(int j=0; j<i; j++)
 							{
 								free(mkv[j].key);
 								mkv[j].key=NULL;
 								free(mkv[j].value);
 								mkv[j].value=NULL;
-								free(mkv[i].table_name);
-								mkv[i].table_name = NULL;
+								free(mkv[j].table_name);
+								mkv[j].table_name = NULL;
 							}
 							i = 0;
 						}
@@ -831,12 +862,12 @@ void process_migrate_req_msg(struct swarmkv_store* store, struct swarmkv_msg *ms
 					}
 				}	
 			}
-			if(i>0)
+			if(i > 0)
 			{
-				//printf("mkv_num: %d\n", i);
+				printf("mkv_num: %d\n", i);
 				msg_len = swarmkv_msg_pack_migration_resp(store, migrate_resp_msg, SWARMKV_MAX_MSG_SIZE, migrate_slot_id, mkv, i);
-				assert(msg_len>0);
-				nn_send(store->nng_socket, migrate_resp_msg, msg_len, 0);
+				assert(msg_len > 0);
+				swarmkv_msg_nng_send(store->nng_socket, migrate_resp_msg, msg_len);
 				//swarmkv_msg_send(store->sockfd, migrate_resp_msg, msg_len, src_node->ip, src_node->port);
 				memset(migrate_resp_msg, 0, SWARMKV_MAX_MSG_SIZE);
 				for(int j=0; j<i; j++)
@@ -845,33 +876,38 @@ void process_migrate_req_msg(struct swarmkv_store* store, struct swarmkv_msg *ms
 					mkv[j].key=NULL;
 					free(mkv[j].value);
 					mkv[j].value=NULL;
-					free(mkv[i].table_name);
-					mkv[i].table_name = NULL;
+					free(mkv[j].table_name);
+					mkv[j].table_name = NULL;
 				}
-				i = 0;
 			}
+
 			//发一条空消息代表该slot迁移结束
 			msg_len = swarmkv_msg_pack_migration_resp(store, migrate_resp_msg, SWARMKV_MAX_MSG_SIZE, migrate_slot_id, NULL, 0);
 			assert(msg_len > 0);
-			nn_send(store->nng_socket, migrate_resp_msg, msg_len, 0);
-			//swarmkv_msg_send(store->sockfd, migrate_resp_msg, msg_len, src_node->ip, src_node->port);
+			printf("%s\n", migrate_resp_msg);
+			if(swarmkv_msg_nng_send(store->nng_socket, migrate_resp_msg, msg_len) < 0)
+			{
+				printf("send fail\n");
+			}
 			free(migrate_resp_msg);
 			migrate_resp_msg = NULL;
 
-			//阻塞？等待迁移接收者的完成响应
-			char nng_buf[BUFSIZE] = {0};
-			int rc = nn_recv(store->nng_socket, nng_buf, BUFSIZE, 0);
+			//阻塞等待迁移接收者的完成响应
+			char nng_recv_buf[BUFSIZE];
+			memset(nng_recv_buf, 0, BUFSIZE);
+			int rc = nn_recv(store->nng_socket, nng_recv_buf, BUFSIZE, 0);
 			if(rc > 0)
 			{
-				printf("recieve server msg: %s\r\n", nng_buf);
+				printf("recieve server msg: %s\r\n", nng_recv_buf);
 				struct swarmkv_msg *slot_owner_change_msg = ALLOC(struct swarmkv_msg, 1);
-				int unpack_res = swarmkv_js_msg_unpack(nng_buf, slot_owner_change_msg);
+				int unpack_res = swarmkv_js_msg_unpack(nng_recv_buf, slot_owner_change_msg);
 				assert(unpack_res>0);
 				msg_statistics(slot_owner_change_msg->type); 
 				if(slot_owner_change_msg->type == MSG_SLOT_OWNER_CHANGE)
 				{
-					process_slot_owner_change_msg(store, slot_owner_change_msg, src_node);
-					//删除该slot所有kv,遍历起来有点慢，重构slot-table-kv的结构
+					//删除该slot所有kv,遍历起来有点慢，重构slot-table-kv的结构,未写
+					int slot_id = slot_owner_change_msg->data.slot_moved_data.slot_id;
+					store->slots[slot_id].owner_node_id = slot_owner_change_msg->data.slot_moved_data.new_owner_id;
 					store->slots[migrate_slot_id].status = 0;
 					nn_close(store->nng_socket);
 				}
@@ -881,28 +917,6 @@ void process_migrate_req_msg(struct swarmkv_store* store, struct swarmkv_msg *ms
 					printf("It is not slot_owner_change_msg : %d\n", slot_owner_change_msg->type);
 				}
 			}
-			memset(nng_buf, 0, BUFSIZE);
-
-			/*
-			//迁移完就把slot_owner_id改为请求者的id
-			//change the slot owner on my store->slots
-			store->slots[migrate_slot_id].last_owner_id = store->my_node_id;
-			store->slots[migrate_slot_id].owner_node_id = src_node->node_id;
-			store->slots[migrate_slot_id].status = 0;
-			//广播一条消息，告诉大家这个slot的持有者改变了
-			char *slot_moved_msg = ALLOC(char, SWARMKV_MAX_MSG_SIZE);
-			int slot_moved_msg_len = swarmkv_msg_pack_slot_owner_change(store, slot_moved_msg, SWARMKV_MAX_MSG_SIZE, migrate_slot_id, src_node->node_id);
-			assert(slot_moved_msg_len>0);
-
-			struct swarmkv_node *node = NULL;
-			struct swarmkv_node *node_tmp = NULL;
-			HASH_ITER(hh, store->nodes, node, node_tmp)
-			{
-				swarmkv_msg_send(store->sockfd, slot_moved_msg, slot_moved_msg_len, node->ip, node->port);
-			}
-			free(slot_moved_msg);
-			slot_moved_msg = NULL;
-			*/
 		}
 		else
 		{
@@ -928,22 +942,30 @@ void process_migrate_req_msg(struct swarmkv_store* store, struct swarmkv_msg *ms
 
 void process_migrate_resp_msg(struct swarmkv_store* store, struct swarmkv_msg *msg, struct swarmkv_node *src_node)
 {
-	pthread_rwlock_wrlock(&store->rwlock);	
+	//pthread_rwlock_wrlock(&store->rwlock);	
 	int migrate_slot_id = msg->data.migrate_req_data.slot_id;
 	if(msg->data.migrate_resp_data.kv_num == 0)
 	{
 		//该slot的最后一个resp，广播一个slot_owner修改 （接收者收到这个消息之后应该删除该slot的所有kv）
 		char *slot_owner_change_msg = ALLOC(char, SWARMKV_MAX_MSG_SIZE);
-		int slot_owner_change_msg_len = swarmkv_msg_pack_slot_owner_change(store, slot_owner_change_msg, SWARMKV_MAX_MSG_SIZE, migrate_slot_id, src_node->node_id);
+		int slot_owner_change_msg_len = swarmkv_msg_pack_slot_owner_change(store, slot_owner_change_msg, SWARMKV_MAX_MSG_SIZE, migrate_slot_id, store->my_node_id);
 		assert(slot_owner_change_msg_len>0);
-
+		
+		if(swarmkv_msg_nng_send(store->nng_socket, slot_owner_change_msg, slot_owner_change_msg_len) < 0)
+		{
+			printf("send failed!\r\n");
+			nn_close(store->nng_socket);
+		}
+		swarmkv_msg_udp_broadcast(store, slot_owner_change_msg, slot_owner_change_msg_len, src_node);
+		store->slots[migrate_slot_id].owner_node_id = store->my_node_id;
+		/*
 		struct swarmkv_node *node = NULL;
 		struct swarmkv_node *node_tmp = NULL;
 		HASH_ITER(hh, store->nodes, node, node_tmp)
 		{
 			if(node->node_id == src_node->node_id)
 			{
-				if(nn_send(store->nng_socket, slot_owner_change_msg, slot_owner_change_msg_len, 0) < 0)
+				if(swarmkv_msg_nng_send(store->nng_socket, slot_owner_change_msg, slot_owner_change_msg_len) < 0)
 				{
 					printf("send failed!\r\n");
 					nn_close(store->nng_socket);
@@ -954,6 +976,7 @@ void process_migrate_resp_msg(struct swarmkv_store* store, struct swarmkv_msg *m
 				swarmkv_msg_send(store->sockfd, slot_owner_change_msg, slot_owner_change_msg_len, node->ip, node->port);
 			}
 		}
+		*/
 		free(slot_owner_change_msg);
 		slot_owner_change_msg = NULL;
 	}
@@ -1010,47 +1033,32 @@ void process_migrate_resp_msg(struct swarmkv_store* store, struct swarmkv_msg *m
 					kv->vallen = vallen;
 				}
 			}
-			//对每一个kv,发送一个del响应，表示自己已经收到某个kv并保存，原始节点可以删除该kv
-			/*
-			char *del_msg = ALLOC(char, SWARMKV_MAX_MSG_SIZE);
-			size_t msg_len = swarmkv_msg_pack_del_msg(store, del_msg, SWARMKV_MAX_MSG_SIZE, table->table_name, msg->data.migrate_resp_data.mkv[i].key, msg->data.migrate_resp_data.mkv[i].value);
-			assert(msg_len>0);
-			swarmkv_msg_send(store->sockfd, del_msg, msg_len, src_node->ip, src_node->port);
-			free(del_msg);
-			del_msg = NULL;
-			*/
 			free(key);
 			key = NULL;
 			free(value);
 			value = NULL;
 		}
 	}
-	pthread_rwlock_unlock(&store->rwlock);
+	//pthread_rwlock_unlock(&store->rwlock);
 }
 
 void process_meet_req_msg(struct swarmkv_store* store, struct swarmkv_msg *msg, struct swarmkv_node *src_node)
 {
+	pthread_rwlock_wrlock(&store->rwlock);
+	printf("start process meet req\n");
 	int meet_result = 0;
 	if(store->cluster_state == CLUSTER_MEETING)
 	{
+		printf("\nreject\n");
 		//reject
 		meet_result = MEET_REJECT;
-		/*
-		char *meet_resp_msg = ALLOC(char, SWARMKV_MAX_MSG_SIZE);
-		size_t meet_resp_msg_len = swarmkv_msg_pack_meet_resp(store, meet_resp_msg, SWARMKV_MAX_MSG_SIZE, MEET_REJECT);
-		assert(meet_resp_msg > 0);
-		swarmkv_msg_send(store->sockfd, meet_resp_msg, meet_resp_msg_len, src_node->ip, src_node->port);
-		free(meet_resp_msg);
-		meet_resp_msg = NULL;
-		*/
 	}
 	else
 	{
-		pthread_rwlock_wrlock(&store->rwlock);
 		if(src_node == NULL)
 		{
-			store->cluster_state == CLUSTER_MEETING;
-			printf("Meet a new node\n");
+			printf("meet a new node: %d\n", msg->src_node_id);
+			store->cluster_state = CLUSTER_MEETING;
 			src_node = ALLOC(struct swarmkv_node, 1);
 			src_node->node_id = msg->src_node_id;
 			src_node->ip = ALLOC(char, strlen(msg->src_ip)+1);
@@ -1064,14 +1072,7 @@ void process_meet_req_msg(struct swarmkv_store* store, struct swarmkv_msg *msg, 
 
 			//send a meet response msg
 			meet_result = MEET_RECIEVE;
-			/*
-			char *meet_resp_msg = ALLOC(char, SWARMKV_MAX_MSG_SIZE);
-			size_t meet_resp_msg_len = swarmkv_msg_pack_meet_resp(store, meet_resp_msg, SWARMKV_MAX_MSG_SIZE, MEET_RECIEVE);
-			assert(meet_resp_msg > 0);
-			swarmkv_msg_send(store->sockfd, meet_resp_msg, meet_resp_msg_len, src_node->ip, src_node->port);
-			free(meet_resp_msg);
-			meet_resp_msg = NULL;
-			*/
+			printf("store->cluster_state: %d\n", store->cluster_state);
 		}
 		else
 		{
@@ -1080,18 +1081,10 @@ void process_meet_req_msg(struct swarmkv_store* store, struct swarmkv_msg *msg, 
 				printf("A meet req from a ONLINE NODE??\n");
 				//reject for node_id conflict
 				meet_result = MEET_ID_CONFLICT;
-				/*
-				char *meet_resp_msg = ALLOC(char, SWARMKV_MAX_MSG_SIZE);
-				size_t meet_resp_msg_len = swarmkv_msg_pack_meet_resp(store, meet_resp_msg, SWARMKV_MAX_MSG_SIZE, MEET_ID_CONFLICT);
-				assert(meet_resp_msg > 0);
-				swarmkv_msg_send(store->sockfd, meet_resp_msg, meet_resp_msg_len, src_node->ip, src_node->port);
-				free(meet_resp_msg);
-				meet_resp_msg = NULL;
-				*/
 			}
 			else
 			{
-				store->cluster_state == CLUSTER_MEETING;
+				store->cluster_state = CLUSTER_MEETING;
 				if(src_node->status==FAIL || src_node->status==PFAIL)
 				{
 					printf("Meet a fail/pfail node\n");
@@ -1099,7 +1092,7 @@ void process_meet_req_msg(struct swarmkv_store* store, struct swarmkv_msg *msg, 
 					src_node->port = msg->src_port;
 					src_node->ping_sent_time = 0;
 					src_node->pong_received_time = 0;
-					src_node->status = ON;
+					src_node->status = WAITMEET;
 					src_node->pfail_cnt = 0;
 				}
 				else if(src_node->status == WAITMEET)
@@ -1108,70 +1101,54 @@ void process_meet_req_msg(struct swarmkv_store* store, struct swarmkv_msg *msg, 
 				}
 				//send a meet response msg
 				meet_result = MEET_RECIEVE;
-				/*
-				char *meet_resp_msg = ALLOC(char, SWARMKV_MAX_MSG_SIZE);
-				size_t meet_resp_msg_len = swarmkv_msg_pack_meet_resp(store, meet_resp_msg, SWARMKV_MAX_MSG_SIZE, MEET_RECIEVE);
-				assert(meet_resp_msg > 0);
-				swarmkv_msg_send(store->sockfd, meet_resp_msg, meet_resp_msg_len, src_node->ip, src_node->port);
-				free(meet_resp_msg);
-				meet_resp_msg = NULL;
-				*/
 			}
 		}
-		//send a meet response msg
-		/*
-		char *meet_resp_msg = ALLOC(char, SWARMKV_MAX_MSG_SIZE);
-		size_t meet_resp_msg_len = swarmkv_msg_pack_meet_resp(store, meet_resp_msg, SWARMKV_MAX_MSG_SIZE, meet_result);
-		assert(meet_resp_msg > 0);
-		swarmkv_msg_send(store->sockfd, meet_resp_msg, meet_resp_msg_len, src_node->ip, src_node->port);
-		free(meet_resp_msg);
-		meet_resp_msg = NULL;
-		*/
-		pthread_rwlock_unlock(&store->rwlock);
 	}
 	char *meet_resp_msg = ALLOC(char, SWARMKV_MAX_MSG_SIZE);
+	//printf("pack meet resp 0 \n");
 	size_t meet_resp_msg_len = swarmkv_msg_pack_meet_resp(store, meet_resp_msg, SWARMKV_MAX_MSG_SIZE, meet_result);
+	//printf("pack meet resp 1 \n");
 	assert(meet_resp_msg > 0);
-	swarmkv_msg_send(store->sockfd, meet_resp_msg, meet_resp_msg_len, src_node->ip, src_node->port);
+	//printf("%s\n", meet_resp_msg);
+	swarmkv_msg_send(store->sockfd, meet_resp_msg, meet_resp_msg_len, msg->src_ip, msg->src_port);
 	free(meet_resp_msg);
 	meet_resp_msg = NULL;
+	pthread_rwlock_unlock(&store->rwlock);
 }
 
 void process_meet_resp_msg(struct swarmkv_store* store, struct swarmkv_msg *msg, struct swarmkv_node *src_node)
 {
+	printf("start process meet resp\n");
 	pthread_rwlock_wrlock(&store->rwlock);
 	if(msg->data.meet_resp_data.op_result==MEET_REJECT)
 	{
-		//感觉也不用在这里检查，应该在process_msg_thread里检查
-
-		//检查本次meet是否过期，如果没有过期
-		//等随机时间重新给所有节点发送meet请求
-		/*
-		clock_t current_time = clock();
-		if(current_time - store->start_time > SWARMKV_DEFAULT_MEET_TIME_US)
+		//在process_msg_thread里检查
+		printf("recieve a meet reject\n");	
+		if(src_node == NULL)
 		{
-			store->start_time = clock();
-			store->meet_recieve_cnt = 0;
-			struct swarmkv_node *node = NULL;	
-			struct swarmkv_node *tmp = NULL;	
-			HASH_ITER(hh, store->nodes, node, tmp)
-			{
-				char *meet_req = ALLOC(char, SWARMKV_MAX_MSG_SIZE);
-				size_t msg_len = swarmkv_msg_pack_meet_req(store, meet_req, SWARMKV_MAX_MSG_SIZE);
-				assert(msg_len > 0);
-				swarmkv_msg_send(store->sockfd, meet_req, msg_len, node->ip, node->port);
-				free(meet_req);
-				meet_req = NULL;
-			}
+			printf("meet a new node: %d\n", msg->src_node_id);
+			store->cluster_state = CLUSTER_MEETING;
+			src_node = ALLOC(struct swarmkv_node, 1);
+			src_node->node_id = msg->src_node_id;
+			src_node->ip = ALLOC(char, strlen(msg->src_ip)+1);
+			memcpy(src_node->ip, msg->src_ip, strlen(msg->src_ip));
+			src_node->port = msg->src_port;
+			src_node->ping_sent_time = 0;
+			src_node->pong_received_time = 0;
+			src_node->status = WAITMEET;
+			src_node->pfail_cnt = 0;
+			HASH_ADD_INT(store->nodes, node_id, src_node);
+			store->cluster_size++;
 		}
-		*/
 	}
 	else if(msg->data.meet_resp_data.op_result==MEET_ID_CONFLICT)
 	{
 		//重新设置ID
+		printf("recieve a meet conflict, please reassign the node ID\n");	
 	}
 	else
 	{
+		printf("meet recieve\n");
 		if(src_node == NULL)
 		{
 			src_node = ALLOC(struct swarmkv_node, 1);
@@ -1188,26 +1165,23 @@ void process_meet_resp_msg(struct swarmkv_store* store, struct swarmkv_msg *msg,
 		}
 		swarmkv_init_node(store, msg->data.swarmkv_basic_info);
 		swarmkv_init_slot_table(store, msg->data.swarmkv_basic_info);
-		/*
-		struct swarmkv_node *node = NULL;	
-		struct swarmkv_node *tmp = NULL;
-		int wait_meet_node = 0;
-		HASH_ITER(hh, store->nodes, node, tmp)
-		{
-			if(node->status == WAITMEET)
-			{
-				wait_meet_node++;
-			}
-		}
-		*/
 		store->meet_recieve_cnt++;
+		printf("%d %d\n", store->meet_recieve_cnt, store->cluster_size);
 		//超过半数的节点接受了我的meet，可以发起迁移slot的请求
-		if(store->meet_recieve_cnt > store->cluster_size/2)
+		if(store->meet_recieve_cnt > (store->cluster_size-1)/2)
 		{
-			store->start_time = 0;
+			printf("caculate slot\n");
+			store->meet_time = 0;
 			//caculate slot table
 			struct swarmkv_slot *new_slots = ALLOC(struct swarmkv_slot, SWARMKV_DEFAULT_SLOT_NUM);
 			caculate_slot_table(store, new_slots);
+			/*
+			for(int i=0; i<SWARMKV_DEFAULT_SLOT_NUM; i++)
+			{
+				printf("%d:%d  ", new_slots[i].slot_id, new_slots[i].owner_node_id);
+			}
+			printf("\n");
+			*/
 			for(int i=0; i<SWARMKV_DEFAULT_SLOT_NUM; i++)
 			{
 				//重新计算后，属于自己的slot，发送迁移请求
@@ -1229,9 +1203,9 @@ void process_meet_resp_msg(struct swarmkv_store* store, struct swarmkv_msg *msg,
 					migrate_req_msg = NULL;
 
 					//建立一个TCP连接
-					//char *url = "tcp://127.0.0.1:2021";
+					//char *url = "tcp://127.0.0.1:8323";
 					char node_url[64];
-					int n = snprintf(node_url, sizeof(node_url), "tcp://%s:%d", curr_node->ip, curr_node->port);
+					int n = snprintf(node_url, sizeof(node_url), "tcp://%s:%d", store->my_ip, store->my_port);
 					assert(n > 0);
 					if(n >= sizeof(node_url))
 					{
@@ -1240,14 +1214,15 @@ void process_meet_resp_msg(struct swarmkv_store* store, struct swarmkv_msg *msg,
 					}
 					store->nng_socket = nng_create_socket_to_listen(node_url);
 					assert(store->nng_socket >= 0);
-					char nng_buf[BUFSIZE] = {0};
+					char nng_buf[BUFSIZE];
 					while(1)
 					{
 						//阻塞读取
+						memset(nng_buf, 0, BUFSIZE);
 						int rc = nn_recv(store->nng_socket, nng_buf, BUFSIZE, 0);
 						if (rc < 0)
 						{
-							printf("nn_recv failed! error\n");
+							//printf("nn_recv failed! error\n");
 							continue;
 						}
 						else
@@ -1259,39 +1234,42 @@ void process_meet_resp_msg(struct swarmkv_store* store, struct swarmkv_msg *msg,
 							msg_statistics(migrate_resp_msg->type);    	//统计各类数据包个数
 							if(migrate_resp_msg->type == MSG_MIGRATE_RESP)
 							{
+								printf("process migrate resp\n");
 								process_migrate_resp_msg(store, migrate_resp_msg, curr_node);
 								//最后一个包处理完毕，关掉nng_socket
 								if(migrate_resp_msg->data.migrate_resp_data.kv_num == 0)
-								{
+								{	
 									nn_close(store->nng_socket);
+									break;
 								}
+								//printf("migrate_resp_msg->data.migrate_resp_data.kv_num: %d\n", migrate_resp_msg->data.migrate_resp_data.kv_num);
 							}
 							else
 							{
 								//应该只会收到migrate_resp消息才对
 								printf("it is not a migrate response? %d\n", migrate_resp_msg->type);
 							}
+							free(migrate_resp_msg);
+							migrate_resp_msg = NULL;
 						}
 					}
 					//nn_close(store->nng_socket);
 				}
 			}
+			free(new_slots);
+			new_slots = NULL;
 			//所有slot都迁移完毕,广播一个节点加入成功的数据包
 			char *join_complete_msg = ALLOC(char, SWARMKV_MAX_MSG_SIZE);
 			size_t join_complete_msg_len = swarmkv_msg_pack_join_complete(store, join_complete_msg, SWARMKV_MAX_MSG_SIZE);
 			assert(join_complete_msg_len>0);
-			struct swarmkv_node *node = NULL;
-			struct swarmkv_node *node_tmp = NULL;
-			HASH_ITER(hh, store->nodes, node, node_tmp)
-			{
-				swarmkv_msg_send(store->sockfd, join_complete_msg, join_complete_msg_len, node->ip, node->port);
-			}
+			swarmkv_msg_udp_broadcast(store, join_complete_msg, join_complete_msg_len, NULL);
 			free(join_complete_msg);
 			join_complete_msg = NULL;
 		}
 		else
 		{
-			//检查本次meet请求过程是否超时,超时要重新给所有节点发送meet请求，应该在process_msg_thread里检查
+			//do nothing
+			//回到process_msg_thread里检查本次meet请求过程是否超时
 		}
 	}
 	pthread_rwlock_unlock(&store->rwlock);
@@ -1854,7 +1832,9 @@ int swarmkv_msg_unpack(struct swarmkv_store* store, char *buf)
 				}
 			}
 			break;
-		case MSG_JOIN_COMPPLETE:
+
+		case MSG_JOIN_COMPLETE:
+			printf("MSG_JOIN_COMPLETE\n");
 			process_join_complete_msg(store, msg, src_node);
 			break;
 
@@ -2127,32 +2107,30 @@ void *swarmkv_msg_processing_thread(void *arg)
 			printf("buff=%s\n",recvbuf);
 			swarmkv_msg_unpack(store, recvbuf);	
 		}
-		if(store->start_time != 0)
+		if(store->meet_time != 0)
 		{
 			clock_t current_time = clock();
-			if(current_time - store->start_time > SWARMKV_DEFAULT_MEET_TIME_US)
+			if(current_time - store->meet_time > SWARMKV_DEFAULT_MEET_TIME_US)
 			{
+				printf(">>>>>>>>>>\nmeet chaoshi\n\n");
 				//生成随机时间并等待
 				time_t timep;
 				time(&timep);  
 				printf("%s", ctime(&timep));
 				//PrintFunction();
 				srand((unsigned)time(NULL));
-				int temp=rand()%4;
+				int temp=rand()%4+2;
 				sleep(temp);
+
 				//重新发送请求
 				store->meet_recieve_cnt = 0;
-				struct swarmkv_node *node = NULL;	
-				struct swarmkv_node *tmp = NULL;	
-				HASH_ITER(hh, store->nodes, node, tmp)
-				{
-					char *meet_req = ALLOC(char, SWARMKV_MAX_MSG_SIZE);
-					size_t msg_len = swarmkv_msg_pack_meet_req(store, meet_req, SWARMKV_MAX_MSG_SIZE);
-					assert(msg_len > 0);
-					swarmkv_msg_send(store->sockfd, meet_req, msg_len, node->ip, node->port);
-					free(meet_req);
-					meet_req = NULL;
-				}
+				char *meet_req = ALLOC(char, SWARMKV_MAX_MSG_SIZE);
+				size_t msg_len = swarmkv_msg_pack_meet_req(store, meet_req, SWARMKV_MAX_MSG_SIZE);
+				assert(msg_len > 0);
+				swarmkv_msg_udp_broadcast(store, meet_req, msg_len, NULL);
+				free(meet_req);
+				meet_req = NULL;
+				store->meet_time = clock();
 			}
 		}
 		/*
@@ -2236,7 +2214,8 @@ int swarmkv_parse_bootstrap_info(struct swarmkv_store *store, const char *bootst
 
 	char *p = NULL;
 	strtok_r(bootstrap_info, ";", &p);
-	if(bootstrap_info == NULL || p == NULL)
+	//if(bootstrap_info == NULL || p == NULL)
+	if(bootstrap_info == NULL)
 	{
 		free(bootstrap_tmp);
 		bootstrap_tmp = NULL;
@@ -2261,39 +2240,51 @@ int swarmkv_parse_bootstrap_info(struct swarmkv_store *store, const char *bootst
 	store->sockfd = swarmkv_create_socket(store->my_port);
 	printf("store->sockfd : %d\n", store->sockfd);
 
-	//peers=192.168.0.100:8323,192.168.0.101:8323
-	char *peer_node_addr = NULL;
-	strtok_r(p, "=", &peer_node_addr);
-	//192.168.0.100:8323,192.168.0.101:8323
-	int meet_node_cnt = 0;
-	char *p1 = NULL;
-	peer_node_addr = strtok_r(peer_node_addr, ",", &p);
-	while(peer_node_addr != NULL)
+	char *tmp = NULL;
+	char *pp = strtok_r(p, ";", &tmp);  
+	if(pp!=NULL)
 	{
-		//192.168.0.100:8323
-		printf("peer_node_addr: %s\n",peer_node_addr);
-		char *peer_ip = NULL;
-		uint16_t peer_port;
-		peer_ip = strtok_r(peer_node_addr, ":", &p1);
-		peer_port = atoi(p1);
-		//send meet msg to each bootstrap peer node
-		char *meet_req = ALLOC(char, SWARMKV_MAX_MSG_SIZE);
-		size_t msg_len = swarmkv_msg_pack_meet_req(store, meet_req, SWARMKV_MAX_MSG_SIZE);
-		assert(msg_len > 0);
-		swarmkv_msg_send(store->sockfd, meet_req, msg_len, peer_ip, peer_port);
-		free(meet_req);
-		meet_req = NULL;
-		meet_node_cnt++;
-		peer_node_addr = strtok_r(NULL, ",", &p);
+		printf("** %s\n",p);
+		//peers=192.168.0.100:8323,192.168.0.101:8323
+		char *peer_node_addr = NULL;
+		strtok_r(p, "=", &peer_node_addr);
+		//192.168.0.100:8323,192.168.0.101:8323
+		int meet_node_cnt = 0;
+
+		peer_node_addr = strtok_r(peer_node_addr, ",", &p);
+		while(peer_node_addr != NULL)
+		{
+			//192.168.0.100:8323
+			char *p1 = NULL;
+			printf("peer_node_addr: %s\n",peer_node_addr);
+			char *peer_ip = NULL;
+			uint16_t peer_port;
+			peer_ip = strtok_r(peer_node_addr, ":", &p1);
+			peer_port = atoi(p1);
+			//send meet msg to each bootstrap peer node
+			char *meet_req = ALLOC(char, SWARMKV_MAX_MSG_SIZE);
+			size_t msg_len = swarmkv_msg_pack_meet_req(store, meet_req, SWARMKV_MAX_MSG_SIZE);
+			assert(msg_len > 0);
+			swarmkv_msg_send(store->sockfd, meet_req, msg_len, peer_ip, peer_port);
+			free(meet_req);
+			meet_req = NULL;
+			meet_node_cnt++;
+			peer_node_addr = strtok_r(NULL, ",", &p);
+		}
+		if(meet_node_cnt == 0)
+		{
+			printf("error: None of the meet messages were sent successfully.\n");
+			return -1;
+		}
+		store->meet_time = clock();
 	}
-	
+	else
+	{
+		store->meet_time = 0;
+	}
 	free(bootstrap_tmp);
 	bootstrap_tmp = NULL;
-	if(meet_node_cnt == 0)
-	{
-		printf("error: None of the meet messages were sent successfully.\n");
-		return -1;
-	}
+	
 	return 1;
 }
 
@@ -2342,9 +2333,10 @@ struct swarmkv_store *swarmkv_open(const char *bootstraps, const char *config, c
 	HASH_ADD_INT(store->nodes, node_id, myself); 
 
 	store->cluster_state = CLUSTER_STABLE;
-	store->cluster_size = 0;
+	store->cluster_size = 1;
 	store->meet_recieve_cnt = 0;
-	store->start_time = clock();
+	printf("store->meet_time: %u\n", store->meet_time);
+	
 
 	//init slots[SWARMKV_DEFAULT_SLOT_NUM], all slot is belong to me
 	int i = 0;

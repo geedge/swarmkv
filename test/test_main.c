@@ -2,9 +2,31 @@
 #include <pthread.h>
 #include <unistd.h>
 
-#include "../src/inc_internal/swarmkv_message.h"
+#include "../src/inc_internal/swarmkv_nng.h"
 
 int main(int argc, char **argv)
 {
-    //test_cjson();
+    //nng_listen();
+    char* url = "tcp://172.16.225.2:8323";
+    int sockfd = nng_create_socket_to_listen(url);
+
+    while(1)
+    {
+        //阻塞读取
+        char *buf = (char*)malloc(sizeof(char)*200);
+        int rc = nn_recv(sockfd, &buf, 200, 0);
+        if (rc < 0)
+        {
+            printf("nn_recv failed! error\n");
+            continue;
+        }
+        else
+        {
+            printf("recieve client msg: %s\r\n",  buf);
+            const char* msg = "world";
+            swarmkv_msg_nng_send(sockfd, msg, strlen(msg));
+        }
+        nn_freemsg (buf);
+    }
+    nn_close(sockfd);
 }
