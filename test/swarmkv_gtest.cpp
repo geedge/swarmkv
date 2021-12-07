@@ -226,7 +226,7 @@ TEST_F(SwarmkvClusterCommuTest, PutRemote)
 
 TEST(SwarmkvClusterOpenTest, ThreeNode)
 {
-	const char *bootstraps_0 = "self=172.16.225.2:8323;peers=172.16.225.2:9323";
+	const char *bootstraps_0 = "self=172.16.225.2:8323";
 	const char *config_0 = "node_id=0;token=49ffb3ae-8e7e-40ab-bc3f-824567e932fe,db=0";
 	char *err_0 = NULL;
 	struct swarmkv_store *store_0 = NULL;

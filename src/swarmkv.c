@@ -789,6 +789,7 @@ void process_slot_owner_change_msg(struct swarmkv_store* store, struct swarmkv_m
 void process_migrate_req_msg(struct swarmkv_store* store, struct swarmkv_msg *msg, struct swarmkv_node *src_node)
 {
 	int migrate_slot_id = msg->data.migrate_req_data.slot_id;
+	//如果是meet状态，算slot的时候要把之前WAITMEET的节点排除
 	if(store->slots[migrate_slot_id].owner_node_id == store->my_node_id)
 	{
 		pthread_rwlock_wrlock(&store->rwlock);
@@ -1049,7 +1050,7 @@ void process_meet_req_msg(struct swarmkv_store* store, struct swarmkv_msg *msg, 
 	int meet_result = 0;
 	if(store->cluster_state == CLUSTER_MEETING)
 	{
-		printf("\nreject\n");
+		printf("\n%d reject\n", store->my_node_id);
 		//reject
 		meet_result = MEET_REJECT;
 	}

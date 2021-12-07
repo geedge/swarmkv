@@ -762,10 +762,10 @@ int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg *msg)
 			{
 				msg->data.get_resp_data.cb_function = cb_function->valueint;
 				msg->data.get_resp_data.cb_arg = cb_arg->valueint;
-				printf("uuid_version->valuestring: %ld\n", strlen(uuid_version->valuestring));
+				//printf("uuid_version->valuestring: %zu\n", strlen(uuid_version->valuestring));
 				memset(msg->data.get_resp_data.uuid_version, 0, sizeof(msg->data.get_resp_data.uuid_version));
 				memcpy(msg->data.get_resp_data.uuid_version, uuid_version->valuestring, strlen(uuid_version->valuestring));
-				printf("msg->data.get_resp_data.uuid_version: %s\n", msg->data.get_resp_data.uuid_version);
+				//printf("msg->data.get_resp_data.uuid_version: %s\n", msg->data.get_resp_data.uuid_version);
 			}
 			break;	
 		
