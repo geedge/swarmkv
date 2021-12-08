@@ -1,9 +1,13 @@
-cmake_minimum_required (VERSION 2.8)
+cmake_minimum_required(VERSION 2.8)
 
 include(ExternalProject)
 
 set(VENDOR_ROOT ${CMAKE_BINARY_DIR}/vendor)
 set(VENDOR_BUILD ${CMAKE_BINARY_DIR}/vendor/vbuild)
+
+MESSAGE("Vendor build output path: ${VENDOR_BUILD}")
+
+file(MAKE_DIRECTORY ${VENDOR_BUILD}/include)
 
 #[[
 MESSAGE("PROJECT_NAME: ${PROJECT_NAME}")       #swarmkv
@@ -26,20 +30,17 @@ set_property(TARGET gtest PROPERTY INTERFACE_LINK_LIBRARIES pthread)
 ]]
 
 #cjson
-ExternalProject_Add(cJSON
-        PREFIX ${VENDOR_ROOT}/cJSON
+ExternalProject_Add(cJSON PREFIX cJSON
         URL ${CMAKE_CURRENT_SOURCE_DIR}/cJSON-1.7.14.zip
         URL_MD5 5fc6b4bb6134f7c3bfaca9d260f294d7
-        CONFIGURE_COMMAND cmake -DBUILD_SHARED_AND_STATIC_LIBS=On -DENABLE_CJSON_TEST=Off -DCMAKE_INSTALL_PREFIX=${VENDOR_BUILD}
-        BUILD_COMMAND make
-        INSTALL_COMMAND make install
-        BUILD_IN_SOURCE 1)
+        CMAKE_ARGS -DBUILD_SHARED_AND_STATIC_LIBS=On -DENABLE_CJSON_TEST=Off -DCMAKE_INSTALL_PREFIX=${VENDOR_BUILD}
+        INSTALL_DIR ${VENDOR_BUILD})
 
 
 add_library(cjson-static STATIC IMPORTED GLOBAL)
 add_dependencies(cjson-static cJSON)
 set_property(TARGET cjson-static PROPERTY IMPORTED_LOCATION ${VENDOR_BUILD}/lib64/libcjson.a)
-set_property(TARGET cjson-static PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${VENDOR_BUILD}/include/cjson)
+#set_property(TARGET cjson-static PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${VENDOR_BUILD}/include/cjson/)
 
 
 #uuid
@@ -48,7 +49,7 @@ ExternalProject_Add(uuid PREFIX uuid
         URL ${CMAKE_CURRENT_SOURCE_DIR}/libuuid-1.0.3.tar.gz
         URL_MD5 d44d866d06286c08ba0846aba1086d68
         CONFIGURE_COMMAND ./configure --prefix=${VENDOR_BUILD} --disable-shared --with-pic
-        BUILD_COMMAND make 
+        BUILD_COMMAND make
         INSTALL_COMMAND make install
         BUILD_IN_SOURCE 1)
 
@@ -56,7 +57,7 @@ ExternalProject_Add(uuid PREFIX uuid
 add_library(uuid-static STATIC IMPORTED GLOBAL)
 add_dependencies(uuid-static uuid)
 set_property(TARGET uuid-static PROPERTY IMPORTED_LOCATION ${VENDOR_BUILD}/lib/libuuid.a)
-set_property(TARGET uuid-static PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${VENDOR_BUILD}/include/uuid)
+#set_property(TARGET uuid-static PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${VENDOR_BUILD}/include/uuid)
 
 
 ### GoogleTest

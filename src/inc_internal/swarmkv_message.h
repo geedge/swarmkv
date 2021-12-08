@@ -2,7 +2,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <cJSON.h>
+#include <cjson/cJSON.h>
 
 #include "swarmkv_internal.h"
 
