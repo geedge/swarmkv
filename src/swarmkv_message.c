@@ -37,9 +37,11 @@ static void *swarmkv_msg_pack_node_list(struct swarmkv_store *store, cJSON *js_m
 	cJSON* js_node = NULL;
 	//js_node_list = cJSON_CreateArray();
 	cJSON_AddItemToObject(js_msg,"node_list", js_node_list = cJSON_CreateArray());
-	struct swarmkv_node* node;
-	for (node = store->nodes; node != NULL; node = (struct swarmkv_node*)(node->hh.next)) {
-		if(node->status != FAIL || node->status != WAITMEET)
+	struct swarmkv_node* node = NULL;
+	struct swarmkv_node* node_tmp = NULL;
+	HASH_ITER(hh, store->nodes, node, node_tmp)
+	{
+		if(node->status != FAIL && node->status != WAITMEET)
 		{
 			cJSON_AddItemToArray(js_node_list, js_node = cJSON_CreateObject());
 			cJSON_AddNumberToObject(js_node,"node_id", node->node_id);
@@ -586,7 +588,8 @@ int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg *msg)
 				slot_num = cJSON_GetArraySize(slot_list);
 				msg->data.meet_resp_data.slot_num = slot_num;
 				i = 0;
-				if(node_list != NULL){
+				if(node_list != NULL)
+				{
 					cJSON *node_item  = node_list->child;
 					while(node_item)
 					{ 

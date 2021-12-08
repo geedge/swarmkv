@@ -9,6 +9,9 @@
 #include "swarmkv.h"
 #include "swarmkv_nng.h"
 
+
+
+
 //#define SWARMKV_DEFAULT_SLOT_NUM 65536    //redis 16284
 #define SWARMKV_DEFAULT_SLOT_NUM 128
 #define SWARMKV_DEFAULT_NODE_NUM 32
@@ -83,6 +86,8 @@ struct swarmkv_node
 	int meet_cnt;
 	UT_hash_handle hh;
 };
+
+
 
 struct swarmkv_store
 {

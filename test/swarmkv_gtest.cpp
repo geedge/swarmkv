@@ -254,7 +254,7 @@ TEST(SwarmkvClusterOpenTest, ThreeNode)
 	sleep(2);
 	store_3 = swarmkv_open(bootstraps_3, config_3, &err_3);
 
-	sleep(15);
+	sleep(30);
 
 	swarmkv_GetSlotAssign(store_0);
 	swarmkv_GetSlotAssign(store_1);
