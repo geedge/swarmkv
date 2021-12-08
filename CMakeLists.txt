@@ -2,14 +2,12 @@ cmake_minimum_required (VERSION 2.8)
 
 project(swarmkv) 
 
-include_directories(${PROJECT_SOURCE_DIR}/include)
-
-set(CMAKE_C_FLAGS "-std=gnu99") 
+set(CMAKE_C_FLAGS "-std=gnu99")
 
 find_program(CMAKE_CXX_CPPCHECK NAMES cppcheck)
 if (CMAKE_CXX_CPPCHECK)
     list(
-        APPEND CMAKE_CXX_CPPCHECK 
+        APPEND CMAKE_CXX_CPPCHECK
             "--enable=all"
             "--force"
             "--std=c99"
@@ -34,6 +32,8 @@ message("PROJECT_SOURCE_DIR: ${PROJECT_SOURCE_DIR}")   #/home/janessa/Desktop/sw
 message("PROJECT_BINARY_DIR: ${PROJECT_BINARY_DIR}")   #/home/janessa/Desktop/swarmkv/build
 message("CAMKE_SOURCE_DIR: ${CAMKE_SOURCE_DIR}")
 ]]
+
+include_directories(include)
 
 #add_subdirectory(source_dir [binary_dir] [EXCLUDE_FROM_ALL])
 add_subdirectory(vendor)
