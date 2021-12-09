@@ -43,7 +43,7 @@ long long swarmkv_incrby(struct swarmkv_store *store, const char *key, const str
 void swarmkv_hset(struct swarmkv_store *store, const struct swarmkv_writeoptions *options, const char *key, size_t keylen, const char *field, const char *value, size_t vallen);
 
 //测试辅助函数
-char *swarmkv_cache_get_kv(struct swarmkv_store *store, const char *tb_name, const char *key, size_t keylen, size_t *vallen);
+char *swarmkv_cache_get_kv(struct swarmkv_store *store, int slot_id, const char *tb_name, const char *key, size_t keylen, size_t *vallen);
 char *swarmkv_GetKeyOpt(struct swarmkv_store *store, const char *tb_name, const char *key, size_t keylen, size_t *vallen);
 char *swarmkv_GetSlotAssign(struct swarmkv_store *store);
 int swarmkv_cluster_open(const char *bootstraps, const char *config, char **err);

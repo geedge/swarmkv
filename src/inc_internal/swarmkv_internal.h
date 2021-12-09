@@ -61,7 +61,7 @@ struct swarmkv_slot
 	int last_owner_id;          //迁移之前的上一个持有者
 	int status;                 //0 normal/1 migrating
 	int replica_node_id[16];
-
+	struct swarmkv_table *table_hash;
 };
 
 struct swarmkv_table
@@ -107,7 +107,7 @@ struct swarmkv_store
 	int sockfd;
 	int nng_socket;
 	struct swarmkv_slot slots[SWARMKV_DEFAULT_SLOT_NUM];
-	struct swarmkv_table *table_hash; //key: char table_name[256], value: struct swarmkv_table*
+	//struct swarmkv_table *table_hash; //key: char table_name[256], value: struct swarmkv_table*
 	//struct swarmkv_transaction *on_fly_transactions;
 	pthread_rwlock_t rwlock;
 };

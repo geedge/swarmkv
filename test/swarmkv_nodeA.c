@@ -31,7 +31,7 @@ int main(int argc, char **argv)
 	}
 
 	const char* tb_name = "table0";
-	const char *key = "key3";
+	const char *key = "key1";
 	size_t keylen = strlen(key);
 	const char *value = "val0";
 	size_t vallen = strlen(value);
@@ -42,9 +42,9 @@ int main(int argc, char **argv)
 	swarmkv_put(store, tb_name, NULL, key, keylen, value, vallen, NULL);
 	//printf("wait response\n");
 
-	/*
-	sleep(3);
-	printf("******test GET_REMOTE******\n");
+	
+	//sleep(3);
+	//printf("******test GET_REMOTE******\n");
 	char *get_val = NULL;
 	size_t get_vallen;
 	get_val = swarmkv_get(store, tb_name, NULL, key, keylen, &get_vallen, NULL);
@@ -53,7 +53,7 @@ int main(int argc, char **argv)
 		printf("%s\n",get_val);
 	}
 	printf("wait response\n");
-	*/
+	
 	/*
 	sleep(1);
 	printf("******test Update_REMOTE******\n");

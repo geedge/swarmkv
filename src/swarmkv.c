@@ -87,18 +87,19 @@ int caculate_slot_table(struct swarmkv_store *store, struct swarmkv_slot *new_sl
 }
 
 //write the key-value into my store 
-void swarmkv_owner_put_kv(struct swarmkv_store *store, const char *table_name, const char *key, size_t keylen, const char *value, size_t vallen)
+void swarmkv_owner_put_kv(struct swarmkv_store *store, int slot_id, const char *table_name, const char *key, size_t keylen, const char *value, size_t vallen)
 {
 	struct swarmkv_table *table = NULL;
 	struct swarmkv_key_value *kv = NULL;
 	pthread_rwlock_wrlock(&store->rwlock);
-	HASH_FIND_STR(store->table_hash, table_name, table);
+	HASH_FIND_STR(store->slots[slot_id].table_hash, table_name, table);
+	//HASH_FIND_STR(store->table_hash, table_name, table);
 	if(table == NULL)
 	{
 		//add a new table in my swarmkv_store
 		table = ALLOC(struct swarmkv_table, 1);
 		memcpy(table->table_name, table_name, strlen(table_name));
-		HASH_ADD_STR(store->table_hash, table_name, table);
+		HASH_ADD_STR(store->slots[slot_id].table_hash, table_name, table);
 	}
 	HASH_FIND(hh, table->owned_value_hash, key, keylen, kv);
 	if(kv == NULL)
@@ -143,13 +144,14 @@ void swarmkv_owner_put_kv(struct swarmkv_store *store, const char *table_name, c
 }
 
 //send an invalidate request msg to nodes in nodes_have_key_cached
-int swarmkv_msg_send_invalidate_key_req(struct swarmkv_store *store, const char *tb_name, const char *key, size_t keylen, 
+int swarmkv_msg_send_invalidate_key_req(struct swarmkv_store *store, int slot_id, const char *tb_name, const char *key, size_t keylen, 
 											const char *value, size_t vallen)
 {
 	struct swarmkv_table *table = NULL;
 	struct swarmkv_key_value *kv = NULL;
 
-	HASH_FIND_STR(store->table_hash, tb_name, table);
+	//HASH_FIND_STR(store->table_hash, tb_name, table);
+	HASH_FIND_STR(store->slots[slot_id].table_hash, tb_name, table);
 	if(table == NULL)
 	{
 		printf("I don't have the table %s\n", tb_name);
@@ -206,16 +208,6 @@ int swarmkv_msg_send_invalidate_key_req(struct swarmkv_store *store, const char 
 	return 1;
 }
 
-//caculate the slot owner id
-int caculate_key_slot_owner(struct swarmkv_store *store, const char *key, size_t keylen)
-{
-	struct swarmkv_slot slot;
-	int slot_id = crc32(key, keylen)%SWARMKV_DEFAULT_SLOT_NUM;
-	slot = store->slots[slot_id];
-	assert(slot_id == slot.slot_id);
-	return slot.owner_node_id;
-}
-
 //caculate the slot id of key
 int caculate_key_slot_id(struct swarmkv_store *store, const char *key, size_t keylen)
 {
@@ -223,8 +215,22 @@ int caculate_key_slot_id(struct swarmkv_store *store, const char *key, size_t ke
 	int slot_id = crc32(key, keylen)%SWARMKV_DEFAULT_SLOT_NUM;
 	slot = store->slots[slot_id];
 	assert(slot_id == slot.slot_id);
-	//printf("***slot_id:%d\n",slot.slot_id);
+	printf("%d\n", slot_id);
 	return slot.slot_id;
+}
+
+//caculate the slot owner id
+int caculate_key_slot_owner(struct swarmkv_store *store, const char *key, size_t keylen)
+{
+	int slot_id = caculate_key_slot_id(store, key, keylen);
+	return store->slots[slot_id].owner_node_id;
+	/*
+	struct swarmkv_slot slot;
+	int slot_id = crc32(key, keylen)%SWARMKV_DEFAULT_SLOT_NUM;
+	slot = store->slots[slot_id];
+	assert(slot_id == slot.slot_id);
+	return slot.owner_node_id;
+	*/
 }
 
 //broadcast
@@ -258,13 +264,14 @@ int swarmkv_msg_udp_broadcast(struct swarmkv_store* store, char* msg, size_t msg
 int swarmkv_put(struct swarmkv_store *store, const char *tb_name, const struct swarmkv_writeoptions *options, 
 					const char *key, size_t keylen, const char *value, size_t vallen, char **errptr)
 {
-	int slot_owner_id = caculate_key_slot_owner(store, key, keylen);
+	int slot_id = caculate_key_slot_id(store, key, keylen);
+	int slot_owner_id = store->slots[slot_id].owner_node_id;
 	if(slot_owner_id == store->my_node_id)
 	{
 		//local put a key-value
 		printf("put kv in my store\n");
-		swarmkv_owner_put_kv(store, tb_name, key, keylen, value, vallen);
-		swarmkv_msg_send_invalidate_key_req(store, tb_name, key, keylen, value, vallen);
+		swarmkv_owner_put_kv(store, slot_id, tb_name, key, keylen, value, vallen);
+		swarmkv_msg_send_invalidate_key_req(store, slot_id, tb_name, key, keylen, value, vallen);
 	}
 	else
 	{
@@ -304,12 +311,14 @@ int swarmkv_put(struct swarmkv_store *store, const char *tb_name, const struct s
 int swarmkv_put_with_callback(struct swarmkv_store *store, const char *tb_name, const struct swarmkv_writeoptions *options,
 							const char *key, size_t keylen, const char *value, size_t vallen, swarmkv_callback_func_t *cb, void *cb_arg)
 {
-	int slot_owner_id = caculate_key_slot_owner(store, key, keylen);
+	int slot_id = caculate_key_slot_id(store, key, keylen);
+	int slot_owner_id = store->slots[slot_id].owner_node_id;
+	//int slot_owner_id = caculate_key_slot_owner(store, key, keylen);
 	if(slot_owner_id == store->my_node_id)
 	{
 		//local put a key-value
-		swarmkv_owner_put_kv(store, tb_name, key, keylen, value, vallen);
-		swarmkv_msg_send_invalidate_key_req(store, tb_name, key, keylen, value, vallen);
+		swarmkv_owner_put_kv(store, slot_id, tb_name, key, keylen, value, vallen);
+		swarmkv_msg_send_invalidate_key_req(store, slot_id, tb_name, key, keylen, value, vallen);
 		printf("start callback\n");
 		cb(tb_name, key, keylen, value, vallen, cb_arg);
 	}
@@ -349,7 +358,7 @@ int swarmkv_put_with_callback(struct swarmkv_store *store, const char *tb_name, 
 }
 
 //get a key-value from my store as owner
-char *swarmkv_owner_get_kv(struct swarmkv_store *store, const char *tb_name, const char *key, size_t keylen, 
+char *swarmkv_owner_get_kv(struct swarmkv_store *store, int slot_id, const char *tb_name, const char *key, size_t keylen, 
 								size_t *vallen, int req_node_id)
 {
 	struct swarmkv_table *table = NULL;
@@ -357,7 +366,7 @@ char *swarmkv_owner_get_kv(struct swarmkv_store *store, const char *tb_name, con
 	//这个value是返回值，不用在该函数内释放内存，但是外面接收返回值的函数要记得释放
 	char* value = NULL;         
 	pthread_rwlock_rdlock(&store->rwlock);
-	HASH_FIND_STR(store->table_hash, tb_name, table);
+	HASH_FIND_STR(store->slots[slot_id].table_hash, tb_name, table);
 	if(table == NULL)
 	{
 		printf("I can't find the table!\n");	
@@ -388,13 +397,13 @@ char *swarmkv_owner_get_kv(struct swarmkv_store *store, const char *tb_name, con
 }
 
 //get a key-value from my cache
-char *swarmkv_cache_get_kv(struct swarmkv_store *store, const char *tb_name, const char *key, size_t keylen, size_t *vallen)
+char *swarmkv_cache_get_kv(struct swarmkv_store *store, int slot_id, const char *tb_name, const char *key, size_t keylen, size_t *vallen)
 {
 	struct swarmkv_table *table = NULL;
 	struct swarmkv_key_value *kv = NULL;
 	char *value = NULL;
 	pthread_rwlock_rdlock(&store->rwlock);
-	HASH_FIND_STR(store->table_hash, tb_name, table);
+	HASH_FIND_STR(store->slots[slot_id].table_hash, tb_name, table);
 	if(table == NULL)
 	{
 		printf("I don't have the table in my cache!\n");
@@ -423,18 +432,20 @@ char *swarmkv_get(struct swarmkv_store *store, const char *table, const struct s
 					const char *key, size_t keylen, size_t *vallen, char **errptr)
 {
 	char *value = NULL;
-	int slot_owner_id = caculate_key_slot_owner(store, key, keylen);
+	//int slot_owner_id = caculate_key_slot_owner(store, key, keylen);
+	int slot_id = caculate_key_slot_id(store, key, keylen);
+	int slot_owner_id = store->slots[slot_id].owner_node_id;
 	if(slot_owner_id == store->my_node_id)
 	{
 		//I am the owner of the key
-		value = swarmkv_owner_get_kv(store, table, key, keylen, vallen, slot_owner_id);
+		value = swarmkv_owner_get_kv(store, slot_id, table, key, keylen, vallen, slot_owner_id);
 		//printf("check the vallen: %ld\n", (*vallen));
 		//printf("%s: %s\n", key[i], value);
 	}
 	else
 	{
 		//check my cache
-		value = swarmkv_cache_get_kv(store, table, key, keylen, vallen);
+		value = swarmkv_cache_get_kv(store, slot_id, table, key, keylen, vallen);
 		//I haven't cache the kv	
 		if(value == NULL)
 		{
@@ -475,16 +486,17 @@ void swarmkv_get_with_callback(struct swarmkv_store *store, const char *table, c
 	printf("start get with callback\n");
 	char *value = NULL;
 	size_t *vallen = ALLOC(size_t, 1);
-	int slot_owner_id = caculate_key_slot_owner(store, key, keylen);
-	
+	//int slot_owner_id = caculate_key_slot_owner(store, key, keylen);
+	int slot_id = caculate_key_slot_id(store, key, keylen);
+	int slot_owner_id = store->slots[slot_id].owner_node_id;
 	if(slot_owner_id == store->my_node_id)
 	{	
-		value = swarmkv_owner_get_kv(store, table, key, keylen, vallen, slot_owner_id);
+		value = swarmkv_owner_get_kv(store, slot_id, table, key, keylen, vallen, slot_owner_id);
 	}
 	else
 	{
 		//check my cache
-		value = swarmkv_cache_get_kv(store, table, key, keylen, vallen);
+		value = swarmkv_cache_get_kv(store, slot_id, table, key, keylen, vallen);
 		//I haven't cache the kv	
 		if(value == NULL)
 		{
@@ -811,7 +823,8 @@ void process_migrate_req_msg(struct swarmkv_store* store, struct swarmkv_msg *ms
 	assert(store->nng_socket >= 0);
 
 	int migrate_slot_id = msg->data.migrate_req_data.slot_id;
-	if(store->slots[migrate_slot_id].owner_node_id == store->my_node_id)
+	int migrate_slot_owner_id = store->slots[migrate_slot_id].owner_node_id;
+	if(migrate_slot_owner_id == store->my_node_id)
 	{
 		store->cluster_state = CLUSTER_STRETCH;
 		struct swarmkv_slot *new_slots = ALLOC(struct swarmkv_slot, SWARMKV_DEFAULT_SLOT_NUM);
@@ -825,7 +838,7 @@ void process_migrate_req_msg(struct swarmkv_store* store, struct swarmkv_msg *ms
 			char *migrate_resp_msg = ALLOC(char, SWARMKV_MAX_MSG_SIZE);
 			size_t msg_len = 0;
 			int i=0;
-			HASH_ITER(hh, store->table_hash, table, tmp)
+			HASH_ITER(hh, store->slots[migrate_slot_id].table_hash, table, tmp)
 			{
 				struct swarmkv_key_value *owned_kv = NULL;
 				struct swarmkv_key_value *owned_kv_tmp = NULL;
@@ -986,12 +999,12 @@ void process_migrate_resp_msg(struct swarmkv_store* store, struct swarmkv_msg *m
 			size_t keylen = base64_decode(msg->data.migrate_resp_data.mkv[i].key, strlen(msg->data.migrate_resp_data.mkv[i].key), key);
 			size_t vallen = base64_decode(msg->data.migrate_resp_data.mkv[i].value, strlen(msg->data.migrate_resp_data.mkv[i].value), value);
 			//printf("%s\n", key);
-			HASH_FIND_STR(store->table_hash, msg->data.migrate_resp_data.mkv[i].table_name, table);
+			HASH_FIND_STR(store->slots[migrate_slot_id].table_hash, msg->data.migrate_resp_data.mkv[i].table_name, table);
 			if(table == NULL)
 			{
 				table = ALLOC(struct swarmkv_table, 1);
 				memcpy(table->table_name, msg->data.migrate_resp_data.mkv[i].table_name, strlen(msg->data.migrate_resp_data.mkv[i].table_name));
-				HASH_ADD_STR(store->table_hash, table_name, table);
+				HASH_ADD_STR(store->slots[migrate_slot_id].table_hash, table_name, table);
 			}
 			HASH_FIND(hh, table->owned_value_hash, key, keylen, kv);
 			if(kv == NULL)
@@ -1326,10 +1339,10 @@ void process_migrate_moved_msg(struct swarmkv_store* store, struct swarmkv_msg *
 	new_slots = NULL;
 }
 
-void del_owned_kv(struct swarmkv_store* store, const char *table_name, const char* key, size_t keylen)
+void del_owned_kv(struct swarmkv_store* store, int slot_id, const char *table_name, const char* key, size_t keylen)
 {
 	struct swarmkv_table *table = NULL;
-	HASH_FIND_STR(store->table_hash, table_name, table);
+	HASH_FIND_STR(store->slots[slot_id].table_hash, table_name, table);
 	if(table != NULL)
 	{
 		struct swarmkv_key_value *kv = NULL;
@@ -1351,12 +1364,14 @@ void process_del_kv_msg(struct swarmkv_store* store, struct swarmkv_msg *msg, st
 	char *key = NULL;
 	key = ALLOC(char, SWARMKV_MAX_KEY_LEN);
 	size_t keylen = base64_decode(msg->data.del_req_data.key, strlen(msg->data.del_req_data.key), key);
-	int slot_owner_id = caculate_key_slot_owner(store, key, keylen);
+	//int slot_owner_id = caculate_key_slot_owner(store, key, keylen);
+	int slot_id = caculate_key_slot_id(store, key, keylen);
+	int slot_owner_id = store->slots[slot_id].owner_node_id;
 	if(slot_owner_id == src_node->node_id)
 	{	
 		pthread_rwlock_wrlock(&store->rwlock);
 		struct swarmkv_table *table = NULL;
-		HASH_FIND_STR(store->table_hash, msg->data.del_req_data.table_name, table);
+		HASH_FIND_STR(store->slots[slot_id].table_hash, msg->data.del_req_data.table_name, table);
 		if(table != NULL)
 		{
 			struct swarmkv_key_value *kv = NULL;
@@ -1391,7 +1406,9 @@ void process_get_req_msg(struct swarmkv_store* store, char *buf, struct swarmkv_
 	char *get_resp_msg = ALLOC(char, SWARMKV_MAX_MSG_SIZE);
 	int msg_len = -1;
 	//check the key is belong to me?
-	int slot_owner_id = caculate_key_slot_owner(store, key, keylen);
+	//int slot_owner_id = caculate_key_slot_owner(store, key, keylen);
+	int slot_id = caculate_key_slot_id(store, key, keylen);
+	int slot_owner_id = store->slots[slot_id].owner_node_id;
 	if(slot_owner_id != store->my_node_id)
 	{
 		if(msg->ttl > 0)
@@ -1428,7 +1445,7 @@ void process_get_req_msg(struct swarmkv_store* store, char *buf, struct swarmkv_
 		printf("it is my slot\n");
 		char *value = NULL;         //记得else结束时释放这个value
 		size_t vallen;
-		value = swarmkv_owner_get_kv(store, msg->data.get_req_data.table_name, key, keylen, &vallen, src_node->node_id);
+		value = swarmkv_owner_get_kv(store, slot_id, msg->data.get_req_data.table_name, key, keylen, &vallen, src_node->node_id);
 		if(value == NULL)          //说明这个slot确实属于我，但是我没有找到对应的value
 		{
 			printf("get key %s from my store for node %d error.\n", key, src_node->node_id);
@@ -1475,13 +1492,14 @@ void process_get_resp_msg(struct swarmkv_store* store, struct swarmkv_msg *msg, 
 	pthread_rwlock_wrlock(&store->rwlock);
 	struct swarmkv_table *table = NULL;
 	struct swarmkv_key_value *kv = NULL;
-	HASH_FIND_STR(store->table_hash, msg->data.get_resp_data.table_name, table);
+	int slot_id = caculate_key_slot_id(store, key, keylen);
+	HASH_FIND_STR(store->slots[slot_id].table_hash, msg->data.get_resp_data.table_name, table);
 	if(table == NULL)
 	{
 		//add a new table in my swarmkv_store
 		table = ALLOC(struct swarmkv_table, 1);
 		memcpy(table->table_name, msg->data.get_resp_data.table_name, strlen(msg->data.get_resp_data.table_name));
-		HASH_ADD_STR(store->table_hash, table_name, table);
+		HASH_ADD_STR(store->slots[slot_id].table_hash, table_name, table);
 	}
 	//更新缓存
 	HASH_FIND(hh, table->cached_value_hash, key, keylen, kv);
@@ -1553,7 +1571,9 @@ void process_put_req_msg(struct swarmkv_store* store, char *buf, struct swarmkv_
 	char *put_resp_msg = ALLOC(char, SWARMKV_MAX_MSG_SIZE);
 	struct swarmkv_node *aim_node = NULL;
 
-	int slot_owner_id = caculate_key_slot_owner(store, key, keylen);
+	//int slot_owner_id = caculate_key_slot_owner(store, key, keylen);
+	int slot_id = caculate_key_slot_id(store, key, keylen);
+	int slot_owner_id = store->slots[slot_id].owner_node_id;
 	if(slot_owner_id != store->my_node_id)
 	{
 		if(msg->ttl > 0)
@@ -1594,8 +1614,8 @@ void process_put_req_msg(struct swarmkv_store* store, char *buf, struct swarmkv_
 		size_t vallen = base64_decode(msg->data.put_req_data.value, strlen(msg->data.put_req_data.value), value);
 		aim_node = src_node;
 		//put the key-value into my store and send invalidate request msg
-		swarmkv_owner_put_kv(store, msg->data.put_req_data.table_name, key, keylen, value, vallen);
-		swarmkv_msg_send_invalidate_key_req(store, msg->data.put_req_data.table_name, key, keylen, value, vallen);
+		swarmkv_owner_put_kv(store, slot_id, msg->data.put_req_data.table_name, key, keylen, value, vallen);
+		swarmkv_msg_send_invalidate_key_req(store, slot_id, msg->data.put_req_data.table_name, key, keylen, value, vallen);
 
 		//send a put response
 		if(msg->data.put_req_data.cb_function == 0)
@@ -1666,7 +1686,8 @@ int del_cache_kv(struct swarmkv_store* store, const char *table_name, const char
 {
 	pthread_rwlock_wrlock(&store->rwlock);
 	struct swarmkv_table *table = NULL;
-	HASH_FIND_STR(store->table_hash, table_name, table);
+	int slot_id = caculate_key_slot_id(store, key, keylen);
+	HASH_FIND_STR(store->slots[slot_id].table_hash, table_name, table);
 	if(table != NULL)
 	{
 		struct swarmkv_key_value *kv = NULL;
@@ -1721,7 +1742,8 @@ void process_invalidate_resp_msg(struct swarmkv_store* store, struct swarmkv_msg
 	char *key = ALLOC(char, SWARMKV_MAX_KEY_LEN);
 	size_t keylen = base64_decode(msg->data.invalidate_req_data.key, strlen(msg->data.invalidate_req_data.key), key);
 	struct swarmkv_table *table = NULL;
-	HASH_FIND_STR(store->table_hash, msg->data.invalidate_req_data.table_name, table);
+	int slot_id = caculate_key_slot_id(store, key, keylen);
+	HASH_FIND_STR(store->slots[slot_id].table_hash, msg->data.invalidate_req_data.table_name, table);
 	if(table != NULL)
 	{
 		struct swarmkv_key_value *kv = NULL;
@@ -2503,29 +2525,32 @@ void swarmkv_close(struct swarmkv_store *store)
 
 	struct swarmkv_table *table = NULL;
 	struct swarmkv_table *table_tmp = NULL;
-	HASH_ITER(hh, store->table_hash, table, table_tmp)
+	for(int i=0; i<SWARMKV_DEFAULT_SLOT_NUM; i++)
 	{
-		struct swarmkv_key_value *owned_kv = NULL;
-		struct swarmkv_key_value *owned_kv_tmp = NULL;
-		HASH_ITER(hh, table->owned_value_hash, owned_kv, owned_kv_tmp)
+		HASH_ITER(hh, store->slots[i].table_hash, table, table_tmp)
 		{
-			free(owned_kv->key);
-			owned_kv->key = NULL;
-			free(owned_kv->value);
-			owned_kv->value = NULL;
+			struct swarmkv_key_value *owned_kv = NULL;
+			struct swarmkv_key_value *owned_kv_tmp = NULL;
+			HASH_ITER(hh, table->owned_value_hash, owned_kv, owned_kv_tmp)
+			{
+				free(owned_kv->key);
+				owned_kv->key = NULL;
+				free(owned_kv->value);
+				owned_kv->value = NULL;
+			}
+			struct swarmkv_key_value *cached_kv = NULL;
+			struct swarmkv_key_value *cached_kv_tmp = NULL;
+			HASH_ITER(hh, table->cached_value_hash, cached_kv, cached_kv_tmp)
+			{
+				free(cached_kv->key);
+				cached_kv->key = NULL;
+				free(cached_kv->value);
+				cached_kv->value = NULL;
+			}
+			HASH_DEL(store->slots[i].table_hash, table);
+			free(table);
+			table = NULL;
 		}
-		struct swarmkv_key_value *cached_kv = NULL;
-		struct swarmkv_key_value *cached_kv_tmp = NULL;
-		HASH_ITER(hh, table->cached_value_hash, cached_kv, cached_kv_tmp)
-		{
-			free(cached_kv->key);
-			cached_kv->key = NULL;
-			free(cached_kv->value);
-			cached_kv->value = NULL;
-		}
-		HASH_DEL(store->table_hash, table);
-		free(table);
-		table = NULL;
 	}
 	free(store->my_ip);
 	store->my_ip = NULL;
