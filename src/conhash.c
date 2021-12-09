@@ -104,9 +104,10 @@ void *swarmkv_conhash_create(struct swarmkv_node *nodes, int node_num, uint32_t 
     {
         for(int j=0;j<ch->bucket_id_upbound;j++)
         {
-			int t = NID[j]+171;
+			int t = NID[j]*171+128*i;
 			srand(t);
-			randval=(((uint32_t)(-1))/(ch->points_per_bucket*(NID[j]+1)))*(i*ch->points_per_bucket+rand()/(NID[j]+i+1));
+			randval = rand() % SWARMKV_DEFAULT_SLOT_NUM + SWARMKV_DEFAULT_SLOT_NUM/(i+1);
+			//randval=(((uint32_t)(-1))/(ch->points_per_bucket*(NID[j]+1)))*(i*ch->points_per_bucket+rand()/(NID[j]+i+1));
             ch->point[i*ch->bucket_id_upbound+j].node_id=NID[j];
             ch->point[i*ch->bucket_id_upbound+j].point_val=randval % SWARMKV_DEFAULT_SLOT_NUM;
 			ch->point[i*ch->bucket_id_upbound+j].hit_cnt=0;

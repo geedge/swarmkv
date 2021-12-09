@@ -63,7 +63,6 @@ static void *swarmkv_msg_pack_my_slot(struct swarmkv_store *store, cJSON *js_msg
 	cJSON_AddItemToObject(js_msg,"slot_list", js_slot_list = cJSON_CreateArray());
 	for(i=0;i<SWARMKV_DEFAULT_SLOT_NUM;i++)
 	{
-		
 		if(store->slots[i].owner_node_id == store->my_node_id)
 		{
 			if(store->slots[i].status == SLOT_MIGRATING)

@@ -60,6 +60,7 @@ struct swarmkv_slot
 	int last_owner_id;          //迁移之前的上一个持有者
 	int status;                 //0 normal/1 migrating
 	int replica_node_id[16];
+	
 };
 
 struct swarmkv_table
