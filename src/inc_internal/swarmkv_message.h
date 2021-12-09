@@ -41,7 +41,8 @@ enum swarmkv_msg_type
 	MSG_GET_RESP,                  //14   
 	MSG_INVALIDATE_KEYS_REQ,       //15
 	MSG_INVALIDATE_KEYS_RESP,      //16
-	MSG_JOIN_COMPLETE,            //17
+	MSG_JOIN_COMPLETE,             //17
+	MSG_LEAVE_REQ,                 //18
 };
 
 

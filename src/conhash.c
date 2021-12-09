@@ -86,28 +86,36 @@ void *swarmkv_conhash_create(struct swarmkv_node *nodes, int node_num, uint32_t 
 	struct swarmkv_node *node_tmp = NULL;
 	int NID[node_num];
 	int nd = 0;
-	printf("current nodes list: ");
+	
 	HASH_ITER(hh, nodes, node, node_tmp)
 	{
-		printf("%d ", node->node_id);
 		if(node->status != WAITMEET && node->status != FAIL)
 		{
 			NID[nd] = node->node_id;
 			nd++;
 		}
 	}
-	printf("\n");
+	
 	qsort(NID, node_num, sizeof(int), cmp_by_node_id);
-	
-	
+
+	printf("current nodes list: ");
+	for(int k=0; k<node_num; k++)
+	{
+		printf("%d ", NID[k]);
+	}
+	printf("\n");
 	for(int i=0;i<ch->points_per_bucket;i++)
     {
         for(int j=0;j<ch->bucket_id_upbound;j++)
         {
-			int t = NID[j]*171+128*i;
-			srand(t);
-			randval = rand() % SWARMKV_DEFAULT_SLOT_NUM + SWARMKV_DEFAULT_SLOT_NUM/(i+1);
-			//randval=(((uint32_t)(-1))/(ch->points_per_bucket*(NID[j]+1)))*(i*ch->points_per_bucket+rand()/(NID[j]+i+1));
+			/*
+			int t = NID[j]*171+171;
+			srand((unsigned)t);
+			uint32_t tmp_rand = rand();
+			randval = tmp_rand % SWARMKV_DEFAULT_SLOT_NUM + SWARMKV_DEFAULT_SLOT_NUM/(i+1);
+			printf("%d %d %u %u\n", t, NID[j], randval, tmp_rand);
+			*/
+			randval=(((uint32_t)(-1))/(ch->points_per_bucket*(NID[j]+i+1)))*((i+1)*(NID[j]+i)*ch->points_per_bucket+SWARMKV_DEFAULT_SLOT_NUM);
             ch->point[i*ch->bucket_id_upbound+j].node_id=NID[j];
             ch->point[i*ch->bucket_id_upbound+j].point_val=randval % SWARMKV_DEFAULT_SLOT_NUM;
 			ch->point[i*ch->bucket_id_upbound+j].hit_cnt=0;
@@ -129,6 +137,7 @@ int conhash_add_point( struct conhash *ch, uint32_t node_id )
 	ch->point_num++;
 	return 0;
 }
+
 
 
 void conhash_destroy( struct conhash *ch )

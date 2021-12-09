@@ -130,7 +130,7 @@ int main(int argc, char **argv)
 	printf("wait response\n");
 	*/
 
-	sleep(20);
+	sleep(40);
 	swarmkv_GetSlotAssign(store);
 	swarmkv_close(store);
 	return 1;

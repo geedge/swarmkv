@@ -17,13 +17,14 @@
 #define SWARMKV_DEFAULT_NODE_NUM 32
 #define BOOTSTRAPS_NUM 5
 
-#define PFAIL 0
-#define FAIL -1
-#define ON 1
-#define WAITMEET 2
+
+#define FAIL 0
+#define PFAIL 1
+#define ON 2
+#define WAITMEET 3
 
 #define CLUSTER_STABLE 0
-#define CLUSTER_MEETING 1
+#define CLUSTER_STRETCH 1
 
 #define SLOT_STABLE 0
 #define SLOT_MIGRATING 1
@@ -60,7 +61,7 @@ struct swarmkv_slot
 	int last_owner_id;          //迁移之前的上一个持有者
 	int status;                 //0 normal/1 migrating
 	int replica_node_id[16];
-	
+
 };
 
 struct swarmkv_table

@@ -241,7 +241,6 @@ TEST(SwarmkvClusterOpenTest, ThreeNode)
 	char *err_2 = NULL;
 	struct swarmkv_store *store_2 = NULL;
 
-	
 	const char *bootstraps_3 = "self=172.16.225.2:7323;peers=172.16.225.2:8323";
 	const char *config_3 = "node_id=3;token=49ffb3ae-8e7e-40ab-bc3f-824567e932fa,db=0";
 	char *err_3 = NULL;
@@ -254,7 +253,14 @@ TEST(SwarmkvClusterOpenTest, ThreeNode)
 	//sleep(2);
 	store_3 = swarmkv_open(bootstraps_3, config_3, &err_3);
 
+	/*
 	sleep(20);
+	printf("\n!!!!!!!!!!!!!!!!!-!-!-!!!!!!!!!!!!!!!!!!!-----------------");
+	printf("\nclose ndoe 3\n");
+	swarmkv_close(store_3);
+	*/
+
+	sleep(40);
 
 	swarmkv_GetSlotAssign(store_0);
 	swarmkv_GetSlotAssign(store_1);
