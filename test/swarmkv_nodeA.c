@@ -42,8 +42,8 @@ int main(int argc, char **argv)
 	swarmkv_put(store, tb_name, NULL, key, keylen, value, vallen, NULL);
 	//printf("wait response\n");
 
-	
-	//sleep(3);
+	/*
+	sleep(3);
 	//printf("******test GET_REMOTE******\n");
 	char *get_val = NULL;
 	size_t get_vallen;
@@ -53,6 +53,7 @@ int main(int argc, char **argv)
 		printf("%s\n",get_val);
 	}
 	printf("wait response\n");
+	*/
 	
 	/*
 	sleep(1);

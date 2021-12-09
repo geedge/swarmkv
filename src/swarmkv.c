@@ -54,17 +54,34 @@ int caculate_slot_table(struct swarmkv_store *store, struct swarmkv_slot *new_sl
 	for(i=0; i<point_num; i++)
 	{
 		printf("%u/%u ", ch->point[i].point_val, ch->point[i].node_id);
+		int k=i+1;
+		int replica_node_id;
+		while(1)
+		{
+			if(ch->point[k%point_num].node_id != ch->point[i].node_id)
+			{
+				replica_node_id = ch->point[k].node_id;
+				break;
+			}
+			else
+			{
+				k++;
+			}
+		}
 		if( i == 0)
 		{
 			for(j = 0; j<=ch->point[i].point_val; j++)
 			{
 				new_slots[j].slot_id = j;
 				new_slots[j].owner_node_id = ch->point[i].node_id;
+				new_slots[j].replica_node_id = replica_node_id;
+						
 			}
 			for(j=ch->point[point_num-1].point_val+1; j<SWARMKV_DEFAULT_SLOT_NUM; j++)
 			{
 				new_slots[j].slot_id = j;
 				new_slots[j].owner_node_id = ch->point[i].node_id;
+				new_slots[j].replica_node_id = replica_node_id;
 			}
 		}
 		else
@@ -73,13 +90,14 @@ int caculate_slot_table(struct swarmkv_store *store, struct swarmkv_slot *new_sl
 			{
 				new_slots[j].slot_id = j;
 				new_slots[j].owner_node_id = ch->point[i].node_id;
+				new_slots[j].replica_node_id = replica_node_id;
 			}
 		}
 	}
 	printf("\n=======================================\n");
 	for(int k=0; k<SWARMKV_DEFAULT_SLOT_NUM; k++)
 	{
-		printf("%d:%d ", new_slots[k].slot_id, new_slots[k].owner_node_id);
+		printf("%d:%d:%d ", new_slots[k].slot_id, new_slots[k].owner_node_id, new_slots[k].replica_node_id);
 	}
 	printf("\n=======================================\n");
 	conhash_destroy(ch);
@@ -780,16 +798,6 @@ void process_pong_msg(struct swarmkv_store* store, struct swarmkv_msg *msg, stru
 	}
 	swarmkv_parse_node(store, msg->data.swarmkv_basic_info);
 	swarmkv_parse_slot(store, msg->data.swarmkv_basic_info);
-}
-
-
-void process_slot_owner_change_msg_nng(struct swarmkv_store* store, struct swarmkv_msg *msg, struct swarmkv_node *src_node)
-{
-	pthread_rwlock_wrlock(&store->rwlock);
-	int slot_id = msg->data.slot_moved_data.slot_id;
-	store->slots[slot_id].owner_node_id = msg->data.slot_moved_data.new_owner_id;
-	//删除对应的kv
-	pthread_rwlock_unlock(&store->rwlock);
 }
 
 void process_slot_owner_change_msg(struct swarmkv_store* store, struct swarmkv_msg *msg, struct swarmkv_node *src_node)
@@ -2033,6 +2041,78 @@ int swarmkv_udp_msg_unpack(struct swarmkv_store* store, char *buf)
 	return 1;
 }
 
+void process_slot_owner_change_msg_nng(struct swarmkv_store* store, struct swarmkv_msg *msg)
+{
+	pthread_rwlock_wrlock(&store->rwlock);
+	//还应该要删除该slot所有kv,遍历起来有点慢，重构slot-table-kv的结构,未写
+	int slot_id = msg->data.slot_moved_data.slot_id;
+	struct swarmkv_table* table = NULL;
+	struct swarmkv_table *table_tmp = NULL;
+	HASH_ITER(hh, store->slots[slot_id].table_hash, table, table_tmp)
+	{
+		struct swarmkv_key_value *owned_kv = NULL;
+		struct swarmkv_key_value *owned_kv_tmp = NULL;
+		HASH_ITER(hh, table->owned_value_hash, owned_kv, owned_kv_tmp)
+		{
+			HASH_DEL(table->owned_value_hash, owned_kv);
+			free(owned_kv);
+			owned_kv = NULL;
+		}
+	}
+	/*
+	if(slot_id == 80)
+	{
+		printf("check\n");
+		const char* tb_name = "table0";
+		const char *key = "key1";
+		size_t keylen = strlen(key);
+
+		HASH_FIND_STR(store->slots[slot_id].table_hash, tb_name, table);
+		if(table == NULL)
+		{
+			printf("table null\n");
+		}
+		else
+		{
+			struct swarmkv_key_value *kv = NULL;
+			HASH_FIND(hh, table->owned_value_hash, key, keylen, kv);
+			if(kv == NULL)
+			{
+				printf("kv null\n");
+			}
+			else
+			{
+				printf("%s\n", kv->value);
+			}
+		}
+	}
+	*/
+	store->slots[slot_id].owner_node_id = msg->data.slot_moved_data.new_owner_id;
+	printf("*%d > %d\n", slot_id, store->slots[slot_id].owner_node_id);
+	store->slots[slot_id].status = SLOT_STABLE;
+	nn_close(store->nng_socket);
+	store->nng_socket = -1;	
+	pthread_rwlock_unlock(&store->rwlock);
+}
+
+int swarmkv_nng_tcp_msg_unpack(struct swarmkv_store* store, char *nng_recv_buf)
+{
+	struct swarmkv_msg *msg = ALLOC(struct swarmkv_msg, 1);
+	int unpack_res = swarmkv_js_msg_unpack(nng_recv_buf, msg);
+	assert(unpack_res>0);
+	msg_statistics(msg->type); 
+
+	switch(msg->type)
+	{
+		case MSG_SLOT_OWNER_CHANGE:
+			process_slot_owner_change_msg_nng(store, msg);
+			break;
+		default:
+			printf("UNKNOWN msg\n");
+	}
+	return 1;
+}
+
 //select a node: has minimal pong_received_time
 int swarmkv_random_ping(int sockfd, struct swarmkv_store *store)
 {	
@@ -2162,32 +2242,6 @@ int swarmkv_regular_ping(struct swarmkv_store *store, clock_t elapsed_time)
 	return 1;
 }
 
-
-int swarmkv_nng_tcp_msg_unpack(struct swarmkv_store* store, char *nng_recv_buf)
-{
-	struct swarmkv_msg *msg = ALLOC(struct swarmkv_msg, 1);
-	int unpack_res = swarmkv_js_msg_unpack(nng_recv_buf, msg);
-	assert(unpack_res>0);
-	msg_statistics(msg->type); 
-
-	switch(msg->type)
-	{
-		case MSG_SLOT_OWNER_CHANGE:
-			//还应该要删除该slot所有kv,遍历起来有点慢，重构slot-table-kv的结构,未写
-			pthread_rwlock_wrlock(&store->rwlock);
-			int slot_id = msg->data.slot_moved_data.slot_id;
-			store->slots[slot_id].owner_node_id = msg->data.slot_moved_data.new_owner_id;
-			printf("*%d > %d\n", slot_id, store->slots[slot_id].owner_node_id);
-			store->slots[slot_id].status = SLOT_STABLE;
-			nn_close(store->nng_socket);
-			store->nng_socket = -1;	
-			pthread_rwlock_unlock(&store->rwlock);
-			break;
-		default:
-			printf("UNKNOWN msg\n");
-	}
-	return 1;
-}
 
 void *swarmkv_msg_processing_thread(void *arg)
 {
