@@ -475,6 +475,18 @@ size_t swarmkv_msg_pack_leave_req(struct swarmkv_store *store, char *buff, size_
 	return msg_len;
 }
 
+size_t swarmkv_msg_pack_leave_resp(struct swarmkv_store *store, char *buff, size_t buff_size, int op_result)
+{	
+	cJSON* js_msg = NULL;
+	js_msg = cJSON_CreateObject();
+	enum swarmkv_msg_type type = MSG_LEAVE_RESP;
+	swarmkv_msg_pack_basic_info(store, js_msg, type);
+	cJSON_AddNumberToObject(js_msg, "op_result", op_result);
+	size_t msg_len = serialization_msg(js_msg, buff, buff_size);
+	cJSON_Delete(js_msg);
+	return msg_len;
+}
+
 size_t swarmkv_msg_repack_ttl(char *raw_msg, char *buff, size_t buff_size)
 {
 	cJSON* js_msg = cJSON_Parse(raw_msg);
@@ -861,7 +873,10 @@ int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg *msg)
 			break;
 		case MSG_LEAVE_REQ:
 			break;
-			
+		case MSG_LEAVE_RESP:
+			op_result = cJSON_GetObjectItem(js_msg, "op_result");
+			msg->data.leave_resp_data.op_result = op_result->valueint;
+			break;
 		default:
 			printf("UNKNOWN msg\n");
 	}

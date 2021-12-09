@@ -771,6 +771,15 @@ void process_pong_msg(struct swarmkv_store* store, struct swarmkv_msg *msg, stru
 }
 
 
+void process_slot_owner_change_msg_nng(struct swarmkv_store* store, struct swarmkv_msg *msg, struct swarmkv_node *src_node)
+{
+	pthread_rwlock_wrlock(&store->rwlock);
+	int slot_id = msg->data.slot_moved_data.slot_id;
+	store->slots[slot_id].owner_node_id = msg->data.slot_moved_data.new_owner_id;
+	//删除对应的kv
+	pthread_rwlock_unlock(&store->rwlock);
+}
+
 void process_slot_owner_change_msg(struct swarmkv_store* store, struct swarmkv_msg *msg, struct swarmkv_node *src_node)
 {
 	pthread_rwlock_wrlock(&store->rwlock);
@@ -794,7 +803,6 @@ void process_migrate_req_msg(struct swarmkv_store* store, struct swarmkv_msg *ms
 			//store->cluster_size++;
 		}
 	}
-
 	//建立一个TCP连接到请求迁移的节点
 	char node_url[64];
 	int n = snprintf(node_url, sizeof(node_url), "tcp://%s:%d", src_node->ip, src_node->port);
@@ -888,6 +896,7 @@ void process_migrate_req_msg(struct swarmkv_store* store, struct swarmkv_msg *ms
 			free(migrate_resp_msg);
 			migrate_resp_msg = NULL;
 
+			/*
 			//阻塞等待迁移接收者的完成响应
 			char nng_recv_buf[BUFSIZE];
 			memset(nng_recv_buf, 0, BUFSIZE);
@@ -907,12 +916,15 @@ void process_migrate_req_msg(struct swarmkv_store* store, struct swarmkv_msg *ms
 				printf("%d --> %d\n", slot_id, store->slots[slot_id].owner_node_id);
 				store->slots[migrate_slot_id].status = SLOT_STABLE;
 			}
+			*/
 		}
 		else
 		{
 			printf("\n");
 			printf("I think the slot is belong to node %d\n", new_slots[migrate_slot_id].owner_node_id);
 			//回复一个reject消息
+			nn_close(store->nng_socket);
+			store->nng_socket = -1;	
 		}
 		free(new_slots);
 		new_slots = NULL;
@@ -931,9 +943,10 @@ void process_migrate_req_msg(struct swarmkv_store* store, struct swarmkv_msg *ms
 		}
 		free(migrate_moved_msg);
 		migrate_moved_msg = NULL;
+		nn_close(store->nng_socket);
+		store->nng_socket = -1;	
 	}
 	src_node->status = WAITMEET;
-	nn_close(store->nng_socket);	
 	pthread_rwlock_unlock(&store->rwlock);
 }
 
@@ -952,7 +965,6 @@ void process_migrate_resp_msg(struct swarmkv_store* store, struct swarmkv_msg *m
 		if(swarmkv_msg_nng_send(store->nng_socket, slot_owner_change_msg, slot_owner_change_msg_len) < 0)
 		{
 			printf("send failed!\r\n");
-			nn_close(store->nng_socket);
 		}
 		swarmkv_msg_udp_broadcast(store, slot_owner_change_msg, slot_owner_change_msg_len, src_node);
 		store->slots[migrate_slot_id].owner_node_id = store->my_node_id;
@@ -1081,6 +1093,7 @@ void process_meet_req_msg(struct swarmkv_store* store, struct swarmkv_msg *msg, 
 	pthread_rwlock_unlock(&store->rwlock);
 }
 
+/*
 void migrate_slot(struct swarmkv_store *store, int slot_id, struct swarmkv_node *src_owner)
 {
 	char *migrate_req_msg = ALLOC(char, SWARMKV_MAX_MSG_SIZE);
@@ -1135,7 +1148,9 @@ void migrate_slot(struct swarmkv_store *store, int slot_id, struct swarmkv_node 
 		}
 	}
 	nn_close(store->nng_socket);
+	store->nng_socket = -1;	
 }
+*/
 
 void process_meet_resp_msg(struct swarmkv_store* store, struct swarmkv_msg *msg, struct swarmkv_node *src_node)
 {
@@ -1156,7 +1171,7 @@ void process_meet_resp_msg(struct swarmkv_store* store, struct swarmkv_msg *msg,
 	else if(msg->data.meet_resp_data.op_result==MEET_ID_CONFLICT)
 	{
 		//重新设置ID
-		printf("recieve a meet conflict, please reassign the node ID\n");	
+		printf("recieve a meet conflict, please REsassign the node ID\n");	
 	}
 	else
 	{
@@ -1233,7 +1248,6 @@ void process_meet_resp_msg(struct swarmkv_store* store, struct swarmkv_msg *msg,
 									//最后一个包处理完毕，关掉nng_socket
 									if(migrate_resp_msg->data.migrate_resp_data.kv_num == 0)
 									{	
-										//nn_close(store->nng_socket);
 										break;
 									}
 								}
@@ -1247,6 +1261,7 @@ void process_meet_resp_msg(struct swarmkv_store* store, struct swarmkv_msg *msg,
 							}
 						}
 						nn_close(store->nng_socket);
+						store->nng_socket = -1;	
 					}
 				}
 				free(new_slots);
@@ -1261,11 +1276,6 @@ void process_meet_resp_msg(struct swarmkv_store* store, struct swarmkv_msg *msg,
 				store->cluster_state = CLUSTER_STABLE;
 				store->meet_time = 0;
 			}
-		}
-		else
-		{
-			//do nothing
-			//回到process_msg_thread里检查本次meet请求过程是否超时
 		}
 	}
 	pthread_rwlock_unlock(&store->rwlock);
@@ -1785,6 +1795,7 @@ void process_fail_req_msg(struct swarmkv_store* store, struct swarmkv_msg *msg, 
 	pthread_rwlock_unlock(&store->rwlock);
 }
 
+/*
 void process_leave_req_msg(struct swarmkv_store* store, struct swarmkv_msg *msg, struct swarmkv_node *src_node)
 {
 	if(store->cluster_state == CLUSTER_STRETCH)
@@ -1793,7 +1804,7 @@ void process_leave_req_msg(struct swarmkv_store* store, struct swarmkv_msg *msg,
 	}
 	else
 	{
-		/*
+		
 		pthread_rwlock_wrlock(&store->rwlock);
 		store->cluster_state = CLUSTER_STRETCH;
 		src_node->status = FAIL;
@@ -1809,11 +1820,26 @@ void process_leave_req_msg(struct swarmkv_store* store, struct swarmkv_msg *msg,
 		free(new_slots);
 		new_slots = NULL;
 		pthread_rwlock_unlock(&store->rwlock);
-		*/
+		
 	}
 }
+void process_leave_resp_msg(struct swarmkv_store* store, struct swarmkv_msg *msg, struct swarmkv_node *src_node)
+{
+	if(msg->data.leave_resp_data.op_result == LEAVE_REJECT)
+	{
+		store->leave_recieve_cnt++;
+		if(store->leave_recieve_cnt >= ((store->cluster_size-1)/2))
+		{
+			//等待随机时间重新请求
+			store->leave_reject_cnt = 0;
+			//
+		}
+	}
+	if()
+}
+*/
 
-int swarmkv_msg_unpack(struct swarmkv_store* store, char *buf)
+int swarmkv_udp_msg_unpack(struct swarmkv_store* store, char *buf)
 {
 	//parse cjson message to swarmkv_msg struct
 	struct swarmkv_msg *msg = ALLOC(struct swarmkv_msg, 1);
@@ -1967,9 +1993,14 @@ int swarmkv_msg_unpack(struct swarmkv_store* store, char *buf)
 		case MSG_MIGRATE_MOVED:
 			process_migrate_moved_msg(store, msg, src_node);
 			break;
+		/*
 		case MSG_LEAVE_REQ:
 			process_leave_req_msg(store, msg, src_node);
 			break;
+		case MSG_LEAVE_RESP:
+			process_leave_resp_msg(store, msg, src_node);
+			break;
+		*/
 		default:
 			printf("UNKNOWN msg\n");
 	}
@@ -2109,22 +2140,63 @@ int swarmkv_regular_ping(struct swarmkv_store *store, clock_t elapsed_time)
 	return 1;
 }
 
+
+int swarmkv_nng_tcp_msg_unpack(struct swarmkv_store* store, char *nng_recv_buf)
+{
+	struct swarmkv_msg *msg = ALLOC(struct swarmkv_msg, 1);
+	int unpack_res = swarmkv_js_msg_unpack(nng_recv_buf, msg);
+	assert(unpack_res>0);
+	msg_statistics(msg->type); 
+
+	switch(msg->type)
+	{
+		case MSG_SLOT_OWNER_CHANGE:
+			//还应该要删除该slot所有kv,遍历起来有点慢，重构slot-table-kv的结构,未写
+			pthread_rwlock_wrlock(&store->rwlock);
+			int slot_id = msg->data.slot_moved_data.slot_id;
+			store->slots[slot_id].owner_node_id = msg->data.slot_moved_data.new_owner_id;
+			printf("*%d > %d\n", slot_id, store->slots[slot_id].owner_node_id);
+			store->slots[slot_id].status = SLOT_STABLE;
+			nn_close(store->nng_socket);
+			store->nng_socket = -1;	
+			pthread_rwlock_unlock(&store->rwlock);
+			break;
+		default:
+			printf("UNKNOWN msg\n");
+	}
+	return 1;
+}
+
 void *swarmkv_msg_processing_thread(void *arg)
 {
 	struct swarmkv_store *store = (struct swarmkv_store *) arg;
-	char recvbuf[BUFSIZE];
+	char udp_recvbuf[BUFSIZE];
 	struct sockaddr_in peer_addr;
 	socklen_t peer_addr_len = sizeof(struct sockaddr_in);
+	char nng_recv_buf[BUFSIZE];
 	while(1)
 	{
-		memset(recvbuf, 0, sizeof(recvbuf));
-		int n = recvfrom(store->sockfd, recvbuf, BUFSIZE, 0, (struct sockaddr *)&peer_addr, &peer_addr_len);
+		memset(udp_recvbuf, 0, sizeof(udp_recvbuf));
+		int n = recvfrom(store->sockfd, udp_recvbuf, BUFSIZE, 0, (struct sockaddr *)&peer_addr, &peer_addr_len);
 		if(n > 0) 
 		{
 			printf("my_ports:%d sender_port:%d\n",store->my_port, htons(peer_addr.sin_port));
-			printf("buff=%s\n",recvbuf);
-			swarmkv_msg_unpack(store, recvbuf);	
+			printf("buff=%s\n",udp_recvbuf);
+			swarmkv_udp_msg_unpack(store, udp_recvbuf);	
 		}
+
+		//nng_socket
+		if(store->nng_socket >= 0)
+		{
+			memset(nng_recv_buf, 0, BUFSIZE);
+			int rc = nn_recv(store->nng_socket, nng_recv_buf, BUFSIZE, 1);
+			if(rc > 0)
+			{
+				printf("recieve server msg: %s\r\n", nng_recv_buf);
+				swarmkv_nng_tcp_msg_unpack(store, nng_recv_buf);	
+			}
+		}
+	
 		if(store->meet_time != 0)
 		{
 			clock_t current_time = clock();
@@ -2152,8 +2224,8 @@ void *swarmkv_msg_processing_thread(void *arg)
 				store->meet_time = clock();
 			}
 		}
+		
 		//已经加入集群了
-	
 		if(store->meet_time == 0 && store->cluster_size > 1)
 		{
 			int ping_cnt = 0;
@@ -2348,6 +2420,7 @@ struct swarmkv_store *swarmkv_open(const char *bootstraps, const char *config, c
 	store->cluster_state = CLUSTER_STABLE;
 	store->cluster_size = 0;
 	store->meet_recieve_cnt = 0;
+	store->nng_socket = -1;
 
 	//add myself to store->nodes
 	add_new_node(store, store->my_node_id, store->my_ip, store->my_port, ON);
@@ -2416,7 +2489,7 @@ void swarmkv_close(struct swarmkv_store *store)
 	free(leave_req);
 	leave_req = NULL;
 	*/
-
+	
 	print_msg_stat();
 	
 	struct swarmkv_node *node = NULL;

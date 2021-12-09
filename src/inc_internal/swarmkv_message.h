@@ -16,9 +16,13 @@
 #define OP_UNSUCCESS -1
 #define REQ_NODE_ERROR 0      //I am not the owner of the key
 #define OP_SUCCESS 1
+
 #define MEET_RECIEVE 2
 #define MEET_REJECT 3
 #define MEET_ID_CONFLICT 4
+
+#define LEAVE_REJECT 5
+#define LEAVE_RECIEVE 6
 
 #define SWARMKV_DEFAULT_TTL 1
 
@@ -43,6 +47,7 @@ enum swarmkv_msg_type
 	MSG_INVALIDATE_KEYS_RESP,      //16
 	MSG_JOIN_COMPLETE,             //17
 	MSG_LEAVE_REQ,                 //18
+	MSG_LEAVE_RESP,                //19
 };
 
 
@@ -176,6 +181,11 @@ struct migrate_moved
 	int new_owner_id;
 };
 
+struct swarmkv_leave_resp
+{
+	int op_result;
+};
+
 union MsgData
 {
 	struct swarmkv_basic_infomation swarmkv_basic_info;
@@ -193,6 +203,7 @@ union MsgData
 	struct swarmkv_del_req del_req_data;
 	struct slot_moved slot_moved_data;
 	struct migrate_moved migrate_moved_data;
+	struct swarmkv_leave_resp leave_resp_data;
 };
 
 struct swarmkv_msg
