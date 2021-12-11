@@ -59,7 +59,7 @@ struct swarmkv_slot
 	int slot_id;
 	int owner_node_id;
 	int last_owner_id;          //迁移之前的上一个持有者
-	int status;                 //0 normal/1 migrating
+	int status;                 //0 SLOT_STABLE/1 SLOT_MIGRATING
 	//int replica_node_id[16];
 	int replica_node_id;
 	struct swarmkv_table *table_hash;
