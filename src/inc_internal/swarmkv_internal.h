@@ -13,12 +13,11 @@
 
 
 //#define SWARMKV_DEFAULT_SLOT_NUM 65536    //redis 16284
-#define SWARMKV_DEFAULT_SLOT_NUM 128
 #define SWARMKV_DEFAULT_NODE_NUM 32
 #define BOOTSTRAPS_NUM 5
 
 
-#define FAIL 0
+#define FAILED 0
 #define PFAIL 1
 #define ON 2
 #define WAITMEET 3
@@ -84,7 +83,7 @@ struct swarmkv_node
 	//int virtual_num;
 	uint32_t ping_sent_time;
 	uint32_t pong_received_time;
-	int status;        //ONLINE/PFAIL/FAIL
+	int status;        //ONLINE/PFAIL/FAILED
 	int pfail_cnt;
 	int meet_cnt;
 	UT_hash_handle hh;

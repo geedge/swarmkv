@@ -1,7 +1,12 @@
 #include<stdio.h>
 #include<pthread.h>
 #include <gtest/gtest.h>
+
 #include "swarmkv.h"
+
+#include "../src/inc_internal/swarmkv_internal.h"
+#include "../src/inc_internal/swarmkv_conhash.h"
+
 /*
 #include "../src/inc_internal/uthash/uthash.h"
 #include "../src/inc_internal/uthash/utarray.h"
@@ -224,6 +229,7 @@ TEST_F(SwarmkvClusterCommuTest, PutRemote)
 }
 */
 
+/*
 TEST(SwarmkvClusterOpenTest, ThreeNode)
 {
 	const char *bootstraps_0 = "self=172.16.225.2:8323";
@@ -251,17 +257,6 @@ TEST(SwarmkvClusterOpenTest, ThreeNode)
 	store_2 = swarmkv_open(bootstraps_2, config_2, &err_2);
 	store_3 = swarmkv_open(bootstraps_3, config_3, &err_3);
 
-	/*
-	sleep(20);
-	printf("\n!!!!!!!!!!!!!!!!!-!-!-!!!!!!!!!!!!!!!!!!!-----------------");
-	printf("\nclose ndoe 3\n");
-	swarmkv_close(store_3);
-	*/
-
-	
-
-	sleep(40);
-
 	swarmkv_GetSlotAssign(store_0);
 	swarmkv_GetSlotAssign(store_1);
 	swarmkv_GetSlotAssign(store_2);
@@ -273,6 +268,160 @@ TEST(SwarmkvClusterOpenTest, ThreeNode)
 	swarmkv_close(store_3);
 
 }
+*/
+
+/*
+int get_slot_table(int NID[], int node_num, struct swarmkv_slot *new_slots)
+{
+	struct conhash* ch = NULL;
+	ch = swarmkv_conhash_create(NID, node_num, SWARMKV_POINTS_PER_NODE_ON_CHR);
+	int i=0;
+	uint32_t j = 0;
+	int point_num = node_num * SWARMKV_POINTS_PER_NODE_ON_CHR;
+	for(i=0; i<point_num; i++)
+	{
+		int k=i+1;
+		int replica_node_id = -1;
+		if(node_num > 1)
+		{
+			while(1)
+			{
+				if(ch->point[k%point_num].node_id != ch->point[i].node_id)
+				{
+					replica_node_id = ch->point[k%point_num].node_id;
+					break;
+				}
+				else
+				{
+					k++;
+				}
+			}
+		}
+		if( i == 0)
+		{
+			for(j = 0; j<=ch->point[i].point_val; j++)
+			{
+				new_slots[j].slot_id = j;
+				new_slots[j].owner_node_id = ch->point[i].node_id;
+				new_slots[j].replica_node_id = replica_node_id;
+						
+			}
+			for(j=ch->point[point_num-1].point_val+1; j<SWARMKV_DEFAULT_SLOT_NUM; j++)
+			{
+				new_slots[j].slot_id = j;
+				new_slots[j].owner_node_id = ch->point[i].node_id;
+				new_slots[j].replica_node_id = replica_node_id;
+			}
+		}
+		else
+		{
+			for(j = ch->point[i-1].point_val+1; j<=ch->point[i].point_val; j++)
+			{
+				new_slots[j].slot_id = j;
+				new_slots[j].owner_node_id = ch->point[i].node_id;
+				new_slots[j].replica_node_id = replica_node_id;
+			}
+		}
+	}
+	printf("\n=======================================\n");
+	for(int k=0; k<SWARMKV_DEFAULT_SLOT_NUM; k++)
+	{
+		printf("%d:%d:%d ", new_slots[k].slot_id, new_slots[k].owner_node_id, new_slots[k].replica_node_id);
+	}
+	printf("\n=======================================\n");
+	conhash_destroy(ch);
+	return 1;
+}
+
+int check_slot_table_state(struct swarmkv_store *store, int NID[], int node_num)
+{
+	struct swarmkv_slot *new_slots = ALLOC(struct swarmkv_slot, SWARMKV_DEFAULT_SLOT_NUM);
+	get_slot_table(NID, node_num, new_slots);
+	
+	printf("*********slot table status**********\n");
+	for(int i=0; i<SWARMKV_DEFAULT_SLOT_NUM; i++)
+	{
+		printf("%d\n", i);
+		int exp_owner_id = new_slots[i].owner_node_id;
+		int store_owner_id = store->slots[i].owner_node_id;
+		EXPECT_EQ(store_owner_id, exp_owner_id);
+		int exp_replica_id = new_slots[i].replica_node_id;
+		if(exp_replica_id == store->my_node_id || exp_owner_id == store->my_node_id)
+		{
+			int store_replica_id = store->slots[i].replica_node_id;
+			EXPECT_EQ(store_replica_id, exp_replica_id);
+		}
+	}
+	return 1;
+}
+*/
+
+class SwarmkvClusterTest : public testing::Test 
+{
+protected:
+	struct swarmkv_store *store_0 = NULL;
+	struct swarmkv_store *store_1 = NULL;
+	struct swarmkv_store *store_2 = NULL;
+	struct swarmkv_store *store_3 = NULL;
+	virtual void SetUp()
+	{
+		const char *bootstraps_0 = "self=172.16.225.2:8323";
+		const char *config_0 = "node_id=0;token=49ffb3ae-8e7e-40ab-bc3f-824567e932fe,db=0";
+		char *err_0 = NULL;
+
+		const char *bootstraps_1 = "self=172.16.225.2:18323;peers=172.16.225.2:8323";
+		const char *config_1 = "node_id=1;token=49ffb3ae-8e7e-40ab-bc3f-824567e932fc,db=0";
+		char *err_1 = NULL;
+
+		const char *bootstraps_2 = "self=172.16.225.2:6323;peers=172.16.225.2:8323";
+		const char *config_2 = "node_id=2;token=49ffb3ae-8e7e-40ab-bc3f-824567e932fb,db=0";
+		char *err_2 = NULL;
+
+		const char *bootstraps_3 = "self=172.16.225.2:7323;peers=172.16.225.2:8323";
+		const char *config_3 = "node_id=3;token=49ffb3ae-8e7e-40ab-bc3f-824567e932fa,db=0";
+		char *err_3 = NULL;
+
+		store_0 = swarmkv_open(bootstraps_0, config_0, &err_0);
+		store_1 = swarmkv_open(bootstraps_1, config_1, &err_1);
+		store_2 = swarmkv_open(bootstraps_2, config_2, &err_2);
+		store_3 = swarmkv_open(bootstraps_3, config_3, &err_3);
+
+		sleep(30);
+	}
+
+	virtual void TearDown()
+	{
+		printf("begine down\n");
+		swarmkv_close(store_0);
+		swarmkv_close(store_1);
+		swarmkv_close(store_2);
+		swarmkv_close(store_3);
+		printf("end\n");
+	}
+};
+
+
+TEST_F(SwarmkvClusterTest, StartResultTest)
+{
+
+	printf("******test Start Result******\n");
+
+	swarmkv_GetSlotAssign(store_0);
+	swarmkv_GetSlotAssign(store_1);
+	swarmkv_GetSlotAssign(store_2);
+	swarmkv_GetSlotAssign(store_3);
+	
+	printf("---------node0------------\n");
+	for(int i=0; i<SWARMKV_DEFAULT_SLOT_NUM; i++)
+	{
+		printf("%d:%d:%d  ", i, store_0->slots[i].owner_node_id, store_0->slots[i].replica_node_id);
+	}
+	printf("\n\n");
+	int NID[4] = {0,1,2,3};
+	check_slot_table_state(store_0, NID, 4);
+	
+}
+
 
 int main(int argc, char **argv) {
   printf("Running main() from %s\n", __FILE__);

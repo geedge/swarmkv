@@ -5,6 +5,7 @@ extern "C"
 {
 #endif
 
+#define SWARMKV_DEFAULT_SLOT_NUM 128
 enum
 {
 	swarmkv_type_string,
@@ -16,6 +17,7 @@ struct swarmkv_readoptions;
 struct swarmkv_writeoptions;
 
 struct swarmkv_store;
+
 
 // config example: "node_id=1;token=49ffb3ae-8e7e-40ab-bc3f-824567e932fe,db=0";
 // bootstraps example: "self=0.0.0.0:8323;peers=192.168.0.100:8323,192.168.0.101:8323"
@@ -47,6 +49,8 @@ char *swarmkv_cache_get_kv(struct swarmkv_store *store, int slot_id, const char 
 char *swarmkv_GetKeyOpt(struct swarmkv_store *store, const char *tb_name, const char *key, size_t keylen, size_t *vallen);
 char *swarmkv_GetSlotAssign(struct swarmkv_store *store);
 int swarmkv_cluster_open(const char *bootstraps, const char *config, char **err);
+int check_slot_table_state(struct swarmkv_store *store, int NID[], int node_num);
+//int get_slot_table(int NID[], int node_num, struct swarmkv_slot *new_slots);
 //int swarmkv_subscribe(struct swarmkv_store *store, const char *table, cb_func callback);
 //struct swarmkv_reply *swarmkv_command(struct swarmkv_store *store, const char *format, ...);
 //value = swarm_kv_command(store, "hget %s %s", key, mbr);

@@ -47,7 +47,7 @@ static void *swarmkv_msg_pack_node_list(struct swarmkv_store *store, cJSON *js_m
 			printf("--------->>>>>>>> %d\n", node->node_id);
 		}
 		*/
-		if(node->status != FAIL && node->status != WAITMEET)
+		if(node->status != FAILED && node->status != WAITMEET)
 		{
 			cJSON_AddItemToArray(js_node_list, js_node = cJSON_CreateObject());
 			cJSON_AddNumberToObject(js_node,"node_id", node->node_id);

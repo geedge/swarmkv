@@ -27,7 +27,8 @@ struct conhash
 	struct ch_point *point;
 };
 
-void *swarmkv_conhash_create(struct swarmkv_node *nodes, int node_num, uint32_t points_per_bucket);
+//void *swarmkv_conhash_create(struct swarmkv_node *nodes, int node_num, uint32_t points_per_bucket);
+struct conhash *swarmkv_conhash_create(int NID[], int node_num, uint32_t points_per_bucket);
 void conhash_destroy( struct conhash *ch );
 
 #ifdef __cplusplus

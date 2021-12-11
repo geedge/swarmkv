@@ -69,10 +69,38 @@ uint64_t gen_uniq_rand(const void* base, int nmeb, size_t size, int val_offset)
 	}
 }
 
+struct conhash *swarmkv_conhash_create(int NID[], int node_num, uint32_t points_per_bucket)
+{
+	struct conhash* ch=NULL;
+	uint32_t randval;
+	ch			   = (struct conhash *)calloc( sizeof( struct conhash ), 1 );
+	ch->point	   = (struct ch_point*)calloc( sizeof( struct ch_point ), node_num * points_per_bucket);
+	ch->bucket_id_upbound = node_num;
+	ch->bucket_cnt = node_num;
+	ch->bucket_hit = (uint32_t*)calloc(sizeof(uint32_t),node_num);
+	ch->points_per_bucket = points_per_bucket;
+	ch->point_num = points_per_bucket*node_num;
+	
+	qsort(NID, node_num, sizeof(int), cmp_by_node_id);
+
+	for(int i=0;i<ch->points_per_bucket;i++)
+    {
+        for(int j=0;j<ch->bucket_id_upbound;j++)
+        {
+			randval=(((uint32_t)(-1))/(ch->points_per_bucket*(NID[j]+i+1)))*((i+1)*(NID[j]+i)*ch->points_per_bucket+SWARMKV_DEFAULT_SLOT_NUM);
+            ch->point[i*ch->bucket_id_upbound+j].node_id=NID[j];
+            ch->point[i*ch->bucket_id_upbound+j].point_val=randval % SWARMKV_DEFAULT_SLOT_NUM;
+			ch->point[i*ch->bucket_id_upbound+j].hit_cnt=0;
+		}
+	}
+	qsort(ch->point,ch->point_num, sizeof(struct ch_point),cmp_by_key);
+	return ch;
+}
+
+/*
 void *swarmkv_conhash_create(struct swarmkv_node *nodes, int node_num, uint32_t points_per_bucket)
 {
 	struct conhash* ch=NULL;
-	//int node_num = HASH_COUNT(nodes);
 	uint32_t randval;
 	ch			   = (struct conhash *)calloc( sizeof( struct conhash ), 1 );
 	ch->point	   = (struct ch_point*)calloc( sizeof( struct ch_point ), node_num * points_per_bucket);
@@ -89,7 +117,7 @@ void *swarmkv_conhash_create(struct swarmkv_node *nodes, int node_num, uint32_t 
 	
 	HASH_ITER(hh, nodes, node, node_tmp)
 	{
-		if(node->status != WAITMEET && node->status != FAIL)
+		if(node->status != WAITMEET && node->status != FAILED)
 		{
 			NID[nd] = node->node_id;
 			nd++;
@@ -107,14 +135,7 @@ void *swarmkv_conhash_create(struct swarmkv_node *nodes, int node_num, uint32_t 
 	for(int i=0;i<ch->points_per_bucket;i++)
     {
         for(int j=0;j<ch->bucket_id_upbound;j++)
-        {
-			/*
-			int t = NID[j]*171+171;
-			srand((unsigned)t);
-			uint32_t tmp_rand = rand();
-			randval = tmp_rand % SWARMKV_DEFAULT_SLOT_NUM + SWARMKV_DEFAULT_SLOT_NUM/(i+1);
-			printf("%d %d %u %u\n", t, NID[j], randval, tmp_rand);
-			*/
+        {	
 			randval=(((uint32_t)(-1))/(ch->points_per_bucket*(NID[j]+i+1)))*((i+1)*(NID[j]+i)*ch->points_per_bucket+SWARMKV_DEFAULT_SLOT_NUM);
             ch->point[i*ch->bucket_id_upbound+j].node_id=NID[j];
             ch->point[i*ch->bucket_id_upbound+j].point_val=randval % SWARMKV_DEFAULT_SLOT_NUM;
@@ -124,6 +145,14 @@ void *swarmkv_conhash_create(struct swarmkv_node *nodes, int node_num, uint32_t 
 	qsort(ch->point,ch->point_num, sizeof(struct ch_point),cmp_by_key);
 	return ch;
 }
+*/
+/*
+			int t = NID[j]*171+171;
+			srand((unsigned)t);
+			uint32_t tmp_rand = rand();
+			randval = tmp_rand % SWARMKV_DEFAULT_SLOT_NUM + SWARMKV_DEFAULT_SLOT_NUM/(i+1);
+			printf("%d %d %u %u\n", t, NID[j], randval, tmp_rand);
+*/
 
 int conhash_add_point( struct conhash *ch, uint32_t node_id )
 {
