@@ -36,20 +36,22 @@ enum swarmkv_msg_type
 	MSG_FAIL_RESP,                 //5
 	MSG_MIGRATE_REQ,               //6
 	MSG_MIGRATE_RESP,              //7
-	MSG_MIGRATE_MOVED,             //8
-	MSG_DEL_KV,                    //9
-	MSG_SLOT_OWNER_CHANGE,         //10
-	MSG_PUT_REQ,                   //11
-	MSG_PUT_RESP,                  //12
-	MSG_GET_REQ,                   //13
-	MSG_GET_RESP,                  //14   
-	MSG_INVALIDATE_KEYS_REQ,       //15
-	MSG_INVALIDATE_KEYS_RESP,      //16
-	MSG_JOIN_COMPLETE,             //17
-	MSG_LEAVE_REQ,                 //18
-	MSG_LEAVE_RESP,                //19
-	MSG_LEAVE_MIGRATE,             //20
-	MSG_LEAVE_COMPLETE,            //21
+	MSG_MIGRATE_REJECT,            //8
+
+	MSG_MIGRATE_MOVED,             //9
+	MSG_DEL_KV,                    //10
+	MSG_SLOT_OWNER_CHANGE,         //11
+	MSG_PUT_REQ,                   //12
+	MSG_PUT_RESP,                  //13
+	MSG_GET_REQ,                   //14
+	MSG_GET_RESP,                  //15   
+	MSG_INVALIDATE_KEYS_REQ,       //16
+	MSG_INVALIDATE_KEYS_RESP,      //17
+	MSG_JOIN_COMPLETE,             //18
+	MSG_LEAVE_REQ,                 //19
+	MSG_LEAVE_RESP,                //20
+	MSG_LEAVE_MIGRATE,             //21
+	MSG_LEAVE_COMPLETE,            //22
 };
 
 
@@ -188,6 +190,12 @@ struct swarmkv_leave_resp
 	int op_result;
 };
 
+struct swarmkv_join_complete
+{
+	int slot_num;
+	struct swarmkv_slot slots[SWARMKV_DEFAULT_SLOT_NUM];
+};
+
 union MsgData
 {
 	struct swarmkv_basic_infomation swarmkv_basic_info;
@@ -206,6 +214,7 @@ union MsgData
 	struct slot_moved slot_moved_data;
 	struct migrate_moved migrate_moved_data;
 	struct swarmkv_leave_resp leave_resp_data;
+	struct swarmkv_join_complete join_complete_data;
 };
 
 struct swarmkv_msg
@@ -265,3 +274,4 @@ size_t swarmkv_msg_pack_slot_owner_change(struct swarmkv_store *store, char *buf
 size_t swarmkv_msg_pack_leave_req(struct swarmkv_store *store, char *buff, size_t buff_size);
 size_t swarmkv_msg_pack_leave_resp(struct swarmkv_store *store, char *buff, size_t buff_size, int op_result);
 size_t swarmkv_msg_pack_leave_complete(struct swarmkv_store *store, char *buff, size_t buff_size);
+size_t swarmkv_msg_pack_migrate_reject(struct swarmkv_store *store, char *buff, size_t buff_size);

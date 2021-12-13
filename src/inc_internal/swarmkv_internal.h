@@ -10,10 +10,13 @@
 #include "swarmkv_nng.h"
 
 
-
+#define SWARMKV_DEFAULT_NODE_TIMEOUT_US 15000000    //15s
+#define SWARMKV_DEFAULT_PING_MIN_INTERVAL_US 1500000    //1.5s
+#define SWARMKV_REGULAR_PING_INTERVAL_US 1000000   //100ms
+#define SWARMKV_RANDOM_PING_INTERVAL_US 1000000   //1s
 
 //#define SWARMKV_DEFAULT_SLOT_NUM 65536    //redis 16284
-#define SWARMKV_DEFAULT_SLOT_NUM 128
+#define SWARMKV_DEFAULT_SLOT_NUM 256
 #define SWARMKV_DEFAULT_NODE_NUM 32
 #define BOOTSTRAPS_NUM 5
 
@@ -108,7 +111,7 @@ struct swarmkv_store
 	int sockfd;
 	int nng_socket;
 	struct swarmkv_slot slots[SWARMKV_DEFAULT_SLOT_NUM];
-	//pthread_t tid;
+	pthread_t tid;
 	//struct swarmkv_table *table_hash; //key: char table_name[256], value: struct swarmkv_table*
 	//struct swarmkv_transaction *on_fly_transactions;
 	pthread_rwlock_t rwlock;
