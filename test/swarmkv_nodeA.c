@@ -132,7 +132,7 @@ int main(int argc, char **argv)
 
 	sleep(40);
 	swarmkv_GetSlotAssign(store);
-	swarmkv_close(store);
+	free_store_space(store);
 	return 1;
 }
 

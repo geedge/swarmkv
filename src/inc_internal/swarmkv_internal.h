@@ -18,10 +18,11 @@
 #define BOOTSTRAPS_NUM 5
 
 
-#define FAIL 0
+#define FAILED 0
 #define PFAIL 1
 #define ON 2
 #define WAITMEET 3
+#define WAITLEAVE 4
 
 #define CLUSTER_STABLE 0
 #define CLUSTER_STRETCH 1
@@ -107,6 +108,7 @@ struct swarmkv_store
 	int sockfd;
 	int nng_socket;
 	struct swarmkv_slot slots[SWARMKV_DEFAULT_SLOT_NUM];
+	//pthread_t tid;
 	//struct swarmkv_table *table_hash; //key: char table_name[256], value: struct swarmkv_table*
 	//struct swarmkv_transaction *on_fly_transactions;
 	pthread_rwlock_t rwlock;

@@ -19,9 +19,14 @@ int main(int argc, char **argv)
 		return -1;
 	}
 	
-	sleep(20);
+	sleep(8);
     swarmkv_GetSlotAssign(store);
 	swarmkv_close(store);
+	sleep(15);
+	for(int i=0; i<10; i++)
+	{
+		printf("************\n");
+	}
 	return 1;
 }
 

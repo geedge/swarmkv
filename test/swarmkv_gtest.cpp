@@ -260,17 +260,19 @@ TEST(SwarmkvClusterOpenTest, ThreeNode)
 	swarmkv_close(store_3);
 	*/
 
-	sleep(40);
+	sleep(60);
 
 	swarmkv_GetSlotAssign(store_0);
 	swarmkv_GetSlotAssign(store_1);
 	swarmkv_GetSlotAssign(store_2);
 	swarmkv_GetSlotAssign(store_3);
 
+	/*
 	swarmkv_close(store_0);
 	swarmkv_close(store_1);
 	swarmkv_close(store_2);
 	swarmkv_close(store_3);
+	*/
 
 }
 

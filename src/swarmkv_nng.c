@@ -46,32 +46,3 @@ int swarmkv_msg_nng_send(int sockfd, const char* msg, size_t msg_len)
     }
     return 0;
 }
-/*
-int nng_socket(int nng_socket)
-{
-    char buf[BUF_LEN] = {0};
-    while(1)
-    {
-        int rc = nn_recv(nng_socket, buf, sizeof(buf), 0);
-        if (rc < 0)
-        {
-            printf("nn_recv failed! error: %s.rc = %d.\n", nn_err_strerror(errno), rc);
-            continue;
-            //nn_close(nng_socket);
-            //exit(EXIT_FAILURE);
-        }
-        else
-        {
-            printf("recieve client msg: %s\r\n", buf);
-            if (nn_send(nng_socket, buf, sizeof(buf), 0) < 0)
-            {
-                printf("send failed!\r\n");
-                nn_close(nng_socket);
-                exit(EXIT_FAILURE);
-            }
-        }
-    }
-    nn_close(nng_socket);
-    return 0;
-}
-*/

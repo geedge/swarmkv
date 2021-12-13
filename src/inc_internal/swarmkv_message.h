@@ -48,6 +48,8 @@ enum swarmkv_msg_type
 	MSG_JOIN_COMPLETE,             //17
 	MSG_LEAVE_REQ,                 //18
 	MSG_LEAVE_RESP,                //19
+	MSG_LEAVE_MIGRATE,             //20
+	MSG_LEAVE_COMPLETE,            //21
 };
 
 
@@ -260,5 +262,6 @@ size_t swarmkv_msg_pack_slot_moved(struct swarmkv_store *store, char *buff, size
 size_t swarmkv_msg_pack_migrate_moved(struct swarmkv_store *store, char *buff, size_t buff_size, int slot_id, int new_owner_id);
 size_t swarmkv_msg_pack_join_complete(struct swarmkv_store *store, char *buff, size_t buff_size);
 size_t swarmkv_msg_pack_slot_owner_change(struct swarmkv_store *store, char *buff, size_t buff_size, int slot_id, int new_owner_id);
-
-
+size_t swarmkv_msg_pack_leave_req(struct swarmkv_store *store, char *buff, size_t buff_size);
+size_t swarmkv_msg_pack_leave_resp(struct swarmkv_store *store, char *buff, size_t buff_size, int op_result);
+size_t swarmkv_msg_pack_leave_complete(struct swarmkv_store *store, char *buff, size_t buff_size);
