@@ -2,7 +2,6 @@
 #include <pthread.h>
 #include <unistd.h>
 
-/*
 #include "../src/inc_internal/swarmkv_nng.h"
 
 int main(int argc, char **argv)
@@ -30,25 +29,4 @@ int main(int argc, char **argv)
         nn_freemsg (buf);
     }
     nn_close(sockfd);
-}
-*/
-
-#include "../src/inc_internal/swarmkv_message.h"
-void test_cjson()
-{
-	char *str = ALLOC(char, 10);
-	memcpy(str, "hello", strlen("hello"));
-	cJSON* js_msg = NULL;
-	js_msg = cJSON_CreateObject();
-	cJSON_AddStringToObject(js_msg, "key", str);
-	
-    free(str);
-    str = NULL;
-    cJSON_Delete(js_msg);
-	
-}
-
-void main()
-{
-    test_cjson();
 }

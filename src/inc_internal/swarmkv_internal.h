@@ -13,11 +13,12 @@
 
 
 //#define SWARMKV_DEFAULT_SLOT_NUM 65536    //redis 16284
+#define SWARMKV_DEFAULT_SLOT_NUM 128
 #define SWARMKV_DEFAULT_NODE_NUM 32
 #define BOOTSTRAPS_NUM 5
 
 
-#define FAILED 0
+#define FAIL 0
 #define PFAIL 1
 #define ON 2
 #define WAITMEET 3
@@ -58,9 +59,8 @@ struct swarmkv_slot
 	int slot_id;
 	int owner_node_id;
 	int last_owner_id;          //迁移之前的上一个持有者
-	int status;                 //0 SLOT_STABLE/1 SLOT_MIGRATING
-	//int replica_node_id[16];
-	int replica_node_id;
+	int status;                 //0 normal/1 migrating
+	int replica_node_id[16];
 	struct swarmkv_table *table_hash;
 };
 
@@ -83,7 +83,7 @@ struct swarmkv_node
 	//int virtual_num;
 	uint32_t ping_sent_time;
 	uint32_t pong_received_time;
-	int status;        //ONLINE/PFAIL/FAILED
+	int status;        //ONLINE/PFAIL/FAIL
 	int pfail_cnt;
 	int meet_cnt;
 	UT_hash_handle hh;
