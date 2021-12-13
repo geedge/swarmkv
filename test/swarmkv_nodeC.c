@@ -20,6 +20,7 @@ int main(int argc, char **argv)
 	}
 	
 	sleep(8);
+	printf("show current slot\n");
     swarmkv_GetSlotAssign(store);
 	swarmkv_close(store);
 	sleep(15);
