@@ -7,6 +7,7 @@ SET(CMAKE_CXX_FLAGS_DEBUG "$ENV{CXXFLAGS} -O0 -Wall -g2 -ggdb")
 SET(CMAKE_CXX_FLAGS_RELEASE "$ENV{CXXFLAGS} -O3 -Wall")
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../include)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../src/inc_internal)
 
 # 创建可执行程序
 add_executable(swarmkv_nodeA swarmkv_nodeA.c)
@@ -25,8 +26,8 @@ target_link_libraries(swarmkv_gtest swarmkv_frame_static)
 add_executable(test_main test_main.c)
 target_link_libraries(test_main swarmkv_frame_static)
 
-add_executable(tes_nng tes_nng.c)
-target_link_libraries(tes_nng swarmkv_frame_static)
+#add_executable(tes_nng tes_nng.c)
+#target_link_libraries(tes_nng swarmkv_frame_static)
 
 #target_link_libraries(MyTests ${GTEST_BOTH_LIBRARIES})
 #target_link_libraries(MyTests ${CMAKE_THREAD_LIBS_INIT})

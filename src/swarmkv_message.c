@@ -262,6 +262,61 @@ size_t swarmkv_msg_pack_put_req_with_cb(struct swarmkv_store *store, enum swarmk
 
 //pack put response msg
 size_t swarmkv_msg_pack_put_resp(struct swarmkv_store *store, enum swarmkv_msg_type type, char *buff, size_t buff_size,
+					 const char* tb_name, const char* key, const char* value, int op_result, int slot_id, int new_owner_id)
+{
+	cJSON* js_msg = NULL;
+	js_msg = cJSON_CreateObject();
+	
+	swarmkv_msg_pack_kv_object(store, js_msg, type, tb_name, key, value);
+	cJSON_AddNumberToObject(js_msg, "op_result", op_result);
+	if(op_result = REQ_NODE_ERROR)
+	{
+		cJSON_AddNumberToObject(js_msg, "s_id", slot_id);
+		cJSON_AddNumberToObject(js_msg, "new_oid", new_owner_id);
+	}
+	size_t msg_len = serialization_msg(js_msg, buff, buff_size);
+	cJSON_Delete(js_msg);
+	return msg_len;
+}
+
+size_t swarmkv_msg_pack_put_resp_with_cb(struct swarmkv_store *store, enum swarmkv_msg_type type, char *buff, size_t buff_size,
+					 const char* tb_name, const char* key, const char* value, int op_result, int slot_id, int new_owner_id, const char* uuid_version, long unsigned int callback_func_addr, long unsigned int callback_arg_addr)
+{
+	cJSON* js_msg = NULL;
+	js_msg = cJSON_CreateObject();
+	
+	swarmkv_msg_pack_kv_object(store, js_msg, type, tb_name, key, value);
+	cJSON_AddNumberToObject(js_msg, "op_result", op_result);
+	if(op_result = REQ_NODE_ERROR)
+	{
+		cJSON_AddNumberToObject(js_msg, "s_id", slot_id);
+		cJSON_AddNumberToObject(js_msg, "new_oid", new_owner_id);
+	}
+	cJSON_AddNumberToObject(js_msg, "callback_func", callback_func_addr);
+	cJSON_AddNumberToObject(js_msg, "callback_func_arg", callback_arg_addr);
+	cJSON_AddStringToObject(js_msg, "uuid_version", uuid_version);
+	
+	size_t msg_len = serialization_msg(js_msg, buff, buff_size);
+	cJSON_Delete(js_msg);
+	return msg_len;
+}
+
+//pack put req msg
+size_t swarmkv_msg_pack_invalidate_req(struct swarmkv_store *store, enum swarmkv_msg_type type, char *buff, size_t buff_size,
+					 const char* tb_name, const char* key, const char* value)
+{
+	cJSON* js_msg = NULL;
+	js_msg = cJSON_CreateObject();
+	
+	swarmkv_msg_pack_kv_object(store, js_msg, type, tb_name, key, value);
+	
+	size_t msg_len = serialization_msg(js_msg, buff, buff_size);
+	
+	cJSON_Delete(js_msg);
+	return msg_len;
+}
+
+size_t swarmkv_msg_pack_invalidate_resp(struct swarmkv_store *store, enum swarmkv_msg_type type, char *buff, size_t buff_size,
 					 const char* tb_name, const char* key, const char* value, int op_result)
 {
 	cJSON* js_msg = NULL;
@@ -271,23 +326,7 @@ size_t swarmkv_msg_pack_put_resp(struct swarmkv_store *store, enum swarmkv_msg_t
 	cJSON_AddNumberToObject(js_msg, "op_result", op_result);
 	
 	size_t msg_len = serialization_msg(js_msg, buff, buff_size);
-	cJSON_Delete(js_msg);
-	return msg_len;
-}
-
-size_t swarmkv_msg_pack_put_resp_with_cb(struct swarmkv_store *store, enum swarmkv_msg_type type, char *buff, size_t buff_size,
-					 const char* tb_name, const char* key, const char* value, int op_result, const char* uuid_version, long unsigned int callback_func_addr, long unsigned int callback_arg_addr)
-{
-	cJSON* js_msg = NULL;
-	js_msg = cJSON_CreateObject();
 	
-	swarmkv_msg_pack_kv_object(store, js_msg, type, tb_name, key, value);
-	cJSON_AddNumberToObject(js_msg, "op_result", op_result);
-	cJSON_AddNumberToObject(js_msg, "callback_func", callback_func_addr);
-	cJSON_AddNumberToObject(js_msg, "callback_func_arg", callback_arg_addr);
-	cJSON_AddStringToObject(js_msg, "uuid_version", uuid_version);
-	
-	size_t msg_len = serialization_msg(js_msg, buff, buff_size);
 	cJSON_Delete(js_msg);
 	return msg_len;
 }
@@ -763,6 +802,13 @@ int swarmkv_js_msg_unpack(char *buf, struct swarmkv_msg *msg)
 			memcpy(msg->data.put_resp_data.value, value->valuestring, val_len);
 			op_result = cJSON_GetObjectItem(js_msg, "op_result");
 			msg->data.put_resp_data.op_result = op_result->valueint;
+			if(msg->data.put_resp_data.op_result == REQ_NODE_ERROR)
+			{
+				slot_id = cJSON_GetObjectItem(js_msg, "s_id");
+				new_owner = cJSON_GetObjectItem(js_msg, "new_oid");
+				msg->data.put_resp_data.slot_id = slot_id->valueint;
+				msg->data.put_resp_data.new_owner_id = new_owner->valueint;
+			}
 			cb_function = cJSON_GetObjectItem(js_msg, "callback_func");
 			cb_arg = cJSON_GetObjectItem(js_msg, "callback_func_arg");
 			uuid_version = cJSON_GetObjectItem(js_msg, "uuid_version");

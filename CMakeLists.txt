@@ -35,7 +35,7 @@ message("PROJECT_SOURCE_DIR: ${PROJECT_SOURCE_DIR}")   #/home/janessa/Desktop/sw
 message("PROJECT_BINARY_DIR: ${PROJECT_BINARY_DIR}")   #/home/janessa/Desktop/swarmkv/build
 message("CAMKE_SOURCE_DIR: ${CAMKE_SOURCE_DIR}")
 ]]
-
+include_directories(include)
 #add_subdirectory(source_dir [binary_dir] [EXCLUDE_FROM_ALL])
 add_subdirectory(vendor)
 add_subdirectory(src)

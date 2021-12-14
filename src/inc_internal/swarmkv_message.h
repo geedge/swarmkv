@@ -123,6 +123,8 @@ struct swarmkv_put_resp
 	char *key;
 	char *value;
 	int op_result;
+	int slot_id;
+	int new_owner_id;
 	char uuid_version[37];
 	long unsigned int cb_function; 
 	long unsigned int cb_arg;
@@ -250,14 +252,18 @@ size_t swarmkv_msg_pack_get_resp_with_cb(struct swarmkv_store *store, char *buff
 									const char* value, int op_result, const char* uuid_version, long unsigned int callback_func_addr, long unsigned int callback_arg_addr);
 
 //put&invalidate
+size_t swarmkv_msg_pack_put_resp(struct swarmkv_store *store, enum swarmkv_msg_type type, char *buff, size_t buff_size,
+					 const char* tb_name, const char* key, const char* value, int op_result, int slot_id, int new_owner_id);
+size_t swarmkv_msg_pack_put_resp_with_cb(struct swarmkv_store *store, enum swarmkv_msg_type type, char *buff, size_t buff_size,
+					 const char* tb_name, const char* key, const char* value, int op_result, int slot_id, int new_owner_id, const char* uuid_version, long unsigned int callback_func_addr, long unsigned int callback_arg_addr);
 size_t swarmkv_msg_pack_put_req(struct swarmkv_store *store, enum swarmkv_msg_type type, char *buff, size_t buff_size,
 					 const char* tb_name, const char* key, const char* value);
 size_t swarmkv_msg_pack_put_req_with_cb(struct swarmkv_store *store, enum swarmkv_msg_type type, char *buff, size_t buff_size,
 					 const char* tb_name, const char* key, const char* value, long unsigned int callback_func_addr, long unsigned int callback_arg_addr);
-size_t swarmkv_msg_pack_put_resp(struct swarmkv_store *store, enum swarmkv_msg_type type, char *buff, size_t buff_size,
-					 const char* tb_name, const char* key, const char* value, int op_result);
-size_t swarmkv_msg_pack_put_resp_with_cb(struct swarmkv_store *store, enum swarmkv_msg_type type, char *buff, size_t buff_size,
-					 const char* tb_name, const char* key, const char* value, int op_result, const char* uuid_version, long unsigned int callback_func_addr, long unsigned int callback_arg_addr);
+//size_t swarmkv_msg_pack_put_resp(struct swarmkv_store *store, enum swarmkv_msg_type type, char *buff, size_t buff_size,
+//					 const char* tb_name, const char* key, const char* value, int op_result);
+//size_t swarmkv_msg_pack_put_resp_with_cb(struct swarmkv_store *store, enum swarmkv_msg_type type, char *buff, size_t buff_size,
+//					 const char* tb_name, const char* key, const char* value, int op_result, const char* uuid_version, long unsigned int callback_func_addr, long unsigned int callback_arg_addr);
 
 size_t swarmkv_msg_pack_migration_req(struct swarmkv_store *store, char *buff, size_t buff_size, int slot_id);
 size_t swarmkv_msg_pack_migration_resp(struct swarmkv_store *store, char *buff, size_t buff_size, enum swarmkv_msg_type type, 
@@ -275,3 +281,11 @@ size_t swarmkv_msg_pack_leave_req(struct swarmkv_store *store, char *buff, size_
 size_t swarmkv_msg_pack_leave_resp(struct swarmkv_store *store, char *buff, size_t buff_size, int op_result);
 size_t swarmkv_msg_pack_leave_complete(struct swarmkv_store *store, char *buff, size_t buff_size);
 size_t swarmkv_msg_pack_migrate_reject(struct swarmkv_store *store, char *buff, size_t buff_size);
+size_t swarmkv_msg_pack_invalidate_req(struct swarmkv_store *store, enum swarmkv_msg_type type, char *buff, size_t buff_size,
+					 const char* tb_name, const char* key, const char* value);
+size_t swarmkv_msg_pack_invalidate_resp(struct swarmkv_store *store, enum swarmkv_msg_type type, char *buff, size_t buff_size,
+					 const char* tb_name, const char* key, const char* value, int op_result);
+
+
+
+
