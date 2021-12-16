@@ -558,11 +558,11 @@ int swarmkv_parse_node(struct swarmkv_store *store, struct swarmkv_basic_infomat
 					fail_req_msg = NULL;
 					struct swarmkv_slot *new_slots = ALLOC(struct swarmkv_slot, SWARMKV_DEFAULT_SLOT_NUM);
 					caculate_slot_table(store, new_slots);
-					for(int i=0; i<SWARMKV_DEFAULT_SLOT_NUM; i++)
+					for(int j=0; j<SWARMKV_DEFAULT_SLOT_NUM; j++)
 					{
-						if(new_slots[i].owner_node_id == store->my_node_id)
+						if(new_slots[j].owner_node_id == store->my_node_id)
 						{
-							store->slots[i].owner_node_id = store->my_node_id;
+							store->slots[j].owner_node_id = store->my_node_id;
 						}
 					}
 					free(new_slots);
@@ -1128,40 +1128,40 @@ void process_meet_resp_msg(struct swarmkv_store* store, struct swarmkv_msg *msg,
 						if (rc > 0)
 						{
 							printf("recieve client msg: %s\r\n", nng_buf);
-							struct swarmkv_msg *msg = ALLOC(struct swarmkv_msg, 1);
-							int unpack_res = swarmkv_js_msg_unpack(nng_buf, msg);
+							struct swarmkv_msg *migrate_msg = ALLOC(struct swarmkv_msg, 1);
+							int unpack_res = swarmkv_js_msg_unpack(nng_buf, migrate_msg);
 							assert(unpack_res>0);
-							msg_statistics(msg->type);    	//统计各类数据包个数
-							if(msg->type == MSG_MIGRATE_RESP)
+							msg_statistics(migrate_msg->type);    	//统计各类数据包个数
+							if(migrate_msg->type == MSG_MIGRATE_RESP)
 							{
 								printf("process migrate resp\n");
-								process_migrate_resp_msg(store, msg, curr_slot_owner_node);
-								if(msg->data.migrate_resp_data.kv_num == 0)
+								process_migrate_resp_msg(store, migrate_msg, curr_slot_owner_node);
+								if(migrate_msg->data.migrate_resp_data.kv_num == 0)
 								{
 									//最后一个包处理完毕，关掉nng_socket
 									break;
 								}
 								else
 								{
-									free_migrate_resp_msg(msg);	
+									free_migrate_resp_msg(migrate_msg);	
 								}
 							}
-							else if(msg->type == MSG_MIGRATE_REJECT)
+							else if(migrate_msg->type == MSG_MIGRATE_REJECT)
 							{
-								swarmkv_parse_node(store, msg->data.swarmkv_basic_info);
-								swarmkv_parse_slot(store, msg->data.swarmkv_basic_info);
+								swarmkv_parse_node(store, migrate_msg->data.swarmkv_basic_info);
+								swarmkv_parse_slot(store, migrate_msg->data.swarmkv_basic_info);
 								caculate_slot_table(store, new_slots);
 								i--;
 								break;
 							}
 							else
 							{
-								printf("It is not a migrate response? %d\n", msg->type);
+								printf("It is not a migrate response? %d\n", migrate_msg->type);
 							}
-							free(msg->src_ip);
-							msg->src_ip = NULL;
-							free(msg);
-							msg = NULL;
+							free(migrate_msg->src_ip);
+							migrate_msg->src_ip = NULL;
+							free(migrate_msg);
+							migrate_msg = NULL;
 						}
 					}
 				}
@@ -2672,30 +2672,33 @@ char *swarmkv_GetKeyOpt(struct swarmkv_store *store, const char *table_name, con
 		{
 			printf("It is not a local table\n");
 		}
-		HASH_FIND(hh, table->owned_value_hash, key, keylen, kv);
-		if(kv == NULL)
-		{
-			printf("It is not a local kv\n");
-			HASH_FIND(hh, table->cached_value_hash, key, keylen, kv);
-			if(kv == NULL)
-			{
-				printf("It is not a cached kv\n");
-			}
-			else
-			{
-				printf("It is a cached kv\n");
-			}
-		}	
 		else
 		{
-			if(strcmp(kv->key, key) != 0)
+			HASH_FIND(hh, table->owned_value_hash, key, keylen, kv);
+			if(kv == NULL)
 			{
-				collision_cnt++;
-				printf("collision\n");
-			}
+				printf("It is not a local kv\n");
+				HASH_FIND(hh, table->cached_value_hash, key, keylen, kv);
+				if(kv == NULL)
+				{
+					printf("It is not a cached kv\n");
+				}
+				else
+				{
+					printf("It is a cached kv\n");
+				}
+			}	
 			else
 			{
-				printf("It is a local kv %s:%s\n", kv->key, kv->value);
+				if(strcmp(kv->key, key) != 0)
+				{
+					collision_cnt++;
+					printf("collision\n");
+				}
+				else
+				{
+					printf("It is a local kv %s:%s\n", kv->key, kv->value);
+				}
 			}
 		}
 	}
