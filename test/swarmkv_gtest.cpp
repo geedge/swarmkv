@@ -985,14 +985,18 @@ protected:
 			char *err = NULL;
 			if(i==0)
 			{
-				snprintf(bootstraps, SWARMKV_MAX_VAL_LEN, "self=172.16.225.2:%d323", i+1);
+				snprintf(bootstraps, 128, "self=172.16.225.2:%d323", i+1);
 			}
 			else
 			{
-				snprintf(bootstraps, SWARMKV_MAX_VAL_LEN, "self=172.16.225.2:%d323;peers=172.16.225.2:1323", i+1);
+				snprintf(bootstraps, 128, "self=172.16.225.2:%d323;peers=172.16.225.2:1323", i+1);
 			}
-			snprintf(config, SWARMKV_MAX_VAL_LEN, "node_id=%d;token=49ffb3ae-8e7e-40ab-bc3f-824567e932fe,db=0", i);
+			snprintf(config, 128, "node_id=%d;token=49ffb3ae-8e7e-40ab-bc3f-824567e932fe,db=0", i);
 			store[i] = swarmkv_open(bootstraps, config, &err);
+			free(bootstraps);
+			bootstraps = NULL;
+			free(config);
+			config = NULL;
 		}
 		//sleep(20);
 	}
