@@ -29,12 +29,6 @@ else()
   message(FATAL_ERROR "Could not find the program cppcheck.")
 endif()
 
-#[[
-message("PROJECT_NAME: ${PROJECT_NAME}")               #swarmkv
-message("PROJECT_SOURCE_DIR: ${PROJECT_SOURCE_DIR}")   #/home/janessa/Desktop/swarmkv
-message("PROJECT_BINARY_DIR: ${PROJECT_BINARY_DIR}")   #/home/janessa/Desktop/swarmkv/build
-message("CAMKE_SOURCE_DIR: ${CAMKE_SOURCE_DIR}")
-]]
 include_directories(include)
 #add_subdirectory(source_dir [binary_dir] [EXCLUDE_FROM_ALL])
 add_subdirectory(vendor)

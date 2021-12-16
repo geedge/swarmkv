@@ -4,9 +4,9 @@
 #include <string.h>
 #include <unistd.h>
 
-#include "nanomsg/nn.h"
-#include "nanomsg/pair.h"
-#include "nanomsg/tcp.h"
+#include <nanomsg/nn.h>
+#include <nanomsg/pair.h>
+#include <nanomsg/tcp.h>
 
 /*
 #include "nanomsg/nn.h"

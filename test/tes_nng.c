@@ -7,7 +7,7 @@
 int main(int argc, char **argv)
 {
     //nng_listen();
-    char* url = "tcp://172.16.225.2:8323";
+    char* url = "tcp://192.168.40.47:8323";
     int sockfd = nng_create_socket_to_connect(url);
     //const char* msg = "{\"my_id\":0,\"my_ip\":\"172.16.225.2\",\"my_port\":8323}";
     const char* msg = "hello";

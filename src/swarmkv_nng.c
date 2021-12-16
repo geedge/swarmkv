@@ -40,9 +40,12 @@ int nng_create_socket_to_connect(const char* url)
 
 int swarmkv_msg_nng_send(int sockfd, const char* msg, size_t msg_len)
 {
+    printf("send 0 \n");
     if(nn_send(sockfd, msg, msg_len, 0)<0)
     {
+        printf("send error\n");
         return -1;
     }
+    printf("send\n");
     return 0;
 }

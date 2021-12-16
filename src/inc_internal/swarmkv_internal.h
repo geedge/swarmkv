@@ -16,7 +16,7 @@
 #define SWARMKV_RANDOM_PING_INTERVAL_US 1000000   //1s
 
 //#define SWARMKV_DEFAULT_SLOT_NUM 65536    //redis 16284
-#define SWARMKV_DEFAULT_SLOT_NUM 256
+#define SWARMKV_DEFAULT_SLOT_NUM 512
 #define SWARMKV_DEFAULT_NODE_NUM 32
 #define BOOTSTRAPS_NUM 5
 
@@ -40,9 +40,9 @@
 #define BUFSIZE 65507
 
 #define SWARMKV_DEFAULT_LISTEN_PORT 8323
-#define SWARMKV_MAX_KEY_LEN 256
+#define SWARMKV_MAX_KEY_LEN 512
 #define SWARMKV_MAX_VAL_LEN 512
-#define SWARMKV_ONCE_MIGRATE_KV_NUM 20
+#define SWARMKV_ONCE_MIGRATE_KV_NUM 40
 #define SWARMKV_MAX_SLOT_KVNUM 10000
 
 #define SWARMKV_DEFAULT_MEET_TIME_US 2000000  //2s
@@ -53,7 +53,6 @@ struct swarmkv_key_value
 	size_t keylen;
 	char *value;
 	size_t vallen;
-	int migrate_flag;     //0未迁移/1已迁移未应答
 	UT_array *nodes_have_key_cached; //for key invalidation
 	UT_hash_handle hh;
 };
@@ -89,7 +88,6 @@ struct swarmkv_node
 	uint32_t pong_received_time;
 	int status;        //ONLINE/PFAIL/FAIL
 	int pfail_cnt;
-	int meet_cnt;
 	UT_hash_handle hh;
 };
 
@@ -104,9 +102,9 @@ struct swarmkv_store
 	char uuid[37];
 	int cluster_size;
 	int cluster_state;     //0 STABLE || 1 MEETING
-	int meet_recieve_cnt;
 	int leave_recieve_cnt;
-	uint32_t meet_time;    //meet不能超时
+	//uint32_t meet_time;    //meet不能超时
+	int meet_flag;
 	struct swarmkv_node *nodes;		  //key: int node_id, value: struct swarmkv_node*
 	int sockfd;
 	int nng_socket;

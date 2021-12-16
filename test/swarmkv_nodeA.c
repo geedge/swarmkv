@@ -19,7 +19,7 @@ void get_callback_print(const char *table, const char *key, size_t keylen, const
 
 int main(int argc, char **argv)
 {	
-	const char *bootstraps = "self=172.16.225.2:8323";
+	const char *bootstraps = "self=192.168.40.182:8323";
 	const char *config = "node_id=0;token=49ffb3ae-8e7e-40ab-bc3f-824567e932fe,db=0";
 	char *err = NULL;
 	struct swarmkv_store *store = NULL;
@@ -30,6 +30,7 @@ int main(int argc, char **argv)
 		return -1;
 	}
 
+	/*
 	const char* tb_name = "table0";
 	const char *key = "key1";
 	size_t keylen = strlen(key);
@@ -40,9 +41,9 @@ int main(int argc, char **argv)
 
 	printf("******test PUT Local******\n");
 	swarmkv_put(store, tb_name, NULL, key, keylen, value, vallen, NULL);
-	//printf("wait response\n");
+	*/
 
-	
+	/*
 	//sleep(3);
 	//printf("******test GET_REMOTE******\n");
 	char *get_val = NULL;
@@ -53,6 +54,10 @@ int main(int argc, char **argv)
 		printf("%s\n",get_val);
 	}
 	printf("wait response\n");
+	*/
+
+	sleep(60);
+	swarmkv_GetSlotAssign(store);
 	
 	/*
 	sleep(1);
@@ -130,8 +135,7 @@ int main(int argc, char **argv)
 	printf("wait response\n");
 	*/
 
-	sleep(40);
-	swarmkv_GetSlotAssign(store);
+	
 	free_store_space(store);
 	return 1;
 }
