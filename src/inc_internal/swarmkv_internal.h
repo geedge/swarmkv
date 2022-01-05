@@ -8,16 +8,17 @@
 #include "swarmkv_net.h"
 #include "swarmkv.h"
 #include "swarmkv_nng.h"
+#include<time.h>
 
 
 #define SWARMKV_DEFAULT_NODE_TIMEOUT_US 15000000    //15s
-#define SWARMKV_DEFAULT_PING_MIN_INTERVAL_US 1500000    //1.5s
-#define SWARMKV_REGULAR_PING_INTERVAL_US 1000000   //100ms
+#define SWARMKV_DEFAULT_PING_MIN_INTERVAL_US 3000000    //5s
+#define SWARMKV_REGULAR_PING_INTERVAL_US 1000000   //1s
 #define SWARMKV_RANDOM_PING_INTERVAL_US 1000000   //1s
 
 //#define SWARMKV_DEFAULT_SLOT_NUM 65536    //redis 16284
-#define SWARMKV_DEFAULT_SLOT_NUM 512
-#define SWARMKV_DEFAULT_NODE_NUM 32
+#define SWARMKV_DEFAULT_SLOT_NUM 1024
+#define SWARMKV_DEFAULT_NODE_NUM 256
 #define BOOTSTRAPS_NUM 5
 
 
@@ -45,8 +46,6 @@
 #define SWARMKV_ONCE_MIGRATE_KV_NUM 40
 #define SWARMKV_MAX_SLOT_KVNUM 10000
 
-#define SWARMKV_DEFAULT_MEET_TIME_US 2000000  //2s
-
 struct swarmkv_key_value
 {
 	char *key;
@@ -64,6 +63,7 @@ struct swarmkv_slot
 	int last_owner_id;          //迁移之前的上一个持有者
 	int status;                 //0 normal/1 migrating
 	int replica_node_id[16];
+	pthread_rwlock_t rwlock;
 	struct swarmkv_table *table_hash;
 };
 
@@ -90,8 +90,6 @@ struct swarmkv_node
 	int pfail_cnt;
 	UT_hash_handle hh;
 };
-
-
 
 struct swarmkv_store
 {

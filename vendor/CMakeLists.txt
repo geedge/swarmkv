@@ -68,3 +68,16 @@ add_dependencies(nanomsg-static nanomsg)
 set_property(TARGET nanomsg-static PROPERTY IMPORTED_LOCATION ${VENDOR_BUILD}/lib64/libnanomsg.a)
 #set_property(TARGET nanomsg-static PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${VENDOR_BUILD}/src/nanomsg/)
 
+
+#fieldstat
+ExternalProject_Add(FieldStat PREFIX FieldStat
+        URL ${CMAKE_CURRENT_SOURCE_DIR}/FieldState.tar.gz
+        URL_MD5 228ca1335d131f9f264200dd67d51167
+        CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${VENDOR_BUILD} -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE})
+
+ExternalProject_Get_Property(FieldStat INSTALL_DIR)
+add_library(fieldstate-static STATIC IMPORTED GLOBAL)
+add_dependencies(fieldstate-static FieldStat)
+set_property(TARGET fieldstate-static PROPERTY IMPORTED_LOCATION ${VENDOR_BUILD}/lib/libMESA_field_stat2.a)
+
+
