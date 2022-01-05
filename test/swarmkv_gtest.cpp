@@ -860,20 +860,6 @@ TEST_F(SwarmkvClusterInitTest, EmptyStartSpeed)
 		}
 	}
 	printf("*ok\n");
-	
-	/*
-	sleep(20);
-
-	int NID[55] = {0};
-	for(int i=0 ; i<node_num; i++)
-	{
-		NID[i] = i;
-	}
-	for(int i=0; i<10; i++)
-	{
-		check_slot_table_state(store[i], NID, node_num);
-	}
-	*/
 }
 
 
