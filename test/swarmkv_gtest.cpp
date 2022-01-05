@@ -807,14 +807,14 @@ TEST_F(SwarmkvRemoteTest, CacheandInvalidate)
 class SwarmkvClusterInitTest : public testing::Test 
 {
 protected:
-	struct swarmkv_store *store[55];
+	struct swarmkv_store *store[16];
 	virtual void SetUp()
 	{
 		const char *bootstraps0 = "self=192.168.40.182:1323";
 		const char *config0 = "node_id=0;token=49ffb3ae-8e7e-40ab-bc3f-824567e932fe,db=0";
 		char *err0 = NULL;
 		store[0] = swarmkv_open(bootstraps0, config0, &err0);
-		for(int i=1; i<55; i++)
+		for(int i=1; i<16; i++)
 		{
 			char *bootstraps = ALLOC(char, 128); 
 			char *config = ALLOC(char, 128);
@@ -841,7 +841,7 @@ protected:
 TEST_F(SwarmkvClusterInitTest, EmptyStartSpeed)
 {
 	printf("******test Start Result******\n");
-	int node_num = 55;
+	int node_num = 16;
 	while(1)
 	{
 		int flag = 0;
@@ -861,6 +861,7 @@ TEST_F(SwarmkvClusterInitTest, EmptyStartSpeed)
 	}
 	printf("*ok\n");
 	
+	/*
 	sleep(20);
 
 	int NID[55] = {0};
@@ -872,6 +873,7 @@ TEST_F(SwarmkvClusterInitTest, EmptyStartSpeed)
 	{
 		check_slot_table_state(store[i], NID, node_num);
 	}
+	*/
 }
 
 
