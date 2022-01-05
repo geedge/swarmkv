@@ -206,7 +206,7 @@ void *put_test_1(void *arg)
 	{
 		get_random_str(key_prefix, 500);
 		get_random_str(val_prefix, 500);
-		snprintf(tb_name, SWARMKV_MAX_KEY_LEN, "table%d", i%128);
+		snprintf(tb_name, 32, "table%d", i%128);
 		size_t vallen = 0;
 		//snprintf(key, SWARMKV_MAX_KEY_LEN, "key-%d", i);
 		snprintf(key, SWARMKV_MAX_KEY_LEN, "%s-%d", key_prefix, i);
