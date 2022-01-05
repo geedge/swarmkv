@@ -560,11 +560,11 @@ int swarmkv_parse_node(struct swarmkv_store *store, struct swarmkv_basic_infomat
 					fail_req_msg = NULL;
 					struct swarmkv_slot *new_slots = ALLOC(struct swarmkv_slot, SWARMKV_DEFAULT_SLOT_NUM);
 					caculate_slot_table(store, new_slots);
-					for(int i=0; i<SWARMKV_DEFAULT_SLOT_NUM; i++)
+					for(int j=0; j<SWARMKV_DEFAULT_SLOT_NUM; j++)
 					{
-						if(new_slots[i].owner_node_id == store->my_node_id)
+						if(new_slots[j].owner_node_id == store->my_node_id)
 						{
-							store->slots[i].owner_node_id = store->my_node_id;
+							store->slots[j].owner_node_id = store->my_node_id;
 						}
 					}
 					free(new_slots);

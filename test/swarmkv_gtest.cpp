@@ -167,7 +167,7 @@ protected:
 	virtual void SetUp()
 	{
 		char *bootstraps = ALLOC(char, 128); 
-		snprintf(bootstraps, SWARMKV_MAX_VAL_LEN, "self=%s:8323", host_ip);
+		snprintf(bootstraps, 128, "self=%s:8323", host_ip);
 		const char *config = "node_id=0;token=49ffb3ae-8e7e-40ab-bc3f-824567e932fe,db=0";
 		char *err = NULL;
 		store_0 = swarmkv_open(bootstraps, config, &err);
@@ -810,17 +810,17 @@ protected:
 	struct swarmkv_store *store[55];
 	virtual void SetUp()
 	{
-		const char *bootstraps = "self=192.168.40.182:1323";
-		const char *config = "node_id=0;token=49ffb3ae-8e7e-40ab-bc3f-824567e932fe,db=0";
-		char *err = NULL;
-		store[0] = swarmkv_open(bootstraps, config, &err);
+		const char *bootstraps0 = "self=192.168.40.182:1323";
+		const char *config0 = "node_id=0;token=49ffb3ae-8e7e-40ab-bc3f-824567e932fe,db=0";
+		char *err0 = NULL;
+		store[0] = swarmkv_open(bootstraps0, config0, &err0);
 		for(int i=1; i<55; i++)
 		{
 			char *bootstraps = ALLOC(char, 128); 
 			char *config = ALLOC(char, 128);
 			char *err = NULL;
-			snprintf(bootstraps, SWARMKV_MAX_VAL_LEN, "self=%s:%d;peers=%s:1323", host_ip, i+1323, host_ip);
-			snprintf(config, SWARMKV_MAX_VAL_LEN, "node_id=%d;token=49ffb3ae-8e7e-40ab-bc3f-824567e932fe,db=0", i);
+			snprintf(bootstraps, 128, "self=%s:%d;peers=%s:1323", host_ip, i+1323, host_ip);
+			snprintf(config, 128, "node_id=%d;token=49ffb3ae-8e7e-40ab-bc3f-824567e932fe,db=0", i);
 			store[i] = swarmkv_open(bootstraps, config, &err);
 			/*
 			while(store[i]->meet_flag)

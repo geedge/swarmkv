@@ -79,7 +79,7 @@ void *put_test_0(void *arg)
 
 		size_t vallen = 0;
 		
-		snprintf(tb_name, SWARMKV_MAX_KEY_LEN, "table%d", i%100);
+		snprintf(tb_name, 32, "table%d", i%100);
 		//snprintf(key, SWARMKV_MAX_KEY_LEN, "key-%d", i);
 		snprintf(key, SWARMKV_MAX_KEY_LEN, "%s-%d", key_prefix, i);
 		keylen = strlen(key);
@@ -143,7 +143,7 @@ void *put_test(void *arg)
 	{
 		get_random_str(key_prefix, 512);
 		get_random_str(val_prefix, 512);
-		snprintf(tb_name, SWARMKV_MAX_KEY_LEN, "table%d", i%64);
+		snprintf(tb_name, 32, "table%d", i%64);
 		size_t vallen = 0;
 		//snprintf(key, SWARMKV_MAX_KEY_LEN, "key-%d", i);
 		snprintf(key, SWARMKV_MAX_KEY_LEN, "%s-%d", key_prefix, i);
