@@ -160,7 +160,7 @@ int get_random_str(char* random_str, const int random_len)
 /*————————————————————————————————————测试用例————————————————————————————————————————*/
 /*————————————————————————————————————测试用例————————————————————————————————————————*/
 
-class SwarmkvLocalTest : public testing::Test 
+class SwarmkvLocalFunctionTest : public testing::Test 
 {
 protected:
 	struct swarmkv_store *store_0 = NULL;
@@ -178,9 +178,136 @@ protected:
 	}
 };
 
-//测试本地put kv并get key:5～10bytes value:7~12bytes
-TEST_F(SwarmkvLocalTest, PutLocalSmallSpeed)
+//测试本地put一个kv并get_with_callback，不带参数的callback函数
+TEST_F(SwarmkvLocalFunctionTest, GetCallbackLocal)
 {
+	printf("******test GET_LOCAL with callback******\n");
+	const char* tb_name = "table0";
+	const char *key = "key3";
+	size_t keylen = strlen(key);
+	const char *value = "val0";
+	size_t vallen = strlen(value);
+
+	swarmkv_put(store_0, tb_name, NULL, key, keylen, value, vallen, NULL);
+
+	swarmkv_get_with_callback(store_0, tb_name, NULL, key, keylen, callback_print, NULL);
+}
+
+
+//测试本地put一个kv并get_with_callback,带参数的callback函数
+TEST_F(SwarmkvLocalFunctionTest, GetCallbackwithArgLocal)
+{
+	printf("******test GET_LOCAL with callback(Arg)******\n");
+	const char* tb_name = "table0";
+	const char *key = "key3";
+	size_t keylen = strlen(key);
+	const char *value = "val0";
+	size_t vallen = strlen(value);
+
+	swarmkv_put(store_0, tb_name, NULL, key, keylen, value, vallen, NULL);
+
+	char *callback_value = ALLOC(char, SWARMKV_MAX_VAL_LEN);
+	swarmkv_get_with_callback(store_0, tb_name, NULL, key, keylen, callback_with_arg, callback_value);
+
+	printf("%s\n", callback_value);
+	const char *exp0 = "val0";
+	EXPECT_EQ(*callback_value, *exp0); 
+
+	free(callback_value);
+	callback_value = NULL;
+}
+
+
+//测试本地put_with_callback，不含参数
+TEST_F(SwarmkvLocalFunctionTest, PUTCallbackLocal)
+{
+	printf("******test PUT_LOCAL with callback******\n");
+	const char* tb_name = "table0";
+	const char *key = "key3";
+	size_t keylen = strlen(key);
+	const char *value = "val0";
+	size_t vallen = strlen(value);
+
+	swarmkv_put_with_callback(store_0, tb_name, NULL, key, keylen, value, vallen, callback_print, NULL);
+
+}
+
+//测试本地put_with_callback，含参数
+TEST_F(SwarmkvLocalFunctionTest, PUTCallbackwithArgLocal)
+{
+	printf("******test PUT_LOCAL with callback(Arg)******\n");
+	const char* tb_name = "table0";
+	const char *key = "key3";
+	size_t keylen = strlen(key);
+	const char *value = "val0";
+	size_t vallen = strlen(value);
+	char *callback_value = ALLOC(char, SWARMKV_MAX_VAL_LEN);
+
+	swarmkv_put_with_callback(store_0, tb_name, NULL, key, keylen, value, vallen, callback_with_arg, callback_value);
+
+	printf("%s\n", callback_value);
+	const char *exp0 = "val0";
+	EXPECT_EQ(*callback_value, *exp0); 
+	free(callback_value);
+	callback_value = NULL;
+}
+
+//测试本地对于同一个key，更新value
+TEST_F(SwarmkvLocalFunctionTest, UpdateLocal)
+{
+	const char* tb_name = "table0";
+	const char *key = "key3";
+	size_t keylen = strlen(key);
+	const char *value = "val0";
+	size_t vallen = strlen(value);
+	swarmkv_put(store_0, tb_name, NULL, key, keylen, value, vallen, NULL);
+
+	char *get_val = NULL;
+	size_t get_vallen;
+	get_val = swarmkv_get(store_0, tb_name, NULL, key, keylen, &get_vallen, NULL);
+	
+	const char *exp0 = "val0";
+	EXPECT_EQ(*get_val, *exp0);  
+	free(get_val);
+	get_val = NULL;
+
+	const char *new_value = "val1";
+	size_t new_vallen = strlen(new_value);
+	swarmkv_put(store_0, tb_name, NULL, key, keylen, new_value, new_vallen, NULL);
+	get_val = swarmkv_get(store_0, tb_name, NULL, key, keylen, &get_vallen, NULL);
+	
+	const char *exp1 = "val1";
+	EXPECT_EQ(*get_val, *exp1);
+	free(get_val);
+	get_val = NULL;
+}
+
+///批量操作测试速度
+class SwarmkvLocalSpeedTest : public testing::Test 
+{
+protected:
+	struct swarmkv_store *store_0 = NULL;
+	virtual void SetUp()
+	{
+		char *bootstraps = ALLOC(char, 128); 
+		snprintf(bootstraps, 128, "self=%s:8323", host_ip);
+		const char *config = "node_id=0;token=49ffb3ae-8e7e-40ab-bc3f-824567e932fe,db=0";
+		char *err = NULL;
+		store_0 = swarmkv_open(bootstraps, config, &err);
+	}
+	virtual void TearDown()
+	{
+		free_store_space(store_0);
+	}
+};
+
+//测试本地put kv并get
+TEST_F(SwarmkvLocalSpeedTest, PutLocalSmallSpeed)
+{
+	//设置kv大小
+	int key_prefix_len = 16;
+	int val_prefix_len = 1000;
+
 	screen_stat_handle_t handle = NULL;
 	handle = FS_create_handle();
 	int FS_value = 1;
@@ -190,17 +317,13 @@ TEST_F(SwarmkvLocalTest, PutLocalSmallSpeed)
 	int histogram_ids = FS_register_histogram(handle, FS_CALC_CURRENT, "op_delay", 1, 100000, 3);
 	struct timespec start;
 
-	printf("******test GET_LOCAL speed******\n");
+	printf("******test PUT_LOCAL speed******\n");
 	const char* tb_name = "table0";
-	printf("%s\n", tb_name);
 	size_t keylen = 0;
 	char *key = ALLOC(char, SWARMKV_MAX_KEY_LEN);
 	char *value = ALLOC(char, SWARMKV_MAX_VAL_LEN);
 	char *key_prefix = ALLOC(char, SWARMKV_MAX_KEY_LEN);
 	char *val_prefix = ALLOC(char, SWARMKV_MAX_VAL_LEN);
-	//size_t get_vallen = 0;
-	int key_prefix_len = 16;
-	int val_prefix_len = 1000;
 	
 	struct timespec start_time = {0, 0};
 	struct timespec end_time = {0, 0};
@@ -210,16 +333,13 @@ TEST_F(SwarmkvLocalTest, PutLocalSmallSpeed)
 	{
 		get_random_str(key_prefix, key_prefix_len);
 		get_random_str(val_prefix, val_prefix_len);
-
-		size_t vallen = 0;
 		snprintf(key, SWARMKV_MAX_KEY_LEN, "%s-%d", key_prefix, i);
 		keylen = strlen(key);
-		//printf("%zu %s\n", keylen, key);
 		snprintf(value, SWARMKV_MAX_VAL_LEN, "%s-%d", val_prefix, i);
-		vallen = strlen(value);		
-		//printf("* %s %s\n", key, value);
+		size_t vallen = strlen(value);	
+		//printf("%zu %s\n", keylen, key);	
+		//printf("%zu %s\n", vallen, value);
 		
-		//int slot_id = caculate_key_slot_id(key, keylen);
 		record_time_start(&start);
 		swarmkv_put(store_0, tb_name, NULL, key, keylen, value, vallen, NULL);
 		long eplapses=record_time_elapse_us(&start);
@@ -241,9 +361,10 @@ TEST_F(SwarmkvLocalTest, PutLocalSmallSpeed)
 	FS_library_destroy();
 }
 
+
 /*
 //测试本地put kv并get key:5～10bytes value:7~12bytes
-TEST_F(SwarmkvLocalTest, GetLocalSmallSpeed)
+TEST_F(SwarmkvLocalSpeedTest, GetLocalSmallSpeed)
 {
 	screen_stat_handle_t handle = NULL;
 	handle = FS_create_handle();
@@ -336,58 +457,10 @@ TEST_F(SwarmkvLocalTest, GetLocalSmallSpeed)
 }
 */
 
-/*
-//测试本地putkv key:5～10bytes value:7~12bytes
-TEST_F(SwarmkvLocalTest, PutLocalSmallSpeed)
-{
-	screen_stat_handle_t handle = NULL;
-	handle = FS_create_handle();
-	int FS_value = 1;
-	FS_set_para(handle, CREATE_THREAD, &FS_value, sizeof(FS_value));
-	FS_value = 1;
-	FS_set_para(handle, STAT_CYCLE, &FS_value, sizeof(FS_value));
-	int histogram_ids = FS_register_histogram(handle, FS_CALC_CURRENT, "op_delay", 1, 100000, 3);
-	FS_start(handle);
-	struct timespec start;
-	
-	printf("******test PUT_Local speed******\n");
-	const char* tb_name = "table0";
-	printf("%s\n", tb_name);
-	size_t keylen = 0;
-	char *key = ALLOC(char, SWARMKV_MAX_KEY_LEN);
-	char *value = ALLOC(char, SWARMKV_MAX_VAL_LEN);
-	
-
-	for(int i=0; i<1000000; i++)
-	{
-		size_t vallen = 0;
-		snprintf(key, SWARMKV_MAX_KEY_LEN, "key-%d", i);
-		keylen = strlen(key);
-		snprintf(value, SWARMKV_MAX_VAL_LEN, "val-%d", i);
-		//printf("* %s %s\n", key, value);
-		vallen = strlen(value);
-
-		record_time_start(&start);
-		swarmkv_put(store_0, tb_name, NULL, key, keylen, value, vallen, NULL);
-		long eplapses=record_time_elapse_us(&start);
-		FS_operate(handle, histogram_ids, 0, FS_OP_SET, eplapses);
-
-		memset(key, 0, SWARMKV_MAX_KEY_LEN);
-		memset(value, 0, SWARMKV_MAX_VAL_LEN);
-	}
-	free(key);
-	key = NULL;
-	free(value);
-	value = NULL;
-	sleep(3);
-	FS_stop(&handle);
-}
-*/
-
 
 /*
 //测试本地putkv 256bytes/256bytes
-TEST_F(SwarmkvLocalTest, PutLocalMidSpeed)
+TEST_F(SwarmkvLocalSpeedTest, PutLocalMidSpeed)
 {
 	screen_stat_handle_t handle = NULL;
 	handle = FS_create_handle();
@@ -456,7 +529,7 @@ TEST_F(SwarmkvLocalTest, PutLocalMidSpeed)
 
 /*
 //测试本地getkv
-TEST_F(SwarmkvLocalTest, GetLocalMidSpeed)
+TEST_F(SwarmkvLocalSpeedTest, GetLocalMidSpeed)
 {
 	screen_stat_handle_t handle = NULL;
 	handle = FS_create_handle();
@@ -529,7 +602,7 @@ TEST_F(SwarmkvLocalTest, GetLocalMidSpeed)
 
 /*
 //测试本地put kv并get
-TEST_F(SwarmkvLocalTest, PutGetLocal)
+TEST_F(SwarmkvLocalSpeedTest, PutGetLocal)
 {
 	printf("******test PUT_Local and GET_LOCAL speed******\n");
 	const char* tb_name = "table0";
@@ -564,8 +637,6 @@ TEST_F(SwarmkvLocalTest, PutGetLocal)
 	clock_gettime(CLOCK_MONOTONIC, &end_time);
 	printf("use_time : %zu\n", (end_time.tv_sec - start_time.tv_sec)*1000 + (end_time.tv_nsec - start_time.tv_nsec)/1000000);
 
-	//struct timespec start_time = {0, 0};
-	//struct timespec end_time = {0, 0};
 	clock_gettime(CLOCK_MONOTONIC, &start_time);
 	size_t get_vallen = 0;
 	char *get_key = ALLOC(char, SWARMKV_MAX_KEY_LEN);
@@ -592,109 +663,6 @@ TEST_F(SwarmkvLocalTest, PutGetLocal)
 }
 */
 
-/*
-//测试本地put一个kv并get_with_callback，不带参数的callback函数
-TEST_F(SwarmkvLocalTest, GetCallbackLocal)
-{
-	printf("******test GET_LOCAL with callback******\n");
-	const char* tb_name = "table0";
-	const char *key = "key3";
-	size_t keylen = strlen(key);
-	const char *value = "val0";
-	size_t vallen = strlen(value);
-
-	swarmkv_put(store_0, tb_name, NULL, key, keylen, value, vallen, NULL);
-
-	swarmkv_get_with_callback(store_0, tb_name, NULL, key, keylen, callback_print, NULL);
-}
-
-//测试本地put一个kv并get_with_callback,带参数的callback函数
-TEST_F(SwarmkvLocalTest, GetCallbackwithArgLocal)
-{
-	printf("******test GET_LOCAL with callback(Arg)******\n");
-	const char* tb_name = "table0";
-	const char *key = "key3";
-	size_t keylen = strlen(key);
-	const char *value = "val0";
-	size_t vallen = strlen(value);
-
-	swarmkv_put(store_0, tb_name, NULL, key, keylen, value, vallen, NULL);
-
-	char *callback_value = ALLOC(char, SWARMKV_MAX_VAL_LEN);
-	swarmkv_get_with_callback(store_0, tb_name, NULL, key, keylen, callback_with_arg, callback_value);
-
-	printf("%s\n", callback_value);
-	const char *exp0 = "val0";
-	EXPECT_EQ(*callback_value, *exp0); 
-
-	free(callback_value);
-	callback_value = NULL;
-}
-
-//测试本地put_with_callback，不含参数
-TEST_F(SwarmkvLocalTest, PUTCallbackLocal)
-{
-	printf("******test PUT_LOCAL with callback******\n");
-	const char* tb_name = "table0";
-	const char *key = "key3";
-	size_t keylen = strlen(key);
-	const char *value = "val0";
-	size_t vallen = strlen(value);
-
-	swarmkv_put_with_callback(store_0, tb_name, NULL, key, keylen, value, vallen, callback_print, NULL);
-
-}
-
-//测试本地put_with_callback，含参数
-TEST_F(SwarmkvLocalTest, PUTCallbackwithArgLocal)
-{
-	printf("******test PUT_LOCAL with callback(Arg)******\n");
-	const char* tb_name = "table0";
-	const char *key = "key3";
-	size_t keylen = strlen(key);
-	const char *value = "val0";
-	size_t vallen = strlen(value);
-	char *callback_value = ALLOC(char, SWARMKV_MAX_VAL_LEN);
-
-	swarmkv_put_with_callback(store_0, tb_name, NULL, key, keylen, value, vallen, callback_with_arg, callback_value);
-
-	printf("%s\n", callback_value);
-	const char *exp0 = "val0";
-	EXPECT_EQ(*callback_value, *exp0); 
-	free(callback_value);
-	callback_value = NULL;
-}
-
-//测试本地对于同一个key，更新value
-TEST_F(SwarmkvLocalTest, UpdateLocal)
-{
-	const char* tb_name = "table0";
-	const char *key = "key3";
-	size_t keylen = strlen(key);
-	const char *value = "val0";
-	size_t vallen = strlen(value);
-	swarmkv_put(store_0, tb_name, NULL, key, keylen, value, vallen, NULL);
-
-	char *get_val = NULL;
-	size_t get_vallen;
-	get_val = swarmkv_get(store_0, tb_name, NULL, key, keylen, &get_vallen, NULL);
-	
-	const char *exp0 = "val0";
-	EXPECT_EQ(*get_val, *exp0);  
-	free(get_val);
-	get_val = NULL;
-
-	const char *new_value = "val1";
-	size_t new_vallen = strlen(new_value);
-	swarmkv_put(store_0, tb_name, NULL, key, keylen, new_value, new_vallen, NULL);
-	get_val = swarmkv_get(store_0, tb_name, NULL, key, keylen, &get_vallen, NULL);
-	
-	const char *exp1 = "val1";
-	EXPECT_EQ(*get_val, *exp1);
-	free(get_val);
-	get_val = NULL;
-}
-*/
 
 
 /*

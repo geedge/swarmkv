@@ -15,6 +15,7 @@
 #define SWARMKV_DEFAULT_PING_MIN_INTERVAL_US 3000000    //5s
 #define SWARMKV_REGULAR_PING_INTERVAL_US 1000000   //1s
 #define SWARMKV_RANDOM_PING_INTERVAL_US 1000000   //1s
+#define SWARMKV_CACHE_EXPIREATION_PERIORD  60000000  //1min
 
 //#define SWARMKV_DEFAULT_SLOT_NUM 65536    //redis 16284
 #define SWARMKV_DEFAULT_SLOT_NUM 1024
@@ -50,6 +51,7 @@ struct swarmkv_key_value
 	size_t keylen;
 	char *value;
 	size_t vallen;
+	clock_t cached_time;
 	UT_array *nodes_have_key_cached; //for key invalidation
 	UT_hash_handle hh;
 };
