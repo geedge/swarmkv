@@ -521,17 +521,17 @@ protected:
 	struct swarmkv_store *store[3];
 	virtual void SetUp()
 	{
-		const char *bootstraps = "self=192.168.40.182:1323";
-		const char *config = "node_id=0;token=49ffb3ae-8e7e-40ab-bc3f-824567e932fe,db=0";
-		char *err = NULL;
-		store[0] = swarmkv_open(bootstraps, config, &err);
+		const char *bootstraps_0 = "self=192.168.40.182:1323";
+		const char *config_0 = "node_id=0;token=49ffb3ae-8e7e-40ab-bc3f-824567e932fe,db=0";
+		char *err_0 = NULL;
+		store[0] = swarmkv_open(bootstraps_0, config_0, &err_0);
 		for(int i=1; i<3; i++)
 		{
 			char *bootstraps = ALLOC(char, 128); 
 			char *config = ALLOC(char, 128);
 			char *err = NULL;
-			snprintf(bootstraps, SWARMKV_MAX_VAL_LEN, "self=%s:%d323;peers=%s:1323", host_ip, i+1, host_ip);
-			snprintf(config, SWARMKV_MAX_VAL_LEN, "node_id=%d;token=49ffb3ae-8e7e-40ab-bc3f-824567e932fe,db=0", i);
+			snprintf(bootstraps, 128, "self=%s:%d323;peers=%s:1323", host_ip, i+1, host_ip);
+			snprintf(config, 128, "node_id=%d;token=49ffb3ae-8e7e-40ab-bc3f-824567e932fe,db=0", i);
 			store[i] = swarmkv_open(bootstraps, config, &err);
 		}
 	}
@@ -653,10 +653,10 @@ TEST_F(SwarmkvRemoteTest, CacheandInvalidate)
 	char *cache_value = NULL;
 	size_t get_vallen;
 	cache_value = swarmkv_get_cache(store[0], tb_name, key, keylen, &get_vallen);
-	printf("cache_value: %s\n", cache_value);
-	EXPECT_EQ(*cache_value, *exp_val); 
 	if(cache_value!=NULL)
 	{
+		printf("cache_value: %s\n", cache_value);
+		EXPECT_EQ(*cache_value, *exp_val); 
 		free(cache_value);
 		cache_value = NULL;
 	}
