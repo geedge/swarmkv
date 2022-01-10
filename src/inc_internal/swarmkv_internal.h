@@ -19,6 +19,7 @@
 //#define SWARMKV_DEFAULT_SLOT_NUM 65536    //redis 16284
 #define SWARMKV_DEFAULT_SLOT_NUM 1024
 #define SWARMKV_DEFAULT_NODE_NUM 256
+#define SWARMKV_POINTS_PER_NODE_ON_CHR 3
 #define BOOTSTRAPS_NUM 5
 
 
@@ -34,17 +35,14 @@
 #define SLOT_STABLE 0
 #define SLOT_MIGRATING 1
 
-#define SWARMKV_POINTS_PER_NODE_ON_CHR 3
-#define SWARMKV_MAX_MIGRATE_KV_NUM 1000
 #define TOKEN_LEN 36
-
 #define BUFSIZE 65507
 
 #define SWARMKV_DEFAULT_LISTEN_PORT 8323
-#define SWARMKV_MAX_KEY_LEN 512
-#define SWARMKV_MAX_VAL_LEN 512
+#define SWARMKV_MAX_KEY_LEN 64
+#define SWARMKV_MAX_VAL_LEN 1024
 #define SWARMKV_ONCE_MIGRATE_KV_NUM 40
-#define SWARMKV_MAX_SLOT_KVNUM 10000
+#define SWARMKV_REDUNDANCY_NUM 3
 
 struct swarmkv_key_value
 {
@@ -60,9 +58,8 @@ struct swarmkv_slot
 {
 	int slot_id;
 	int owner_node_id;
-	int last_owner_id;          //迁移之前的上一个持有者
+	int replica_node_id[SWARMKV_REDUNDANCY_NUM];
 	int status;                 //0 normal/1 migrating
-	int replica_node_id[16];
 	pthread_rwlock_t rwlock;
 	struct swarmkv_table *table_hash;
 };

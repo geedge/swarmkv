@@ -50,9 +50,10 @@ int caculate_slot_table(struct swarmkv_store *store, struct swarmkv_slot *new_sl
 	ch = swarmkv_conhash_create(NID, node_num, SWARMKV_POINTS_PER_NODE_ON_CHR);
 	int i = 0;
 	int j = 0;
+	printf("\n");
 	for(i=0; i<point_num; i++)
 	{
-		//printf("%u/%u ", ch->point[i].point_val, ch->point[i].node_id);
+		printf("%u/%u ", ch->point[i].point_val, ch->point[i].node_id);
 		if( i == 0)
 		{
 			for(j = 0; j<=ch->point[i].point_val; j++)
@@ -92,16 +93,19 @@ void swarmkv_owner_put_kv(struct swarmkv_store *store, int slot_id, const char *
 {
 	struct swarmkv_table *table = NULL;
 	struct swarmkv_key_value *kv = NULL;
-	pthread_rwlock_wrlock(&store->rwlock);
+	//pthread_rwlock_wrlock(&store->rwlock);
 	HASH_FIND_STR(store->slots[slot_id].table_hash, table_name, table);
-	//HASH_FIND_STR(store->table_hash, table_name, table);
 	if(table == NULL)
 	{
+		pthread_rwlock_wrlock(&store->rwlock);
 		//add a new table in my swarmkv_store
 		table = ALLOC(struct swarmkv_table, 1);
 		memcpy(table->table_name, table_name, strlen(table_name));
 		HASH_ADD_STR(store->slots[slot_id].table_hash, table_name, table);
+		pthread_rwlock_init(&table->rwlock, NULL);
+		pthread_rwlock_unlock(&store->rwlock);
 	}
+	pthread_rwlock_wrlock(&table->rwlock);
 	HASH_FIND(hh, table->owned_value_hash, key, keylen, kv);
 	if(kv == NULL)
 	{
@@ -133,6 +137,7 @@ void swarmkv_owner_put_kv(struct swarmkv_store *store, int slot_id, const char *
 			kv->vallen = vallen;
 		}
 	}
+	pthread_rwlock_unlock(&table->rwlock);
 	/*
 	printf("check if put success\n");
 	HASH_FIND(hh, table->owned_value_hash, key, keylen, kv);
@@ -141,7 +146,7 @@ void swarmkv_owner_put_kv(struct swarmkv_store *store, int slot_id, const char *
 		printf("%s:%s\n",kv->key, kv->value);
 	}
 	*/
-	pthread_rwlock_unlock(&store->rwlock);
+	//pthread_rwlock_unlock(&store->rwlock);
 }
 
 //send an invalidate request msg to nodes in nodes_have_key_cached
@@ -151,7 +156,6 @@ int swarmkv_msg_send_invalidate_key_req(struct swarmkv_store *store, int slot_id
 	struct swarmkv_table *table = NULL;
 	struct swarmkv_key_value *kv = NULL;
 
-	//HASH_FIND_STR(store->table_hash, tb_name, table);
 	HASH_FIND_STR(store->slots[slot_id].table_hash, tb_name, table);
 	if(table == NULL)
 	{
@@ -248,15 +252,15 @@ int swarmkv_put(struct swarmkv_store *store, const char *tb_name, const struct s
 	int slot_owner_id = store->slots[slot_id].owner_node_id;
 	if(slot_owner_id == store->my_node_id)
 	{
-		//printf("put kv in my store\n");
+		printf("put kv in my store\n");
 		swarmkv_owner_put_kv(store, slot_id, tb_name, key, keylen, value, vallen);
 		swarmkv_msg_send_invalidate_key_req(store, slot_id, tb_name, key, keylen, value, vallen);
 	}
 	else
 	{
 		//base64 encode
-		char *key_base64 = ALLOC(char, SWARMKV_MAX_KEY_LEN);
-		char *value_base64 = ALLOC(char, SWARMKV_MAX_VAL_LEN);
+		char *key_base64 = ALLOC(char, keylen*2);
+		char *value_base64 = ALLOC(char, vallen*2);
 		base64_encode(key, keylen, key_base64);
 		base64_encode(value, vallen, value_base64);
 
@@ -272,6 +276,7 @@ int swarmkv_put(struct swarmkv_store *store, const char *tb_name, const struct s
 			return -1;
 		}
 		char *put_req_msg = ALLOC(char, SWARMKV_MAX_MSG_SIZE);
+		
 		size_t msg_len = swarmkv_msg_pack_put_req(store, MSG_PUT_REQ, put_req_msg, SWARMKV_MAX_MSG_SIZE, tb_name, key_base64, value_base64);
 		assert(msg_len > 0);
 		swarmkv_msg_send(store->sockfd, put_req_msg, msg_len, peer_node->ip, peer_node->port);
@@ -309,8 +314,8 @@ int swarmkv_put_with_callback(struct swarmkv_store *store, const char *tb_name, 
 			return -1;
 		}
 		//base64 encode
-		char *key_base64 = ALLOC(char, SWARMKV_MAX_KEY_LEN);
-		char *value_base64 = ALLOC(char, SWARMKV_MAX_VAL_LEN);
+		char *key_base64 = ALLOC(char, keylen*2);
+		char *value_base64 = ALLOC(char, vallen*2);
 		base64_encode(key, keylen, key_base64);
 		base64_encode(value, vallen, value_base64);
 		char *put_req_msg = ALLOC(char, SWARMKV_MAX_MSG_SIZE);
@@ -674,11 +679,11 @@ void msg_statistics(int msg_type)
 			msg_cnt.slot_moved_cnt++;
 			break;
 		case MSG_PUT_REQ:
-			//printf("It is a PUT REQUEST msg\n");
+			printf("It is a PUT REQUEST msg\n");
 			msg_cnt.put_req_cnt++;
 			break;
 		case MSG_PUT_RESP:
-			//printf("It is a PUT RESPONSE msg\n");
+			printf("It is a PUT RESPONSE msg\n");
 			msg_cnt.put_resp_cnt++;
 			break;
 		case MSG_GET_REQ:
@@ -870,7 +875,6 @@ void process_migrate_req_msg(struct swarmkv_store* store, struct swarmkv_msg *ms
 			store->slots[migrate_slot_id].status = SLOT_MIGRATING; 
 			batch_pack_and_send_kv(store, MSG_MIGRATE_RESP, migrate_slot_id, SWARMKV_ONCE_MIGRATE_KV_NUM);
 			store->slots[migrate_slot_id].owner_node_id = src_node->node_id;
-			store->slots[migrate_slot_id].last_owner_id = store->my_node_id;
 			store->slots[migrate_slot_id].status = SLOT_STABLE; 
 		}
 		else
@@ -945,6 +949,7 @@ void process_migrate_resp_msg(struct swarmkv_store* store, struct swarmkv_msg *m
 				table = ALLOC(struct swarmkv_table, 1);
 				memcpy(table->table_name, msg->data.migrate_resp_data.mkv[i].table_name, strlen(msg->data.migrate_resp_data.mkv[i].table_name));
 				HASH_ADD_STR(store->slots[migrate_slot_id].table_hash, table_name, table);
+				pthread_rwlock_init(&table->rwlock, NULL);
 			}
 			HASH_FIND(hh, table->owned_value_hash, key, keylen, kv);
 			if(kv == NULL)
@@ -1395,7 +1400,7 @@ void process_get_resp_msg(struct swarmkv_store* store, struct swarmkv_msg *msg, 
 	char *key = NULL;
 	char *value = NULL;
 	key = ALLOC(char, SWARMKV_MAX_KEY_LEN);
-	value = ALLOC(char, SWARMKV_MAX_KEY_LEN);
+	value = ALLOC(char, SWARMKV_MAX_VAL_LEN);
 	int keylen = base64_decode(msg->data.get_resp_data.key, strlen(msg->data.get_resp_data.key), key);
 	int vallen = base64_decode(msg->data.get_resp_data.value, strlen(msg->data.get_resp_data.value), value);	
 	
@@ -1411,6 +1416,7 @@ void process_get_resp_msg(struct swarmkv_store* store, struct swarmkv_msg *msg, 
 		table = ALLOC(struct swarmkv_table, 1);
 		memcpy(table->table_name, msg->data.get_resp_data.table_name, strlen(msg->data.get_resp_data.table_name));
 		HASH_ADD_STR(store->slots[slot_id].table_hash, table_name, table);
+		pthread_rwlock_init(&table->rwlock, NULL);
 	}
 	//更新缓存
 	HASH_FIND(hh, table->cached_value_hash, key, keylen, kv);
@@ -1467,16 +1473,17 @@ void process_get_resp_msg(struct swarmkv_store* store, struct swarmkv_msg *msg, 
 
 void process_put_req_msg(struct swarmkv_store* store, char *buf, struct swarmkv_msg *msg, struct swarmkv_node *src_node)
 {
-	//printf("start process put req\n");
+	printf("start process put req\n");
 	
 	char *key = NULL;
 	char *value = NULL;
 	key = ALLOC(char, SWARMKV_MAX_KEY_LEN);
 	size_t keylen = base64_decode(msg->data.put_req_data.key, strlen(msg->data.put_req_data.key), key);
+	//printf("%zu %s\n", strlen(msg->data.put_req_data.key), msg->data.put_req_data.key);
+	//printf("%zu %s\n", keylen, key);
 	size_t msg_len = 0;
 	char *put_resp_msg = ALLOC(char, SWARMKV_MAX_MSG_SIZE);
 	struct swarmkv_node *aim_node = NULL;
-
 	int slot_id = caculate_key_slot_id(key, keylen);
 	int slot_owner_id = store->slots[slot_id].owner_node_id;
 	if(slot_owner_id != store->my_node_id)
@@ -1512,13 +1519,13 @@ void process_put_req_msg(struct swarmkv_store* store, char *buf, struct swarmkv_
 	}
 	else
 	{
-		value = ALLOC(char, SWARMKV_MAX_KEY_LEN);
+		value = ALLOC(char, SWARMKV_MAX_VAL_LEN);
 		size_t vallen = base64_decode(msg->data.put_req_data.value, strlen(msg->data.put_req_data.value), value);
 		aim_node = src_node;
 		//put the key-value into my store and send invalidate request msg
 		swarmkv_owner_put_kv(store, slot_id, msg->data.put_req_data.table_name, key, keylen, value, vallen);
 		swarmkv_msg_send_invalidate_key_req(store, slot_id, msg->data.put_req_data.table_name, key, keylen, value, vallen);
-
+		
 		//send a put response
 		if(msg->data.put_req_data.cb_function == 0)
 		{
@@ -1555,7 +1562,7 @@ void process_put_resp_msg(struct swarmkv_store* store, struct swarmkv_msg *msg, 
 			char *key = NULL;
 			char *value = NULL;
 			key = ALLOC(char, SWARMKV_MAX_KEY_LEN);
-			value = ALLOC(char, SWARMKV_MAX_KEY_LEN);
+			value = ALLOC(char, SWARMKV_MAX_VAL_LEN);
 			int keylen = base64_decode(msg->data.put_resp_data.key, strlen(msg->data.put_resp_data.key), key);
 			int vallen = base64_decode(msg->data.put_resp_data.value, strlen(msg->data.put_resp_data.value), value);
 			if(strcmp(msg->data.put_resp_data.uuid_version, store->uuid) == 0)
@@ -1674,22 +1681,6 @@ void process_invalidate_resp_msg(struct swarmkv_store* store, struct swarmkv_msg
 						break;
 					}
 				}
-				/*
-				//检查是不是删掉了
-				int *tmp_node = NULL;
-				for(tmp_node=(int*)utarray_front(kv->nodes_have_key_cached); tmp_node!= NULL; tmp_node=(int*)utarray_next(kv->nodes_have_key_cached,tmp_node)) 
-				{
-					printf("after delete\n");
-					if(*tmp_node == src_node->node_id)
-					{
-						printf("delete failed\n");
-					}
-					else
-					{
-						printf("delete success\n");
-					}
-				}
-				*/
 			}
 		}
 	}
@@ -2098,6 +2089,7 @@ void process_leave_migrate_msg(struct swarmkv_store* store, struct swarmkv_msg *
 				table = ALLOC(struct swarmkv_table, 1);
 				memcpy(table->table_name, msg->data.migrate_resp_data.mkv[i].table_name, strlen(msg->data.migrate_resp_data.mkv[i].table_name));
 				HASH_ADD_STR(store->slots[migrate_slot_id].table_hash, table_name, table);
+				pthread_rwlock_init(&table->rwlock, NULL);
 			}
 			HASH_FIND(hh, table->owned_value_hash, key, keylen, kv);
 			if(kv == NULL)
@@ -2672,6 +2664,45 @@ void swarmkv_msg_processing_thread()
 	}
 }
 */
+
+char *swarmkv_delete(struct swarmkv_store *store, const char *table_name, const struct swarmkv_readoptions *options, const char *key, size_t keylen)
+{
+	pthread_rwlock_wrlock(&store->rwlock);
+	struct swarmkv_table *table = NULL;
+	int slot_id = caculate_key_slot_id(key, keylen);
+	char* ret_value = NULL;
+	HASH_FIND_STR(store->slots[slot_id].table_hash, table_name, table);
+	if(table != NULL)
+	{
+		struct swarmkv_key_value *kv = NULL;
+		HASH_FIND(hh, table->owned_value_hash, key, keylen, kv);
+		if(kv != NULL)
+		{
+			ret_value = ALLOC(char, kv->vallen);
+			memcpy(kv->value, ret_value, kv->vallen);
+			HASH_DEL(table->owned_value_hash, kv);
+			free(kv);
+			kv = NULL;
+			pthread_rwlock_unlock(&store->rwlock);
+		}
+		else
+		{
+			HASH_FIND(hh, table->cached_value_hash, key, keylen, kv);
+			if(kv != NULL)
+			{
+				ret_value = ALLOC(char, kv->vallen);
+				memcpy(kv->value, ret_value, kv->vallen);
+				HASH_DEL(table->cached_value_hash, kv);
+				free(kv);
+				kv = NULL;
+				pthread_rwlock_unlock(&store->rwlock);
+			}
+		}
+	}
+	pthread_rwlock_unlock(&store->rwlock);
+	return ret_value;
+}
+
 
 char *swarmkv_GetKeyOpt(struct swarmkv_store *store, const char *table_name, const char *key, size_t keylen, size_t *vallen)
 {

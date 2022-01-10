@@ -178,6 +178,164 @@ protected:
 	}
 };
 
+//测试本地put kv并get key:5～10bytes value:7~12bytes
+TEST_F(SwarmkvLocalTest, PutLocalSmallSpeed)
+{
+	screen_stat_handle_t handle = NULL;
+	handle = FS_create_handle();
+	int FS_value = 1;
+	FS_set_para(handle, CREATE_THREAD, &FS_value, sizeof(FS_value));
+	FS_value = 1;
+	FS_set_para(handle, STAT_CYCLE, &FS_value, sizeof(FS_value));
+	int histogram_ids = FS_register_histogram(handle, FS_CALC_CURRENT, "op_delay", 1, 100000, 3);
+	struct timespec start;
+
+	printf("******test GET_LOCAL speed******\n");
+	const char* tb_name = "table0";
+	printf("%s\n", tb_name);
+	size_t keylen = 0;
+	char *key = ALLOC(char, SWARMKV_MAX_KEY_LEN);
+	char *value = ALLOC(char, SWARMKV_MAX_VAL_LEN);
+	char *key_prefix = ALLOC(char, SWARMKV_MAX_KEY_LEN);
+	char *val_prefix = ALLOC(char, SWARMKV_MAX_VAL_LEN);
+	//size_t get_vallen = 0;
+	int key_prefix_len = 16;
+	int val_prefix_len = 1000;
+	
+	struct timespec start_time = {0, 0};
+	struct timespec end_time = {0, 0};
+	clock_gettime(CLOCK_MONOTONIC, &start_time);
+	FS_start(handle);
+	for(int i=0; i<100000; i++)
+	{
+		get_random_str(key_prefix, key_prefix_len);
+		get_random_str(val_prefix, val_prefix_len);
+
+		size_t vallen = 0;
+		snprintf(key, SWARMKV_MAX_KEY_LEN, "%s-%d", key_prefix, i);
+		keylen = strlen(key);
+		//printf("%zu %s\n", keylen, key);
+		snprintf(value, SWARMKV_MAX_VAL_LEN, "%s-%d", val_prefix, i);
+		vallen = strlen(value);		
+		//printf("* %s %s\n", key, value);
+		
+		//int slot_id = caculate_key_slot_id(key, keylen);
+		record_time_start(&start);
+		swarmkv_put(store_0, tb_name, NULL, key, keylen, value, vallen, NULL);
+		long eplapses=record_time_elapse_us(&start);
+		FS_operate(handle, histogram_ids, 0, FS_OP_SET, eplapses);
+
+		memset(key, 0, SWARMKV_MAX_KEY_LEN);
+		memset(key_prefix, 0, SWARMKV_MAX_KEY_LEN);
+		memset(value, 0, SWARMKV_MAX_VAL_LEN);
+		memset(val_prefix, 0, SWARMKV_MAX_VAL_LEN);
+	}
+	clock_gettime(CLOCK_MONOTONIC, &end_time);
+	printf("use_time : %zu\n", (end_time.tv_sec - start_time.tv_sec)*1000 + (end_time.tv_nsec - start_time.tv_nsec)/1000000);
+	free(key);
+	key = NULL;
+	free(value);
+	value = NULL;
+	sleep(3);
+	FS_stop(&handle);
+	FS_library_destroy();
+}
+
+/*
+//测试本地put kv并get key:5～10bytes value:7~12bytes
+TEST_F(SwarmkvLocalTest, GetLocalSmallSpeed)
+{
+	screen_stat_handle_t handle = NULL;
+	handle = FS_create_handle();
+	int FS_value = 1;
+	FS_set_para(handle, CREATE_THREAD, &FS_value, sizeof(FS_value));
+	FS_value = 1;
+	FS_set_para(handle, STAT_CYCLE, &FS_value, sizeof(FS_value));
+	int histogram_ids = FS_register_histogram(handle, FS_CALC_CURRENT, "op_delay", 1, 100000, 3);
+	struct timespec start;
+
+	printf("******test GET_LOCAL speed******\n");
+	const char* tb_name = "table0";
+	printf("%s\n", tb_name);
+	size_t keylen = 0;
+	char *key = ALLOC(char, SWARMKV_MAX_KEY_LEN);
+	char *value = ALLOC(char, SWARMKV_MAX_VAL_LEN);
+	char *key_prefix = ALLOC(char, SWARMKV_MAX_KEY_LEN);
+	char *val_prefix = ALLOC(char, SWARMKV_MAX_KEY_LEN);
+	//size_t get_vallen = 0;
+	int kv_len = 500;
+	
+	struct timespec start_time = {0, 0};
+	struct timespec end_time = {0, 0};
+	clock_gettime(CLOCK_MONOTONIC, &start_time);
+	FS_start(handle);
+	for(int i=0; i<1000000; i++)
+	{
+		get_random_str(key_prefix, kv_len);
+		get_random_str(val_prefix, kv_len);
+
+		size_t vallen = 0;
+		//snprintf(key, SWARMKV_MAX_KEY_LEN, "key-%d", i);
+		snprintf(key, SWARMKV_MAX_KEY_LEN, "%s-%d", key_prefix, i);
+		keylen = strlen(key);
+		//snprintf(value, SWARMKV_MAX_VAL_LEN, "val-%d", i);
+		snprintf(value, SWARMKV_MAX_KEY_LEN, "%s-%d", val_prefix, i);
+		vallen = strlen(value);		
+		//printf("* %s %s\n", key, value);
+		
+		//int slot_id = caculate_key_slot_id(key, keylen);
+		record_time_start(&start);
+		swarmkv_put(store_0, tb_name, NULL, key, keylen, value, vallen, NULL);
+		long eplapses=record_time_elapse_us(&start);
+		FS_operate(handle, histogram_ids, 0, FS_OP_SET, eplapses);
+
+		memset(key, 0, SWARMKV_MAX_KEY_LEN);
+		memset(key_prefix, 0, SWARMKV_MAX_KEY_LEN);
+		memset(value, 0, SWARMKV_MAX_VAL_LEN);
+		memset(val_prefix, 0, SWARMKV_MAX_KEY_LEN);
+	}
+	clock_gettime(CLOCK_MONOTONIC, &end_time);
+	printf("use_time : %zu\n", (end_time.tv_sec - start_time.tv_sec)*1000 + (end_time.tv_nsec - start_time.tv_nsec)/1000000);
+	free(key);
+	key = NULL;
+	free(value);
+	value = NULL;
+	
+	
+	size_t get_vallen = 0;
+	char *get_key = ALLOC(char, SWARMKV_MAX_KEY_LEN);
+	char *get_val = ALLOC(char, SWARMKV_MAX_VAL_LEN);
+	char *exp_value = ALLOC(char, SWARMKV_MAX_VAL_LEN);
+	FS_start(handle);
+	for(int j=0; j<1000000; j++)
+	{
+		
+		snprintf(get_key, SWARMKV_MAX_KEY_LEN, "key-%d", j);
+		keylen = strlen(get_key);
+
+		record_time_start(&start);
+		get_val = swarmkv_get(store_0, tb_name, NULL, get_key, keylen, &get_vallen, NULL);
+		printf("%s\n", get_val);
+		long eplapses=record_time_elapse_us(&start);
+		FS_operate(handle, histogram_ids, 0, FS_OP_SET, eplapses);
+		
+		snprintf(exp_value, SWARMKV_MAX_KEY_LEN, "val-%d", j);
+		EXPECT_EQ(*get_val, *exp_value); 
+		memset(get_key, 0, SWARMKV_MAX_KEY_LEN);
+		memset(exp_value, 0, SWARMKV_MAX_VAL_LEN); 
+		free(get_val);
+		get_val = NULL;
+	}
+	
+	sleep(3);
+	FS_stop(&handle);
+	//free(get_key);
+	//get_key = NULL;
+	//free(exp_value);
+	//exp_value = NULL;
+}
+*/
+
 /*
 //测试本地putkv key:5～10bytes value:7~12bytes
 TEST_F(SwarmkvLocalTest, PutLocalSmallSpeed)
@@ -225,108 +383,6 @@ TEST_F(SwarmkvLocalTest, PutLocalSmallSpeed)
 	FS_stop(&handle);
 }
 */
-
-
-/*
-//测试本地put kv并get key:5～10bytes value:7~12bytes
-TEST_F(SwarmkvLocalTest, GetLocalSmallSpeed)
-{
-	screen_stat_handle_t handle = NULL;
-	handle = FS_create_handle();
-	int FS_value = 1;
-	FS_set_para(handle, CREATE_THREAD, &FS_value, sizeof(FS_value));
-	FS_value = 1;
-	FS_set_para(handle, STAT_CYCLE, &FS_value, sizeof(FS_value));
-	int histogram_ids = FS_register_histogram(handle, FS_CALC_CURRENT, "op_delay", 1, 100000, 3);
-	struct timespec start;
-
-	printf("******test GET_LOCAL speed******\n");
-	const char* tb_name = "table0";
-	printf("%s\n", tb_name);
-	size_t keylen = 0;
-	char *key = ALLOC(char, SWARMKV_MAX_KEY_LEN);
-	char *value = ALLOC(char, SWARMKV_MAX_VAL_LEN);
-	char *key_prefix = ALLOC(char, SWARMKV_MAX_KEY_LEN);
-	char *val_prefix = ALLOC(char, SWARMKV_MAX_KEY_LEN);
-	size_t get_vallen = 0;
-	struct timespec start_time = {0, 0};
-	struct timespec end_time = {0, 0};
-	clock_gettime(CLOCK_MONOTONIC, &start_time);
-	FS_start(handle);
-	for(int i=0; i<1000000; i++)
-	{
-		get_random_str(key_prefix, 495);
-		get_random_str(val_prefix, 495);
-
-		size_t vallen = 0;
-		//snprintf(key, SWARMKV_MAX_KEY_LEN, "key-%d", i);
-		snprintf(key, SWARMKV_MAX_KEY_LEN, "%s-%d", key_prefix, i);
-		keylen = strlen(key);
-		//snprintf(value, SWARMKV_MAX_VAL_LEN, "val-%d", i);
-		snprintf(value, SWARMKV_MAX_KEY_LEN, "%s-%d", val_prefix, i);
-		vallen = strlen(value);		
-		//printf("* %s %s\n", key, value);
-		
-		//int slot_id = caculate_key_slot_id(key, keylen);
-		record_time_start(&start);
-		swarmkv_put(store_0, tb_name, NULL, key, keylen, value, vallen, NULL);
-		long eplapses=record_time_elapse_us(&start);
-		FS_operate(handle, histogram_ids, 0, FS_OP_SET, eplapses);
-
-		char *get_val = swarmkv_get(store_0, tb_name, NULL, key, keylen, &get_vallen, NULL);
-		//printf("%s\n", get_val);
-
-		free(get_val);
-		get_val = NULL;
-		memset(key, 0, SWARMKV_MAX_KEY_LEN);
-		memset(key_prefix, 0, SWARMKV_MAX_KEY_LEN);
-		memset(value, 0, SWARMKV_MAX_VAL_LEN);
-		memset(val_prefix, 0, SWARMKV_MAX_KEY_LEN);
-	}
-	clock_gettime(CLOCK_MONOTONIC, &end_time);
-	printf("use_time : %zu\n", (end_time.tv_sec - start_time.tv_sec)*1000 + (end_time.tv_nsec - start_time.tv_nsec)/1000000);
-	free(key);
-	key = NULL;
-	free(value);
-	value = NULL;
-	
-	//clock_gettime(CLOCK_MONOTONIC, &start_time);
-	size_t get_vallen = 0;
-	char *get_key = ALLOC(char, SWARMKV_MAX_KEY_LEN);
-	char *get_val = ALLOC(char, SWARMKV_MAX_VAL_LEN);
-	char *exp_value = ALLOC(char, SWARMKV_MAX_VAL_LEN);
-	FS_start(handle);
-	for(int j=0; j<1000000; j++)
-	{
-		
-		snprintf(get_key, SWARMKV_MAX_KEY_LEN, "key-%d", j);
-		keylen = strlen(get_key);
-
-		record_time_start(&start);
-		get_val = swarmkv_get(store_0, tb_name, NULL, get_key, keylen, &get_vallen, NULL);
-		printf("%s\n", get_val);
-		long eplapses=record_time_elapse_us(&start);
-		FS_operate(handle, histogram_ids, 0, FS_OP_SET, eplapses);
-		
-		snprintf(exp_value, SWARMKV_MAX_KEY_LEN, "val-%d", j);
-		EXPECT_EQ(*get_val, *exp_value); 
-		memset(get_key, 0, SWARMKV_MAX_KEY_LEN);
-		memset(exp_value, 0, SWARMKV_MAX_VAL_LEN); 
-		free(get_val);
-		get_val = NULL;
-	}
-	
-	sleep(3);
-	FS_stop(&handle);
-	//free(get_key);
-	//get_key = NULL;
-	//free(exp_value);
-	//exp_value = NULL;
-}
-*/
-
-
-
 
 
 /*

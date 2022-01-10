@@ -31,7 +31,7 @@ int get_random_str(char* random_str, const int random_len)
     seed_str_len = strlen(seed_str);
     
     gettimeofday(&tv, NULL);
-    seed_num = (unsigned int)(tv.tv_sec + tv.tv_usec); //超了unsigned int的范围也无所谓，我们要的只是不同的种子数字
+    seed_num = (unsigned int)(tv.tv_sec + tv.tv_usec); 
     srand(seed_num);
 
     for(i = 0; i < random_len; i++)
