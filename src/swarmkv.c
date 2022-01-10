@@ -437,7 +437,7 @@ char *swarmkv_get(struct swarmkv_store *store, const char *table, const struct s
 			else
 			{
 				//base64 encode key
-				char *key_base64 = ALLOC(char, SWARMKV_MAX_KEY_LEN);
+				char *key_base64 = ALLOC(char, keylen*2);
 				base64_encode(key, keylen, key_base64);
 
 				char *get_req_msg = ALLOC(char, SWARMKV_MAX_MSG_SIZE);
@@ -484,7 +484,7 @@ void swarmkv_get_with_callback(struct swarmkv_store *store, const char *table, c
 			else
 			{
 				//base64 encode key
-				char *key_base64 = ALLOC(char, SWARMKV_MAX_KEY_LEN);
+				char *key_base64 = ALLOC(char, keylen*2);
 				base64_encode(key, keylen, key_base64);
 
 				char *get_req_msg = ALLOC(char, SWARMKV_MAX_MSG_SIZE);
@@ -793,8 +793,8 @@ void batch_pack_and_send_kv(struct swarmkv_store* store, int msg_type, int slot_
 		{
 			mkv[kv_num].table_name = ALLOC(char, strlen(table->table_name)+1);
 			memcpy(mkv[kv_num].table_name, table->table_name, strlen(table->table_name));
-			mkv[kv_num].key = ALLOC(char, SWARMKV_MAX_KEY_LEN);
-			mkv[kv_num].value = ALLOC(char, SWARMKV_MAX_VAL_LEN);
+			mkv[kv_num].key = ALLOC(char, kv->keylen*2);
+			mkv[kv_num].value = ALLOC(char, kv->vallen*2);
 			base64_encode(kv->key, kv->keylen, mkv[kv_num].key);
 			base64_encode(kv->value, kv->vallen, mkv[kv_num].value);	
 			if(kv_num == batch_size-1)
@@ -1368,7 +1368,7 @@ void process_get_req_msg(struct swarmkv_store* store, char *buf, struct swarmkv_
 		}
 		
 		//encode value
-		char *value_base64 = ALLOC(char, SWARMKV_MAX_VAL_LEN);
+		char *value_base64 = ALLOC(char, vallen*2);
 		base64_encode(value, vallen, value_base64);
 		if(msg->data.get_req_data.cb_function == 0)
 		{
