@@ -242,7 +242,7 @@ int swarmkv_put(struct swarmkv_store *store, const char *tb_name, const struct s
 	int slot_owner_id = store->slots[slot_id].owner_node_id;
 	if(slot_owner_id == store->my_node_id)
 	{
-		printf("put kv in my store\n");
+		//printf("put kv in my store\n");
 		swarmkv_owner_put_kv(store, slot_id, tb_name, key, keylen, value, vallen);
 		swarmkv_msg_send_invalidate_key_req(store, slot_id, tb_name, key, keylen, value, vallen);
 	}
@@ -373,18 +373,13 @@ int del_cache_kv(struct swarmkv_store* store, const char *table_name, const char
 		HASH_FIND(hh, table->cached_value_hash, key, keylen, kv);
 		if(kv != NULL)
 		{
-			if(strcmp(kv->key, key)==0)
-			{
-				HASH_DEL(table->cached_value_hash, kv);
-				free(kv);
-				kv = NULL;
-				pthread_rwlock_unlock(&store->rwlock);
-				return 1;
-			}
+			HASH_DEL(table->cached_value_hash, kv);
+			free(kv);
+			kv = NULL;
 		}
 	}
 	pthread_rwlock_unlock(&store->rwlock);
-	return -1;
+	return 1;
 }
 
 //get a key-value from my cache

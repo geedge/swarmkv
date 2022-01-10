@@ -3,19 +3,11 @@
 #include<stdlib.h>
 #include<string.h>
 #include <gtest/gtest.h>
-#include "swarmkv.h"
 #include<time.h>
 #include<MESA/field_stat2.h>
-
-//#include "../src/inc_internal/swarmkv_internal.h"
-//#include "../src/inc_internal/swarmkv_conhash.h"
+#include "swarmkv.h"
 #include "swarmkv_internal.h"
 #include "swarmkv_conhash.h"
-/*
-#include "../src/inc_internal/uthash/uthash.h"
-#include "../src/inc_internal/uthash/utarray.h"
-#include "../src/inc_internal/swarmkv_internal.h"
-*/
 
 //判断key在哪里，用于测试migrate成功与否
 //swarmkv_getkeyopt(kv, key, SWMKV_OPT_KEY_LOCATION, *value);
@@ -23,6 +15,7 @@
 
 const char* host_ip = "192.168.40.182";
 
+/*————————————————————————————————————辅助函数————————————————————————————————————————*/
 /*————————————————————————————————————辅助函数————————————————————————————————————————*/
 /*————————————————————————————————————辅助函数————————————————————————————————————————*/
 void callback_print(const char *table, const char *key, size_t keylen, const char *value, size_t vallen, void *arg)
@@ -109,14 +102,10 @@ char *swarmkv_get_cache(struct swarmkv_store *store, const char *tb_name, const 
 	struct swarmkv_table *table = NULL;
 	struct swarmkv_key_value *kv = NULL;
 	char *value = NULL;
-	pthread_rwlock_rdlock(&store->rwlock);
 	HASH_FIND_STR(store->slots[slot_id].table_hash, tb_name, table);
-	if(table == NULL)
+	if(table != NULL)
 	{
-		//printf("I don't have the table in my cache!\n");
-	}
-	else
-	{
+		pthread_rwlock_rdlock(&table->rwlock);
 		HASH_FIND(hh, table->cached_value_hash, key, keylen, kv);
 		if(kv == NULL)
 		{
@@ -124,12 +113,25 @@ char *swarmkv_get_cache(struct swarmkv_store *store, const char *tb_name, const 
 		}
 		else
 		{
-			value = ALLOC(char, SWARMKV_MAX_VAL_LEN);
-			memcpy(value, kv->value, kv->vallen);
-			*vallen = kv->vallen;
+			clock_t elapsed_time = clock();
+			if(elapsed_time - kv->cached_time < SWARMKV_CACHE_EXPIREATION_PERIORD)
+			{
+				value = ALLOC(char, SWARMKV_MAX_VAL_LEN);
+				memcpy(value, kv->value, kv->vallen);
+				*vallen = kv->vallen;
+			}
+			else
+			{
+				printf("expiration\n");
+				del_cache_kv(store, tb_name, key, keylen);
+			}
 		}
+		pthread_rwlock_unlock(&table->rwlock);
 	}
-	pthread_rwlock_unlock(&store->rwlock);
+	else
+	{
+		//printf("I don't have the table in my cache!\n");
+	}
 	return value;
 }
 
@@ -301,7 +303,8 @@ protected:
 	}
 };
 
-//测试本地put kv并get
+/*
+//测试本地put kv
 TEST_F(SwarmkvLocalSpeedTest, PutLocalSmallSpeed)
 {
 	//设置kv大小
@@ -329,7 +332,7 @@ TEST_F(SwarmkvLocalSpeedTest, PutLocalSmallSpeed)
 	struct timespec end_time = {0, 0};
 	clock_gettime(CLOCK_MONOTONIC, &start_time);
 	FS_start(handle);
-	for(int i=0; i<100000; i++)
+	for(int i=0; i<1000000; i++)
 	{
 		get_random_str(key_prefix, key_prefix_len);
 		get_random_str(val_prefix, val_prefix_len);
@@ -351,7 +354,7 @@ TEST_F(SwarmkvLocalSpeedTest, PutLocalSmallSpeed)
 		memset(val_prefix, 0, SWARMKV_MAX_VAL_LEN);
 	}
 	clock_gettime(CLOCK_MONOTONIC, &end_time);
-	printf("use_time : %zu\n", (end_time.tv_sec - start_time.tv_sec)*1000 + (end_time.tv_nsec - start_time.tv_nsec)/1000000);
+	printf("put_use_time : %zu\n", (end_time.tv_sec - start_time.tv_sec)*1000 + (end_time.tv_nsec - start_time.tv_nsec)/1000000);
 	free(key);
 	key = NULL;
 	free(value);
@@ -360,12 +363,16 @@ TEST_F(SwarmkvLocalSpeedTest, PutLocalSmallSpeed)
 	FS_stop(&handle);
 	FS_library_destroy();
 }
+*/
 
 
-/*
-//测试本地put kv并get key:5～10bytes value:7~12bytes
+//测试本地put kv并get
 TEST_F(SwarmkvLocalSpeedTest, GetLocalSmallSpeed)
 {
+	//设置kv大小
+	int key_prefix_len = 16;
+	int val_prefix_len = 512;
+
 	screen_stat_handle_t handle = NULL;
 	handle = FS_create_handle();
 	int FS_value = 1;
@@ -382,9 +389,11 @@ TEST_F(SwarmkvLocalSpeedTest, GetLocalSmallSpeed)
 	char *key = ALLOC(char, SWARMKV_MAX_KEY_LEN);
 	char *value = ALLOC(char, SWARMKV_MAX_VAL_LEN);
 	char *key_prefix = ALLOC(char, SWARMKV_MAX_KEY_LEN);
-	char *val_prefix = ALLOC(char, SWARMKV_MAX_KEY_LEN);
-	//size_t get_vallen = 0;
-	int kv_len = 500;
+	char *val_prefix = ALLOC(char, SWARMKV_MAX_VAL_LEN);
+
+	size_t get_vallen = 0;
+	char *get_val = NULL;
+	char *exp_value = ALLOC(char, SWARMKV_MAX_VAL_LEN);
 	
 	struct timespec start_time = {0, 0};
 	struct timespec end_time = {0, 0};
@@ -392,71 +401,49 @@ TEST_F(SwarmkvLocalSpeedTest, GetLocalSmallSpeed)
 	FS_start(handle);
 	for(int i=0; i<1000000; i++)
 	{
-		get_random_str(key_prefix, kv_len);
-		get_random_str(val_prefix, kv_len);
-
-		size_t vallen = 0;
-		//snprintf(key, SWARMKV_MAX_KEY_LEN, "key-%d", i);
+		get_random_str(key_prefix, key_prefix_len);
+		get_random_str(val_prefix, val_prefix_len);
 		snprintf(key, SWARMKV_MAX_KEY_LEN, "%s-%d", key_prefix, i);
 		keylen = strlen(key);
-		//snprintf(value, SWARMKV_MAX_VAL_LEN, "val-%d", i);
-		snprintf(value, SWARMKV_MAX_KEY_LEN, "%s-%d", val_prefix, i);
-		vallen = strlen(value);		
-		//printf("* %s %s\n", key, value);
+		snprintf(value, SWARMKV_MAX_VAL_LEN, "%s-%d", val_prefix, i);
+		size_t vallen = strlen(value);	
 		
-		//int slot_id = caculate_key_slot_id(key, keylen);
-		record_time_start(&start);
 		swarmkv_put(store_0, tb_name, NULL, key, keylen, value, vallen, NULL);
+
+		record_time_start(&start);
+		get_val = swarmkv_get(store_0, tb_name, NULL, key, keylen, &get_vallen, NULL);
 		long eplapses=record_time_elapse_us(&start);
 		FS_operate(handle, histogram_ids, 0, FS_OP_SET, eplapses);
+		
+		//printf("%s\n", get_val);
+		snprintf(exp_value, SWARMKV_MAX_VAL_LEN, "%s-%d", val_prefix, i);
+		EXPECT_EQ(*get_val, *exp_value); 
 
 		memset(key, 0, SWARMKV_MAX_KEY_LEN);
 		memset(key_prefix, 0, SWARMKV_MAX_KEY_LEN);
 		memset(value, 0, SWARMKV_MAX_VAL_LEN);
-		memset(val_prefix, 0, SWARMKV_MAX_KEY_LEN);
-	}
-	clock_gettime(CLOCK_MONOTONIC, &end_time);
-	printf("use_time : %zu\n", (end_time.tv_sec - start_time.tv_sec)*1000 + (end_time.tv_nsec - start_time.tv_nsec)/1000000);
-	free(key);
-	key = NULL;
-	free(value);
-	value = NULL;
-	
-	
-	size_t get_vallen = 0;
-	char *get_key = ALLOC(char, SWARMKV_MAX_KEY_LEN);
-	char *get_val = ALLOC(char, SWARMKV_MAX_VAL_LEN);
-	char *exp_value = ALLOC(char, SWARMKV_MAX_VAL_LEN);
-	FS_start(handle);
-	for(int j=0; j<1000000; j++)
-	{
-		
-		snprintf(get_key, SWARMKV_MAX_KEY_LEN, "key-%d", j);
-		keylen = strlen(get_key);
-
-		record_time_start(&start);
-		get_val = swarmkv_get(store_0, tb_name, NULL, get_key, keylen, &get_vallen, NULL);
-		printf("%s\n", get_val);
-		long eplapses=record_time_elapse_us(&start);
-		FS_operate(handle, histogram_ids, 0, FS_OP_SET, eplapses);
-		
-		snprintf(exp_value, SWARMKV_MAX_KEY_LEN, "val-%d", j);
-		EXPECT_EQ(*get_val, *exp_value); 
-		memset(get_key, 0, SWARMKV_MAX_KEY_LEN);
+		memset(val_prefix, 0, SWARMKV_MAX_VAL_LEN);
 		memset(exp_value, 0, SWARMKV_MAX_VAL_LEN); 
 		free(get_val);
 		get_val = NULL;
 	}
-	
-	sleep(3);
-	FS_stop(&handle);
-	//free(get_key);
-	//get_key = NULL;
-	//free(exp_value);
-	//exp_value = NULL;
-}
-*/
+	clock_gettime(CLOCK_MONOTONIC, &end_time);
+	printf("get_use_time : %zu\n", (end_time.tv_sec - start_time.tv_sec)*1000 + (end_time.tv_nsec - start_time.tv_nsec)/1000000);
+	free(key);
+	key = NULL;
+	free(value);
+	value = NULL;
+	free(exp_value);
+	exp_value = NULL;
+	free(key_prefix);
+	key_prefix = NULL;
+	free(val_prefix);
+	val_prefix = NULL;
 
+	sleep(3);
+	FS_stop(&handle);	
+	FS_library_destroy();
+}
 
 /*
 //测试本地putkv 256bytes/256bytes
@@ -527,145 +514,6 @@ TEST_F(SwarmkvLocalSpeedTest, PutLocalMidSpeed)
 */
 
 
-/*
-//测试本地getkv
-TEST_F(SwarmkvLocalSpeedTest, GetLocalMidSpeed)
-{
-	screen_stat_handle_t handle = NULL;
-	handle = FS_create_handle();
-	int FS_value = 1;
-	FS_set_para(handle, CREATE_THREAD, &FS_value, sizeof(FS_value));
-	FS_value = 2;
-	FS_set_para(handle, STAT_CYCLE, &FS_value, sizeof(FS_value));
-	int histogram_ids = FS_register_histogram(handle, FS_CALC_CURRENT, "op_delay", 1, 100000, 3);
-	struct timespec start;
-
-	const char* tb_name = "table0";
-	printf("%s\n", tb_name);
-	size_t keylen = 0;
-	char *key = ALLOC(char, SWARMKV_MAX_KEY_LEN);
-	char *value = ALLOC(char, SWARMKV_MAX_VAL_LEN);
-	const char *key_prefix = "XVBMN<OIedkeybbfhbbfhbedkeybfhbedkeyUDSHUEIWGDHIBDCUWEIFVY*Y#BSYFTWFCDGVDBHKNCBHVHVXVBMN<OIedkeyfhbbfhbedkeybfhbedkeyUDSHUEIWGDHIBDCUWEIFVY*Y#BSYFTWFCDGVDBHKNCBHVHVXVBMN<OIedkeybfhbedkeybfhbedkeyUDSHUEIWGDHIBDCUWEIFVY*Y#BSYFTWFCDGVDBHKNCBHVbfhbbfhbedkeybfhbedkeyUDSHUEIWGDHIBDCUWEIFVY*Y#BSYFTWFCDGVDBHKNCBHVHVXVBMN<OIedkeyHVXVBMN<OIedkey";
-	const char *val_prefix = "bfhbbbdeBYRRVhsykdeniduewfhbbfhbedkeybfhbedkeyUDSHUEIWGIBDCUWEIFVY*Y#BSYFTWFCDGVDBHKNCBHVHVXVBMN<OIedkeybfhbbfhbedkeybfhbedkeyUDSHUEIWGDHIBDCUWEIFVY*Y#BSYFTWFCDGVDBHKNCBHVHVXVBMN<OIedkeybbfhbbfhbedkeybfhbedkeyUDSHUEIWGDHIBDCUWEIFVY*Y#BSYFTWFCDGVDBHKNCBHVHVXVBMN<OIedkeyfhbbfhbedkeybfhbedkeyUDSHUEIWGDHIBDCUWEIFVY*Y#BSYFTWFCDGVDBHKNCBHVHVXVBMN<OIedkeybfhbedkeybfhbedkeyUDSHUEIWGDHIBDCUWEIFVY*Y#BSYFTWFCDGVDBHKNCBHVbfhbbfhbedkeybfhbedkeyUDSHUEIWGDHIBDCUWEIFVY*Y#BSYFTWFCDGVDBHKNCBHVHVXVBMN<OIedkeyHVXVBMN<OIedvalue";
-	printf("%zu\n", strlen(key_prefix));
-	printf("%zu\n", strlen(val_prefix));
-
-	for(int i=0; i<1000000; i++)
-	{
-		size_t vallen = 0;
-		snprintf(key, SWARMKV_MAX_KEY_LEN, "%s-%d", key_prefix, i);
-		keylen = strlen(key);
-		snprintf(value, SWARMKV_MAX_VAL_LEN, "%s-%d", val_prefix, i);
-		//printf("* %s %s\n", key, value);
-		vallen = strlen(value);
-		swarmkv_put(store_0, tb_name, NULL, key, keylen, value, vallen, NULL);
-		memset(key, 0, SWARMKV_MAX_KEY_LEN);
-		memset(value, 0, SWARMKV_MAX_VAL_LEN);
-	}
-	free(key);
-	key = NULL;
-	free(value);
-	value = NULL;
-
-	printf("******GET_LOCAL speed******\n");
-	size_t get_vallen = 0;
-	char *get_key = ALLOC(char, SWARMKV_MAX_KEY_LEN);
-	char *get_val = ALLOC(char, SWARMKV_MAX_VAL_LEN);
-	char *exp_value = ALLOC(char, SWARMKV_MAX_VAL_LEN);
-	FS_start(handle);
-	for(int j=0; j<1000000; j++)
-	{
-		snprintf(get_key, SWARMKV_MAX_KEY_LEN, "%s-%d", key_prefix, j);
-		keylen = strlen(get_key);
-		int slot_id = caculate_key_slot_id(get_key, keylen);
-
-		record_time_start(&start);
-		get_val = swarmkv_get(store_0, tb_name, NULL, get_key, keylen, &get_vallen, NULL, slot_id);
-		long eplapses=record_time_elapse_us(&start);
-		FS_operate(handle, histogram_ids, 0, FS_OP_SET, eplapses);
-
-		snprintf(exp_value, SWARMKV_MAX_KEY_LEN, "%s-%d", val_prefix, j);
-		EXPECT_EQ(*get_val, *exp_value); 
-		memset(get_key, 0, SWARMKV_MAX_KEY_LEN);
-		memset(exp_value, 0, SWARMKV_MAX_VAL_LEN); 
-		free(get_val);
-		get_val = NULL;
-	}
-	sleep(3);
-	FS_stop(&handle);
-	free(get_key);
-	get_key = NULL;
-	free(exp_value);
-	exp_value = NULL;
-}
-*/
-
-/*
-//测试本地put kv并get
-TEST_F(SwarmkvLocalSpeedTest, PutGetLocal)
-{
-	printf("******test PUT_Local and GET_LOCAL speed******\n");
-	const char* tb_name = "table0";
-	printf("%s\n", tb_name);
-	size_t keylen = 0;
-	char *key = ALLOC(char, SWARMKV_MAX_KEY_LEN);
-	char *value = ALLOC(char, SWARMKV_MAX_VAL_LEN);
-	const char *key_prefix = "djhienwhfbhvfhvrnxj 3276998 n0sjcbjh ebncbdjh bandknkeahuwdyr7684bjbh calkdpokwed ndjehiu3ehbd jbhvgnfdjrjfinjfnjbyugfhbedkey>dfj*#2djhienwvfhvrnxj 3276998 n0sjcbjh ebncbdjh bandknkeahuwdyr7684bjbh calkdpokwed ndjehiu3ehbd jbhvdfdgnfdjrjfinjfnjbyugfhbedkey";
-	const char *val_prefix = "hewhioncyergvybjwnfriovrkncjdinsxnwjheuddnjehjnefiubhrbfh83274868 this is amide duerfmksjeiwbbfy duehdkjfkfrm jehf9487hewhioncyergvybjwnfriovrdinsxnwjheuddnjehjnefiubhrbfh83274868 this is amide duerfmksjeiwbbfy duehdkjfkfrmnusgwuhhudebednusgwuhhudebedvalue";
-	printf("%zu\n", strlen(key_prefix));
-	printf("%zu\n", strlen(val_prefix));
-
-	struct timespec start_time = {0, 0};
-	struct timespec end_time = {0, 0};
-	clock_gettime(CLOCK_MONOTONIC, &start_time);
-	for(int i=0; i<1000000; i++)
-	{
-		size_t vallen = 0;
-		snprintf(key, SWARMKV_MAX_KEY_LEN, "%s-%d", key_prefix, i);
-		keylen = strlen(key);
-		snprintf(value, SWARMKV_MAX_VAL_LEN, "%s-%d", val_prefix, i);
-		//printf("* %s %s\n", key, value);
-		vallen = strlen(value);
-		swarmkv_put(store_0, tb_name, NULL, key, keylen, value, vallen, NULL);
-		memset(key, 0, SWARMKV_MAX_KEY_LEN);
-		memset(value, 0, SWARMKV_MAX_VAL_LEN);
-	}
-	free(key);
-	key = NULL;
-	free(value);
-	value = NULL;
-	clock_gettime(CLOCK_MONOTONIC, &end_time);
-	printf("use_time : %zu\n", (end_time.tv_sec - start_time.tv_sec)*1000 + (end_time.tv_nsec - start_time.tv_nsec)/1000000);
-
-	clock_gettime(CLOCK_MONOTONIC, &start_time);
-	size_t get_vallen = 0;
-	char *get_key = ALLOC(char, SWARMKV_MAX_KEY_LEN);
-	char *get_val = ALLOC(char, SWARMKV_MAX_VAL_LEN);
-	char *exp_value = ALLOC(char, SWARMKV_MAX_VAL_LEN);
-	for(int j=0; j<1000000; j++)
-	{
-		snprintf(get_key, SWARMKV_MAX_KEY_LEN, "%s-%d", key_prefix, j);
-		keylen = strlen(get_key);
-		get_val = swarmkv_get(store_0, tb_name, NULL, get_key, keylen, &get_vallen, NULL);
-		snprintf(exp_value, SWARMKV_MAX_KEY_LEN, "%s-%d", val_prefix, j);
-		EXPECT_EQ(*get_val, *exp_value); 
-		memset(get_key, 0, SWARMKV_MAX_KEY_LEN);
-		memset(exp_value, 0, SWARMKV_MAX_VAL_LEN); 
-		free(get_val);
-		get_val = NULL;
-	}
-	clock_gettime(CLOCK_MONOTONIC, &end_time);
-	printf("use_time : %zu\n", (end_time.tv_sec - start_time.tv_sec)*1000 + (end_time.tv_nsec - start_time.tv_nsec)/1000000);
-	free(get_key);
-	get_key = NULL;
-	free(exp_value);
-	exp_value = NULL;
-}
-*/
-
-
-
-/*
 //三个节点，环回
 class SwarmkvRemoteTest : public testing::Test 
 {
@@ -689,38 +537,55 @@ protected:
 	}
 	virtual void TearDown()
 	{
-		//free_store_space(store[0]);
+		free_store_space(store[0]);
+		free_store_space(store[1]);
+		free_store_space(store[2]);
 	}
 };
 
 //测试远程put_with_callback
 TEST_F(SwarmkvRemoteTest, PUTCallbackwithArgLocal)
 {
-	printf("******test PUT_Remote with callback(Arg)******\n");
+	int node_num = 3;
 	while(1)
 	{
-		if(store[0]->meet_flag == 0 && store[1]->meet_flag == 0 && store[2]->meet_flag == 0 )
+		int flag = 0;
+		for(int i=0; i<node_num; i++)
+		{
+			if(store[i]->meet_flag == 1)
+			{
+				flag = 1;
+
+				break;
+			}
+		}
+		if(flag == 0)
 		{
 			break;
 		}
 	}
 	sleep(5);
 	int NID[3] = {0,1,2};
-	int node_num = 3;
 	for(int i=0; i<node_num; i++)
 	{
 		check_slot_table_state(store[i], NID, node_num);
 	}
 
+	printf("******test PUT_Remote with callback(Arg)******\n");
 	const char* tb_name = "table0";
 	const char *key = "key3";
 	size_t keylen = strlen(key);
 	const char *value = "val0";
 	size_t vallen = strlen(value);
+	//int slot_id = caculate_key_slot_id(key, keylen);
+	//printf("slot_id: %d\n", slot_id);
+
 	char *callback_value = ALLOC(char, SWARMKV_MAX_VAL_LEN);
-	int slot_id = caculate_key_slot_id(key, keylen);
-	printf("slot_id: %d\n", slot_id);
-	
+	struct timespec start_time = {0, 0};
+	struct timespec end_time = {0, 0};
+	clock_gettime(CLOCK_MONOTONIC, &start_time);
+	swarmkv_put_with_callback(store[0], tb_name, NULL, key, keylen, value, vallen, callback_with_arg, callback_value);
+
 	const char *exp0 = "val0";
 	while(1)
 	{
@@ -736,14 +601,10 @@ TEST_F(SwarmkvRemoteTest, PUTCallbackwithArgLocal)
 	free(callback_value);
 	callback_value = NULL;
 }
-*/
 
-
-/*
 //测试本地缓存和invalidate
 TEST_F(SwarmkvRemoteTest, CacheandInvalidate)
 {
-	printf("******test get remote & cache accuracy and invalidate speed******\n");
 	while(1)
 	{
 		if(store[0]->meet_flag == 0 && store[1]->meet_flag == 0 && store[2]->meet_flag == 0 )
@@ -759,6 +620,7 @@ TEST_F(SwarmkvRemoteTest, CacheandInvalidate)
 		check_slot_table_state(store[i], NID, node_num);
 	}
 
+	printf("******test get remote & cache accuracy and invalidate speed******\n");
 	const char* tb_name = "table0";
 	const char *key = "key3";
 	size_t keylen = strlen(key);
@@ -784,9 +646,8 @@ TEST_F(SwarmkvRemoteTest, CacheandInvalidate)
 		}
 	}
 	clock_gettime(CLOCK_MONOTONIC, &end_time);
-	printf("use_time : %zu\n", (end_time.tv_sec - start_time.tv_sec)*1000000 + (end_time.tv_nsec - start_time.tv_nsec)/1000);
+	printf("get_use_time : %zu\n", (end_time.tv_sec - start_time.tv_sec)*1000000 + (end_time.tv_nsec - start_time.tv_nsec)/1000);
 	printf("get value: %s\n", get_callback_value);
-	
 
 	//check cache
 	char *cache_value = NULL;
@@ -794,8 +655,11 @@ TEST_F(SwarmkvRemoteTest, CacheandInvalidate)
 	cache_value = swarmkv_get_cache(store[0], tb_name, key, keylen, &get_vallen);
 	printf("cache_value: %s\n", cache_value);
 	EXPECT_EQ(*cache_value, *exp_val); 
-	free(cache_value);
-	cache_value = NULL;
+	if(cache_value!=NULL)
+	{
+		free(cache_value);
+		cache_value = NULL;
+	}
 
 	//update
 	const char *new_value = "valnew";
@@ -825,7 +689,6 @@ TEST_F(SwarmkvRemoteTest, CacheandInvalidate)
 	free(put_callback_value);
 	put_callback_value = NULL;
 }
-*/
 
 
 class SwarmkvClusterInitTest : public testing::Test 

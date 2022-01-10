@@ -188,7 +188,7 @@ TEST_F(SwarmkvLocalTest, SimplePut)
 	struct timespec start_time = {0, 0};
 	struct timespec end_time = {0, 0};
 	clock_gettime(CLOCK_MONOTONIC, &start_time);
-	for(int i=0; i<1000000; i++)
+	for(int i=0; i<10000; i++)
 	{
 		get_random_str(key_prefix, kv_prefix_len);
 		get_random_str(val_prefix, val_prefix_len);

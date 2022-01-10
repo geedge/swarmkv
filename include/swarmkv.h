@@ -49,6 +49,7 @@ char *swarmkv_GetSlotAssign(struct swarmkv_store *store);
 int swarmkv_cluster_open(const char *bootstraps, const char *config, char **err);
 void free_store_space(struct swarmkv_store* store);
 int caculate_key_slot_id(const char *key, size_t keylen);
+int del_cache_kv(struct swarmkv_store* store, const char *table_name, const char* key, size_t keylen);
 //int swarmkv_subscribe(struct swarmkv_store *store, const char *table, cb_func callback);
 //struct swarmkv_reply *swarmkv_command(struct swarmkv_store *store, const char *format, ...);
 //value = swarm_kv_command(store, "hget %s %s", key, mbr);
