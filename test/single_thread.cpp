@@ -95,7 +95,6 @@ void *put_test(void *arg)
 	char *key_prefix = ALLOC(char, SWARMKV_MAX_KEY_LEN);
 	char *val_prefix = ALLOC(char, SWARMKV_MAX_VAL_LEN);
 
-	size_t get_vallen = 0;
 	struct timespec start_time = {0, 0};
 	struct timespec end_time = {0, 0};
 	clock_gettime(CLOCK_MONOTONIC, &start_time);
@@ -113,10 +112,12 @@ void *put_test(void *arg)
 
 		swarmkv_put(store, tb_name, NULL, key, keylen, value, vallen, NULL);
 
+        size_t get_vallen = 0;
 		char *get_val = swarmkv_get(store, tb_name, NULL, key, keylen, &get_vallen, NULL);
 		//printf("%s\n", get_val);
 		free(get_val);
 		get_val = NULL;
+        
 		memset(key, 0, SWARMKV_MAX_KEY_LEN);
 		memset(key_prefix, 0, SWARMKV_MAX_KEY_LEN);
 		memset(value, 0, SWARMKV_MAX_VAL_LEN);

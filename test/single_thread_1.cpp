@@ -90,7 +90,6 @@ void *put_test(void *arg)
 	//char* tb_name = ALLOC(char, 32);
 	const char* tb_name = "table0";
 	size_t keylen = 0;
-    //size_t get_vallen = 0;
 	char *key = ALLOC(char, SWARMKV_MAX_KEY_LEN);
 	char *value = ALLOC(char, SWARMKV_MAX_VAL_LEN);
 	char *key_prefix = ALLOC(char, SWARMKV_MAX_KEY_LEN);
@@ -114,12 +113,12 @@ void *put_test(void *arg)
 
 		swarmkv_put(store, tb_name, NULL, key, keylen, value, vallen, NULL);
 
-        /*
+        size_t get_vallen = 0;
 		char *get_val = swarmkv_get(store, tb_name, NULL, key, keylen, &get_vallen, NULL);
 		//printf("%s\n", get_val);
 		free(get_val);
 		get_val = NULL;
-        */
+        
 		memset(key, 0, SWARMKV_MAX_KEY_LEN);
 		memset(value, 0, SWARMKV_MAX_VAL_LEN);	
 	}
