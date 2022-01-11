@@ -2284,6 +2284,7 @@ void *swarmkv_msg_processing_thread(void *arg)
 		pthread_testcancel();
 		memset(udp_recvbuf, 0, sizeof(udp_recvbuf));
 		int n = recvfrom(store->sockfd, udp_recvbuf, BUFSIZE, 0, (struct sockaddr *)&peer_addr, &peer_addr_len);
+		pthread_testcancel();
 		if(n > 0) 
 		{
 			//printf("my_ports:%d sender_port:%d\n",store->my_port, htons(peer_addr.sin_port));
@@ -2296,6 +2297,7 @@ void *swarmkv_msg_processing_thread(void *arg)
 		{
 			memset(nng_recv_buf, 0, BUFSIZE);
 			int rc = nn_recv(store->nng_socket, nng_recv_buf, BUFSIZE, 1);
+			pthread_testcancel();
 			if(rc > 0)
 			{
 				printf("recieve server msg: %s\r\n", nng_recv_buf);

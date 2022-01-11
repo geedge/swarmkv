@@ -264,37 +264,39 @@ int multi_thread()
 
 	printf("============= Multi thread =============\n");
 	pthread_t tid_0;
-	int pthread_ret = pthread_create(&tid_0, NULL, put_test_0, (void*)store);
-	if(pthread_ret != 0)
-	{
-		printf("pthread_create error: error_code = %d\n", pthread_ret);
-        return -1;
-	}
-
-	pthread_t tid_1;
-	int pthread_ret_0 = pthread_create(&tid_1, NULL, put_test_1, (void*)store);
+	int pthread_ret_0 = pthread_create(&tid_0, NULL, put_test_0, (void*)store);
 	if(pthread_ret_0 != 0)
 	{
 		printf("pthread_create error: error_code = %d\n", pthread_ret_0);
         return -1;
 	}
 
-    pthread_t tid_2;
-	int pthread_ret_1 = pthread_create(&tid_2, NULL, put_test_2, (void*)store);
+	pthread_t tid_1;
+	int pthread_ret_1 = pthread_create(&tid_1, NULL, put_test_1, (void*)store);
 	if(pthread_ret_1 != 0)
 	{
-		printf("pthread_create error: error_code = %d\n", pthread_ret_0);
+		printf("pthread_create error: error_code = %d\n", pthread_ret_1);
+        return -1;
+	}
+
+    pthread_t tid_2;
+	int pthread_ret_2 = pthread_create(&tid_2, NULL, put_test_2, (void*)store);
+	if(pthread_ret_2 != 0)
+	{
+		printf("pthread_create error: error_code = %d\n", pthread_ret_2);
         return -1;
 	}
 
 	struct timespec start_time = {0, 0};
 	struct timespec end_time = {0, 0};
 	clock_gettime(CLOCK_MONOTONIC, &start_time);
+	printf("0\n");
 	if ( pthread_join(tid_0, NULL) ) 
 	{
 		printf("error join thread.");
 		abort();
   	}
+	printf("1\n");
 	if ( pthread_join(tid_1, NULL) ) 
 	{
 		printf("error join thread.");
