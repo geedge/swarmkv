@@ -1005,8 +1005,8 @@ protected:
 			char *bootstraps = ALLOC(char, 128); 
 			char *config = ALLOC(char, 128);
 			char *err = NULL;
-			snprintf(bootstraps, SWARMKV_MAX_VAL_LEN, "self=%s:%d323;peers=%s:1323", host_ip, i+1, host_ip);
-			snprintf(config, SWARMKV_MAX_VAL_LEN, "node_id=%d;token=49ffb3ae-8e7e-40ab-bc3f-824567e932fe,db=0", i);
+			snprintf(bootstraps, 128, "self=%s:%d323;peers=%s:1323", host_ip, i+1, host_ip);
+			snprintf(config, 128, "node_id=%d;token=49ffb3ae-8e7e-40ab-bc3f-824567e932fe,db=0", i);
 			store[i] = swarmkv_open(bootstraps, config, &err);
 		}
 	}
