@@ -180,6 +180,7 @@ protected:
 	}
 };
 
+
 //测试本地put一个kv并get_with_callback，不带参数的callback函数
 TEST_F(SwarmkvLocalFunctionTest, GetCallbackLocal)
 {
@@ -206,20 +207,36 @@ TEST_F(SwarmkvLocalFunctionTest, GetCallbackwithArgLocal)
 	const char *value = "val0";
 	size_t vallen = strlen(value);
 
+	const char* tb_name_1 = "table1";
+	const char *key_1 = "key3";
+	size_t keylen_1 = strlen(key_1);
+	const char *value_1 = "val1";
+	size_t vallen_1 = strlen(value_1);
+
 	swarmkv_put(store_0, tb_name, NULL, key, keylen, value, vallen, NULL);
+	swarmkv_put(store_0, tb_name_1, NULL, key_1, keylen_1, value_1, vallen_1, NULL);
 
 	char *callback_value = ALLOC(char, SWARMKV_MAX_VAL_LEN);
 	swarmkv_get_with_callback(store_0, tb_name, NULL, key, keylen, callback_with_arg, callback_value);
+
+	char *callback_value_1 = ALLOC(char, SWARMKV_MAX_VAL_LEN);
+	swarmkv_get_with_callback(store_0, tb_name_1, NULL, key_1, keylen_1, callback_with_arg, callback_value_1);
 
 	printf("%s\n", callback_value);
 	const char *exp0 = "val0";
 	EXPECT_EQ(*callback_value, *exp0); 
 
+	printf("%s\n", callback_value_1);
+	const char *exp1 = "val1";
+	EXPECT_EQ(*callback_value_1, *exp1); 
+
 	free(callback_value);
 	callback_value = NULL;
+	free(callback_value_1);
+	callback_value_1 = NULL;
 }
 
-
+/*
 //测试本地put_with_callback，不含参数
 TEST_F(SwarmkvLocalFunctionTest, PUTCallbackLocal)
 {
@@ -283,6 +300,7 @@ TEST_F(SwarmkvLocalFunctionTest, UpdateLocal)
 	free(get_val);
 	get_val = NULL;
 }
+*/
 
 ///批量操作测试速度
 class SwarmkvLocalSpeedTest : public testing::Test 
@@ -303,7 +321,7 @@ protected:
 	}
 };
 
-/*
+
 //测试本地put kv
 TEST_F(SwarmkvLocalSpeedTest, PutLocalSmallSpeed)
 {
@@ -363,9 +381,8 @@ TEST_F(SwarmkvLocalSpeedTest, PutLocalSmallSpeed)
 	FS_stop(&handle);
 	FS_library_destroy();
 }
-*/
 
-
+/*
 //测试本地put kv并get
 TEST_F(SwarmkvLocalSpeedTest, GetLocalSmallSpeed)
 {
@@ -444,6 +461,7 @@ TEST_F(SwarmkvLocalSpeedTest, GetLocalSmallSpeed)
 	FS_stop(&handle);	
 	FS_library_destroy();
 }
+*/
 
 /*
 //测试本地putkv 256bytes/256bytes
