@@ -10,6 +10,42 @@
 #include "swarmkv_internal.h"
 #include "swarmkv_conhash.h"
 
+
+
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <fcntl.h>
+#include <errno.h> 
+#include <net/if.h>  
+#include <sys/ioctl.h> 
+char* get_localip(const char *eth_inf)
+{
+    int sd;
+    //struct sockaddr_in sin;
+    struct ifreq ifr;
+ 
+    sd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (-1 == sd)
+    {
+        printf("socket error: %s\n", strerror(errno));
+        return NULL;
+    }
+    strncpy(ifr.ifr_name, eth_inf, IFNAMSIZ);
+    ifr.ifr_name[IFNAMSIZ - 1] = 0;
+    if (ioctl(sd, SIOCGIFADDR, &ifr) < 0)
+    {
+        printf("ioctl error: %s\n", strerror(errno));
+        close(sd);
+        return NULL;
+    }
+    //printf("interfac: %s, ip: %s\n", eth_inf, inet_ntoa(((struct sockaddr_in*)&ifr.ifr_addr)->sin_addr)); 
+	char* local_ip = inet_ntoa(((struct sockaddr_in*)&ifr.ifr_addr)->sin_addr);
+    close(sd);
+	//printf("local_ip: %s\n",local_ip);
+    return local_ip;
+}
+
 void get_callback_print(const char *table, const char *key, size_t keylen, const char *value, size_t vallen, void *arg)
 {
 	printf("\n-----print callback result-----\n");
@@ -100,6 +136,8 @@ void *put_test(void *arg)
 
 int single_thread()
 {
+	char *local_ip = get_localip("eth0");
+	printf("%s\n", local_ip);
 	const char *bootstraps = "self=192.168.40.182:8323";
 	const char *config = "node_id=0;token=49ffb3ae-8e7e-40ab-bc3f-824567e932fe,db=0";
 	char *err = NULL;
@@ -361,7 +399,7 @@ int multi_thread()
 
 int main(int argc, char **argv)
 {	
-	multi_thread();
-	//single_thread();
+	//multi_thread();
+	single_thread();
 	return 1;
 }
