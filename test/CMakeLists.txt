@@ -35,6 +35,12 @@ target_link_libraries(multi_thread swarmkv_frame_static)
 add_executable(single_thread single_thread.cpp)
 target_link_libraries(single_thread swarmkv_frame_static)
 
+add_executable(multi_thread_1 multi_thread_1.cpp)
+target_link_libraries(multi_thread_1 swarmkv_frame_static)
+
+add_executable(single_thread_1 single_thread_1.cpp)
+target_link_libraries(single_thread_1 swarmkv_frame_static)
+
 #target_link_libraries(MyTests ${GTEST_BOTH_LIBRARIES})
 #target_link_libraries(MyTests ${CMAKE_THREAD_LIBS_INIT})
 #add_test(Test MyTests)

@@ -92,11 +92,8 @@ void *put_test_0(void *arg)
 	size_t keylen = 0;
 	char *key = ALLOC(char, SWARMKV_MAX_KEY_LEN);
 	char *value = ALLOC(char, SWARMKV_MAX_VAL_LEN);
-	char *key_prefix_0 = ALLOC(char, SWARMKV_MAX_KEY_LEN);
-	char *val_prefix_0 = ALLOC(char, SWARMKV_MAX_VAL_LEN);
-
-	//get_random_str(key_prefix_0, key_prefix_len);
-	//get_random_str(val_prefix_0, val_prefix_len);
+	char *key_prefix = ALLOC(char, SWARMKV_MAX_KEY_LEN);
+	char *val_prefix = ALLOC(char, SWARMKV_MAX_VAL_LEN);
 
 	//size_t get_vallen = 0;
 	struct timespec start_time = {0, 0};
@@ -104,14 +101,14 @@ void *put_test_0(void *arg)
 	clock_gettime(CLOCK_MONOTONIC, &start_time);
 	for(int i=0; i<340000; i++)
 	{
-		get_random_str(key_prefix_0, key_prefix_len);
-		get_random_str(val_prefix_0, val_prefix_len);
+		get_random_str(key_prefix, key_prefix_len);
+		get_random_str(val_prefix, val_prefix_len);
 
 		size_t vallen = 0;
 		//snprintf(tb_name, 32, "table%d", i%100);
-		snprintf(key, SWARMKV_MAX_KEY_LEN, "%s-%d", key_prefix_0, i);
+		snprintf(key, SWARMKV_MAX_KEY_LEN, "%s-%d", key_prefix, i);
 		keylen = strlen(key);
-		snprintf(value, SWARMKV_MAX_VAL_LEN, "%s-%d", val_prefix_0, i);
+		snprintf(value, SWARMKV_MAX_VAL_LEN, "%s-%d", val_prefix, i);
 		vallen = strlen(value);		
 		//printf("* %s %s\n", key, value);
 
@@ -122,9 +119,9 @@ void *put_test_0(void *arg)
 		//free(get_val);
 		//get_val = NULL;
 		memset(key, 0, SWARMKV_MAX_KEY_LEN);
-		memset(key_prefix_0, 0, SWARMKV_MAX_KEY_LEN);
+		memset(key_prefix, 0, SWARMKV_MAX_KEY_LEN);
 		memset(value, 0, SWARMKV_MAX_VAL_LEN);
-		memset(val_prefix_0, 0, SWARMKV_MAX_VAL_LEN);
+		memset(val_prefix, 0, SWARMKV_MAX_VAL_LEN);
 	}
 	clock_gettime(CLOCK_MONOTONIC, &end_time);
 	printf("use_time_0 : %zu\n", (end_time.tv_sec - start_time.tv_sec)*1000000 + (end_time.tv_nsec - start_time.tv_nsec)/1000);
@@ -132,6 +129,10 @@ void *put_test_0(void *arg)
 	key = NULL;
 	free(value);
 	value = NULL;
+	free(key_prefix);
+	key_prefix = NULL;
+    free(val_prefix);
+	val_prefix = NULL;
 	pthread_exit(NULL);
 }
 
@@ -147,23 +148,21 @@ void *put_test_1(void *arg)
 	size_t keylen = 0;
 	char *key = ALLOC(char, SWARMKV_MAX_KEY_LEN);
 	char *value = ALLOC(char, SWARMKV_MAX_VAL_LEN);
-	char *key_prefix_1 = ALLOC(char, SWARMKV_MAX_KEY_LEN);
-	char *val_prefix_1 = ALLOC(char, SWARMKV_MAX_VAL_LEN);
+	char *key_prefix = ALLOC(char, SWARMKV_MAX_KEY_LEN);
+	char *val_prefix = ALLOC(char, SWARMKV_MAX_VAL_LEN);
 	//size_t get_vallen = 0;
-	//get_random_str(key_prefix_1, key_prefix_len);
-	//get_random_str(val_prefix_1, val_prefix_len);
 
 	struct timespec start_time = {0, 0};
 	struct timespec end_time = {0, 0};
 	clock_gettime(CLOCK_MONOTONIC, &start_time);
 	for(int i=0; i<330000; i++)
 	{
-		get_random_str(key_prefix_1, key_prefix_len);
-		get_random_str(val_prefix_1, val_prefix_len);
+		get_random_str(key_prefix, key_prefix_len);
+		get_random_str(val_prefix, val_prefix_len);
 		size_t vallen = 0;
-		snprintf(key, SWARMKV_MAX_KEY_LEN, "%s-%d", key_prefix_1, i);
+		snprintf(key, SWARMKV_MAX_KEY_LEN, "%s-%d", key_prefix, i);
 		keylen = strlen(key);
-		snprintf(value, SWARMKV_MAX_VAL_LEN, "%s-%d", val_prefix_1, i);
+		snprintf(value, SWARMKV_MAX_VAL_LEN, "%s-%d", val_prefix, i);
 		vallen = strlen(value);		
 		//printf("* %s %s\n", key, value);
 	
@@ -174,9 +173,9 @@ void *put_test_1(void *arg)
 		//free(get_val);
 		//get_val = NULL;
 		memset(key, 0, SWARMKV_MAX_KEY_LEN);
-		memset(key_prefix_1, 0, SWARMKV_MAX_KEY_LEN);
+		memset(key_prefix, 0, SWARMKV_MAX_KEY_LEN);
 		memset(value, 0, SWARMKV_MAX_VAL_LEN);
-		memset(val_prefix_1, 0, SWARMKV_MAX_VAL_LEN);
+		memset(val_prefix, 0, SWARMKV_MAX_VAL_LEN);
 	}
 	clock_gettime(CLOCK_MONOTONIC, &end_time);
 	printf("use_time_1 : %zu\n", (end_time.tv_sec - start_time.tv_sec)*1000000 + (end_time.tv_nsec - start_time.tv_nsec)/1000);
@@ -184,6 +183,10 @@ void *put_test_1(void *arg)
 	key = NULL;
 	free(value);
 	value = NULL;
+	free(key_prefix);
+	key_prefix = NULL;
+    free(val_prefix);
+	val_prefix = NULL;
 	pthread_exit(NULL);
 }
 
@@ -199,24 +202,22 @@ void *put_test_2(void *arg)
 	size_t keylen = 0;
 	char *key = ALLOC(char, SWARMKV_MAX_KEY_LEN);
 	char *value = ALLOC(char, SWARMKV_MAX_VAL_LEN);
-	char *key_prefix_2 = ALLOC(char, SWARMKV_MAX_KEY_LEN);
-	char *val_prefix_2 = ALLOC(char, SWARMKV_MAX_VAL_LEN);
+	char *key_prefix = ALLOC(char, SWARMKV_MAX_KEY_LEN);
+	char *val_prefix = ALLOC(char, SWARMKV_MAX_VAL_LEN);
 	//size_t get_vallen = 0;
-	//get_random_str(key_prefix_2, key_prefix_len);
-	//get_random_str(val_prefix_2, val_prefix_len);
 	
 	struct timespec start_time = {0, 0};
 	struct timespec end_time = {0, 0};
 	clock_gettime(CLOCK_MONOTONIC, &start_time);
 	for(int i=0; i<330000; i++)
 	{
-		get_random_str(key_prefix_2, key_prefix_len);
-		get_random_str(val_prefix_2, val_prefix_len);
+		get_random_str(key_prefix, key_prefix_len);
+		get_random_str(val_prefix, val_prefix_len);
 		size_t vallen = 0;
 		
-		snprintf(key, SWARMKV_MAX_KEY_LEN, "%s-%d", key_prefix_2, i);
+		snprintf(key, SWARMKV_MAX_KEY_LEN, "%s-%d", key_prefix, i);
 		keylen = strlen(key);
-		snprintf(value, SWARMKV_MAX_VAL_LEN, "%s-%d", val_prefix_2, i);
+		snprintf(value, SWARMKV_MAX_VAL_LEN, "%s-%d", val_prefix, i);
 		vallen = strlen(value);		
 		//printf("* %s %s\n", key, value);
 	
@@ -228,9 +229,9 @@ void *put_test_2(void *arg)
 		//free(get_val);
 		//get_val = NULL;
 		memset(key, 0, SWARMKV_MAX_KEY_LEN);
-		memset(key_prefix_2, 0, SWARMKV_MAX_KEY_LEN);
+		memset(key_prefix, 0, SWARMKV_MAX_KEY_LEN);
 		memset(value, 0, SWARMKV_MAX_VAL_LEN);
-		memset(val_prefix_2, 0, SWARMKV_MAX_VAL_LEN);
+		memset(val_prefix, 0, SWARMKV_MAX_VAL_LEN);
 	}
 	clock_gettime(CLOCK_MONOTONIC, &end_time);
 	printf("use_time_2 : %zu\n", (end_time.tv_sec - start_time.tv_sec)*1000000 + (end_time.tv_nsec - start_time.tv_nsec)/1000);
@@ -238,6 +239,10 @@ void *put_test_2(void *arg)
 	key = NULL;
 	free(value);
 	value = NULL;
+	free(key_prefix);
+	key_prefix = NULL;
+    free(val_prefix);
+	val_prefix = NULL;
 	pthread_exit(NULL);
 }
 
