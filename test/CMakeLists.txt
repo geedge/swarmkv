@@ -32,8 +32,20 @@ target_link_libraries(tes_nng swarmkv_frame_static)
 add_executable(multi_thread multi_thread.cpp)
 target_link_libraries(multi_thread swarmkv_frame_static)
 
-add_executable(nodeA nodeA_gtest.cpp)
-target_link_libraries(nodeA swarmkv_frame_static)
+add_executable(single_thread single_thread.cpp)
+target_link_libraries(single_thread swarmkv_frame_static)
+
+add_executable(multi_thread_put multi_thread_put.cpp)
+target_link_libraries(multi_thread_put swarmkv_frame_static)
+
+add_executable(single_thread_put single_thread_put.cpp)
+target_link_libraries(single_thread_put swarmkv_frame_static)
+
+add_executable(single_thread_get single_thread_get.cpp)
+target_link_libraries(single_thread_get swarmkv_frame_static)
+
+add_executable(multi_thread_get multi_thread_get.cpp)
+target_link_libraries(multi_thread_get swarmkv_frame_static)
 
 add_executable(rrpc_nodeA swarmkv_rrpc_nodeA.cpp)
 target_link_libraries(rrpc_nodeA swarmkv_frame_static)

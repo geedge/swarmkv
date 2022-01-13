@@ -183,7 +183,7 @@ TEST_F(SwarmkvLocalTest, SimplePut)
 	char *val_prefix = ALLOC(char, SWARMKV_MAX_VAL_LEN);
 	//size_t get_vallen = 0;
 	int kv_prefix_len = 16;
-    int val_prefix_len = 500;
+    int val_prefix_len = 1000;
 	
 	struct timespec start_time = {0, 0};
 	struct timespec end_time = {0, 0};

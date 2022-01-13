@@ -180,6 +180,7 @@ protected:
 	}
 };
 
+
 //测试本地put一个kv并get_with_callback，不带参数的callback函数
 TEST_F(SwarmkvLocalFunctionTest, GetCallbackLocal)
 {
@@ -206,17 +207,33 @@ TEST_F(SwarmkvLocalFunctionTest, GetCallbackwithArgLocal)
 	const char *value = "val0";
 	size_t vallen = strlen(value);
 
+	const char* tb_name_1 = "table1";
+	const char *key_1 = "key3";
+	size_t keylen_1 = strlen(key_1);
+	const char *value_1 = "val1";
+	size_t vallen_1 = strlen(value_1);
+
 	swarmkv_put(store_0, tb_name, NULL, key, keylen, value, vallen, NULL);
+	swarmkv_put(store_0, tb_name_1, NULL, key_1, keylen_1, value_1, vallen_1, NULL);
 
 	char *callback_value = ALLOC(char, SWARMKV_MAX_VAL_LEN);
 	swarmkv_get_with_callback(store_0, tb_name, NULL, key, keylen, callback_with_arg, callback_value);
+
+	char *callback_value_1 = ALLOC(char, SWARMKV_MAX_VAL_LEN);
+	swarmkv_get_with_callback(store_0, tb_name_1, NULL, key_1, keylen_1, callback_with_arg, callback_value_1);
 
 	printf("%s\n", callback_value);
 	const char *exp0 = "val0";
 	EXPECT_EQ(*callback_value, *exp0); 
 
+	printf("%s\n", callback_value_1);
+	const char *exp1 = "val1";
+	EXPECT_EQ(*callback_value_1, *exp1); 
+
 	free(callback_value);
 	callback_value = NULL;
+	free(callback_value_1);
+	callback_value_1 = NULL;
 }
 
 
@@ -284,6 +301,7 @@ TEST_F(SwarmkvLocalFunctionTest, UpdateLocal)
 	get_val = NULL;
 }
 
+
 ///批量操作测试速度
 class SwarmkvLocalSpeedTest : public testing::Test 
 {
@@ -327,6 +345,8 @@ TEST_F(SwarmkvLocalSpeedTest, PutLocalSmallSpeed)
 	char *value = ALLOC(char, SWARMKV_MAX_VAL_LEN);
 	char *key_prefix = ALLOC(char, SWARMKV_MAX_KEY_LEN);
 	char *val_prefix = ALLOC(char, SWARMKV_MAX_VAL_LEN);
+	get_random_str(key_prefix, key_prefix_len);
+	get_random_str(val_prefix, val_prefix_len);
 	
 	struct timespec start_time = {0, 0};
 	struct timespec end_time = {0, 0};
@@ -334,8 +354,7 @@ TEST_F(SwarmkvLocalSpeedTest, PutLocalSmallSpeed)
 	FS_start(handle);
 	for(int i=0; i<1000000; i++)
 	{
-		get_random_str(key_prefix, key_prefix_len);
-		get_random_str(val_prefix, val_prefix_len);
+		
 		snprintf(key, SWARMKV_MAX_KEY_LEN, "%s-%d", key_prefix, i);
 		keylen = strlen(key);
 		snprintf(value, SWARMKV_MAX_VAL_LEN, "%s-%d", val_prefix, i);
@@ -349,9 +368,9 @@ TEST_F(SwarmkvLocalSpeedTest, PutLocalSmallSpeed)
 		FS_operate(handle, histogram_ids, 0, FS_OP_SET, eplapses);
 
 		memset(key, 0, SWARMKV_MAX_KEY_LEN);
-		memset(key_prefix, 0, SWARMKV_MAX_KEY_LEN);
 		memset(value, 0, SWARMKV_MAX_VAL_LEN);
-		memset(val_prefix, 0, SWARMKV_MAX_VAL_LEN);
+		//memset(key_prefix, 0, SWARMKV_MAX_KEY_LEN);
+		//memset(val_prefix, 0, SWARMKV_MAX_VAL_LEN);
 	}
 	clock_gettime(CLOCK_MONOTONIC, &end_time);
 	printf("put_use_time : %zu\n", (end_time.tv_sec - start_time.tv_sec)*1000 + (end_time.tv_nsec - start_time.tv_nsec)/1000000);
@@ -390,6 +409,8 @@ TEST_F(SwarmkvLocalSpeedTest, GetLocalSmallSpeed)
 	char *value = ALLOC(char, SWARMKV_MAX_VAL_LEN);
 	char *key_prefix = ALLOC(char, SWARMKV_MAX_KEY_LEN);
 	char *val_prefix = ALLOC(char, SWARMKV_MAX_VAL_LEN);
+	get_random_str(key_prefix, key_prefix_len);
+	get_random_str(val_prefix, val_prefix_len);
 
 	size_t get_vallen = 0;
 	char *get_val = NULL;
@@ -401,8 +422,7 @@ TEST_F(SwarmkvLocalSpeedTest, GetLocalSmallSpeed)
 	FS_start(handle);
 	for(int i=0; i<1000000; i++)
 	{
-		get_random_str(key_prefix, key_prefix_len);
-		get_random_str(val_prefix, val_prefix_len);
+		
 		snprintf(key, SWARMKV_MAX_KEY_LEN, "%s-%d", key_prefix, i);
 		keylen = strlen(key);
 		snprintf(value, SWARMKV_MAX_VAL_LEN, "%s-%d", val_prefix, i);
@@ -420,9 +440,9 @@ TEST_F(SwarmkvLocalSpeedTest, GetLocalSmallSpeed)
 		EXPECT_EQ(*get_val, *exp_value); 
 
 		memset(key, 0, SWARMKV_MAX_KEY_LEN);
-		memset(key_prefix, 0, SWARMKV_MAX_KEY_LEN);
 		memset(value, 0, SWARMKV_MAX_VAL_LEN);
-		memset(val_prefix, 0, SWARMKV_MAX_VAL_LEN);
+		//memset(key_prefix, 0, SWARMKV_MAX_KEY_LEN);
+		//memset(val_prefix, 0, SWARMKV_MAX_VAL_LEN);
 		memset(exp_value, 0, SWARMKV_MAX_VAL_LEN); 
 		free(get_val);
 		get_val = NULL;
@@ -444,6 +464,7 @@ TEST_F(SwarmkvLocalSpeedTest, GetLocalSmallSpeed)
 	FS_stop(&handle);	
 	FS_library_destroy();
 }
+
 
 /*
 //测试本地putkv 256bytes/256bytes
@@ -489,7 +510,6 @@ TEST_F(SwarmkvLocalSpeedTest, PutLocalMidSpeed)
 		vallen = strlen(value);
 		
 		swarmkv_put(store_0, tb_name, NULL, key, keylen, value, vallen, NULL);
-		
 		
 		size_t get_vallen = 0;
 		char *get_val;
@@ -537,8 +557,11 @@ protected:
 	}
 	virtual void TearDown()
 	{
+		pthread_join(store[0]->tid, NULL);
 		free_store_space(store[0]);
+		pthread_join(store[1]->tid, NULL);
 		free_store_space(store[1]);
+		pthread_join(store[2]->tid, NULL);
 		free_store_space(store[2]);
 	}
 };
@@ -987,8 +1010,8 @@ protected:
 			char *bootstraps = ALLOC(char, 128); 
 			char *config = ALLOC(char, 128);
 			char *err = NULL;
-			snprintf(bootstraps, SWARMKV_MAX_VAL_LEN, "self=%s:%d323;peers=%s:1323", host_ip, i+1, host_ip);
-			snprintf(config, SWARMKV_MAX_VAL_LEN, "node_id=%d;token=49ffb3ae-8e7e-40ab-bc3f-824567e932fe,db=0", i);
+			snprintf(bootstraps, 128, "self=%s:%d323;peers=%s:1323", host_ip, i+1, host_ip);
+			snprintf(config, 128, "node_id=%d;token=49ffb3ae-8e7e-40ab-bc3f-824567e932fe,db=0", i);
 			store[i] = swarmkv_open(bootstraps, config, &err);
 		}
 	}

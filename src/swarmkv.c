@@ -2287,7 +2287,7 @@ void *swarmkv_msg_processing_thread(void *arg)
 		int n = recvfrom(store->sockfd, udp_recvbuf, BUFSIZE, 0, (struct sockaddr *)&peer_addr, &peer_addr_len);
         // cancel a thread will interrupt the block function and set EINTR error number
         pthread_testcancel();
-		if(n > 0) 
+		if(n > 0)
 		{
 			//printf("my_ports:%d sender_port:%d\n",store->my_port, htons(peer_addr.sin_port));
 			//printf("buff=%s\n",udp_recvbuf);
