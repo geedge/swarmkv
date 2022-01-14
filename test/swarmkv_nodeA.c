@@ -137,7 +137,7 @@ void *put_test(void *arg)
 
 int multi_thread()
 {
-	const char *bootstraps = "self=192.168.40.182:8323";
+	const char *bootstraps = "proto=udp;self=192.168.40.182:8323";
 	const char *config = "node_id=0;token=49ffb3ae-8e7e-40ab-bc3f-824567e932fe,db=0";
 	char *err = NULL;
 	struct swarmkv_store *store = NULL;
@@ -187,7 +187,7 @@ int main(int argc, char **argv)
 {	
 	multi_thread();
 	/*
-	const char *bootstraps = "self=192.168.40.182:8323";
+	const char *bootstraps = "proto=udp;self=192.168.40.182:8323";
 	const char *config = "node_id=0;token=49ffb3ae-8e7e-40ab-bc3f-824567e932fe,db=0";
 	char *err = NULL;
 	struct swarmkv_store *store = NULL;
@@ -308,7 +308,7 @@ int main(int argc, char **argv)
 
 	/*
 	struct init_infomation init_info;
-	init_info.bootstraps = "self=172.16.225.2:8323;peers=172.16.225.2:6323,172.16.225.2:7323,172.16.225.2:18323";
+	init_info.bootstraps = "proto=udp;self=172.16.225.2:8323;peers=172.16.225.2:6323,172.16.225.2:7323,172.16.225.2:18323";
 	init_info.config = "node_id=0;token=49ffb3ae-8e7e-40ab-bc3f-824567e932fe,db=0";
 	init_info.err = NULL;
 	*/

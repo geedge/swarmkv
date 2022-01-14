@@ -141,8 +141,8 @@ int single_thread()
 	char *local_ip = get_localip("eth0");
 	//printf("%s\n", local_ip);
 	char *bootstraps = ALLOC(char, 128); 
-	snprintf(bootstraps, 128, "self=%s:8323", local_ip);
-	//const char *bootstraps = "self=192.168.40.182:8323";
+	snprintf(bootstraps, 128, "proto=udp;self=%s:8323", local_ip);
+	//const char *bootstraps = "proto=udp;self=192.168.40.182:8323";
 	const char *config = "node_id=0;token=49ffb3ae-8e7e-40ab-bc3f-824567e932fe,db=0";
 	char *err = NULL;
 	struct swarmkv_store *store = NULL;

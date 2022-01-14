@@ -35,7 +35,7 @@ class SwarmkvLocalTest : public testing::Test {
   struct swarmkv_store *store_0 = NULL;
   virtual void SetUp() {
       char *bootstraps = ALLOC(char, 128);
-      snprintf(bootstraps, 128, "self=%s:8323", host_ip);
+      snprintf(bootstraps, 128, "proto=udp;self=%s:8323", host_ip);
       const char *config = "node_id=0;token=49ffb3ae-8e7e-40ab-bc3f-824567e932fe,db=0";
       char *err = NULL;
       store_0 = swarmkv_open(bootstraps, config, &err);

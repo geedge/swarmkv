@@ -81,3 +81,10 @@ add_dependencies(fieldstate-static FieldStat)
 set_property(TARGET fieldstate-static PROPERTY IMPORTED_LOCATION ${VENDOR_BUILD}/lib/libMESA_field_stat2.a)
 
 
+#rrpc
+ExternalProject_Add(RRPC PREFIX rrpc-build
+        SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/rrpc
+        CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${VENDOR_BUILD} -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE})
+add_library(rrpc-static STATIC IMPORTED GLOBAL)
+add_dependencies(rrpc-static RRPC)
+set_property(TARGET rrpc-static PROPERTY IMPORTED_LOCATION ${VENDOR_BUILD}/lib/librrpc-lib.a)

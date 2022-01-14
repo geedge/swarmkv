@@ -2382,86 +2382,100 @@ int swarmkv_parse_config_info(struct config_information *config_info, const char
 }
 
 
-int swarmkv_parse_bootstrap_info(struct swarmkv_store *store, const char *bootstraps)
-{
-	// bootstraps example: "self=0.0.0.0:8323;peers=192.168.0.100:8323,192.168.0.101:8323"
-	int bs_info_len = strlen(bootstraps);
-	char *bootstrap_info = ALLOC(char, bs_info_len+1);
-	memcpy(bootstrap_info, bootstraps, bs_info_len);
-	char* bootstrap_tmp = bootstrap_info;
-
-	char *p = NULL;
-	strtok_r(bootstrap_info, ";", &p);
-	//if(bootstrap_info == NULL || p == NULL)
-	if(bootstrap_info == NULL)
-	{
-		free(bootstrap_tmp);
-		bootstrap_tmp = NULL;
-		printf("Please set your ip&port and bootstrap_nodes ip&port. Format: self=ip:port;peers=ip0:port0,ip1:port1,...\n");
+/**
+ * Used to parse the bootstrap string, bind with a device and send meeting request to peer nodes.
+ *
+ * @param store The global data of swarmkv.
+ * @param bootstraps The boostrap string used to setup swarmkv.
+ * @return
+ * 		- Not Negative: Success and return the count of peer node.
+ * 		- Negative: Failed.
+ */
+static int swarmkv_parse_bootstrap_info(struct swarmkv_store *store, const char *bootstraps) {
+	if (bootstraps == NULL || strlen(bootstraps) == 0) {
+		printf(
+			"Please set your ip&port and bootstrap_nodes ip&port. Format: "
+			"\n\tproto=udp;self=ip:port;peers=ip0:port0,ip1:port1,... or proto=rdma;self=ip;peers=ip0,ip1,... \n");
 		return -1;
 	}
+	// bootstraps example: "proto=udp;self=0.0.0.0:8323;peers=192.168.0.100:8323,192.168.0.101:8323"
+	uint64_t bs_info_len = strlen(bootstraps);
+	char *bootstrap_info = ALLOC(char, bs_info_len + 1);
+	strcpy(bootstrap_info, bootstraps);
 
-	//self=0.0.0.0:8323
+	int meet_node_cnt = 0;
+	/**
+	 * Transport protocol. e.g. proto=udp, proto=rdma.
+	 */
+	char *proto = NULL;
+	/**
+	 * Address used to bind with. e.g. self=192.168.1.1:8323, self=192.168.1.1.
+	 */
 	char *my_addr = NULL;
-	strtok_r(bootstrap_info, "=", &my_addr);  
-	//0.0.0.0:8323
+	/**
+	 * IP Address use to bind with.
+	 */
 	char *my_ip = NULL;
-	char *my_port = NULL;
-	my_ip = strtok_r(my_addr, ":", &my_port);
-	int ip_len = strlen(my_ip);
-	store->my_ip = ALLOC(char, ip_len+1);
-	memcpy(store->my_ip, my_ip, ip_len);
-	store->my_port = atoi(my_port);
-	printf("store->my_ip:%s\n", store->my_ip);
-	printf("store->my_port:%d\n", store->my_port);
+	char *next_ptr = NULL;
 
-	//create socket
-	store->sockfd = swarmkv_create_socket(store->my_port);
-	printf("store->sockfd : %d\n", store->sockfd);
+	// get proto string
+	proto = strtok_r(bootstrap_info, ";", &next_ptr);
 
-	char *tmp = NULL;
-	char *pp = strtok_r(p, ";", &tmp);  
-	if(pp != NULL)
-	{
-		//printf("** %s\n",p);
-		//peers=192.168.0.100:8323,192.168.0.101:8323
-		char *peer_node_addr = NULL;
-		strtok_r(p, "=", &peer_node_addr);
-		//192.168.0.100:8323,192.168.0.101:8323
-		int meet_node_cnt = 0;
+	// get self address
+	my_addr = strtok_r(NULL, ";", &next_ptr);
+	strtok_r(my_addr, "=", &my_addr);
 
-		peer_node_addr = strtok_r(peer_node_addr, ",", &p);
-		while(peer_node_addr != NULL)
-		{
-			//192.168.0.100:8323
-			char *p1 = NULL;
-			//printf("peer_node_addr: %s\n",peer_node_addr);
-			char *peer_ip = NULL;
-			uint16_t peer_port;
-			peer_ip = strtok_r(peer_node_addr, ":", &p1);
-			peer_port = atoi(p1);
-			//send meet msg to each bootstrap peer node
-			char *meet_req = ALLOC(char, SWARMKV_MAX_MSG_SIZE);
-			size_t msg_len = swarmkv_msg_pack_meet_req(store, meet_req, SWARMKV_MAX_MSG_SIZE);
-			assert(msg_len > 0);
-			swarmkv_msg_send(store->sockfd, meet_req, msg_len, peer_ip, peer_port);
-			free(meet_req);
-			meet_req = NULL;
-			meet_node_cnt++;
-			peer_node_addr = strtok_r(NULL, ",", &p);
+	if (strcpy(proto, "proto=udp")) {
+		char *my_port = NULL;
+		my_ip = strtok_r(my_addr, ":", &my_port);
+		uint64_t ip_len = strlen(my_ip);
+		store->my_ip = ALLOC(char, ip_len + 1);
+		memcpy(store->my_ip, my_ip, ip_len);
+		store->my_port = atoi(my_port);
+		printf("store->my_ip:%s\n", store->my_ip);
+		printf("store->my_port:%d\n", store->my_port);
+
+		//create socket
+		store->sockfd = swarmkv_create_socket(store->my_port);
+		printf("store->sockfd : %d\n", store->sockfd);
+
+		char *pp = strtok_r(NULL, ";", &next_ptr);
+		if (pp != NULL) {
+			char *peer_node_addr = NULL;
+			strtok_r(pp, "=", &peer_node_addr);
+
+			peer_node_addr = strtok_r(peer_node_addr, ",", &next_ptr);
+			while (peer_node_addr != NULL) {
+				char *peer_port_str = NULL;
+				char *peer_ip = NULL;
+				uint16_t peer_port;
+				peer_ip = strtok_r(peer_node_addr, ":", &peer_port_str);
+				peer_port = atoi(peer_port_str);
+				// send meet msg to each bootstrap peer node
+				char *meet_req = ALLOC(char, SWARMKV_MAX_MSG_SIZE);
+				size_t msg_len = swarmkv_msg_pack_meet_req(store, meet_req, SWARMKV_MAX_MSG_SIZE);
+				assert(msg_len > 0);
+				swarmkv_msg_send(store->sockfd, meet_req, msg_len, peer_ip, peer_port);
+				free(meet_req);
+				meet_req = NULL;
+				meet_node_cnt++;
+				peer_node_addr = strtok_r(NULL, ",", &next_ptr);
+			}
+			if (meet_node_cnt == 0) {
+				printf("error: None of the meet messages were sent successfully.\n");
+				free(bootstrap_info);
+				return -2;
+			}
+			//store->meet_time = clock();
+			store->meet_flag = 1;
 		}
-		if(meet_node_cnt == 0)
-		{
-			printf("error: None of the meet messages were sent successfully.\n");
-			return -1;
-		}
-		//store->meet_time = clock();
-		store->meet_flag = 1;
+	}else {
+		printf("error: Not support transport %s", proto);
+		free(bootstrap_info);
+		return -3;
 	}
-	free(bootstrap_tmp);
-	bootstrap_tmp = NULL;
-	
-	return 1;
+	free(bootstrap_info);
+	return meet_node_cnt;
 }
 
 
@@ -2473,6 +2487,8 @@ struct swarmkv_store *swarmkv_open(const char *bootstraps, const char *config, c
 	uuid_t uuid;
     uuid_generate(uuid); 
 	uuid_unparse(uuid, store->uuid);
+
+	int ret = 0;
 	
 	struct config_information *config_info = ALLOC(struct config_information, 1);
 	if(swarmkv_parse_config_info(config_info, config) < 0)
@@ -2486,9 +2502,8 @@ struct swarmkv_store *swarmkv_open(const char *bootstraps, const char *config, c
 	store->my_node_id = config_info->node_id;
 	printf("store->my_node_id: %d\n", store->my_node_id);
 
-	if(swarmkv_parse_bootstrap_info(store, bootstraps) < 0)
-	{
-		printf("Startup failed, please reconfigure. Format: node_id=id;token=xxxxx,db=0\n");
+	if ((ret = swarmkv_parse_bootstrap_info(store, bootstraps)) < 0) {
+		printf("Startup failed(ret=%d), please reconfigure. Format: node_id=id;token=xxxxx,db=0\n", ret);
 		free(store);
 		return NULL;
 	}

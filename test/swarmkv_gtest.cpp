@@ -169,7 +169,7 @@ protected:
 	virtual void SetUp()
 	{
 		char *bootstraps = ALLOC(char, 128); 
-		snprintf(bootstraps, 128, "self=%s:8323", host_ip);
+		snprintf(bootstraps, 128, "proto=udp;self=%s:8323", host_ip);
 		const char *config = "node_id=0;token=49ffb3ae-8e7e-40ab-bc3f-824567e932fe,db=0";
 		char *err = NULL;
 		store_0 = swarmkv_open(bootstraps, config, &err);
@@ -310,7 +310,7 @@ protected:
 	virtual void SetUp()
 	{
 		char *bootstraps = ALLOC(char, 128); 
-		snprintf(bootstraps, 128, "self=%s:8323", host_ip);
+		snprintf(bootstraps, 128, "proto=udp;self=%s:8323", host_ip);
 		const char *config = "node_id=0;token=49ffb3ae-8e7e-40ab-bc3f-824567e932fe,db=0";
 		char *err = NULL;
 		store_0 = swarmkv_open(bootstraps, config, &err);
@@ -541,7 +541,7 @@ protected:
 	struct swarmkv_store *store[3];
 	virtual void SetUp()
 	{
-		const char *bootstraps_0 = "self=192.168.40.182:1323";
+		const char *bootstraps_0 = "proto=udp;self=192.168.40.182:1323";
 		const char *config_0 = "node_id=0;token=49ffb3ae-8e7e-40ab-bc3f-824567e932fe,db=0";
 		char *err_0 = NULL;
 		store[0] = swarmkv_open(bootstraps_0, config_0, &err_0);
@@ -550,7 +550,7 @@ protected:
 			char *bootstraps = ALLOC(char, 128); 
 			char *config = ALLOC(char, 128);
 			char *err = NULL;
-			snprintf(bootstraps, 128, "self=%s:%d323;peers=%s:1323", host_ip, i+1, host_ip);
+			snprintf(bootstraps, 128, "proto=udp;self=%s:%d323;peers=%s:1323", host_ip, i+1, host_ip);
 			snprintf(config, 128, "node_id=%d;token=49ffb3ae-8e7e-40ab-bc3f-824567e932fe,db=0", i);
 			store[i] = swarmkv_open(bootstraps, config, &err);
 		}
@@ -720,7 +720,7 @@ protected:
 	struct swarmkv_store *store[16];
 	virtual void SetUp()
 	{
-		const char *bootstraps0 = "self=192.168.40.182:1323";
+		const char *bootstraps0 = "proto=udp;self=192.168.40.182:1323";
 		const char *config0 = "node_id=0;token=49ffb3ae-8e7e-40ab-bc3f-824567e932fe,db=0";
 		char *err0 = NULL;
 		store[0] = swarmkv_open(bootstraps0, config0, &err0);
@@ -729,7 +729,7 @@ protected:
 			char *bootstraps = ALLOC(char, 128); 
 			char *config = ALLOC(char, 128);
 			char *err = NULL;
-			snprintf(bootstraps, 128, "self=%s:%d;peers=%s:1323", host_ip, i+1323, host_ip);
+			snprintf(bootstraps, 128, "proto=udp;self=%s:%d;peers=%s:1323", host_ip, i+1323, host_ip);
 			snprintf(config, 128, "node_id=%d;token=49ffb3ae-8e7e-40ab-bc3f-824567e932fe,db=0", i);
 			store[i] = swarmkv_open(bootstraps, config, &err);
 			/*
@@ -975,7 +975,7 @@ protected:
 	struct swarmkv_store *store[16];
 	virtual void SetUp()
 	{
-		const char *bootstraps = "self=192.168.40.182:1323";
+		const char *bootstraps = "proto=udp;self=192.168.40.182:1323";
 		const char *config = "node_id=0;token=49ffb3ae-8e7e-40ab-bc3f-824567e932fe,db=0";
 		char *err = NULL;
 		store[0] = swarmkv_open(bootstraps, config, &err);
@@ -1010,7 +1010,7 @@ protected:
 			char *bootstraps = ALLOC(char, 128); 
 			char *config = ALLOC(char, 128);
 			char *err = NULL;
-			snprintf(bootstraps, 128, "self=%s:%d323;peers=%s:1323", host_ip, i+1, host_ip);
+			snprintf(bootstraps, 128, "proto=udp;self=%s:%d323;peers=%s:1323", host_ip, i+1, host_ip);
 			snprintf(config, 128, "node_id=%d;token=49ffb3ae-8e7e-40ab-bc3f-824567e932fe,db=0", i);
 			store[i] = swarmkv_open(bootstraps, config, &err);
 		}
@@ -1121,11 +1121,11 @@ protected:
 			char *err = NULL;
 			if(i==0)
 			{
-				snprintf(bootstraps, 128, "self=%s:%d323", host_ip, i+1);
+				snprintf(bootstraps, 128, "proto=udp;self=%s:%d323", host_ip, i+1);
 			}
 			else
 			{
-				snprintf(bootstraps, 128, "self=%s:%d323;peers=%s:1323", host_ip, i+1, host_ip);
+				snprintf(bootstraps, 128, "proto=udp;self=%s:%d323;peers=%s:1323", host_ip, i+1, host_ip);
 			}
 			snprintf(config, 128, "node_id=%d;token=49ffb3ae-8e7e-40ab-bc3f-824567e932fe,db=0", i);
 			store[i] = swarmkv_open(bootstraps, config, &err);
@@ -1443,7 +1443,7 @@ TEST_F(SwarmkvClusterTest, PUTafterMigratingTest)
 //测试update invalidate生效时间
 TEST(OneNode, InvalidateSpeedTest)
 {
-	const char *bootstraps = "self=192.168.40.182:8323";
+	const char *bootstraps = "proto=udp;self=192.168.40.182:8323";
 	const char *config = "node_id=1;token=49ffb3ae-8e7e-40ab-bc3f-824567e932fe,db=0";
 	char *err = NULL;
 	struct swarmkv_store *store = swarmkv_open(bootstraps, config, &err);
@@ -1484,7 +1484,7 @@ protected:
 	//静态SetUpTestCase()和TearDownTestCase()是TestCase事件，在所有测试中只执行一次，所有的testcase开始前执行SetUpTestCase,结束后执行一次TearDownTestCase
 	static void SetUpTestCase()
 	{
-		const char *bootstraps = "self=172.16.225.2:8323;peers=172.16.225.2:6323,172.16.225.2:7323,172.16.225.2:18323";
+		const char *bootstraps = "proto=udp;self=172.16.225.2:8323;peers=172.16.225.2:6323,172.16.225.2:7323,172.16.225.2:18323";
 		const char *config = "node_id=0;token=49ffb3ae-8e7e-40ab-bc3f-824567e932fe,db=0";
 		char *err = NULL;
 		store = swarmkv_open(bootstraps, config, &err);
@@ -1500,22 +1500,22 @@ protected:
 /*
 TEST(SwarmkvClusterOpenTest, ThreeNode)
 {
-	const char *bootstraps_0 = "self=172.16.225.2:8323";
+	const char *bootstraps_0 = "proto=udp;self=172.16.225.2:8323";
 	const char *config_0 = "node_id=0;token=49ffb3ae-8e7e-40ab-bc3f-824567e932fe,db=0";
 	char *err_0 = NULL;
 	struct swarmkv_store *store_0 = NULL;
 
-	const char *bootstraps_1 = "self=172.16.225.2:18323;peers=172.16.225.2:8323";
+	const char *bootstraps_1 = "proto=udp;self=172.16.225.2:18323;peers=172.16.225.2:8323";
 	const char *config_1 = "node_id=1;token=49ffb3ae-8e7e-40ab-bc3f-824567e932fc,db=0";
 	char *err_1 = NULL;
 	struct swarmkv_store *store_1 = NULL;
 
-	const char *bootstraps_2 = "self=172.16.225.2:6323;peers=172.16.225.2:8323";
+	const char *bootstraps_2 = "proto=udp;self=172.16.225.2:6323;peers=172.16.225.2:8323";
 	const char *config_2 = "node_id=2;token=49ffb3ae-8e7e-40ab-bc3f-824567e932fb,db=0";
 	char *err_2 = NULL;
 	struct swarmkv_store *store_2 = NULL;
 
-	const char *bootstraps_3 = "self=172.16.225.2:7323;peers=172.16.225.2:8323";
+	const char *bootstraps_3 = "proto=udp;self=172.16.225.2:7323;peers=172.16.225.2:8323";
 	const char *config_3 = "node_id=3;token=49ffb3ae-8e7e-40ab-bc3f-824567e932fa,db=0";
 	char *err_3 = NULL;
 	struct swarmkv_store *store_3 = NULL;
