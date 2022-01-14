@@ -82,8 +82,9 @@ set_property(TARGET fieldstate-static PROPERTY IMPORTED_LOCATION ${VENDOR_BUILD}
 
 
 #rrpc
-ExternalProject_Add(RRPC PREFIX rrpc-build
-        SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/rrpc
+ExternalProject_Add(RRPC PREFIX rrpc
+        GIT_REPOSITORY https://oauth2:glpat-CFSV3ZCnGzYs3z6C6VWD@git.mesalab.cn/t9k/rrpc.git
+        GIT_TAG main
         CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${VENDOR_BUILD} -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE})
 add_library(rrpc-static STATIC IMPORTED GLOBAL)
 add_dependencies(rrpc-static RRPC)
