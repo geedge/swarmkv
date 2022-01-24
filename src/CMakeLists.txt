@@ -1,32 +1,36 @@
-cmake_minimum_required (VERSION 2.8)
+set(SWARMKV_MAJOR_VERSION 2)
+set(SWARMKV_MINOR_VERSION 0)
+set(SWARMKV_PATCH_VERSION 0)
+set(SWARMKV_VERSION ${SWARMKV_MAJOR_VERSION}.${SWARMKV_MINOR_VERSION}.${SWARMKV_PATCH_VERSION})
 
-project(swarmkv_lib)
+message(STATUS "SwarmKV, Version: ${SWARMKV_VERSION}")
 
-
-#add_library(<name> [STATIC | SHARED | MODULE] [EXCLUDE_FROM_ALL] [source1] [source2] [...])
-
-#set(${SWARMKV_SRC} swarmkv.c swarmkv_net.c swarmkv_message.c)
-aux_source_directory(. SWARMKV_SRC)
-message("***swarmkv_src: ${SWARMKV_SRC}")
-message("***swarmkv_src: ${PROJECT_SOURCE_DIR}")  #/home/janessa/Desktop/swarmkv_cppcheck/src
-#include_directories(${PROJECT_SOURCE_DIR}/../include)
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/inc_internal)
-
-add_library(swarmkv_frame_static STATIC ${SWARMKV_SRC})
-set_target_properties(swarmkv_frame_static PROPERTIES LINKER_LANGUAGE C)
-set_target_properties(swarmkv_frame_static PROPERTIES OUTPUT_NAME swarmkv)
-
-target_link_libraries(swarmkv_frame_static cjson-static)
-target_link_libraries(swarmkv_frame_static uuid-static)
-target_link_libraries(swarmkv_frame_static gtest) 
-target_link_libraries(swarmkv_frame_static nanomsg-static) 
-target_link_libraries(swarmkv_frame_static fieldstate-static) 
-#target_link_libraries(swarmkv_frame_static nng-static) 
-#link_directories(/usr/local/lib)
-target_link_libraries(swarmkv_frame_static pthread)
-target_link_libraries(swarmkv_frame_static crypto)
+add_definitions(-fPIC)
+set(SWARMKV_SRC swarmkv.c mpack.c)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../include/)
 
 
+# Static Library Output
+add_library(swarmkv_static STATIC ${SWARMKV_SRC})
+set_target_properties(swarmkv_static PROPERTIES LINKER_LANGUAGE CXX)
+set_target_properties(swarmkv_static PROPERTIES OUTPUT_NAME swarmkv)
+set_target_properties(swarmkv_static PROPERTIES CLEAN_DIRECT_OUTPUT 1)
+target_include_directories(swarmkv_static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/inc_internal/)
+
+target_link_libraries(swarmkv_static nng-static)
+target_link_libraries(swarmkv_static fieldstat2-static)
 
 
+# Shared Library Output
+add_library(swarmkv_shared SHARED ${SWARMKV_SRC})
+set_target_properties(swarmkv_shared PROPERTIES LINKER_LANGUAGE CXX)
+set_target_properties(swarmkv_shared PROPERTIES OUTPUT_NAME swarmkv)
+set_target_properties(swarmkv_shared PROPERTIES CLEAN_DIRECT_OUTPUT 1)
+set_target_properties(swarmkv_shared PROPERTIES VERSION ${SWARMKV_MAJOR_VERSION}.${SWARMKV_MINOR_VERSION})
+set_target_properties(swarmkv_shared PROPERTIES SOVERSION ${SWARMKV_MAJOR_VERSION})
+set_target_properties(swarmkv_shared PROPERTIES LINK_FLAGS "-Wl,--version-script=${CMAKE_CURRENT_LIST_DIR}/version.map")
+target_include_directories(swarmkv_shared PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/inc_internal/)
+
+target_link_libraries(swarmkv_shared nng-static)
+target_link_libraries(swarmkv_shared fieldstat2-static)
 

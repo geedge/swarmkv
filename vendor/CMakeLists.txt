@@ -1,91 +1,46 @@
-cmake_minimum_required(VERSION 2.8)
+# CMakeFiles for 3rd vendor library
 
 include(ExternalProject)
 
 set(VENDOR_ROOT ${CMAKE_BINARY_DIR}/vendor)
 set(VENDOR_BUILD ${CMAKE_BINARY_DIR}/vendor/vbuild)
 
-MESSAGE("Vendor build output path: ${VENDOR_BUILD}")
-
-file(MAKE_DIRECTORY ${VENDOR_BUILD}/include)
-
-#cjson
-ExternalProject_Add(cJSON PREFIX cJSON
-        URL ${CMAKE_CURRENT_SOURCE_DIR}/cJSON-1.7.14.zip
-        URL_MD5 5fc6b4bb6134f7c3bfaca9d260f294d7
-        CMAKE_ARGS -DBUILD_SHARED_AND_STATIC_LIBS=On -DENABLE_CJSON_TEST=Off -DCMAKE_INSTALL_PREFIX=${VENDOR_BUILD}
-        INSTALL_DIR ${VENDOR_BUILD})
-
-
-add_library(cjson-static STATIC IMPORTED GLOBAL)
-add_dependencies(cjson-static cJSON)
-set_property(TARGET cjson-static PROPERTY IMPORTED_LOCATION ${VENDOR_BUILD}/lib64/libcjson.a)
-#set_property(TARGET cjson-static PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${VENDOR_BUILD}/include/cjson/)
-
-
-#uuid
-#--with-pic, PIC:position independent code
-ExternalProject_Add(uuid PREFIX uuid
-        URL ${CMAKE_CURRENT_SOURCE_DIR}/libuuid-1.0.3.tar.gz
-        URL_MD5 d44d866d06286c08ba0846aba1086d68
-        CONFIGURE_COMMAND ./configure --prefix=${VENDOR_BUILD} --disable-shared --with-pic
-        BUILD_COMMAND make
-        INSTALL_COMMAND make install
-        BUILD_IN_SOURCE 1)
-
-
-add_library(uuid-static STATIC IMPORTED GLOBAL)
-add_dependencies(uuid-static uuid)
-set_property(TARGET uuid-static PROPERTY IMPORTED_LOCATION ${VENDOR_BUILD}/lib/libuuid.a)
-#set_property(TARGET uuid-static PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${VENDOR_BUILD}/include/uuid)
-
-
-### GoogleTest
+# GoogleTest
 ExternalProject_Add(GoogleTest PREFIX GoogleTest
         URL ${CMAKE_CURRENT_SOURCE_DIR}/googletest-release-1.8.0.tar.gz
         URL_MD5 16877098823401d1bf2ed7891d7dce36
         CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${VENDOR_BUILD} -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE})
 
 ExternalProject_Get_Property(GoogleTest INSTALL_DIR)
+file(MAKE_DIRECTORY ${VENDOR_BUILD}/include)
 
-add_library(gtest STATIC IMPORTED GLOBAL)
-add_dependencies(gtest GoogleTest)
-set_property(TARGET gtest PROPERTY IMPORTED_LOCATION ${VENDOR_BUILD}/lib/libgtest.a)
-set_property(TARGET gtest PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${VENDOR_BUILD}/include)
-set_property(TARGET gtest PROPERTY INTERFACE_LINK_LIBRARIES pthread)
-
-
-#nanomsg
-#nanomsg在运行时需要glibc中的动态链接库
-ExternalProject_Add(nanomsg PREFIX nanomsg
-        URL ${CMAKE_CURRENT_SOURCE_DIR}/nanomsg.tar.gz
-        URL_MD5 067c174050d39186984c94eb444b05d6
-        CMAKE_ARGS -DBUILD_SHARED_AND_STATIC_LIBS=On -DENABLE_NANOMSG_TEST=Off -DCMAKE_INSTALL_PREFIX=${VENDOR_BUILD})
-
-ExternalProject_Get_Property(nanomsg INSTALL_DIR)
-add_library(nanomsg-static STATIC IMPORTED GLOBAL)
-add_dependencies(nanomsg-static nanomsg)
-set_property(TARGET nanomsg-static PROPERTY IMPORTED_LOCATION ${VENDOR_BUILD}/lib64/libnanomsg.a)
-#set_property(TARGET nanomsg-static PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${VENDOR_BUILD}/src/nanomsg/)
+add_library(gtest-static STATIC IMPORTED GLOBAL)
+set_property(TARGET gtest-static PROPERTY IMPORTED_LOCATION ${VENDOR_BUILD}/lib/libgtest.a)
+set_property(TARGET gtest-static PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${VENDOR_BUILD}/include)
+set_property(TARGET gtest-static PROPERTY INTERFACE_LINK_LIBRARIES pthread)
 
 
-#fieldstat
-ExternalProject_Add(FieldStat PREFIX FieldStat
-        URL ${CMAKE_CURRENT_SOURCE_DIR}/FieldState.tar.gz
-        URL_MD5 228ca1335d131f9f264200dd67d51167
+# Nanomsg NG
+ExternalProject_Add(Nanomsg-NG PREFIX nng
+        URL ${CMAKE_CURRENT_SOURCE_DIR}/nng-1.5.2.zip
         CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${VENDOR_BUILD} -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE})
 
-ExternalProject_Get_Property(FieldStat INSTALL_DIR)
-add_library(fieldstate-static STATIC IMPORTED GLOBAL)
-add_dependencies(fieldstate-static FieldStat)
-set_property(TARGET fieldstate-static PROPERTY IMPORTED_LOCATION ${VENDOR_BUILD}/lib/libMESA_field_stat2.a)
+ExternalProject_Get_Property(Nanomsg-NG INSTALL_DIR)
+file(MAKE_DIRECTORY ${VENDOR_BUILD}/include)
 
+add_library(nng-static STATIC IMPORTED GLOBAL)
+set_property(TARGET nng-static PROPERTY IMPORTED_LOCATION ${VENDOR_BUILD}/lib/libnng.a)
+set_property(TARGET nng-static PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${VENDOR_BUILD}/include)
 
-#rrpc
-ExternalProject_Add(RRPC PREFIX rrpc
-        GIT_REPOSITORY https://oauth2:glpat-CFSV3ZCnGzYs3z6C6VWD@git.mesalab.cn/t9k/rrpc.git
-        GIT_TAG main
+# FieldStat2
+ExternalProject_Add(FieldStat2 PREFIX fieldstat2
+        URL ${CMAKE_CURRENT_SOURCE_DIR}/FieldStat2-v2.10.0.zip
         CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${VENDOR_BUILD} -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE})
-add_library(rrpc-static STATIC IMPORTED GLOBAL)
-add_dependencies(rrpc-static RRPC)
-set_property(TARGET rrpc-static PROPERTY IMPORTED_LOCATION ${VENDOR_BUILD}/lib/librrpc-lib.a)
+
+ExternalProject_Get_Property(FieldStat2 INSTALL_DIR)
+file(MAKE_DIRECTORY ${VENDOR_BUILD}/include)
+
+add_library(fieldstat2-static STATIC IMPORTED GLOBAL)
+add_dependencies(fieldstat2-static FieldStat2)
+set_property(TARGET fieldstat2-static PROPERTY IMPORTED_LOCATION ${VENDOR_BUILD}/lib/libMESA_field_stat2.a)
+set_property(TARGET fieldstat2-static PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${VENDOR_BUILD}/include)
