@@ -1,4 +1,4 @@
-#include "swarmkv.h"
+#include "swarmkv/swarmkv.h"
 #include <gtest/gtest.h>
 class SwarmkvBasicTest : public testing::Test 
 {
@@ -6,7 +6,17 @@ class SwarmkvBasicTest : public testing::Test
 protected:	
 	static void SetUpTestCase()
 	{
-		swarmkv_open(const char * bootstraps, const char * config, char * * err);
+		const char* bootstraps="";
+		const char* config="";
+		char* err=NULL;
+		int ret=0;
+		store=swarmkv_open(bootstraps, config, &err);
+		if(!store)
+		{
+			printf("swarmkv_open failed: %s\n", err);
+			free(err);
+			err=NULL;
+		}
 	}
 	static void TearDownTestCase()
 	{

@@ -3,6 +3,7 @@
 #include "swarmkv_limits.h"
 #include "uthash/uthash.h"
 #include <pthread.h>
+#include <netinet/ip.h>
 
 enum swarmkv_value_type
 {
@@ -53,14 +54,15 @@ struct swarmkv_params
 	char* self_ip_str;
 	uint16_t listen_port;
 	size_t n_bootstrap_nodes;
-	char* bootstrap_node_addrs[MAX_BOOTSTRAP_NODES][MAX_IPv6_ADDR_STR_LEN];
+	char bootstrap_node_addrs[MAX_BOOTSTRAP_NODES][MAX_IPv6_ADDR_STR_LEN];
 	uint16_t boostrap_node_port_nr[MAX_BOOTSTRAP_NODES];	//network order
 	int minimum_replica_num;
 	int dry_run;
 };
 struct swarmkv_store
 {
-	struct swarmkv_params para;	
+	struct swarmkv_params para;
+	pthread_t thread;
 	struct swarmkv_slot slots[SLOT_NUM];
 };
 

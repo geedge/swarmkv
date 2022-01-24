@@ -29,7 +29,7 @@ ExternalProject_Get_Property(Nanomsg-NG INSTALL_DIR)
 file(MAKE_DIRECTORY ${VENDOR_BUILD}/include)
 
 add_library(nng-static STATIC IMPORTED GLOBAL)
-set_property(TARGET nng-static PROPERTY IMPORTED_LOCATION ${VENDOR_BUILD}/lib/libnng.a)
+set_property(TARGET nng-static PROPERTY IMPORTED_LOCATION ${VENDOR_BUILD}/lib64/libnng.a)
 set_property(TARGET nng-static PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${VENDOR_BUILD}/include)
 
 # FieldStat2

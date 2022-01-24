@@ -1,4 +1,5 @@
 #include "swarmkv/swarmkv.h"
+#include "swarmkv_store.h"
 #include "swarmkv_utils.h"
 #include "uthash/uthash.h"
 #include <pthread.h>
@@ -12,6 +13,10 @@ int SWARMKV_VERSION_2_0_0_20220124=0;
 void *swarmkv_msg_processing_thread(void *arg)
 {
 	struct swarmkv_store *store = (struct swarmkv_store *) arg;
+	while(1)
+	{
+	}
+	return NULL;
 }
 
 static int swarmkv_parse_bootstrap_info(struct swarmkv_params *para, const char *bootstraps) {
@@ -85,7 +90,7 @@ struct swarmkv_store *swarmkv_open(const char *bootstraps, const char *config, c
 {
 	struct swarmkv_store *store = ALLOC(struct swarmkv_store, 1);
 	int ret = 0;
-	if ((ret = swarmkv_parse_bootstrap_info(store, bootstraps)) < 0)
+	if ((ret = swarmkv_parse_bootstrap_info(&store->para, bootstraps)) < 0)
 	{		
 		*err=ALLOC(char, ERROR_STR_SIZE);
 		snprintf(*err, ERROR_STR_SIZE, "Invalid bootstraps format");
@@ -96,11 +101,11 @@ struct swarmkv_store *swarmkv_open(const char *bootstraps, const char *config, c
 	for(i = 0; i<SLOT_NUM; i++)
 	{
 		store->slots[i].slot_id = i;
-		store->slots[i].owner_node_id = store->my_node_id;
-		store->slots[i].status = SLOT_STABLE;
+		store->slots[i].owner_node_id = 0;
+//		store->slots[i].status = SLOT_STABLE;
 	}
 	
-	int pthread_ret = pthread_create(&store->tid, NULL, swarmkv_msg_processing_thread, (void*)store);
+	int pthread_ret = pthread_create(&store->thread, NULL, swarmkv_msg_processing_thread, (void*)store);
 	if(pthread_ret != 0)
 	{
 		printf("pthread_create error: error_code = %d\n", pthread_ret);
