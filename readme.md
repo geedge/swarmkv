@@ -33,7 +33,7 @@ I list design choices here.
 
 Key-value pairs are distributed over nodes. As shown in the following picture, the key layer keeps track of the current location of every key-value pair, and the value layer stores the actual binary of key-value. This design is inspired by the NSDI'18 paper *Elastic scaling of stateful network functions*.
 
-![image-20220129083856533](.\doc\nsdi18-s6-dht-based-dso-space.png)
+![nsdi18-s6-dht-based-dso-space](./doc/imgs/nsdi18-s6-dht-based-dso-space.png)
 
 
 
