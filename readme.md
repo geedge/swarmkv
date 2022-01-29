@@ -31,9 +31,11 @@ I list design choices here.
 
 ### DHT-based KV spaces
 
-Key-value pairs are distributed over nodes. The key layer keeps track of the current location of every key-value pair. The value layer stores the actual binary of key-value. 
+Key-value pairs are distributed over nodes. As shown in the following picture, the key layer keeps track of the current location of every key-value pair, and the value layer stores the actual binary of key-value. This design is inspired by the NSDI'18 paper *Elastic scaling of stateful network functions*.
 
-![image-20220129083856533](D:\Code\swarmkv\doc\nsdi18-s6-dht-based-dso-space.png)
+![image-20220129083856533](.\doc\nsdi18-s6-dht-based-dso-space.png)
+
+
 
 使用Raft协议来保证Key Owner的一致性？
 
