@@ -15,9 +15,7 @@ extern "C"
 		const char * value, size_t vallen, void * arg);
 
 
-	// config example: "node_id=1;token=49ffb3ae-8e7e-40ab-bc3f-824567e932fe,db=0";
-	// bootstraps example: "proto=udp;self=0.0.0.0:8323;peers=192.168.0.100:8323,[2001:db8::1]:8080"
-	struct swarmkv_store * swarmkv_open(const char * bootstraps, const char * config, char * *err);
+	struct swarmkv_store *swarmkv_open(const char * cluster_name, unsigned int http_port, unsigned int p2p_port, void * mesa_handle_logger);
 	void swarmkv_close(struct swarmkv_store * store);
 
 

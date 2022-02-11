@@ -1,7 +1,11 @@
-#define SLOT_NUM 		4096
+#pragma once
+
+#define SWARMKV_SLOT_NUM 		4096
 #define	MAX_REPLICA_NUM		8
 #define	SWARMKV_THREAD_MAX	16
-
+#define	SWARMKV_SYMBOL_MAX	128
+#define	SWARMKV_URL_MAX		1024
+#define	SWARMKV_NODE_MAX	1024
 
 #define	SWARMKV_MAX_TABLE_NAME	256
 

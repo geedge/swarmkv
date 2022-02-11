@@ -35,7 +35,7 @@ set_property(TARGET fieldstat2-static PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${V
 ### Libevent 2.1.12
 ExternalProject_Add(libevent PREFIX libevent
         URL ${CMAKE_CURRENT_SOURCE_DIR}/libevent-2.1.12-stable.tar.gz
-		CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${VENDOR_BUILD} -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE})
+		CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${VENDOR_BUILD} -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DCMAKE_C_FLAGS="-fPIC")
 
 file(MAKE_DIRECTORY ${VENDOR_BUILD}/include)
 
@@ -44,3 +44,9 @@ add_dependencies(libevent-static libevent)
 set_property(TARGET libevent-static PROPERTY IMPORTED_LOCATION ${VENDOR_BUILD}/lib/libevent.a)
 set_property(TARGET libevent-static PROPERTY IMPORTED_INTERFACE_LINK_LIBRARIES pthread crypto)
 set_property(TARGET libevent-static PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${VENDOR_BUILD}/include)
+
+add_library(libevent-static-pthreads STATIC IMPORTED GLOBAL)
+add_dependencies(libevent-static-pthreads libevent)
+set_property(TARGET libevent-static-pthreads PROPERTY IMPORTED_LOCATION ${VENDOR_BUILD}/lib/libevent_pthreads.a)
+set_property(TARGET libevent-static-pthreads PROPERTY IMPORTED_INTERFACE_LINK_LIBRARIES pthread crypto)
+set_property(TARGET libevent-static-pthreads PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${VENDOR_BUILD}/include)
