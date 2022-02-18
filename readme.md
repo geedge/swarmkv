@@ -1,4 +1,8 @@
-#  <img src="./doc/imgs/swarmkv_logo.svg" alt="swarmkv_logo" style="zoom:25%;" />Swarm KV
+# Swarm KV
+
+
+
+<img src="./doc/imgs/swarmkv_logo.svg" alt="swarmk logo"  align="left" height="200px" />
 
 **SwarmKV is a embedded and distributed key-value storage library with peer-to-peer networing.** SwarmKV uses [HashiCorp Consul](https://www.consul.io/) for cluster management, which includes leader election, health checking, and slot table management.
 
@@ -8,7 +12,7 @@
 
 **Why not Redis?** Because Swarm KV is
 
-- Embedded, need additional servers.
+- Embedded, **no** need additional servers.
 - Cache optimized
 - Salable for trillions of operations per second, billions of keys, and thousands of operators
 
