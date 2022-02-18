@@ -12,3 +12,6 @@
 #define	ERROR_STR_SIZE			1024
 #define	MAX_BOOTSTRAP_NODES		256
 #define	MAX_IPv6_ADDR_STR_LEN	48
+#define	MAX_UUID_STR_LEN		37
+#define MAX_CMD_ARGS	8
+

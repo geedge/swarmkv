@@ -1,6 +1,6 @@
 # Swarm KV 
 
-**SwarmKV is a embedded and distributed key-value storage library that provides a mapping from string keys to string values.** SwarmKV uses [HashiCorp Consul](https://www.consul.io/) for cluster management.
+**SwarmKV is a embedded and distributed key-value storage library that provides a mapping from string keys to string values.** SwarmKV uses [HashiCorp Consul](https://www.consul.io/) for cluster management, which includes leader election, health checking, and slot table management.
 
 **Main Features**
 
@@ -36,6 +36,17 @@ SwarmKV operations
 - Get, Set, Delete
 - TTL
 
+| Command Operator  | Command Args | Response                                  |
+| ----------------- | ------------ | ----------------------------------------- |
+| GET               | Key          |                                           |
+| SET               |              |                                           |
+| HGET              |              |                                           |
+| CLUSTER OBJ_OWNER | Key          | 1) "192.168.1.200"<br/>2) (interger) 5211 |
+
+
+
+
+
 ## SwarmKV Design
 
 I list design choices here.
@@ -44,10 +55,6 @@ Todo:
 
 - Object migration
 - Nodes failover by object replication
-
-The Raft algorithm is provided by a [standalone Raft library](https://github.com/willemt/raft) by Willem-Hendrik Thiart.
-
-
 
 ### DHT-based KV spaces
 
@@ -62,18 +69,14 @@ As shown in the above picture, a KV operation is done by following steps:
    - if the key does not exist, the object is assigned to Node A and added to the object routing table.
 3. Node A sends KV operation request to Node C.
 
-The keyspace consistency is based on the [Raft](https://raft.github.io/) algorithm. Maybe Not. See [A typical raft cluster goes up to 7 nodes.](https://stackoverflow.com/questions/42422111/raft-nodes-count) In Consul, only server nodes participate in Raft. I think that's why Redis doesn't use raft for clustering.
-
-Swarmkv nodes use the  [Gossip protocol](https://en.wikipedia.org/wiki/Gossip_protocol) to broadcast messages to the cluster.
-
-Gossip is how new nodes announce themselves to the cluster, as well as metadata that doesn’t have to be consistent (like the possible failure nodes). Once a node has joined the cluster, slots are assigned to those nodes through raft membership change operations.
+The keyspace consistency is based on [consul](https://www.consul.io/) and its [Raft](https://raft.github.io/) implementation. As [a typical raft cluster goes up to 7 nodes](https://stackoverflow.com/questions/42422111/raft-nodes-count), so only consul server nodes participate in Raft. The consul and its [Gossip protocol](https://en.wikipedia.org/wiki/Gossip_protocol) implementation are used  to track node health.
 
 #### Global Slot Table
 
 The global slot table is stored in Consul KV, the key is swarmkv/<cluster_name>/slot_table:
 
 ```
-curl http://localhost:8500/v1/kv/<cluster_name>/slot_table?raw=true
+curl http://localhost:8500/v1/kv/swarmkv/<cluster_name>/slot_table?raw=true
 ```
 
 This will return a JSON array:
@@ -123,7 +126,7 @@ This will return a JSON array:
 The slot table is maintained by the cluster leader, which is elected from cluster peers. SwarmKV uses [Consul for leader election](https://learn.hashicorp.com/tutorials/consul/application-leader-elections). 
 
 ```
-curl http://localhost:8500/v1/kv/<cluster_name>/lead?raw=true
+curl http://localhost:8500/v1/kv/swarmkv/<cluster_name>/lead?raw=true
 ```
 
 ```json
@@ -133,7 +136,14 @@ curl http://localhost:8500/v1/kv/<cluster_name>/lead?raw=true
 }
 ```
 
+Except for node in dry run mode, cluster nodes will watch leadership changes and [run for it](https://learn.hashicorp.com/tutorials/consul/application-leader-elections) when no cluster leader.
 
+1. Read `swarmkv/<cluster_name>/lead` with [blocking query](https://www.consul.io/api/features/blocking).
+2. If there is no session in the result, then run for leader with following steps
+   - [Create a session](https://www.consul.io/api-docs/session#create-session).
+   - [Update](https://www.consul.io/api-docs/kv#acquire) swarmkv/<cluster_name>/lead with `?acquire=<session>` parameter.
+   - If the response is `true`, the node is elected to be a leader.
+3. Go to  step 1.
 
 #### Keyspace reorganization
 
@@ -156,13 +166,28 @@ What if someone fails during the migration?
 - If node B fails, node A still owns slot N, and after a timeout without receiving slot table update, it will restore it to a stable state.
 - if node A fails, node B aborts this migration and waits for the cluster leader to update the global slot table.
 
-When a master node A fails, if slots owned by A has a replica which is node B, the cluster leader will promote node B to slot owner. It has following steps:
+When a master node A fails, if slots owned by A has a replica which is node B, the cluster leader will promote node B to slot owner. It has the following steps:
 
 - Cluster leader sends promote command to 
 
 ,  in which,  N is slot id, Y contains a 32-bit node ID, UUID format version, IP and port. 
 
+### KV Operation
 
+The swarmkv's cache model is inspired by [Redis server-assisted client side caching](https://redis.io/topics/client-side-caching). The object owner remembers what keys a given peer accessed, and sends update messages when the same keys are modified.  
+
+When a requester executes a command, it takes the following steps
+
+- for a read operation, lookup local cache, if a cache miss or a write operation
+- the requester lookup global keyspace to find out the key owner, and send the command message to the key owner
+- the key owner lookup key route table,
+  - if no key entry exists
+    - if it's a  read operation, return NULL
+    - if it's a write operation, register the requester as the object owner
+  - if the key entry exists, send the object owner node address to the requester
+- the requester receives the key owner's reply, send the command to the object owner
+- the object owner executes the command, registers the requester as one of the cache tracking nodes, and send a reply to the requester
+- the requester receives the reply and invokes  call back function
 
 ### Fault Tolerance
 
@@ -178,11 +203,68 @@ Nodes use a gossip protocol to send ping packets to make sure all the other node
 
 If a node is failed, peers will detect it by not replying ping message
 
+### Wire Protocol
+
+Messages between nodes are serialized with [MessagePack](https://msgpack.org/index.html) format. For readability, we use JSON to describe the request and response here.
+
+Request format
+
+```json
+{
+    "msg_type":"cmd",
+    "need_reply": true,
+    "txn_seq": 7237914459,
+    "txn_initiator": "ebe5a57c-cb33-4b2f-968f-44c4b87ea8d9",
+    "node":{
+        "ip":"192.168.1.200",
+        "port":5210,
+        "uuid":"ebe5a57c-cb33-4b2f-968f-44c4b87ea8d9"
+    },
+    "cmd":{
+        "op":"HMGET",
+        "args":[
+            "user1",
+            "phone_number",
+            "address",
+            "avatar"
+        ]
+    }
+}
+```
+
+Response Format
+
+```json
+{
+	"msg_type":"reply",
+    "txn_seq": 7237914459,
+    "txn_initiator": "ebe5a57c-cb33-4b2f-968f-44c4b87ea8d9",
+    "node":{
+        "ip":"192.168.1.201",
+        "port":5210,
+        "uuid":"921e25e4-85a4-11ec-a8a3-0242ac120002"
+    },
+    "reply":{
+        "reply_type":"array",
+        "element":[
+            {
+                "reply_type":"string",
+                "string": "+86 186 0000 0000"
+            },
+            {
+                "reply_type":"string",
+                "string":"House 01, Haidian District, Beijing, China"
+            },
+            {
+                "reply_type":"string",
+                "string":"0c 74 65 78 74 20 20 20 20 43 6f 70 79 72 69 67 68 74 20 28 63 29 20 31 39 39 38 20 48 65 77 6c 65 74 74 2d 50 61 63 6b 61 72 64 20 43 6f 6d 70 61 6e 79 20 20 64 65 73 63 20 20 20 20 20 20 20 12 73 52 47 42 20 49 45 43 36 31 39 36 36 2d 32 2e 31 20 20 20 20 20 20 20 20 20 20 20 12 73 52 47 42 20 49 45 43 36 31 39 36 36 2d 32 2e 31 20 20 00"
+            }
+        ]
+    }
+}
+```
 
 
-### Cache Model
-
-The swarmkv's cache model is inspired by [Redis server-assisted client side caching](https://redis.io/topics/client-side-caching). The object owner remembers what keys a given peer accessed, and sends invalidation messages when the same keys are modified.  
 
 ### Node Design
 
@@ -211,10 +293,12 @@ The worker threads are responsible for:
 
 The source files are organized as follows:
 
-- swarmkv_store.c event loop, kv operation
-- swarmkv_keyspace.c: The control plane of SwarmKV. Interact with Consul for node discovery, slot assignment, and leader election.
-  - The keyspace is partitioned by key slots among the participating nodes.  Raft protocol provides a consensus of key slot assignments.
-- swarmkv_message.c message serialization
+- swarmkv.c event loop, orchestration
+- swarmkv_store.c  kv operation, key hash table is implemented with [uthash](https://troydhanson.github.io/uthash/). Use [sds](https://github.com/antirez/sds) as dynamic string library.
+- swarmkv_keyspace.c: The control plane of SwarmKV. Interact with [HashiCorp Consul](https://www.consul.io/) for node discovery, slot assignment, and leader election.
+  - The keyspace is partitioned by key slots among the participating nodes. 
+- swarmkv_message.c: Message is encoded to [MessagePack](https://msgpack.org/index.html) format by [mpack](https://github.com/ludocode/mpack) library.
+- swarmkv_net.c: High performance P2P communication via [libevent](https://libevent.org/).
 
 ## Similar Projects
 

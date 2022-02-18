@@ -19,9 +19,11 @@
 #include <string.h>
 
 #define	CONSUL_HOST	"127.0.0.1"
-#define	LOCAL_HOST	"127.0.0.1"
 #define	CONSUL_DEFAULT_PORT	8500
-#define CONSUL_SESSION_TIMEOUT_SECONDS	20
+
+#define	LOCAL_HOST	"127.0.0.1"
+
+#define	XXHASH_SEED	5210
 #define MODULE_SWARMKV_KEYSPACE		"swarmkv.keyspace"
 enum slot_state
 {
@@ -46,14 +48,13 @@ struct swarmkv_keyspace
 	int readable_tid;
 
 	int node_id;	//Self node ID
+	struct swarmkv_node self;
 	pthread_rwlock_t rwlock_slots;
 	struct key_slot slots[SWARMKV_SLOT_NUM];
 
 	unsigned int consul_agent_port;
 	unsigned int health_check_port;	//HTTP
-	unsigned int p2p_port;			//UDP based msgpack
 	int dryrun;
-	char self_ip[INET6_ADDRSTRLEN];
 	struct event_base * evbase;
 	int init_success;
 
@@ -68,7 +69,7 @@ struct swarmkv_keyspace
 	struct evhttp* http_server;//
 	void *logger;
 };
-void consul_run_for_leader_async(struct swarmkv_keyspace* ks);
+void consul_acquire_session_lock_async(struct swarmkv_keyspace* ks);
 void consul_watch_leadership_changes_async(struct swarmkv_keyspace* ks);
 void consul_watch_nodes_changes_async(struct swarmkv_keyspace* ks);
 void consul_watch_slots_changes_async(struct swarmkv_keyspace* ks);
@@ -200,7 +201,7 @@ int consul_get_self_ip(struct swarmkv_keyspace* ks)
 		self=cJSON_Parse(response);
 		member=cJSON_GetObjectItem(self, "Member");
 		item=cJSON_GetObjectItem(member, "Addr");
-		strncpy(ks->self_ip, item->valuestring, sizeof(ks->self_ip));
+		strncpy(ks->self.ip_addr, item->valuestring, sizeof(ks->self_ip));
 		ret=0;
 		cJSON_Delete(self);
 	}
@@ -218,7 +219,7 @@ int consul_service_register(struct swarmkv_keyspace* ks)
 	cJSON_AddStringToObject(service, "Name", ks->cluster_name);
 	snprintf(ks->consul_service_id, sizeof(ks->consul_service_id), "%s-%d", ks->cluster_name, ks->health_check_port);
 	cJSON_AddStringToObject(service, "ID", ks->consul_service_id);
-	cJSON_AddStringToObject(service, "Address", ks->self_ip);
+	cJSON_AddStringToObject(service, "Address", ks->self.ip_addr);
 	cJSON_AddNumberToObject(service, "Port", ks->p2p_port);
 
 	cJSON* check=cJSON_CreateObject();
@@ -251,24 +252,87 @@ int consul_service_register(struct swarmkv_keyspace* ks)
 	cJSON_Delete(service);
 	return ret;
 }
-void __consul_session_renew_cb(struct evhttp_request *req, void *arg)
+
+
+void __consul_session_create_cb(struct evhttp_request *req, void *arg)
 {
+	int resp_code=0;
+	cJSON* session_id=NULL, *session_create_response=NULL;
 	struct swarmkv_keyspace* ks = (struct swarmkv_keyspace *)arg;
+	int is_running_for_leader=0;
 	if(!req || !evhttp_request_get_response_code(req))
 	{
 		int errcode = EVUTIL_SOCKET_ERROR();
-		MESA_handle_runtime_log(ks->logger, RLOG_LV_FATAL, MODULE_SWARMKV_KEYSPACE, "session renew failed: %s",
-			evutil_socket_error_to_string(errcode));		
+		MESA_handle_runtime_log(ks->logger, RLOG_LV_FATAL, MODULE_SWARMKV_KEYSPACE, "session create failed: socket error %s",
+			evutil_socket_error_to_string(errcode));	
 	}
-	if()
+	else
+	{
+		resp_code=evhttp_request_get_response_code(req);
+		
+	}
+	if(resp_code==200)
+	{
+		struct evbuffer *buf=NULL;
+		buf=evhttp_request_get_input_buffer(req);
+		size_t len = evbuffer_get_length(buf);
+		sds out=sdsnewlen(SDS_NOINIT, len);
+		evbuffer_copyout(buf, out, len);
+		
+		session_create_response=cJSON_Parse(out);
+		session_id=cJSON_GetObjectItem(session_create_response, "ID");
+		strncpy(ks->consul_session_id, session_id->valuestring, sizeof(ks->consul_session_id));
+		cJSON_Delete(session_create_response);
+		consul_acquire_session_lock_async(ks);
+		sdsfree(out);
+		is_running_for_leader=1;
+		MESA_handle_runtime_log(ks->logger, RLOG_LV_INFO, MODULE_SWARMKV_KEYSPACE, "session %s is created.", ks->consul_session_id);
+	}
+	else
+	{
+		MESA_handle_runtime_log(ks->logger, RLOG_LV_FATAL, MODULE_SWARMKV_KEYSPACE, "session creation failed: HTTP code %d.",
+			resp_code);	
+	}
+	if(!is_running_for_leader)
+	{
+		consul_watch_leadership_changes_async(ks);
+	}
+	return;
 }
-static void __consul_session_renew_periodic(evutil_socket_t fd, short what, void * arg)
+
+void consul_create_session_async(struct swarmkv_keyspace* ks)
 {
-	struct swarmkv_keyspace* ks = (struct swarmkv_keyspace *)arg;
-	char url[SWARMKV_URL_MAX]="";
-	snprintf(url, sizeof(url), "/v1/session/renew/%s", ks->consul_session_id);
+	cJSON* session=NULL, *service_check_array=NULL, *service_check=NULL, *check_array=NULL, *session_create_response=NULL, *session_id=NULL;
+	session=cJSON_CreateObject();
+	cJSON_AddStringToObject(session, "LockDelay", "5s");
+	cJSON_AddStringToObject(session, "Name", "swarmkv-leader-election-lock");
+	cJSON_AddStringToObject(session, "Behavior", "release");
+//	snprintf(ttl, sizeof(ttl), "%ds", CONSUL_SESSION_TIMEOUT_SECONDS);
+//	cJSON_AddStringToObject(session, "TTL", ttl);
+
+	service_check=cJSON_CreateObject();
+	cJSON_AddStringToObject(service_check, "ID", ks->consul_check_id);
+	service_check_array=cJSON_CreateArray();
+	cJSON_AddItemToArray(service_check_array, service_check);
+	cJSON_AddItemToObject(session, "ServiceChecks", service_check_array);
+
+/*
+	char* p[1];
+	p[0]=ks->cluster_name;
+	check_array=cJSON_CreateStringArray(p, 1);
+	cJSON_AddItemToObject(session, "Checks", check_array);
 	
-	struct evhttp_request* request=evhttp_request_new(__consul_session_renew_cb, ks);
+*/
+	char* payload=NULL;
+	payload=cJSON_Print(session);
+	sds req_body=sdsnew(payload);
+	free(payload);
+	printf("%s\n", req_body);
+
+	char url[SWARMKV_URL_MAX]="";
+	snprintf(url, sizeof(url), "/v1/session/create");
+
+	struct evhttp_request* request=evhttp_request_new(__consul_session_create_cb, ks);
 	struct evhttp_connection* conn=evhttp_connection_base_new(ks->evbase, NULL, CONSUL_HOST, ks->consul_agent_port);	
 	evhttp_connection_set_timeout(conn, 2);
 
@@ -276,62 +340,92 @@ static void __consul_session_renew_periodic(evutil_socket_t fd, short what, void
 	
     evhttp_add_header(output_headers, "Host", LOCAL_HOST);
 	evhttp_add_header(output_headers, "Connection", "close");
+	
+	struct evbuffer* output_buffer = evhttp_request_get_output_buffer(request);
+	evbuffer_add(output_buffer, req_body, sdslen(req_body));
+	char number[64];
+	snprintf(number, sizeof(number), "%zu", sdslen(req_body));
+	evhttp_add_header(output_headers, "Content-Type", "application/json");
+	evhttp_add_header(output_headers, "Content-Length", number);
 
 	evhttp_make_request(conn, request, EVHTTP_REQ_PUT, url);
 	return;
+
 }
-
-int consul_session_create(struct swarmkv_keyspace* ks)
+void __consul_session_check_cb(struct evhttp_request *req, void *arg)
 {
-	int ret=-1;
-	cJSON* session=NULL, *service_check_array=NULL, *service_check=NULL, *check_array=NULL, *session_create_response=NULL, *session_id=NULL;
-	char ttl[32]="";
-	session=cJSON_CreateObject();
-	cJSON_AddStringToObject(session, "LockDelay", "5s");
-	cJSON_AddStringToObject(session, "Name", "swarmkv-leader-election");
-	cJSON_AddStringToObject(session, "Behavior", "release");
-	snprintf(ttl, sizeof(ttl), "%ds", CONSUL_SESSION_TIMEOUT_SECONDS);
-	cJSON_AddStringToObject(session, "TTL", ttl);
-
-/*	service_check=cJSON_CreateObject();
-	cJSON_AddStringToObject(service_check, "ID", ks->consul_check_id);
-	service_check_array=cJSON_CreateArray();
-	cJSON_AddItemToArray(service_check_array, service_check);
-	cJSON_AddItemToObject(session, "ServiceChecks", service_check_array);
-
-
-	char* p[1];
-	p[0]=ks->consul_check_id;
-	check_array=cJSON_CreateStringArray(p, 1);
-	cJSON_AddItemToObject(session, "Checks", check_array);
-	*/
-
-	char* payload=NULL;
-	payload=cJSON_Print(session);
-	sds req_body=sdsnew(payload);
-	free(payload);
-	printf("%s\n", req_body);
-	sds resp_body=NULL;
 	int resp_code=0;
-	resp_code=http_blocking_request(EVHTTP_REQ_PUT, CONSUL_HOST, ks->consul_agent_port, "/v1/session/create", req_body, &resp_body);
+	cJSON *session_check=NULL;
+	int session_check_array_size=0;
+	struct swarmkv_keyspace* ks = (struct swarmkv_keyspace *)arg;
+	int is_running_for_leader=0;
+	if(!req || !evhttp_request_get_response_code(req))
+	{
+		int errcode = EVUTIL_SOCKET_ERROR();
+		MESA_handle_runtime_log(ks->logger, RLOG_LV_FATAL, MODULE_SWARMKV_KEYSPACE, "session check failed: socket error %s",
+			evutil_socket_error_to_string(errcode));	
+	}
+	else
+	{
+		resp_code=evhttp_request_get_response_code(req);
+		
+	}
 	if(resp_code==200)
 	{
-		session_create_response=cJSON_Parse(resp_body);
-		session_id=cJSON_GetObjectItem(session_create_response, "ID");
-		strncpy(ks->consul_session_id, session_id->valuestring, sizeof(ks->consul_session_id));
-		cJSON_Delete(session_create_response);
-		ret=0;
+		struct evbuffer *buf=NULL;
+		buf=evhttp_request_get_input_buffer(req);
+		size_t len = evbuffer_get_length(buf);
+		sds out=sdsnewlen(SDS_NOINIT, len);
+		evbuffer_copyout(buf, out, len);
+		
+		session_check=cJSON_Parse(out);
+		session_check_array_size=cJSON_GetArraySize(session_check);
+		cJSON_Delete(session_check);
+		sdsfree(out);
+		if(session_check_array_size==0)
+		{
+			consul_create_session_async(ks);		
+			MESA_handle_runtime_log(ks->logger, RLOG_LV_INFO, MODULE_SWARMKV_KEYSPACE, "session %s is not existed, start to create a new session.", ks->consul_session_id);
+			memset(ks->consul_session_id, 0, sizeof(ks->consul_session_id));
+		}
+		else
+		{
+			consul_acquire_session_lock_async(ks);			
+			MESA_handle_runtime_log(ks->logger, RLOG_LV_INFO, MODULE_SWARMKV_KEYSPACE, "session %s is valid, run for leader.", ks->consul_session_id);
+		}
+		is_running_for_leader=1;
 	}
-	sdsfree(req_body);
-	sdsfree(resp_body);
-	cJSON_Delete(session);
-	struct event * ev = event_new(ks->evbase, -1, EV_PERSIST, __consul_session_renew_periodic, ks);
-	struct timeval timer_delay = {CONSUL_SESSION_TIMEOUT_SECONDS/2, 0};
-	evtimer_add(ev, &timer_delay);
-
-	return ret;
+	else
+	{
+		MESA_handle_runtime_log(ks->logger, RLOG_LV_FATAL, MODULE_SWARMKV_KEYSPACE, "session check failed: HTTP code %d.",
+			resp_code);	
+	}
+	if(!is_running_for_leader)
+	{
+		consul_watch_leadership_changes_async(ks);
+	}
+	return;
 }
-void __run_for_leader_cb(struct evhttp_request *req, void *arg)
+
+void consul_session_check_async(struct swarmkv_keyspace* ks)
+{
+	char url[SWARMKV_URL_MAX]="";
+	snprintf(url, sizeof(url), "/v1/session/info/%s", ks->consul_session_id);
+
+	struct evhttp_request* request=evhttp_request_new(__consul_session_check_cb, ks);
+	struct evhttp_connection* conn=evhttp_connection_base_new(ks->evbase, NULL, CONSUL_HOST, ks->consul_agent_port);	
+	evhttp_connection_set_timeout(conn, 2);
+
+	struct evkeyvalq *output_headers = evhttp_request_get_output_headers(request);
+	
+    evhttp_add_header(output_headers, "Host", LOCAL_HOST);
+	evhttp_add_header(output_headers, "Connection", "close");
+	
+	evhttp_make_request(conn, request, EVHTTP_REQ_GET, url);
+	return;
+
+}
+void __acquire_session_lock_cb(struct evhttp_request *req, void *arg)
 {
 	struct swarmkv_keyspace* ks=(struct swarmkv_keyspace*)arg;
 	int resp_code=0;
@@ -340,7 +434,6 @@ void __run_for_leader_cb(struct evhttp_request *req, void *arg)
 		int errcode = EVUTIL_SOCKET_ERROR();
 		MESA_handle_runtime_log(ks->logger, RLOG_LV_FATAL, MODULE_SWARMKV_KEYSPACE, "run for leader failed: %s",
 			evutil_socket_error_to_string(errcode));
-		consul_run_for_leader_async(ks);
 	}
 	else
 	{
@@ -365,7 +458,12 @@ void __run_for_leader_cb(struct evhttp_request *req, void *arg)
 				ks->is_leader=0;
 			}
 		}
+		else
+		{
+			MESA_handle_runtime_log(ks->logger, RLOG_LV_FATAL, MODULE_SWARMKV_KEYSPACE, "run for leader failed: HTTP Code %d.", resp_code);
+		}
 	}
+	consul_watch_leadership_changes_async(ks);
 }
 sds self_print_json(struct swarmkv_keyspace* ks)
 {
@@ -381,15 +479,16 @@ sds self_print_json(struct swarmkv_keyspace* ks)
 	free(payload);
 	return self_json;
 }
-void consul_run_for_leader_async(struct swarmkv_keyspace* ks)
+void consul_acquire_session_lock_async(struct swarmkv_keyspace* ks)
 {
 	sds req_body=self_print_json(ks);
 
 	char url[SWARMKV_URL_MAX];
+	
 	//run for leader
 	snprintf(url, sizeof(url), "/v1/kv/swarmkv/%s/lead?acquire=%s", ks->cluster_name, ks->consul_session_id);
 
-	struct evhttp_request* request=evhttp_request_new(__run_for_leader_cb, ks);
+	struct evhttp_request* request=evhttp_request_new(__acquire_session_lock_cb, ks);
 	struct evhttp_connection* conn=evhttp_connection_base_new(ks->evbase, NULL, CONSUL_HOST, ks->consul_agent_port);	
 	evhttp_connection_set_timeout(conn, 2);
 
@@ -411,11 +510,24 @@ void consul_run_for_leader_async(struct swarmkv_keyspace* ks)
 	sdsfree(req_body);
 
 }
+void consul_run_for_leader_async(struct swarmkv_keyspace* ks)
+{
+	if(0==strlen(ks->consul_session_id))
+	{
+		consul_create_session_async(ks);
+	}
+	else
+	{
+		consul_session_check_async(ks);
+	}
+	return;
+}
 void __watch_leadership_changes_cb(struct evhttp_request *req, void *arg)
 {
 	struct swarmkv_keyspace* ks=(struct swarmkv_keyspace*)arg;
 	cJSON *metadata_array=NULL, *metadata=NULL, *modify_idx=NULL, *session=NULL;
 	int resp_code=0;
+	int is_running_for_leader=0;
 
 	if(!req || !evhttp_request_get_response_code(req))
 	{
@@ -440,15 +552,36 @@ void __watch_leadership_changes_cb(struct evhttp_request *req, void *arg)
 			session=cJSON_GetObjectItem(metadata, "Session");
 			if(!session || 0==strlen(session->valuestring))
 			{
-				MESA_handle_runtime_log(ks->logger, RLOG_LV_INFO, MODULE_SWARMKV_KEYSPACE, "cluster losts leader, start to run for leader.");		
-				//run for leader
+				MESA_handle_runtime_log(ks->logger, RLOG_LV_INFO, MODULE_SWARMKV_KEYSPACE, "cluster losts leader, start to run for leader.");
 				consul_run_for_leader_async(ks);
+				is_running_for_leader=1;
+			}
+			if(!session || 0!=strcmp(session->valuestring, ks->consul_session_id))
+			{
+				if(ks->is_leader)
+				{
+					MESA_handle_runtime_log(ks->logger, RLOG_LV_INFO, MODULE_SWARMKV_KEYSPACE, "node is no longer a leader.");
+					ks->is_leader=0;
+				}
 			}
 			cJSON_free(metadata_array);
 			sdsfree(out);
 		}
+		else if(resp_code==404)
+		{
+			MESA_handle_runtime_log(ks->logger, RLOG_LV_INFO, MODULE_SWARMKV_KEYSPACE, "no leader key, start to run for leader.");
+			consul_run_for_leader_async(ks);
+			is_running_for_leader=1;
+		}
+		else
+		{
+			MESA_handle_runtime_log(ks->logger, RLOG_LV_INFO, MODULE_SWARMKV_KEYSPACE, "watch leadership changes failed: HTTP code %d.", resp_code);
+		}
 	}
-	consul_watch_leadership_changes_async(ks);
+	if(!is_running_for_leader)
+	{
+		consul_watch_leadership_changes_async(ks);
+	}
 }
 void consul_watch_leadership_changes_async(struct swarmkv_keyspace* ks)
 {
@@ -457,7 +590,7 @@ void consul_watch_leadership_changes_async(struct swarmkv_keyspace* ks)
 	struct evhttp_connection* conn=evhttp_connection_base_new(ks->evbase, NULL, CONSUL_HOST, ks->consul_agent_port);	
 	struct evkeyvalq *output_headers = evhttp_request_get_output_headers(request);
 	evhttp_connection_set_timeout(conn, 1800);
-	snprintf(url, sizeof(url), "/v1/kv/swarmkv/%s/lead?index=%d", ks->cluster_name, ks->consul_lead_key_modify_idx);
+	snprintf(url, sizeof(url), "/v1/kv/swarmkv/%s/lead?index=%d&wait=10s", ks->cluster_name, ks->consul_lead_key_modify_idx);
     evhttp_add_header(output_headers, "Host", LOCAL_HOST);
 	evhttp_add_header(output_headers, "Connection", "close");
 
@@ -565,12 +698,15 @@ void __watch_nodes_changes_cb(struct evhttp_request *req, void *arg)
 	const char* tmp=NULL;
 	cJSON *health_reponse=NULL, *record=NULL, *item=NULL, *service=NULL;
 	struct swarmkv_node nodes[SWARMKV_NODE_MAX];
-	resp_code=evhttp_request_get_response_code(req);
-	if(!req || !resp_code)
+	if(!req || !evhttp_request_get_response_code(req))
 	{
 		int errcode = EVUTIL_SOCKET_ERROR();
 		MESA_handle_runtime_log(ks->logger, RLOG_LV_FATAL, MODULE_SWARMKV_KEYSPACE, "watch node changes failed: %s",
 			evutil_socket_error_to_string(errcode));		
+	}
+	else
+	{
+		resp_code=evhttp_request_get_response_code(req);
 	}
 	if(resp_code==200)
 	{
@@ -737,6 +873,7 @@ static void consul_kv_init_if_nonexist(struct swarmkv_keyspace* ks)
 	}
 
 }
+
 int swarmkv_keyspace_init(struct swarmkv_keyspace* ks)
 {
 	int ret=-1;
@@ -769,12 +906,6 @@ int swarmkv_keyspace_init(struct swarmkv_keyspace* ks)
 		MESA_handle_runtime_log(ks->logger, RLOG_LV_FATAL, MODULE_SWARMKV_KEYSPACE, "consul service register failed.");
 		goto error_out;
 	}
-	ret=consul_session_create(ks);
-	if(ret<0)
-	{
-		MESA_handle_runtime_log(ks->logger, RLOG_LV_FATAL, MODULE_SWARMKV_KEYSPACE, "consul session creation failed.");
-		goto error_out;
-	}		
 	consul_watch_leadership_changes_async(ks);
 	
 	return 0;
@@ -807,9 +938,22 @@ void swarmkv_keyspace_free(struct swarmkv_keyspace* ks)
 	free(ks);
 	return;
 }
-int swarmkv_keyspace_lookup_keyowner(struct swarmkv_keyspace* ks, const char* key, size_t keylen, struct swarmkv_node* out)
+//
+//return 1 when self is key owner;
+//return 0 when key is owned by someone else
+int swarmkv_keyspace_get_keyowner(struct swarmkv_keyspace* ks, const char* key, size_t keylen, struct swarmkv_node* keyowner)
 {
-	XXH32_hash_t hash = XXH32(key, keylen, 5210);
-	return hash%SWARMKV_SLOT_NUM;
-
+	XXH32_hash_t hash = XXH32(key, keylen, XXHASH_SEED);
+	int slot_id=hash%SWARMKV_SLOT_NUM;
+	pthread_rwlock_rdlock(&ks->rwlock_slots);
+	*keyowner=ks->slots[slot_id];
+	pthread_rwlock_unlock(&ks->rwlock_slots);
+	if(0==memcmp(keyowner, &(ks->self), sizeof(ks->self)))
+	{
+		return 1;
+	}
+	else
+	{
+		return 0;
+	}
 }

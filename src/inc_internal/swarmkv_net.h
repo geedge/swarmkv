@@ -2,11 +2,10 @@
 #include "swarmkv_common.h"
 struct swarmkv_net;
 typedef int (*net_recv_data_func)   (
-    const char* ip,
-    unsigned int port,
-    void *arg,
+	const struct swarmkv_node * node,
     const char* data,
-    size_t data_len
+    size_t data_len,    
+    void *arg
     );
 struct swarmkv_net* swarmkv_net_new(unsigned int listen_port, int thread_num, void* logger);
 void swarmkv_net_free(struct swarmkv_net* net);
