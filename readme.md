@@ -1,6 +1,6 @@
-# Swarm KV 
+#  <img src="./doc/imgs/swarmkv_logo.svg" alt="swarmkv_logo" style="zoom:25%;" />Swarm KV
 
-**SwarmKV is a embedded and distributed key-value storage library that provides a mapping from string keys to string values.** SwarmKV uses [HashiCorp Consul](https://www.consul.io/) for cluster management, which includes leader election, health checking, and slot table management.
+**SwarmKV is a embedded and distributed key-value storage library with peer-to-peer networing.** SwarmKV uses [HashiCorp Consul](https://www.consul.io/) for cluster management, which includes leader election, health checking, and slot table management.
 
 **Main Features**
 
@@ -79,7 +79,7 @@ The global slot table is stored in Consul KV, the key is swarmkv/<cluster_name>/
 curl http://localhost:8500/v1/kv/swarmkv/<cluster_name>/slot_table?raw=true
 ```
 
-This will return a JSON array:
+The command returns a JSON array.
 
 ```json
 [
