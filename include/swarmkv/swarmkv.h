@@ -28,7 +28,7 @@ enum swarmkv_reply_type
 };
 struct swarmkv_reply
 {
-	swarmkv_reply_type type,
+	enum swarmkv_reply_type type;
 	long long integer;	/* The integer when type is SWARMKV_REPLY_INTEGER */
 	int len; /* Length of string */
 	char *str; /* Used for both SWARMKV_REPLY_ERROR and SWARMKV_REPLY_STRING */
@@ -38,11 +38,11 @@ struct swarmkv_reply
 void swarmkv_reply_free(struct swarmkv_reply *reply);
 
 struct swarmkv;
-typedef void swarmkv_cmd_callback_func_t(const swarmkv_reply* reply, void * arg);
+typedef void swarmkv_cmd_callback_func_t(const struct swarmkv_reply* reply, void * arg);
 
 
-struct swarmkv_store *swarmkv_open(const char * cluster_name, unsigned int http_port, unsigned int p2p_port, void * mesa_handle_logger);
-void swarmkv_close(struct swarmkv_store * store);
+struct swarmkv *swarmkv_open(const char * cluster_name, const char* self_ip, unsigned int http_port, unsigned int p2p_port, void * logger);
+void swarmkv_close(struct swarmkv * db);
 
 
 
@@ -52,8 +52,7 @@ void swarmkv_get_string(struct swarmkv * db,
 void swarmkv_set_string(struct swarmkv * db, 
 	const char * key, size_t keylen, const char * value, size_t vallen, swarmkv_cmd_callback_func_t * cb, void * arg);
 
-char * swarmkv_del(struct swarmkv_store * store, const char * table, const struct swarmkv_readoptions * options, 
-	const char * key, size_t keylen);
+void swarmkv_del(struct swarmkv * db, const char * key, size_t keylen, swarmkv_cmd_callback_func_t *cb, void *cb_arg);
 
 
 

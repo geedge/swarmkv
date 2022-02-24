@@ -2,25 +2,27 @@
 #include "sds.h"
 #include "swarmkv_utils.h"
 #include "swarmkv_net.h"
+#include "swarmkv_message.h"
+#include <string.h>
+
 struct swarmkv_msg
 {
 	enum swarmkv_msg_type type;
-	char txn_initiator[MAX_UUID_STR_LEN];
+	uuid_t txn_initiator_uuid;
 	unsigned long long txn_seq;
-	struct swarmkv_node node;
+	int do_not_reply;//only used in cmd msg
 	union
 	{
 		struct swarmkv_cmd* cmd;
 		struct swarmkv_reply* reply;
 	};
-	int need_reply;
 };
 
-struct swarmkv_msg* swarmkv_msg_new(const char* initiator_uuid, unsigned long long txn_sequence)
+struct swarmkv_msg* swarmkv_msg_new(uuid_t initiator_uuid, unsigned long long txn_sequence)
 {	
 	struct swarmkv_msg* msg=ALLOC(struct swarmkv_msg, 1);
 	msg->txn_seq=txn_sequence;
-	strncpy(msg->txn_initiator, initiator_uuid, sizeof(msg->txn_initiator));
+	uuid_copy(msg->txn_initiator_uuid, initiator_uuid);
 	return msg;
 }
 void swarmkv_msg_add_cmd(struct swarmkv_msg* msg, struct swarmkv_cmd* cmd)
@@ -33,23 +35,20 @@ void swarmkv_msg_add_reply(struct swarmkv_msg* msg, struct swarmkv_reply* reply)
 	msg->type=SWARMKV_MSG_TYPE_REPLY;
 	msg->reply=reply;
 }
-void swarmkv_msg_set_node(struct swarmkv_msg *msg, const struct swarmkv_node *node)
-{
-
-}
 
 void swarmkv_msg_free(struct swarmkv_msg* msg)
 {
 	if(msg->type==SWARMKV_MSG_TYPE_CMD)
 	{
 		if(msg->cmd) swarmkv_cmd_free(msg->cmd);
-		msg->cmd==NULL;
+		msg->cmd=NULL;
 	}
 	else
 	{
 		if(msg->reply) swarmkv_reply_free(msg->reply);
 		msg->reply=NULL;
 	}
+	uuid_clear(msg->txn_initiator_uuid);
 	free(msg);
 	return;
 }
@@ -72,14 +71,15 @@ struct swarmkv_cmd* swarmkv_msg_get_cmd(struct swarmkv_msg* msg)
 	msg->cmd=NULL;
 	return cmd;
 }
-void swarmkv_msg_read_node(struct swarmkv_msg *msg, struct swarmkv_node* out)
-{
-	memcpy(&(msg->node), out, sizeof(struct swarmkv_node));
-	return;
-}
-unsigned long long swarmkv_msg_get_transaction_sequence(struct swarmkv_msg* msg)
+
+unsigned long long swarmkv_msg_read_transaction_sequence(struct swarmkv_msg* msg)
 {
 	return msg->txn_seq;
+}
+void swarmkv_msg_read_txn_initiator_uuid(struct swarmkv_msg* msg, uuid_t out)
+{
+	uuid_copy(out, msg->txn_initiator_uuid);
+	return;
 }
 struct swarmkv_reply* deserialize_reply(mpack_node_t reply_node)
 {
@@ -117,13 +117,14 @@ struct swarmkv_reply* deserialize_reply(mpack_node_t reply_node)
 			assert(0);
 			break;
 	}
+	return reply;
 }
-struct swarmkv_msg* swarmkv_msg_deserialize(const sds buff)
+struct swarmkv_msg* swarmkv_msg_deserialize(const char* data, size_t len)
 {
 	struct swarmkv_msg* msg=ALLOC(struct swarmkv_msg, 1);
 	size_t i=0;
 	mpack_tree_t tree;
-	mpack_tree_init_data(&tree, buff, sdslen(buff));
+	mpack_tree_init_data(&tree, data, len);
 	mpack_tree_parse(&tree);
 	mpack_node_t tmp_node, item, cmd_node, args_node, reply_node;
 	const char *p=NULL;
@@ -132,17 +133,11 @@ struct swarmkv_msg* swarmkv_msg_deserialize(const sds buff)
 	msg->type=mpack_node_int(mpack_node_map_cstr(root, "msg_type"));
 	msg->txn_seq=mpack_node_u64(mpack_node_map_cstr(root, "txn_seq"));
 	tmp_node=mpack_node_map_cstr(root, "txn_initiator");
-	mpack_node_copy_cstr(tmp_node, msg->txn_initiator, sizeof(msg->txn_initiator));
+	mpack_node_copy_data(tmp_node, (char*)msg->txn_initiator_uuid, sizeof(msg->txn_initiator_uuid));
 
-	tmp_node=mpack_node_map_cstr(root, "node");
-	item=mpack_node_map_cstr(tmp_node, "ip");
-	mpack_node_copy_cstr(item, msg->node.ip_addr, sizeof(msg->node.ip_addr));
-	item=mpack_node_map_cstr(tmp_node, "port");
-	msg->node.p2p_port=mpack_node_u32(item);
-	item=mpack_node_map_cstr(tmp_node, "uuid");
-	mpack_node_copy_cstr(item, msg->node.uuid, sizeof(msg->node.uuid));
 	if(msg->type==SWARMKV_MSG_TYPE_CMD)
-	{
+	{		
+		msg->do_not_reply=mpack_node_int(mpack_node_map_cstr(root, "do_not_reply"));
 		msg->cmd=ALLOC(struct swarmkv_cmd, 1);
 		cmd_node=mpack_node_map_cstr(root, "cmd");
 		item=mpack_node_map_cstr(cmd_node, "op");
@@ -164,15 +159,12 @@ struct swarmkv_msg* swarmkv_msg_deserialize(const sds buff)
 	}
 	if (mpack_tree_destroy(&tree) != mpack_ok) {
 		fprintf(stderr, "An error occurred decoding the data!\n");
-		return;
+		swarmkv_msg_free(msg);
+		return NULL;
 	}
+	return msg;
+}
 
-}
-static const char* operator2string(enum swarmkv_operator op)
-{
-	const char* op_str[__SWARMKV_CMD_MAX];
-	return NULL;
-}
 sds serialize_reply(const struct swarmkv_reply* reply)
 {
 	char *reply_mpack_buff;
@@ -218,23 +210,13 @@ sds serialize_reply(const struct swarmkv_reply* reply)
 }
 sds swarmkv_msg_serialize(const struct swarmkv_msg* msg)
 {
-	char *root_mpack_buff=NULL, *cmd_mpack_buff=NULL, *args_mpack_buff=NULL, *txn_mpack_buff=NULL;
-	size_t root_mpack_sz=0, cmd_mpack_sz=0, args_mpack_sz=0, txn_mpack_sz=0;
+	char *root_mpack_buff=NULL, *cmd_mpack_buff=NULL, *args_mpack_buff=NULL;
+	size_t root_mpack_sz=0, cmd_mpack_sz=0, args_mpack_sz=0;
 	sds reply_mpack_buff;
 
-	mpack_writer_t root, cmd, args, txn_initiator;	
+	mpack_writer_t root, cmd, args;	
 	size_t i=0;
 	
-	mpack_writer_init_growable(&txn_initiator, &txn_mpack_buff, &txn_mpack_sz);
-	mpack_build_map(&txn_initiator);
-	mpack_write_cstr(&txn_initiator, "ip");
-	mpack_write_cstr(&txn_initiator, msg->node.ip_addr);
-	mpack_write_cstr(&txn_initiator, "port");
-	mpack_write_u32(&txn_initiator, msg->node.p2p_port);
-	mpack_write_cstr(&txn_initiator, "uuid");
-	mpack_write_cstr(&txn_initiator, msg->node.uuid);
-	mpack_complete_map(&txn_initiator);
-	mpack_writer_destroy(&txn_initiator);
 
 	mpack_writer_init_growable(&root, &root_mpack_buff, &root_mpack_sz);
 	mpack_build_map(&root);
@@ -243,18 +225,12 @@ sds swarmkv_msg_serialize(const struct swarmkv_msg* msg)
 	mpack_write_cstr(&root, "txn_seq");
 	mpack_write_u64(&root, msg->txn_seq);
 	mpack_write_cstr(&root, "txn_initiator");
-	mpack_write_cstr(&root, msg->txn_initiator);
-	mpack_write_cstr(&root, "node");
-	mpack_write_object_bytes(&cmd, txn_mpack_buff, txn_mpack_sz);
-
-	
-	free(txn_mpack_buff);
-	txn_mpack_buff=NULL;
+	mpack_write_str(&root, (const char*)&(msg->txn_initiator_uuid), sizeof(msg->txn_initiator_uuid));
 	
 	if(msg->type==SWARMKV_MSG_TYPE_CMD)
 	{
-		mpack_write_cstr(&root, "need_reply");
-		mpack_write_int(&root, msg->need_reply);
+		mpack_write_cstr(&root, "do_not_reply");
+		mpack_write_int(&root, msg->do_not_reply);
 		
 		mpack_writer_init_growable(&args, &args_mpack_buff, &args_mpack_sz);
 		mpack_build_array(&args);
@@ -284,11 +260,12 @@ sds swarmkv_msg_serialize(const struct swarmkv_msg* msg)
 	else
 	{
 		mpack_write_cstr(&root, "reply");
-		reply_mpack_buff=serialize_reply(msg->reply)
+		reply_mpack_buff=serialize_reply(msg->reply);
 		mpack_write_object_bytes(&root, reply_mpack_buff, sdslen(reply_mpack_buff));
 		sdsfree(reply_mpack_buff);
 		reply_mpack_buff=NULL;
-	}	
+	}
+	mpack_complete_map(&root);
 	mpack_writer_destroy(&root);
 	sds output=sdsnewlen(root_mpack_buff, root_mpack_sz);
 	free(root_mpack_buff);

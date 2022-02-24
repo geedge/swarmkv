@@ -1,20 +1,34 @@
-#include "swarmkv.h"
+#include "swarmkv/swarmkv.h"
+
+#include "swarmkv_common.h"
+#include "swarmkv_limits.h"
+#include "swarmkv_utils.h"
+
 #include "swarmkv_store.h"
 #include "swarmkv_keyspace.h"
 #include "swarmkv_message.h"
 #include "swarmkv_net.h"
+
+#include "uthash.h"
+#include "sds.h"
+
+#include <MESA/MESA_handle_logger.h>
+
+#include <sys/syscall.h>
+#include <sys/prctl.h>
+#include <pthread.h>
+#include <assert.h>
+#include <uuid/uuid.h>
+#include <time.h>
+
 
 int SWARMKV_VERSION_2_0_0_tiger_year=0;
 #define	MODULE_SWAMRKV_CORE	"swarmkv.core"
 
 struct swarmkv_params
 {
-	char* self_ip_str;
 	unsigned int http_port;
 	unsigned int p2p_port;
-	size_t n_bootstrap_nodes;
-	char bootstrap_node_addrs[MAX_BOOTSTRAP_NODES][MAX_IPv6_ADDR_STR_LEN];
-	uint16_t boostrap_node_port_nr[MAX_BOOTSTRAP_NODES];	//network order
 	int minimum_replica_num;
 	int dry_run;
 	int disable_cache;
@@ -28,18 +42,6 @@ struct swarmkv_thread_ctx
 	time_t lastime;
 };
 
-struct key_route_entry
-{
-	char* key;
-	size_t keylen;
-	int owner_node_id;
-	UT_hash_handle hh;
-};
-struct key_route_table
-{
-	struct key_route_entry* hash_route_table;
-	pthread_rwlock_t rwlock;
-};
 enum swarmkv_txn_state
 {
 	STATE_WAIT_KEY_OWNER, //wait for key owner to reply object onwer information
@@ -51,19 +53,18 @@ struct swarmkv_transaction
 	struct timespec create_time;
 	enum swarmkv_txn_state state;
 	struct swarmkv_cmd* cmd;
-	swarmkv_cmd_callback_func_t callback_func;
+	swarmkv_cmd_callback_func_t* callback_func;
 	void* callback_arg;
 	UT_hash_handle hh;
 };
 struct swarmkv
 {
+	char cluster_name[SWARMKV_SYMBOL_MAX];
 	struct swarmkv_params para;
 	int nr_worker_threads;
-	char uuid[37];
 	struct swarmkv_node self;
 	struct swarmkv_thread_ctx * worker_threads[SWARMKV_THREAD_MAX];
 	struct swarmkv_keyspace* ks;
-	struct key_route_table* key_route;	
 	struct swarmkv_transaction* transaction_table;
 	struct swarmkv_store* store;
 	struct swarmkv_net* net;
@@ -80,7 +81,9 @@ struct swarmkv_writeoptions
 {
 
 };
-static struct swarmkv_transaction* swarmkv_transaction_new(struct swarmkv *db, struct swarmkv_cmd *cmd, swarmkv_cmd_callback_func_t * cb, void * cb_arg)
+
+
+static struct swarmkv_transaction* swarmkv_transaction_new(struct swarmkv *db, const struct swarmkv_cmd *cmd, swarmkv_cmd_callback_func_t * cb, void * cb_arg)
 {
 	struct swarmkv_transaction *txn=ALLOC(struct swarmkv_transaction, 1);
 	txn->sequence=db->txn_sequence_generator++;
@@ -92,18 +95,9 @@ static struct swarmkv_transaction* swarmkv_transaction_new(struct swarmkv *db, s
 }
 static void swarmkv_transaction_free(struct swarmkv *db, struct swarmkv_transaction *txn)
 {
-
+	swarmkv_cmd_free(txn->cmd);
 	HASH_DELETE(hh, db->transaction_table, txn);
 	free(txn);
-}
-
-//return 1if 
-int obj_route_lookup_obj_owner(struct key_route_table *key_route, const char *key, size_t keylen, struct swarmkv_node* owner)
-{
-	return 0;
-}
-int obj_route_add_obj_owner(struct key_route_table *key_route, const char* key, size_t keylen, struct swarmkv_node* owner)
-{
 }
 
 void swarmkv_create_thread_ctx(struct swarmkv *db)
@@ -113,59 +107,130 @@ void swarmkv_create_thread_ctx(struct swarmkv *db)
 	{
 		db->worker_threads[i] = ALLOC(struct swarmkv_thread_ctx, 1);
 		db->worker_threads[i]->thread_id = i;
-		db->worker_threads[i]->store = db;		
+		db->worker_threads[i]->db = db;		
 	}
 }
-static void peer_conn_bev_readcb(struct bufferevent * bev, void * arg)
+static void swarmkv_exec(struct swarmkv *db, const struct swarmkv_cmd *cmd, swarmkv_cmd_callback_func_t * cb, void * cb_arg)
 {
-	struct swarmkv *db=(struct swarmkv*) arg;	
-	struct evbuffer * input_buffer = bufferevent_get_input(bev);
-	swarmkv_msg_read(struct evbuffer * buff, reply or cmd?)
+	int self_is_keyowner=0, self_is_objowner=0, is_cache_hit=0;
+	struct swarmkv_node keyowner, objowner; 
+	struct swarmkv_cmd *cmd_get_obj_owner=NULL;
+	struct swarmkv_reply *reply=NULL;
+
+	const char* key=cmd->args[0];
+	size_t keylen=sdslen(cmd->args[0]);
+
+	self_is_keyowner=swarmkv_keyspace_get_key_owner(db->ks, key, keylen, &keyowner);
+	if(self_is_keyowner)
+	{
+		self_is_objowner=swarmkv_keyspace_set_obj_owner_if_NoneXist(db->ks, key, keylen, &(db->self), &objowner);
+	}
+	if(self_is_objowner)
+	{
+		swarmkv_store_exec(db->store, cmd, &reply);
+		cb(reply, cb_arg);
+		goto fast_out;
+	}
+	if(is_read_operator(cmd->op) && !db->para.disable_cache)
+	{
+		is_cache_hit=swarmkv_store_cache_exec(db->store, cmd, &reply);
+		if(is_cache_hit)
+		{
+			cb(reply, cb_arg);
+			goto fast_out;
+		}
+	}
+	struct swarmkv_transaction* txn=swarmkv_transaction_new(db, cmd, cb, cb_arg);
+	sds buff=NULL;
+	struct swarmkv_msg* msg=NULL;
+	msg=swarmkv_msg_new(db->self.bin_uuid, txn->sequence);
+	struct swarmkv_node* dest=NULL;
+	if(!self_is_keyowner)
+	{
+		txn->state=STATE_WAIT_KEY_OWNER;
+		cmd_get_obj_owner=swarmkv_cmd_new(SWARMKV_OP_CLUSTER_OBJ_OWNER, 2);
+		cmd_get_obj_owner->args[0]=sdsnewlen(key, keylen);
+		cmd_get_obj_owner->args[1]=sdsnew("NX");//"SET if Not eXists".
+		swarmkv_msg_add_cmd(msg, cmd_get_obj_owner);
+		cmd_get_obj_owner=NULL;
+		dest=&keyowner;
+	}
+	else if(!self_is_objowner)
+	{
+		txn->state=STATE_WAIT_OBJ_ONWER;
+		struct swarmkv_cmd* _cmd=swarmkv_cmd_dup(cmd);
+		swarmkv_msg_add_cmd(msg, _cmd);
+		_cmd=NULL;
+		dest=&objowner;
+
+	}
+	else
+	{
+		assert(0);
+	}
+	buff=swarmkv_msg_serialize(msg);
+	swarmkv_net_send(db->net, dest, buff);
+	swarmkv_msg_free(msg);
+	msg=NULL;
+	sdsfree(buff);
+	buff=NULL;
+
+fast_out:
+	if(cmd_get_obj_owner)
+	{
+		swarmkv_cmd_free(cmd_get_obj_owner);
+	}
+	if(reply)
+	{
+		swarmkv_reply_free(reply);
+	}
+	return;
+
 }
-void msg_read_callback(sds msg_buff, void* arg)
+
+void msg_read_callback(const struct swarmkv_node * peer, const char* data, size_t len, void* arg)
 {
 	struct swarmkv* db=(struct swarmkv*)arg;
 	
 	struct swarmkv_reply* reply=NULL;
-	enum swarmkv_msg_type msg_type=0;
+	enum swarmkv_msg_type msg_type;
+	uuid_t msg_uuid;
 	struct swarmkv_msg *msg_received=NULL, *msg_to_send=NULL;
-	struct swarmkv_node obj_owner, *p=NULL, requester=NULL;
+	struct swarmkv_node obj_owner;
 	unsigned long long msg_call_sequence=0;
-	int ret=0;
-	msg_received=swarmkv_msg_deserialize(msg_buff);
+	int got_obj_owner=0;
+	msg_received=swarmkv_msg_deserialize(data, len);
 	msg_type=swarmkv_msg_get_type(msg_received);
 	msg_call_sequence=swarmkv_msg_read_transaction_sequence(msg_received);
-	swarmkv_msg_read_node(msg_received, &requester);
 	if(msg_type==SWARMKV_MSG_TYPE_CMD)
 	{
 		struct swarmkv_cmd* cmd=NULL;
-		cmd=swarmkv_msg_get_reply(msg_received);
+		cmd=swarmkv_msg_get_cmd(msg_received);
 		switch(cmd->op)
 		{
 			case SWARMKV_OP_CLUSTER_OBJ_OWNER:
-				ret=obj_route_lookup_obj_owner(db->key_route, cmd->args[0], sdslen(cmd->args[0]), &obj_owner);
-				if(ret==1)
+				if(cmd->n_args==2 && 0==strncmp(cmd->args[1], "NX", 2))
 				{
-					p=&obj_owner;
+					swarmkv_keyspace_set_obj_owner_if_NoneXist(db->ks, cmd->args[0], sdslen(cmd->args[0]), peer, &obj_owner);
+					got_obj_owner=1;
 				}
-				else if(cmd->n_args==2 && 0==strncmp(cmd->args[1], "NX", 2))
+				else
 				{
-					p=requester;
-					obj_route_add_obj_owner(db->key_route, cmd->args[0], sdslen(cmd->args[0]), p);
+					got_obj_owner=swarmkv_keyspace_get_obj_owner(db->ks, cmd->args[0], sdslen(cmd->args[0]), &obj_owner);
 				}
-				
-				if(p)
+
+				if(got_obj_owner)
 				{
 					reply=ALLOC(struct swarmkv_reply, 1);
 					reply->type=SWARMKV_REPLY_ARRAY;
 					reply->n_element=2;
 					reply->element[0]=ALLOC(struct swarmkv_reply, 1);
 					reply->element[0]->type=SWARMKV_REPLY_STRING;
-					reply->element[0]->str=strdup(p->ip_addr);
+					reply->element[0]->str=strdup(obj_owner.ip_addr);
 					
 					reply->element[1]=ALLOC(struct swarmkv_reply, 1);
 					reply->element[1]->type=SWARMKV_REPLY_INTEGER;
-					reply->element[1]->integer=p->p2p_port;
+					reply->element[1]->integer=obj_owner.p2p_port;
 				}
 				else
 				{
@@ -177,11 +242,12 @@ void msg_read_callback(sds msg_buff, void* arg)
 				swarmkv_store_exec(db->store, cmd, &reply);
 				break;
 		}
-		msg_to_send=swarmkv_msg_new(msg_received->txn_initiator, msg_call_sequence);
+		swarmkv_msg_read_txn_initiator_uuid(msg_received, msg_uuid);
+		msg_to_send=swarmkv_msg_new(msg_uuid, msg_call_sequence);
 		swarmkv_msg_add_reply(msg_to_send, reply);
 		reply=NULL;
 		sds buff=swarmkv_msg_serialize(msg_to_send);
-		swarmkv_net_send(db->net, requester, buff);
+		swarmkv_net_send(db->net, peer, buff);
 		swarmkv_msg_free(msg_to_send);
 		msg_to_send=NULL;
 		sdsfree(buff);
@@ -192,39 +258,39 @@ void msg_read_callback(sds msg_buff, void* arg)
 	else
 	{
 		struct swarmkv_reply* reply=NULL;
-		struct swarmkv_transaction* cmd_ctx=NULL;
+		struct swarmkv_transaction* txn=NULL;
 		reply=swarmkv_msg_get_reply(msg_received);
 		msg_call_sequence=swarmkv_msg_read_transaction_sequence(msg_received);
-		HASH_FIND(hh, db->transaction_table, &msg_call_sequence, sizeof(msg_call_sequence), cmd_ctx);
-		if(cmd_ctx)
+		HASH_FIND(hh, db->transaction_table, &msg_call_sequence, sizeof(msg_call_sequence), txn);
+		if(txn)
 		{
-			if(cmd_ctx->state==STATE_WAIT_KEY_OWNER)
+			if(txn->state==STATE_WAIT_KEY_OWNER)
 			{
 				if(reply->type!=SWARMKV_REPLY_NIL)
 				{
-					cmd_ctx->callback_func(reply, cmd_ctx->callback_arg);
-					HASH_DELETE(hh, db->transaction_table, cmd_ctx);
-					swarmkv_cmd_free(cmd_ctx->cmd);
-					cmd_ctx->cmd=NULL;
-					free(cmd_ctx);
+					txn->callback_func(reply, txn->callback_arg);
+					HASH_DELETE(hh, db->transaction_table, txn);
+					swarmkv_cmd_free(txn->cmd);
+					txn->cmd=NULL;
+					free(txn);
 				}
 				else
 				{
 					if(reply->type!=SWARMKV_REPLY_ARRAY || reply->n_element!=2
-						|| reply->element[0].type!=SWARMKV_REPLY_STRING
-						|| reply->element[1].type!=SWARMKV_REPLY_INTEGER)
+						|| reply->element[0]->type!=SWARMKV_REPLY_STRING
+						|| reply->element[1]->type!=SWARMKV_REPLY_INTEGER)
 					{
 						MESA_handle_runtime_log(db->logger, RLOG_LV_FATAL, MODULE_SWAMRKV_CORE, "Invalid reply for CLUSTER OBJOWNER");
 					}
-					obj_owner.ip_addr=strdup(reply->element[0]->str);
-					obj_owner.p2p_port=reply->element[1].integer;
-					msg_to_send=swarmkv_msg_new(db->uuid, cmd_ctx->sequence);
-					swarmkv_msg_add_cmd(msg_to_send, cmd_ctx->cmd);
-					cmd_ctx->cmd=NULL;
-					cmd_ctx->state=STATE_WAIT_OBJ_ONWER;
+					strncpy(obj_owner.ip_addr, reply->element[0]->str, sizeof(obj_owner.ip_addr));
+					obj_owner.p2p_port=reply->element[1]->integer;
+					msg_to_send=swarmkv_msg_new(db->self.bin_uuid, txn->sequence);
+					swarmkv_msg_add_cmd(msg_to_send, txn->cmd);
+					txn->cmd=NULL;
+					txn->state=STATE_WAIT_OBJ_ONWER;
 					sds buff=NULL;
 					buff=swarmkv_msg_serialize(msg_to_send);
-					cmd_ctx->cmd=swarmkv_msg_get_cmd(msg_to_send);
+					txn->cmd=swarmkv_msg_get_cmd(msg_to_send);
 					swarmkv_net_send(db->net, &obj_owner, buff);
 					swarmkv_msg_free(msg_to_send);
 					msg_to_send=NULL;
@@ -234,10 +300,8 @@ void msg_read_callback(sds msg_buff, void* arg)
 			}
 			else
 			{
-				cmd_ctx->callback_func(reply, cmd_ctx->callback_arg);
-				swarmkv_cmd_free(cmd_ctx->cmd);
-				cmd_ctx->cmd=NULL;
-				free(cmd_ctx);
+				txn->callback_func(reply, txn->callback_arg);
+				swarmkv_transaction_free(db, txn);
 			}
 		}
 		else
@@ -269,23 +333,30 @@ void swarmkv_threads_run(struct swarmkv *db)
 	return;
 }
 
-struct swarmkv_store *swarmkv_open(const char * cluster_name, unsigned int http_port, unsigned int p2p_port, void * logger)
+struct swarmkv *swarmkv_open(const char * cluster_name, const char* self_ip, unsigned int http_port, unsigned int p2p_port, void * logger)
 {
 	struct swarmkv *db = NULL;
 	int ret = 0;
 
 	db=ALLOC(struct swarmkv, 1);
+	strncpy(db->cluster_name, cluster_name, sizeof(db->cluster_name));
 	db->logger=logger;
 	db->nr_worker_threads=2;
 	db->para.http_port=http_port;
 	db->para.p2p_port=p2p_port;
 	swarmkv_create_thread_ctx(db);
 
-	srand(time());
-	db->txn_sequence_generator=rand();
-	db->net=swarmkv_net_new(p2p_port, db->nr_worker_threads, db->logger);
+	uuid_generate(db->self.bin_uuid);
+	db->self.p2p_port=p2p_port;
+	strncpy(db->self.ip_addr, self_ip, sizeof(db->self.ip_addr));
+	
+	db->txn_sequence_generator=1;
+	db->net=swarmkv_net_new(&db->self, db->nr_worker_threads, db->logger);
+	swarmkv_net_set_recv_cb(db->net, msg_read_callback, db);
+		
 	struct event_base *evbase=swarmkv_net_get_eventbase(db->net, 0);
-	db->ks=swarmkv_keyspace_new(cluster_name, evbase, http_port, p2p_port, logger);
+	db->ks=swarmkv_keyspace_new(cluster_name, evbase, http_port, &db->self, logger);
+	
 	if(db->para.dry_run)
 	{
 		swarmkv_keyspace_set_dryrun(db->ks);
@@ -295,8 +366,9 @@ struct swarmkv_store *swarmkv_open(const char * cluster_name, unsigned int http_
 	{
 		goto error_out;
 	}
+	db->store=swarmkv_store_new();
 	swarmkv_threads_run(db);
-	
+	MESA_handle_runtime_log(db->logger, RLOG_LV_INFO, MODULE_SWAMRKV_CORE, "swarmkv cluster %s opened.", db->cluster_name);
 	return db;
 error_out:
 	if(db->net)
@@ -315,72 +387,26 @@ error_out:
 }
 void swarmkv_close(struct swarmkv * db)
 {
+	swarmkv_net_stop(db->net);
+	swarmkv_store_free(db->store);
+	db->store=NULL;
 	swarmkv_keyspace_free(db->ks);
 	db->ks=NULL;
+	
+
+	struct swarmkv_transaction *txn=NULL, *tmp_txn=NULL;
+	
+	HASH_ITER(hh, db->transaction_table, txn, tmp_txn)
+	{
+		swarmkv_transaction_free(db, txn);
+	}
 	swarmkv_net_free(db->net);
-	//todo
+	db->net=NULL;
+	MESA_handle_runtime_log(db->logger, RLOG_LV_INFO, MODULE_SWAMRKV_CORE, "swarmkv cluster %s closed.", db->cluster_name);
 	free(db);
 	return;
 }
-static void swarmkv_exec(struct swarmkv *db, const struct swarmkv_cmd *cmd, swarmkv_cmd_callback_func_t * cb, void * cb_arg)
-{
-	int ret=0, is_keyower=0, is_objowner=0, is_cache_hit=0;
-	struct swarmkv_node keyowner, objowner; 
-	struct swarmkv_cmd *cmd_get_obj_owner=NULL;
-	struct swarmkv_reply *reply=NULL;
-	sds msg_for_local_cmd=NULL;
 
-	const char* key=cmd->args[0];
-	size_t keylen=sdslen(cmd->args[0]);
-	
-	is_keyower=swarmkv_keyspace_get_keyowner(db->ks, key, keylen, &keyowner);
-	if(is_keyower)
-	{
-		is_objowner=obj_route_lookup_obj_owner(db->key_route, key, keylen, &objowner);
-		if(ret==1 && 0==memcmp(objowner, &db->self, sizeof(*objowner)))
-		{
-			is_objowner=1;
-		}
-	}
-	if(is_objowner)
-	{
-		swarmkv_store_exec(db->store, cmd, &reply);
-		cb(reply, cb_arg);
-		goto fast_out;
-	}
-	if(is_read_operator(cmd->op) && !db->para.disable_cache)
-	{
-		is_cache_hit=store_cache_cmd_exec(cmd_get_obj_owner, reply);
-		if(is_cache_hit)
-		{
-			cb(reply, cb_arg);
-			goto fast_out;
-		}
-	}
-	struct swarmkv_transaction* txn=swarmkv_transaction_new(db, cmd, cb, cb_arg);
-	
-	cmd_get_obj_owner=swarmkv_cmd_new(SWARMKV_OP_CLUSTER_OBJ_OWNER, 2);
-	cmd_get_obj_owner->args[0]=sdsnewlen(key, keylen);
-	cmd_get_obj_owner->args[1]=sdsnew("NX");//"SET if Not eXists".
-	sds buff=NULL;
-	struct swarmkv_msg* msg=NULL;
-	msg=swarmkv_msg_new(db->uuid, txn->sequence);
-	swarmkv_msg_set_node(msg, &db->self);
-	swarmkv_msg_add_cmd(msg, cmd_get_obj_owner);
-	cmd_get_obj_owner=NULL;
-	buff=swarmkv_msg_serialize(msg);
-	swarmkv_net_send(db->net, &keyowner, buff);
-	swarmkv_msg_free(msg);
-	msg=NULL;
-	sdsfree(buff);
-	buff=NULL;
-	
-fast_out:
-	swarmkv_cmd_free(cmd_get_obj_owner);
-	swarmkv_reply_free(reply);
-	return;
-
-}
 void swarmkv_set_string(struct swarmkv * db, 
 	const char * key, size_t keylen, const char * value, size_t vallen, swarmkv_cmd_callback_func_t * cb, void * cb_arg)
 
@@ -406,39 +432,14 @@ void swarmkv_get_string(struct swarmkv * db,
 	swarmkv_cmd_free(cmd);
 	return;
 }
-int swarmkv_hset_string(struct      swarmkv_store *store, const struct swarmkv_writeoptions *options,
+int swarmkv_hset_string(struct      swarmkv_store *store,
 				const char *key, size_t keylen, const char* member, size_t memberlen, const char *value, size_t vallen)
 {
 	return 0;
-}
-struct swarmkv_cmd* swarmkv_cmd_new(enum swarmkv_operator op, size_t n_args)
+}				
+void swarmkv_del(struct swarmkv * db, const char * key, size_t keylen, swarmkv_cmd_callback_func_t *cb, void *cb_arg)
 {
-	struct swarmkv_cmd* cmd=ALLOC(struct swarmkv_cmd, 1);
-	cmd->op=op;
-	cmd->n_args=n_args;
-	assert(cmd->n_args<MAX_CMD_ARGS);
-	return cmd;
+	return;
 }
-void swarmkv_cmd_free(struct swarmkv_cmd* p)
-{
-	size_t i=0;
-	for(i=0; i<p->n_args; i++)
-	{
-		sdsfree(p->args[i]);
-		p->args[i]=NULL;
-	}
-	free(p);
-}
-struct swarmkv_cmd* swarmkv_cmd_dup(struct swarmkv_cmd* origin)
-{
-	struct swarmkv_cmd* copy=ALLOC(struct swarmkv_cmd, 1);
-	copy->op=origin->op;
-	copy->n_args=origin->n_args;
-	size_t i=0;
-	for(i=0; i<origin->n_args; i++)
-	{
-		copy->args[i]=sdsdup(origin->args[i]);
-	}
-	return copy;
-}
+
 

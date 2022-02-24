@@ -1,10 +1,8 @@
-<h1>
-  <img src="./doc/imgs/swarmkv_logo.svg" align="left" height="46px" alt="swarmk logo"/>
-  <span>Swarm KV</span>
-</h1>
+# Swarm KV
 
+<img src="./doc/imgs/swarmkv_logo.svg" alt="swarmkv logo" align="left" />
 
-**SwarmKV is a embedded and distributed key-value storage library with peer-to-peer networing.** SwarmKV uses [HashiCorp Consul](https://www.consul.io/) for cluster management, which includes leader election, health checking, and slot table management.
+**SwarmKV is a embedded and distributed key-value storage library with peer-to-peer networking.** SwarmKV uses [HashiCorp Consul](https://www.consul.io/) for cluster management, which includes leader election, health checking, and slot table management.
 
 **Main Features**
 
@@ -12,9 +10,9 @@
 
 **Why not Redis?** Because Swarm KV is
 
-- Embedded, **no** need additional servers.
+- Embedded, **no** additional servers.
 - Cache optimized
-- Salable for trillions of operations per second, billions of keys, and thousands of operators
+- Salable for trillions of operations per second, billions of keys, and thousands of parallel operators
 
 **Why not SQLite, or rqlite, dqlite?** Because Swarm KV is not a relational database and is extremely fast.
 
@@ -25,7 +23,7 @@ Vocabularies
 | Name | Explaination                                                 |
 | ---- | ------------------------------------------------------------ |
 | KV   | Key-value pair                                               |
-| Node | Instances in a Swarm KV cluster                              |
+| Node | Instances in a Swarm KV cluster. A swarmkv node is identified with its IP, P2P port and UUID. |
 | Slot | KVs are partitioned in different slots, and keys of one table are scattered in many slots.  Each slot is maintained by one node. |
 
 SwarmKV Data Types
@@ -40,12 +38,12 @@ SwarmKV operations
 - Get, Set, Delete
 - TTL
 
-| Command Operator  | Command Args | Response                                  |
-| ----------------- | ------------ | ----------------------------------------- |
-| GET               | Key          |                                           |
-| SET               |              |                                           |
-| HGET              |              |                                           |
-| CLUSTER OBJ_OWNER | Key          | 1) "192.168.1.200"<br/>2) (interger) 5211 |
+| Command Operator  | Command Args | Response                                 |
+| ----------------- | ------------ | ---------------------------------------- |
+| GET               | Key          |                                          |
+| SET               |              |                                          |
+| HGET              |              |                                          |
+| CLUSTER OBJ_OWNER | Key          | 1) "192.168.1.200"<br/>2) (integer) 5211 |
 
 
 
@@ -209,9 +207,9 @@ If a node is failed, peers will detect it by not replying ping message
 
 ### Wire Protocol
 
-Messages between nodes are serialized with [MessagePack](https://msgpack.org/index.html) format. For readability, we use JSON to describe the request and response here.
+Messages between nodes is start with a fixed length header and a variable length payload. The payload is serialized with [MessagePack](https://msgpack.org/index.html) format.  For readability, we use JSON to describe the request and response here.
 
-Request format
+Request payload
 
 ```json
 {
@@ -219,11 +217,6 @@ Request format
     "need_reply": true,
     "txn_seq": 7237914459,
     "txn_initiator": "ebe5a57c-cb33-4b2f-968f-44c4b87ea8d9",
-    "node":{
-        "ip":"192.168.1.200",
-        "port":5210,
-        "uuid":"ebe5a57c-cb33-4b2f-968f-44c4b87ea8d9"
-    },
     "cmd":{
         "op":"HMGET",
         "args":[
@@ -232,22 +225,18 @@ Request format
             "address",
             "avatar"
         ]
-    }
+    },
+    "do_not_reply":0
 }
 ```
 
-Response Format
+Response payload
 
 ```json
 {
 	"msg_type":"reply",
     "txn_seq": 7237914459,
     "txn_initiator": "ebe5a57c-cb33-4b2f-968f-44c4b87ea8d9",
-    "node":{
-        "ip":"192.168.1.201",
-        "port":5210,
-        "uuid":"921e25e4-85a4-11ec-a8a3-0242ac120002"
-    },
     "reply":{
         "reply_type":"array",
         "element":[

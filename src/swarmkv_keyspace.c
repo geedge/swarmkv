@@ -7,6 +7,7 @@
 #include "sds.h"
 #include "base64.h"
 #include "xxhash.h"
+#include "uthash.h"
 
 #include <MESA/MESA_handle_logger.h>
 
@@ -23,7 +24,7 @@
 
 #define	LOCAL_HOST	"127.0.0.1"
 
-#define	XXHASH_SEED	5210
+#define	KEYSPACE_XXHASH_SEED	5210
 #define MODULE_SWARMKV_KEYSPACE		"swarmkv.keyspace"
 enum slot_state
 {
@@ -41,6 +42,34 @@ struct key_slot
 	enum slot_state state;
 };
 
+struct key_route_entry
+{
+	sds key;
+	struct swarmkv_node owner;
+	UT_hash_handle hh;
+};
+struct key_route_entry *key_entry_new(const char *key, size_t keylen, const struct swarmkv_node* owner)
+{
+	struct key_route_entry *entry=NULL;
+	entry=ALLOC(struct key_route_entry, 1);
+	entry->key=sdsnewlen(key, keylen);
+	memcpy(&(entry->owner), owner, sizeof(struct swarmkv_node));
+	return entry;
+}
+
+void key_entry_free(struct key_route_entry *entry)
+{
+	sdsfree(entry->key);
+	entry->key=NULL;
+	free(entry);
+}
+static inline int get_slot_id(const char* key, size_t keylen)
+{
+	XXH32_hash_t hash = XXH32(key, keylen, KEYSPACE_XXHASH_SEED);
+	int slot_id=hash%SWARMKV_SLOT_NUM;
+	return slot_id;
+}
+
 struct swarmkv_keyspace
 {
 	char cluster_name[SWARMKV_SYMBOL_MAX];
@@ -49,13 +78,15 @@ struct swarmkv_keyspace
 
 	int node_id;	//Self node ID
 	struct swarmkv_node self;
-	pthread_rwlock_t rwlock_slots;
+	pthread_rwlock_t rwlock;
 	struct key_slot slots[SWARMKV_SLOT_NUM];
+
+	struct key_route_entry* keyroute_table;
+
 
 	unsigned int consul_agent_port;
 	unsigned int health_check_port;	//HTTP
 	int dryrun;
-	struct event_base * evbase;
 	int init_success;
 
 	int is_leader;
@@ -66,7 +97,10 @@ struct swarmkv_keyspace
 	char consul_check_id[SWARMKV_SYMBOL_MAX];
 	char consul_session_id[SWARMKV_SYMBOL_MAX];
 
-	struct evhttp* http_server;//
+	struct evhttp* http_server;
+
+	//reference, no need free
+	struct event_base * evbase;	
 	void *logger;
 };
 void consul_acquire_session_lock_async(struct swarmkv_keyspace* ks);
@@ -178,11 +212,11 @@ int http_blocking_request(enum evhttp_cmd_type type, const char* host, unsigned 
 	return client->response_code;	
 }
 
-struct swarmkv_keyspace* swarmkv_keyspace_new(const char* cluster_name, struct event_base * evbase, unsigned int http_port, unsigned int p2p_port, void* logger)
+struct swarmkv_keyspace* swarmkv_keyspace_new(const char* cluster_name, struct event_base * evbase, unsigned int http_port, struct swarmkv_node* self, void* logger)
 {
 	struct swarmkv_keyspace* ks=ALLOC(struct swarmkv_keyspace, 1);
 	ks->health_check_port=http_port;
-	ks->p2p_port=p2p_port;
+	memcpy(&(ks->self), self, sizeof(ks->self));
 	strncpy(ks->cluster_name, cluster_name, sizeof(ks->cluster_name));
 	ks->consul_agent_port=CONSUL_DEFAULT_PORT;
     ks->evbase = evbase;
@@ -190,6 +224,7 @@ struct swarmkv_keyspace* swarmkv_keyspace_new(const char* cluster_name, struct e
 	
 	return ks;
 }
+/*
 int consul_get_self_ip(struct swarmkv_keyspace* ks)
 {
 	sds response=NULL;
@@ -210,7 +245,7 @@ int consul_get_self_ip(struct swarmkv_keyspace* ks)
 	response=NULL;
 	return ret;
 }
-
+*/
 int consul_service_register(struct swarmkv_keyspace* ks)
 {
 	int ret=0;
@@ -220,7 +255,7 @@ int consul_service_register(struct swarmkv_keyspace* ks)
 	snprintf(ks->consul_service_id, sizeof(ks->consul_service_id), "%s-%d", ks->cluster_name, ks->health_check_port);
 	cJSON_AddStringToObject(service, "ID", ks->consul_service_id);
 	cJSON_AddStringToObject(service, "Address", ks->self.ip_addr);
-	cJSON_AddNumberToObject(service, "Port", ks->p2p_port);
+	cJSON_AddNumberToObject(service, "Port", ks->self.p2p_port);
 
 	cJSON* check=cJSON_CreateObject();
 
@@ -302,7 +337,7 @@ void __consul_session_create_cb(struct evhttp_request *req, void *arg)
 
 void consul_create_session_async(struct swarmkv_keyspace* ks)
 {
-	cJSON* session=NULL, *service_check_array=NULL, *service_check=NULL, *check_array=NULL, *session_create_response=NULL, *session_id=NULL;
+	cJSON* session=NULL, *service_check_array=NULL, *service_check=NULL;
 	session=cJSON_CreateObject();
 	cJSON_AddStringToObject(session, "LockDelay", "5s");
 	cJSON_AddStringToObject(session, "Name", "swarmkv-leader-election-lock");
@@ -465,12 +500,16 @@ void __acquire_session_lock_cb(struct evhttp_request *req, void *arg)
 	}
 	consul_watch_leadership_changes_async(ks);
 }
-sds self_print_json(struct swarmkv_keyspace* ks)
+sds self_print_json(struct swarmkv_node* self)
 {
 	cJSON* node_info=NULL;
+	char uuid_str[MAX_UUID_STR_LEN];
+	uuid_unparse_lower(self->bin_uuid, uuid_str);
 	node_info=cJSON_CreateObject();
-	cJSON_AddStringToObject(node_info, "ip", ks->self_ip);
-	cJSON_AddNumberToObject(node_info, "p2p_port", ks->p2p_port);
+	
+	cJSON_AddStringToObject(node_info, "ip", self->ip_addr);
+	cJSON_AddNumberToObject(node_info, "p2p_port", self->p2p_port);
+	cJSON_AddStringToObject(node_info, "uuid", uuid_str);
 	char* payload=NULL;
 	payload=cJSON_Print(node_info);
 
@@ -481,7 +520,7 @@ sds self_print_json(struct swarmkv_keyspace* ks)
 }
 void consul_acquire_session_lock_async(struct swarmkv_keyspace* ks)
 {
-	sds req_body=self_print_json(ks);
+	sds req_body=self_print_json(&ks->self);
 
 	char url[SWARMKV_URL_MAX];
 	
@@ -664,9 +703,9 @@ void __watch_slots_changes_cb(struct evhttp_request *req, void *arg)
 	assert(n_slot==0||n_slot==SWARMKV_SLOT_NUM);
 	if(n_slot==SWARMKV_SLOT_NUM)
 	{
-		pthread_rwlock_wrlock(&ks->rwlock_slots);
+		pthread_rwlock_wrlock(&ks->rwlock);
 		memcpy(ks->slots, key_slots, sizeof(ks->slots));
-		pthread_rwlock_unlock(&ks->rwlock_slots);
+		pthread_rwlock_unlock(&ks->rwlock);
 		MESA_handle_runtime_log(ks->logger, RLOG_LV_INFO, MODULE_SWARMKV_KEYSPACE, "key slots are updated.");
 	}
 	consul_watch_slots_changes_async(ks);
@@ -826,8 +865,9 @@ void keyslots_init(struct swarmkv_keyspace* ks)
 	for(i=0; i<SWARMKV_SLOT_NUM; i++)
 	{
 		ks->slots[i].slot_id=i;
-		strncpy(ks->slots[i].owner.ip_addr, ks->self_ip, sizeof(ks->slots[i].owner.ip_addr));
-		ks->slots[i].owner.p2p_port=ks->p2p_port;
+		strncpy(ks->slots[i].owner.ip_addr, ks->self.ip_addr, sizeof(ks->slots[i].owner.ip_addr));
+		ks->slots[i].owner.p2p_port=ks->self.p2p_port;
+		uuid_copy(ks->slots[i].owner.bin_uuid, ks->self.bin_uuid);
 	}
 	return;
 }
@@ -858,7 +898,7 @@ static void consul_kv_init_if_nonexist(struct swarmkv_keyspace* ks)
 	resp_code_get=http_blocking_request(EVHTTP_REQ_GET, CONSUL_HOST, ks->consul_agent_port, url, NULL, NULL);
 	if(resp_code_get==404)
 	{
-		self_info=self_print_json(ks);
+		self_info=self_print_json(&ks->self);
 		resp_code_put=http_blocking_request(EVHTTP_REQ_PUT, CONSUL_HOST, ks->consul_agent_port, url, self_info, NULL);	
 		sdsfree(self_info);
 		if(resp_code_put==200)
@@ -877,15 +917,6 @@ static void consul_kv_init_if_nonexist(struct swarmkv_keyspace* ks)
 int swarmkv_keyspace_init(struct swarmkv_keyspace* ks)
 {
 	int ret=-1;
-	if(0==strlen(ks->self_ip))
-	{
-		ret=consul_get_self_ip(ks);
-		if(ret<0)
-		{
-			MESA_handle_runtime_log(ks->logger, RLOG_LV_FATAL, MODULE_SWARMKV_KEYSPACE, "cannot get self IP from local consul agent.");		
-			goto error_out;
-		}
-	}
 	keyslots_init(ks);
 	consul_kv_init_if_nonexist(ks);
 	ks->http_server=http_server_new(ks->evbase, ks->health_check_port, ks->logger);
@@ -923,11 +954,6 @@ int swarmkv_keyspace_set_dryrun(struct swarmkv_keyspace* ks)
 	ks->dryrun=1;
 	return 0;
 }
-int swarmkv_keyspace_set_selfip(struct swarmkv_keyspace* ks, const char* ip)
-{
-	strcpy(ks->self_ip, ip);
-	return 0;
-}
 void swarmkv_keyspace_free(struct swarmkv_keyspace* ks)
 {
 	if(ks->http_server)
@@ -935,25 +961,153 @@ void swarmkv_keyspace_free(struct swarmkv_keyspace* ks)
 		evhttp_free(ks->http_server);
 		ks->http_server=NULL;
 	}
+	struct key_route_entry *key_entry=NULL, *tmp=NULL;
+	HASH_ITER(hh, ks->keyroute_table, key_entry, tmp)
+	{
+		HASH_DELETE(hh, ks->keyroute_table, key_entry);
+		key_entry_free(key_entry);
+	}
 	free(ks);
 	return;
 }
-//
-//return 1 when self is key owner;
-//return 0 when key is owned by someone else
-int swarmkv_keyspace_get_keyowner(struct swarmkv_keyspace* ks, const char* key, size_t keylen, struct swarmkv_node* keyowner)
+
+int swarmkv_keyspace_get_key_owner(struct swarmkv_keyspace* ks, const char *key, size_t keylen, struct swarmkv_node* owner)
 {
-	XXH32_hash_t hash = XXH32(key, keylen, XXHASH_SEED);
-	int slot_id=hash%SWARMKV_SLOT_NUM;
-	pthread_rwlock_rdlock(&ks->rwlock_slots);
-	*keyowner=ks->slots[slot_id];
-	pthread_rwlock_unlock(&ks->rwlock_slots);
+	int self_is_keyowner=0;
+	int slot_id=get_slot_id(key, keylen);
+	
+	struct swarmkv_node *keyowner=NULL;
+	pthread_rwlock_rdlock(&ks->rwlock);
+	keyowner=&(ks->slots[slot_id].owner);
+	memcpy(owner, keyowner, sizeof(struct swarmkv_node));
+	pthread_rwlock_unlock(&ks->rwlock);
 	if(0==memcmp(keyowner, &(ks->self), sizeof(ks->self)))
 	{
-		return 1;
+		self_is_keyowner=1;
+	}
+	return self_is_keyowner;
+
+/*	
+	if(0==memcmp(keyowner, &(ks->self), sizeof(ks->self)))
+	{
+		HASH_FIND(hh, ks->keyroute_table, key, keylen, key_entry);
+		if(key_entry)
+		{
+			memcpy(owner, &(key_entry->owner), sizeof(struct swarmkv_node));
+			ret=OBJ_OWNER;
+		}
 	}
 	else
 	{
-		return 0;
+		memcpy(owner, keyowner, sizeof(struct swarmkv_node));
+		ret=KEY_OWNER;
 	}
+	pthread_rwlock_unlock(&ks->rwlock);
+	return ret;
+	*/
 }
+
+void swarmkv_keyspace_set_obj_owner(struct swarmkv_keyspace *ks, const char *key, size_t keylen, const struct swarmkv_node *owner)
+{
+	int slot_id=get_slot_id(key, keylen);
+	struct swarmkv_node *keyowner=NULL;
+	struct key_route_entry *key_entry=NULL;
+	pthread_rwlock_wrlock(&ks->rwlock);
+	keyowner=&(ks->slots[slot_id].owner);
+	if(memcmp(keyowner, &(ks->self), sizeof(ks->self)))
+	{
+		MESA_handle_runtime_log(ks->logger, RLOG_LV_INFO, MODULE_SWARMKV_KEYSPACE, 
+			"weird behavior: set an object owner (key=%.5s) of slot %d, which key owner should be %s:%u",
+			key, slot_id, keyowner->ip_addr, keyowner->p2p_port);	
+	}
+	
+	HASH_FIND(hh, ks->keyroute_table, key, keylen, key_entry);
+	if(key_entry)
+	{	
+		memcpy(&(key_entry->owner), owner, sizeof(struct swarmkv_node));
+	}
+	else
+	{
+		key_entry=key_entry_new(key, keylen, owner);
+		HASH_ADD_KEYPTR(hh, ks->keyroute_table, key_entry->key, sdslen(key_entry->key), key_entry);
+	}
+	pthread_rwlock_unlock(&ks->rwlock);
+	return;
+
+}
+int swarmkv_keyspace_get_obj_owner(struct swarmkv_keyspace *ks, const char *key, size_t keylen, struct swarmkv_node *owner)
+{
+	int found=0;
+	int slot_id=get_slot_id(key, keylen);
+	struct swarmkv_node *keyowner=NULL;
+	struct key_route_entry *key_entry=NULL;
+	pthread_rwlock_rdlock(&ks->rwlock);
+	keyowner=&(ks->slots[slot_id].owner);
+	if(memcmp(keyowner, &(ks->self), sizeof(ks->self)))
+	{
+		MESA_handle_runtime_log(ks->logger, RLOG_LV_INFO, MODULE_SWARMKV_KEYSPACE, 
+			"weird behavior: set an object owner (key=%.5s) of slot %d, which key owner should be %s:%u",
+			key, slot_id, keyowner->ip_addr, keyowner->p2p_port);	
+	}
+	HASH_FIND(hh, ks->keyroute_table, key, keylen, key_entry);
+	if(key_entry)
+	{	
+		memcpy(owner, &(key_entry->owner), sizeof(struct swarmkv_node));
+		found=1;
+	}
+	pthread_rwlock_unlock(&ks->rwlock);
+	return found;
+}
+void swarmkv_keyspace_del_obj_owner(struct swarmkv_keyspace* ks, const char *key, size_t keylen)
+{
+	int slot_id=get_slot_id(key, keylen);
+
+	struct swarmkv_node *keyowner=NULL;
+	struct key_route_entry *key_entry=NULL;
+	pthread_rwlock_wrlock(&ks->rwlock);
+	keyowner=&(ks->slots[slot_id].owner);
+	if(memcmp(keyowner, &(ks->self), sizeof(ks->self)))
+	{
+		MESA_handle_runtime_log(ks->logger, RLOG_LV_INFO, MODULE_SWARMKV_KEYSPACE, 
+			"weird behavior: del an object owner (key=%.5s) of slot %d, which key owner should be %s:%u",
+			key, slot_id, keyowner->ip_addr, keyowner->p2p_port);	
+	}
+	HASH_FIND(hh, ks->keyroute_table, key, keylen, key_entry);
+	if(key_entry)
+	{
+		HASH_DELETE(hh, ks->keyroute_table, key_entry);
+	}
+	pthread_rwlock_unlock(&ks->rwlock);
+	return;	
+}
+
+int swarmkv_keyspace_set_obj_owner_if_NoneXist(struct swarmkv_keyspace* ks, const char *key, size_t keylen, const struct swarmkv_node* in, struct swarmkv_node* out)
+{
+	int slot_id=get_slot_id(key, keylen);
+	int self_is_objowner=0;
+	struct swarmkv_node *keyowner=NULL;
+	struct key_route_entry *key_entry=NULL;
+	pthread_rwlock_wrlock(&ks->rwlock);
+	keyowner=&(ks->slots[slot_id].owner);
+	if(memcmp(keyowner, &(ks->self), sizeof(ks->self)))
+	{
+		MESA_handle_runtime_log(ks->logger, RLOG_LV_INFO, MODULE_SWARMKV_KEYSPACE, 
+			"weird behavior: del an object owner (key=%.5s) of slot %d, which key owner should be %s:%u",
+			key, slot_id, keyowner->ip_addr, keyowner->p2p_port);	
+	}
+	HASH_FIND(hh, ks->keyroute_table, key, keylen, key_entry);
+	if(!key_entry)
+	{
+		key_entry= key_entry_new(key, keylen, in);
+		HASH_ADD_KEYPTR(hh, ks->keyroute_table, key_entry->key, sdslen(key_entry->key), key_entry);
+	}
+	memcpy(out, &(key_entry->owner), sizeof(struct swarmkv_node));
+	pthread_rwlock_unlock(&ks->rwlock);
+	if(0==memcmp(out, &ks->self, sizeof(ks->self)))
+	{
+		self_is_objowner=1;
+	}
+	return self_is_objowner;	
+
+}
+
