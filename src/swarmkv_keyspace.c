@@ -28,18 +28,16 @@
 #define MODULE_SWARMKV_KEYSPACE		"swarmkv.keyspace"
 enum slot_state
 {
-	slot_unkonwn,
-	slot_stable,
-	slot_mirgrating
+	SLOT_STABLE=0,
+	SLOT_MIGRATING
 };
 
 struct key_slot
 {
 	int slot_id;
-	int key_owner_node_id;
-	struct swarmkv_node owner;
-	struct swarmkv_node replica[MAX_REPLICA_NUM];
 	enum slot_state state;
+	struct swarmkv_node owner;
+//	struct swarmkv_node replica[MAX_REPLICA_NUM];
 };
 
 struct key_route_entry
@@ -640,11 +638,12 @@ void __watch_slots_changes_cb(struct evhttp_request *req, void *arg)
 {
 	struct swarmkv_keyspace* ks=(struct swarmkv_keyspace*)arg;
 	cJSON *metadata_array=NULL, *metadata=NULL, *value=NULL, *modify_idx=NULL;
-	cJSON *slot_table=NULL, *range=NULL, *slot=NULL, *ip=NULL, *port=NULL;
+	cJSON *slot_table=NULL, *range=NULL, *slot=NULL, *owner=NULL, *ip=NULL, *p2p_port=NULL, *uuid=NULL;
 	int resp_code=0;
 	int	i=0, j=0, n_record=0, n_slot=0;
 	int range_start=0, range_end=0;
 	struct key_slot key_slots[SWARMKV_SLOT_NUM];
+	memset(key_slots, 0, sizeof(key_slots));
 	if(!req || !evhttp_request_get_response_code(req))
 	{
 		int errcode = EVUTIL_SOCKET_ERROR();
@@ -668,8 +667,8 @@ void __watch_slots_changes_cb(struct evhttp_request *req, void *arg)
 		modify_idx=cJSON_GetObjectItem(metadata, "ModifyIndex");
 		ks->consul_slots_modify_idx=modify_idx->valueint;
 		value=cJSON_GetObjectItem(metadata, "Value");
-		sds decode_buffer=sdsnewlen(NULL, BASE64_DECODE_OUT_SIZE(strlen(value->string)));
-		base64_decode(value->string, strlen(value->string), (unsigned char*)decode_buffer);
+		sds decode_buffer=sdsnewlen(NULL, BASE64_DECODE_OUT_SIZE(strlen(value->valuestring)));
+		base64_decode(value->valuestring, strlen(value->valuestring), (unsigned char*)decode_buffer);
 		
 		slot_table=cJSON_Parse(decode_buffer);
 		n_record=cJSON_GetArraySize(slot_table);
@@ -677,21 +676,25 @@ void __watch_slots_changes_cb(struct evhttp_request *req, void *arg)
 		{
 			slot=cJSON_GetArrayItem(slot_table, i);
 			range=cJSON_GetObjectItem(slot, "slot");
-			if(strstr(slot->string, "-"))
+			if(strstr(range->valuestring, "-"))
 			{
-				sscanf(range->string, "%d-%d", &range_start, &range_end);
+				sscanf(range->valuestring, "%d-%d", &range_start, &range_end);
 			}
 			else
 			{
-				sscanf(range->string, "%d", &range_start);
+				sscanf(range->valuestring, "%d", &range_start);
 				range_end=range_start;
 			}
-			ip=cJSON_GetObjectItem(slot, "ip");	
-			port=cJSON_GetObjectItem(slot, "p2p_port");
+			owner=cJSON_GetObjectItem(slot, "owner");	
+			ip=cJSON_GetObjectItem(owner, "ip");	
+			p2p_port=cJSON_GetObjectItem(owner, "p2p_port");
+			uuid=cJSON_GetObjectItem(owner, "uuid");
 			for(j=range_start; j<range_end+1; j++)
 			{
-				strncpy(key_slots[n_slot].owner.ip_addr, ip->string, sizeof(key_slots[n_slot].owner.ip_addr));
-				key_slots[n_slot].owner.p2p_port= (unsigned int)port->valueint;
+				key_slots[n_slot].slot_id=n_slot;
+				strncpy(key_slots[n_slot].owner.ip_addr, ip->valuestring, sizeof(key_slots[n_slot].owner.ip_addr));
+				key_slots[n_slot].owner.p2p_port= (unsigned int)p2p_port->valueint;
+				uuid_parse(uuid->valuestring, key_slots[n_slot].owner.bin_uuid);
 				n_slot++;
 			}
 		}
@@ -799,16 +802,17 @@ static sds keyslots_print_json(struct key_slot slots[], size_t n_slot)
 {
 	cJSON *slot_array=cJSON_CreateArray();
 	sds printed=NULL;
-	cJSON *slot=NULL, *node=NULL, *replica_array=NULL;
-	char range[256]="";
-	size_t i=0, j=0;
+	cJSON *slot=NULL, *node=NULL;
+//	cJSON *replica_array=NULL;
+	char range[256]="", uuid_str[MAX_UUID_STR_LEN]="";
+	size_t i=0;
 	int start=0, end=0;
 	start=end=slots[0].slot_id;
 	for(i=0; i<n_slot+1; i++)
 	{
 		if(i<n_slot
-			&& 0==memcmp(&(slots[i].owner), &(slots[end].owner), sizeof(slots[i].owner))
-			&& 0==memcmp(&(slots[i].replica), &(slots[end].replica), sizeof(slots[i].replica)) )
+			&& 0==memcmp(&(slots[i].owner), &(slots[end].owner), sizeof(slots[i].owner)))
+//			&& 0==memcmp(&(slots[i].replica), &(slots[end].replica), sizeof(slots[i].replica)) )
 		{
 			end=i;
 			continue;
@@ -825,9 +829,11 @@ static sds keyslots_print_json(struct key_slot slots[], size_t n_slot)
 		cJSON_AddStringToObject(slot, "slot", range);		
 		node=cJSON_CreateObject();
 		cJSON_AddStringToObject(node, "ip", slots[end].owner.ip_addr);
-		cJSON_AddNumberToObject(node, "port", slots[end].owner.p2p_port);
+		cJSON_AddNumberToObject(node, "p2p_port", slots[end].owner.p2p_port);
+		uuid_unparse_lower(slots[end].owner.bin_uuid, uuid_str);
+		cJSON_AddStringToObject(node, "uuid", uuid_str);
 		cJSON_AddItemToObject(slot, "owner", node);
-
+/*
 		replica_array=cJSON_CreateArray();
 		for(j=0; j<MAX_REPLICA_NUM; j++)
 		{
@@ -837,7 +843,7 @@ static sds keyslots_print_json(struct key_slot slots[], size_t n_slot)
 			}
 			node=cJSON_CreateObject();
 			cJSON_AddStringToObject(node, "ip", slots[end].replica[j].ip_addr);
-			cJSON_AddNumberToObject(node, "port", slots[end].replica[j].p2p_port);
+			cJSON_AddNumberToObject(node, "p2p_port", slots[end].replica[j].p2p_port);
 			cJSON_AddItemToArray(replica_array, node);
 		}
 		if(j==0)
@@ -848,6 +854,7 @@ static sds keyslots_print_json(struct key_slot slots[], size_t n_slot)
 		{
 			cJSON_AddItemToObject(slot, "replicas", replica_array);
 		}
+		*/
 		cJSON_AddItemToArray(slot_array, slot);
 		start=end=i;
 	}

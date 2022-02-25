@@ -99,6 +99,33 @@ size_t swarmkv_reply_print(const struct swarmkv_reply* reply, char* buff, size_t
 	return print_len;
 }
 
+void basic_test_get_callback(const struct swarmkv_reply* reply, void * cb_arg)
+{
+	struct cmd_exec_arg* arg=(struct cmd_exec_arg*)cb_arg;
+	char buff[1024];
+	swarmkv_reply_print(reply, buff, sizeof(buff));
+	printf("get %s\n", buff);
+	if(reply->type==SWARMKV_REPLY_STRING && 0==strcasecmp(reply->str, "zhangsan"))
+	{
+		arg->success=1;
+	}
+	cmd_exec_arg_signal(arg);
+	return;
+}
+void basic_test_set_callback(const struct swarmkv_reply* reply, void * cb_arg)
+{
+	struct cmd_exec_arg* arg=(struct cmd_exec_arg*)cb_arg;
+	char buff[1024];
+	swarmkv_reply_print(reply, buff, sizeof(buff));
+	printf("set %s\n", buff);
+	if(reply->type==SWARMKV_REPLY_STATUS && 0==strcasecmp(reply->str, "OK"))
+	{
+		arg->success=1;
+	}
+	cmd_exec_arg_signal(arg);
+	return;
+}
+
 class SwarmkvTwoNodes : public testing::Test 
 {
 
@@ -128,51 +155,27 @@ struct swarmkv* SwarmkvTwoNodes::db2;
 TEST_F(SwarmkvTwoNodes, SimpleSetGet)
 {
 	struct cmd_exec_arg *arg=NULL;
-	struct swarmkv* db=SwarmkvBasicTest::db;
+	struct swarmkv* db1=SwarmkvTwoNodes::db1;
+	struct swarmkv* db2=SwarmkvTwoNodes::db2;
 	const char* key="name";
 	const char* val="zhangsan";
 	int is_timeout=0;
 
 	arg=cmd_exec_arg_new();
-	swarmkv_set_string(db, key, strlen(key), val, strlen(val), basic_test_set_callback, arg);
+	swarmkv_set_string(db1, key, strlen(key), val, strlen(val), basic_test_set_callback, arg);
 	is_timeout=cmd_exec_arg_wait(arg, 100);//100ms
 	EXPECT_EQ(is_timeout, 0);
 	EXPECT_EQ(arg->success, 1);
 	arg->success=0;
-	swarmkv_get_string(db, key, strlen(key), basic_test_get_callback, arg);
+	swarmkv_get_string(db2, key, strlen(key), basic_test_get_callback, arg);
 	cmd_exec_arg_wait(arg, 100);//100ms
 	EXPECT_EQ(is_timeout, 0);
 	EXPECT_EQ(arg->success, 1);
 	cmd_exec_arg_free(arg);
 	arg=NULL;
+	sleep(1800);
 }
 
-void basic_test_get_callback(const struct swarmkv_reply* reply, void * cb_arg)
-{
-	struct cmd_exec_arg* arg=(struct cmd_exec_arg*)cb_arg;
-	char buff[1024];
-	swarmkv_reply_print(reply, buff, sizeof(buff));
-	printf("get %s\n", buff);
-	if(reply->type==SWARMKV_REPLY_STRING && 0==strcasecmp(reply->str, "zhangsan"))
-	{
-		arg->success=1;
-	}
-	cmd_exec_arg_signal(arg);
-	return;
-}
-void basic_test_set_callback(const struct swarmkv_reply* reply, void * cb_arg)
-{
-	struct cmd_exec_arg* arg=(struct cmd_exec_arg*)cb_arg;
-	char buff[1024];
-	swarmkv_reply_print(reply, buff, sizeof(buff));
-	printf("set %s\n", buff);
-	if(reply->type==SWARMKV_REPLY_STATUS && 0==strcasecmp(reply->str, "OK"))
-	{
-		arg->success=1;
-	}
-	cmd_exec_arg_signal(arg);
-	return;
-}
 class SwarmkvBasicTest : public testing::Test 
 {
 

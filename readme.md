@@ -1,5 +1,3 @@
-# Swarm KV
-
 <img src="./doc/imgs/swarmkv_logo.svg" alt="swarmkv logo" align="left" />
 
 **SwarmKV is a embedded and distributed key-value storage library with peer-to-peer networking.** SwarmKV uses [HashiCorp Consul](https://www.consul.io/) for cluster management, which includes leader election, health checking, and slot table management.
@@ -49,7 +47,7 @@ SwarmKV operations
 
 
 
-## SwarmKV Design
+# SwarmKV Design
 
 I list design choices here.
 
@@ -58,7 +56,7 @@ Todo:
 - Object migration
 - Nodes failover by object replication
 
-### DHT-based KV spaces
+## DHT-based KV spaces
 
 Key-value pairs are distributed over nodes. As shown in the following picture, the key layer keeps track of the current location of every key-value pair, and the value layer stores the actual binary of key-value. This design is inspired by the NSDI'18 paper [*Elastic scaling of stateful network functions*](https://www.usenix.org/conference/nsdi18/presentation/woo).
 
@@ -73,7 +71,7 @@ As shown in the above picture, a KV operation is done by following steps:
 
 The keyspace consistency is based on [consul](https://www.consul.io/) and its [Raft](https://raft.github.io/) implementation. As [a typical raft cluster goes up to 7 nodes](https://stackoverflow.com/questions/42422111/raft-nodes-count), so only consul server nodes participate in Raft. The consul and its [Gossip protocol](https://en.wikipedia.org/wiki/Gossip_protocol) implementation are used  to track node health.
 
-#### Global Slot Table
+### Global Slot Table
 
 The global slot table is stored in Consul KV, the key is swarmkv/<cluster_name>/slot_table:
 
@@ -123,7 +121,7 @@ The command returns a JSON array.
 ]
 ```
 
-#### Cluster Leader Election
+### Cluster Leader Election
 
 The slot table is maintained by the cluster leader, which is elected from cluster peers. SwarmKV uses [Consul for leader election](https://learn.hashicorp.com/tutorials/consul/application-leader-elections). 
 
@@ -147,7 +145,7 @@ Except for node in dry run mode, cluster nodes will watch leadership changes and
    - If the response is `true`, the node is elected to be a leader.
 3. Go to  step 1.
 
-#### Keyspace reorganization
+### Keyspace reorganization
 
 The keyspace is sharding to slots and each slot is owned by one node. This information is recorded in the global shared slot table, which is maintained by the cluster leader.
 
@@ -174,7 +172,7 @@ When a master node A fails, if slots owned by A has a replica which is node B, t
 
 ,  in which,  N is slot id, Y contains a 32-bit node ID, UUID format version, IP and port. 
 
-### KV Operation
+## KV Operation
 
 The swarmkv's cache model is inspired by [Redis server-assisted client side caching](https://redis.io/topics/client-side-caching). The object owner remembers what keys a given peer accessed, and sends update messages when the same keys are modified.  
 
@@ -191,21 +189,21 @@ When a requester executes a command, it takes the following steps
 - the object owner executes the command, registers the requester as one of the cache tracking nodes, and send a reply to the requester
 - the requester receives the reply and invokes  call back function
 
-### Fault Tolerance
+## Fault Tolerance
 
-#### High Availability
+### High Availability
 
 Each object has *N* replicas. Those replicas are managed by the key owner and key owner replica.
 
-#### Health Check
+### Health Check
 
 Nodes use a gossip protocol to send ping packets to make sure all the other nodes are working properly.  A node flags another node with the `PFAIL` flag when the node is not reachable for more than `NODE_TIMEOUT` time. Every node sends gossip messages to every other node including the state of a few random known nodes. Every node eventually receives a set of node flags for every other node. This way every node has a mechanism to signal other nodes about failure conditions they have detected.
 
-#### Handle key owner fails
+### Handle key owner fails
 
 If a node is failed, peers will detect it by not replying ping message
 
-### Wire Protocol
+## Wire Protocol
 
 Messages between nodes is start with a fixed length header and a variable length payload. The payload is serialized with [MessagePack](https://msgpack.org/index.html) format.  For readability, we use JSON to describe the request and response here.
 
@@ -259,9 +257,9 @@ Response payload
 
 
 
-### Node Design
+## Node Design
 
-#### Thread Model
+### Thread Model
 
 A swarmkv instance has one main thread and several (configurable) work threads. Swarmkv uses [libevent](https://github.com/libevent/libevent) as a peer-to-peer communication infrastructure.  The main thread is responsible for:
 
@@ -282,7 +280,7 @@ The worker threads are responsible for:
   - Pong message: update key routing table and node list
   - Meet message: ?
 
-### Source Code Directory Structure
+## Source Code Directory Structure
 
 The source files are organized as follows:
 
