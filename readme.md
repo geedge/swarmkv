@@ -1,6 +1,10 @@
-<img src="./doc/imgs/swarmkv_logo.svg" alt="swarmkv logo" align="left" />
+<h1>
+  <img src="./doc/imgs/swarmkv_logo.svg" align="left" height="40px" alt="swarmkv logo"/>
+  <span>SwarmKV</span>
+</h1>
 
-**SwarmKV is a embedded and distributed key-value storage library with peer-to-peer networking.** SwarmKV uses [HashiCorp Consul](https://www.consul.io/) for cluster management, which includes leader election, health checking, and slot table management.
+**SwarmKV is a embedded and distributed key-value storage library with peer-to-peer networking.** 
+SwarmKV uses [HashiCorp Consul](https://www.consul.io/) for cluster management, which includes leader election, health checking, and slot table management.
 
 **Main Features**
 
