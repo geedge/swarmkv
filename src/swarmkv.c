@@ -224,8 +224,10 @@ void msg_read_callback(const struct swarmkv_node * peer, const char* data, size_
 					reply=ALLOC(struct swarmkv_reply, 1);
 					reply->type=SWARMKV_REPLY_ARRAY;
 					reply->n_element=2;
+					reply->element=ALLOC(struct swarmkv_reply*, reply->n_element);
 					reply->element[0]=ALLOC(struct swarmkv_reply, 1);
 					reply->element[0]->type=SWARMKV_REPLY_STRING;
+					reply->element[0]->len=strlen(obj_owner.ip_addr)+1;
 					reply->element[0]->str=strdup(obj_owner.ip_addr);
 					
 					reply->element[1]=ALLOC(struct swarmkv_reply, 1);
@@ -266,7 +268,7 @@ void msg_read_callback(const struct swarmkv_node * peer, const char* data, size_
 		{
 			if(txn->state==STATE_WAIT_KEY_OWNER)
 			{
-				if(reply->type!=SWARMKV_REPLY_NIL)
+				if(reply->type==SWARMKV_REPLY_NIL)
 				{
 					txn->callback_func(reply, txn->callback_arg);
 					HASH_DELETE(hh, db->transaction_table, txn);
@@ -282,6 +284,7 @@ void msg_read_callback(const struct swarmkv_node * peer, const char* data, size_
 					{
 						MESA_handle_runtime_log(db->logger, RLOG_LV_FATAL, MODULE_SWAMRKV_CORE, "Invalid reply for CLUSTER OBJOWNER");
 					}
+					memset(&obj_owner, 0, sizeof(obj_owner));
 					strncpy(obj_owner.ip_addr, reply->element[0]->str, sizeof(obj_owner.ip_addr));
 					obj_owner.p2p_port=reply->element[1]->integer;
 					msg_to_send=swarmkv_msg_new(db->self.bin_uuid, txn->sequence);

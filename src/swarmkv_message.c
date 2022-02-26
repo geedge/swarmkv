@@ -107,6 +107,7 @@ struct swarmkv_reply* deserialize_reply(mpack_node_t reply_node)
 		case SWARMKV_REPLY_ARRAY:
 			array_node=mpack_node_map_cstr(reply_node, "element");
 			reply->n_element=mpack_node_array_length(array_node);
+			reply->element=ALLOC(struct swarmkv_reply*, reply->n_element);
 			for(i=0; i<reply->n_element; i++)
 			{
 				item=mpack_node_array_at(array_node, i);

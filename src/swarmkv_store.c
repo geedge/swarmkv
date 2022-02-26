@@ -71,15 +71,12 @@ int swarmkv_store_cache_exec(struct swarmkv_store *store, const struct swarmkv_c
 			if(ctr)
 			{
 				r->type=SWARMKV_REPLY_STRING;
-				r->str=ALLOC(char, sdslen(ctr->obj.value));
+				r->len=sdslen(ctr->obj.value);
+				r->str=ALLOC(char, r->len);
 				memcpy(r->str, ctr->obj.value, sdslen(ctr->obj.value));
-			}
-			else
-			{
-				r->type=SWARMKV_REPLY_NIL;
-			}
-			n_reply=1;
-			*reply=r;
+				n_reply=1;
+				*reply=r;
+			}		
 			break;
 		default:
 			free(r);

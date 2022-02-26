@@ -21,6 +21,7 @@ void swarmkv_reply_free(struct swarmkv_reply *reply)
 				swarmkv_reply_free(reply->element[i]);
 				reply->element[i]=NULL;
 			}
+			free(reply->element);
 			break;
 		default:
 			break;

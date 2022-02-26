@@ -5,6 +5,7 @@
 
 enum swarmkv_msg_type
 {
+	SWARMKV_MSG_TYPE_INVALID=0,
 	SWARMKV_MSG_TYPE_CMD=1,
 	SWARMKV_MSG_TYPE_REPLY
 };
