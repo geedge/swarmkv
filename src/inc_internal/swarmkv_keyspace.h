@@ -15,7 +15,7 @@
 struct swarmkv_keyspace;
 
 
-struct swarmkv_keyspace* swarmkv_keyspace_new(const char* cluster_name, struct event_base * evbase, unsigned int http_port, struct swarmkv_node* self, void* logger);
+struct swarmkv_keyspace* swarmkv_keyspace_new(const char* cluster_name, uuid_t bin_uuid, struct event_base * evbase, unsigned int http_port, struct swarmkv_node* self, void* logger);
 int swarmkv_keyspace_init(struct swarmkv_keyspace* ks);
 void swarmkv_keyspace_free(struct swarmkv_keyspace* keyspace);
 

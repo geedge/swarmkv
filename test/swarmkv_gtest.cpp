@@ -105,7 +105,7 @@ void basic_test_get_callback(const struct swarmkv_reply* reply, void * cb_arg)
 	char buff[1024];
 	swarmkv_reply_print(reply, buff, sizeof(buff));
 	printf("get %s\n", buff);
-	if(reply->type==SWARMKV_REPLY_STRING && 0==strcasecmp(reply->str, "zhangsan"))
+	if(reply->type==SWARMKV_REPLY_STRING && 0==memcmp(reply->str, "zhangsan", reply->len))
 	{
 		arg->success=1;
 	}
@@ -118,7 +118,7 @@ void basic_test_set_callback(const struct swarmkv_reply* reply, void * cb_arg)
 	char buff[1024];
 	swarmkv_reply_print(reply, buff, sizeof(buff));
 	printf("set %s\n", buff);
-	if(reply->type==SWARMKV_REPLY_STATUS && 0==strcasecmp(reply->str, "OK"))
+	if(reply->type==SWARMKV_REPLY_STATUS && 0==memcpy(reply->str, "OK", reply->len))
 	{
 		arg->success=1;
 	}

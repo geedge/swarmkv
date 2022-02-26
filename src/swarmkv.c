@@ -23,7 +23,7 @@
 
 
 int SWARMKV_VERSION_2_0_0_tiger_year=0;
-#define	MODULE_SWAMRKV_CORE	"swarmkv.core"
+#define	MODULE_SWAMRKV_CORE	module_name_str("swarmkv.core")
 
 struct swarmkv_params
 {
@@ -60,6 +60,7 @@ struct swarmkv_transaction
 struct swarmkv
 {
 	char cluster_name[SWARMKV_SYMBOL_MAX];
+	uuid_t bin_uuid;
 	struct swarmkv_params para;
 	int nr_worker_threads;
 	struct swarmkv_node self;
@@ -143,7 +144,7 @@ static void swarmkv_exec(struct swarmkv *db, const struct swarmkv_cmd *cmd, swar
 	struct swarmkv_transaction* txn=swarmkv_transaction_new(db, cmd, cb, cb_arg);
 	sds buff=NULL;
 	struct swarmkv_msg* msg=NULL;
-	msg=swarmkv_msg_new(db->self.bin_uuid, txn->sequence);
+	msg=swarmkv_msg_new(db->bin_uuid, txn->sequence);
 	struct swarmkv_node* dest=NULL;
 	if(!self_is_keyowner)
 	{
@@ -287,7 +288,7 @@ void msg_read_callback(const struct swarmkv_node * peer, const char* data, size_
 					memset(&obj_owner, 0, sizeof(obj_owner));
 					strncpy(obj_owner.ip_addr, reply->element[0]->str, sizeof(obj_owner.ip_addr));
 					obj_owner.p2p_port=reply->element[1]->integer;
-					msg_to_send=swarmkv_msg_new(db->self.bin_uuid, txn->sequence);
+					msg_to_send=swarmkv_msg_new(db->bin_uuid, txn->sequence);
 					swarmkv_msg_add_cmd(msg_to_send, txn->cmd);
 					txn->cmd=NULL;
 					txn->state=STATE_WAIT_OBJ_ONWER;
@@ -349,7 +350,7 @@ struct swarmkv *swarmkv_open(const char * cluster_name, const char* self_ip, uns
 	db->para.p2p_port=p2p_port;
 	swarmkv_create_thread_ctx(db);
 
-	uuid_generate(db->self.bin_uuid);
+	uuid_generate(db->bin_uuid);
 	db->self.p2p_port=p2p_port;
 	strncpy(db->self.ip_addr, self_ip, sizeof(db->self.ip_addr));
 	
@@ -358,7 +359,7 @@ struct swarmkv *swarmkv_open(const char * cluster_name, const char* self_ip, uns
 	swarmkv_net_set_recv_cb(db->net, msg_read_callback, db);
 		
 	struct event_base *evbase=swarmkv_net_get_eventbase(db->net, 0);
-	db->ks=swarmkv_keyspace_new(cluster_name, evbase, http_port, &db->self, logger);
+	db->ks=swarmkv_keyspace_new(cluster_name, db->bin_uuid, evbase, http_port, &db->self, logger);
 	
 	if(db->para.dry_run)
 	{

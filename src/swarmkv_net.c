@@ -22,7 +22,7 @@
 #include <errno.h>
 #include <pthread.h>
 
-#define	MODULE_SWAMRKV_NET	"swarmkv.net"
+#define	MODULE_SWAMRKV_NET	module_name_str("swarmkv.net")
 #define	MSG_HDR_MAGIC	0x5210
 struct swarmkv_msg_hdr
 {
@@ -57,7 +57,8 @@ struct swarmkv_net_thread_ctx
 	int thread_id;
 	struct event_base *evbase;
 	struct swarmkv_connection* conn_table;
-	pthread_rwlock_t rwlock;
+//	pthread_rwlock_t rwlock;
+	pthread_mutex_t mutex;
 	void* ref_logger;
 	struct swarmkv_net* ref_net;
 };
@@ -110,7 +111,7 @@ static void sockaddr2string(struct sockaddr * sa, char* s, size_t len, unsigned 
     }
 	return;
 }
-static void swarmkv_connection_leave_table(struct swarmkv_connection* conn)
+static void swarmkv_net_conn_table_remove(struct swarmkv_connection* conn)
 {
 	struct swarmkv_net_thread_ctx *thr=conn->ref_thr_ctx;
 	assert(conn->is_in_conn_table==1);
@@ -132,10 +133,7 @@ static void swarmkv_connection_free(struct swarmkv_connection* conn)
 		evutil_closesocket(conn->fd);
 		conn->fd=-1;
 	}
-	if(conn->is_in_conn_table)
-	{
-		swarmkv_connection_leave_table(conn);
-	}
+	assert(!conn->is_in_conn_table);
 	free(conn);
 	return;
 }
@@ -151,33 +149,33 @@ static void swarmkv_connection_set_peer(struct swarmkv_connection* conn, struct 
 	return;
 }
 
-static void swarmkv_net_overwrite_conn_table(struct swarmkv_net_thread_ctx* thr, struct swarmkv_connection* conn)
+static void swarmkv_net_conn_table_overwrite(struct swarmkv_net_thread_ctx* thr, struct swarmkv_connection* conn)
 {
 	struct swarmkv_connection* tmp_conn=NULL;
 	assert(conn->is_in_conn_table==0);
-	pthread_rwlock_wrlock(&thr->rwlock);
 	HASH_FIND(hh, thr->conn_table, &(conn->peer), sizeof(struct swarmkv_node), tmp_conn);
 	if(tmp_conn)
 	{
 		MESA_handle_runtime_log(thr->ref_logger, RLOG_LV_FATAL, MODULE_SWAMRKV_NET, 
 			"accept duplicated connection form peer %s:%u, previous connection is %s.",
 							tmp_conn->peer_ip, tmp_conn->peer_port);
-		HASH_DELETE(hh, thr->conn_table, tmp_conn);
+		swarmkv_net_conn_table_remove(tmp_conn);
 		swarmkv_connection_kill(tmp_conn);
 		//The old connection (tmp_conn) will be freed in its peer_conn_read_cb 		
 	}
 	HASH_ADD(hh, thr->conn_table, peer, sizeof(conn->peer), conn);
 	conn->is_in_conn_table=1;
-	pthread_rwlock_unlock(&thr->rwlock);
 
 	return;
 }
+/*
 static void peer_conn_write_cb(struct bufferevent *bev, void *arg)
 {
 	struct swarmkv_connection *conn=(struct swarmkv_connection*)arg;
 	bufferevent_write_buffer(conn->bev, conn->buff_for_sending);
 	return;
 }
+*/
 static void peer_conn_read_cb(struct bufferevent *bev, void *arg)
 {
 	struct swarmkv_connection *conn=(struct swarmkv_connection*)arg;
@@ -186,13 +184,16 @@ static void peer_conn_read_cb(struct bufferevent *bev, void *arg)
     struct evbuffer *input = bufferevent_get_input(bev);
 	assert(bev==conn->bev);
 	
+	
 	if(conn->need_to_be_kill)
 	{
 		MESA_handle_runtime_log(thr->ref_logger, RLOG_LV_FATAL, MODULE_SWAMRKV_NET, "connection %s:%u is killed",
 									conn->peer_ip, conn->peer_port);
-		pthread_rwlock_wrlock(&thr->rwlock);
+		pthread_mutex_lock(&thr->mutex);
+		swarmkv_net_conn_table_remove(conn);
+		pthread_mutex_unlock(&thr->mutex);
+		
 		swarmkv_connection_free(conn);
-		pthread_rwlock_unlock(&thr->rwlock);
 		return;
 	}
 	const char *recv_buff=NULL;
@@ -212,20 +213,24 @@ static void peer_conn_read_cb(struct bufferevent *bev, void *arg)
 		if(hdr->magic!=MSG_HDR_MAGIC)
 		{
 			MESA_handle_runtime_log(thr->ref_logger, RLOG_LV_FATAL, MODULE_SWAMRKV_NET, "invalid message header magic from %s:%u",
-									conn->peer_ip, conn->peer_port);
+									conn->peer_ip, conn->peer_port);									
+			pthread_mutex_lock(&thr->mutex);
+			swarmkv_net_conn_table_remove(conn);
+			pthread_mutex_unlock(&thr->mutex);
+			
 			swarmkv_connection_free(conn);
 			return;
 		}
 		if(!conn->is_in_conn_table)
 		{
 			swarmkv_connection_set_peer(conn, &hdr->source);
-			swarmkv_net_overwrite_conn_table(thr, conn);
-			
-			char uuid_str[MAX_UUID_STR_LEN];
-			uuid_unparse_lower(conn->peer.bin_uuid, uuid_str);
+			pthread_mutex_lock(&thr->mutex);
+			swarmkv_net_conn_table_overwrite(thr, conn);			
+			pthread_mutex_unlock(&thr->mutex);
+
 			MESA_handle_runtime_log(thr->ref_logger, RLOG_LV_INFO, MODULE_SWAMRKV_NET, 
-						"new peer connection from %s:%d (%s) has been set, source address is %s:%u.",
-										conn->peer.ip_addr, conn->peer.p2p_port, uuid_str,
+						"new peer connection from %s:%d has been set, source address is %s:%u.",
+										conn->peer.ip_addr, conn->peer.p2p_port,
 										conn->peer_ip, conn->peer_port);
 		}
 		conn->recv_state=RECEIVING_PAYLOAD;
@@ -243,9 +248,11 @@ static void peer_conn_read_cb(struct bufferevent *bev, void *arg)
 			return;
 		}
 		thr->ref_net->callback_func(&(conn->peer), recv_buff, conn->expect_payload_len, thr->ref_net->callback_arg);
+		evbuffer_drain(input, conn->expect_payload_len);
 		conn->expect_payload_len=0;
 		conn->recv_state=RECEIVING_HDR;
 	}
+	return;
 }
 
 static void peer_conn_event_cb(struct bufferevent *bev, short events, void *arg)
@@ -261,9 +268,10 @@ static void peer_conn_event_cb(struct bufferevent *bev, short events, void *arg)
 								conn->peer_ip, conn->peer_port,
 								err, evutil_socket_error_to_string(err));
 	}
-	pthread_rwlock_wrlock(&thr->rwlock);
+	pthread_mutex_lock(&thr->mutex);
+	swarmkv_net_conn_table_remove(conn);
+	pthread_mutex_unlock(&thr->mutex);
 	swarmkv_connection_free(conn);
-	pthread_rwlock_unlock(&thr->rwlock);
 	return;
 }
 
@@ -276,7 +284,7 @@ void connect_peer_eventcb(struct bufferevent *bev, short events, void *arg)
 	assert(bev==conn->bev);
 	if (events & BEV_EVENT_CONNECTED)
 	{
-		conn->fd=bufferevent_getfd(conn->bev);
+		//conn->fd=bufferevent_getfd(conn->bev);
 		bufferevent_write_buffer(conn->bev, conn->buff_for_sending);
 		bufferevent_setcb(conn->bev, peer_conn_read_cb, NULL, peer_conn_event_cb, conn);
 		bufferevent_enable(conn->bev, EV_READ | EV_WRITE);
@@ -287,9 +295,10 @@ void connect_peer_eventcb(struct bufferevent *bev, short events, void *arg)
 		MESA_handle_runtime_log(thr->ref_logger, RLOG_LV_FATAL, MODULE_SWAMRKV_NET, "connect to %s:%u failed %d (%s).",
 								conn->peer.ip_addr, conn->peer.p2p_port,
 								err, evutil_socket_error_to_string(err));
-		pthread_rwlock_wrlock(&thr->rwlock);
+		pthread_mutex_lock(&thr->mutex);
+		swarmkv_net_conn_table_remove(conn);
+		pthread_mutex_unlock(&thr->mutex);		
 		swarmkv_connection_free(conn);
-		pthread_rwlock_unlock(&thr->rwlock);
     }
 }
 
@@ -362,17 +371,17 @@ struct swarmkv_connection* swarmkv_connection_new_by_fd(struct swarmkv_net_threa
 	return conn;
 }
 
-void swarmkv_connection_send(struct swarmkv_connection* conn, const char* data, size_t len)
+void swarmkv_connection_send(struct swarmkv_connection* conn, struct evbuffer* buff)
 {
 	struct evbuffer* output_buffer=NULL;
 	output_buffer=bufferevent_get_output(conn->bev);
 	if(output_buffer)
 	{
-		evbuffer_add(output_buffer, data, len);
+		evbuffer_add_buffer(output_buffer, buff);
 	}
 	else
 	{
-		evbuffer_add(conn->buff_for_sending, data, len);
+		evbuffer_add_buffer(conn->buff_for_sending, buff);
 	}
 	return;
 }
@@ -390,7 +399,7 @@ int swarmkv_net_send(struct swarmkv_net* net, const struct swarmkv_node* dest, c
 	struct swarmkv_net_thread_ctx* thr=net->threads[thread_id];
 	void* logger=net->logger;
 
-	pthread_rwlock_wrlock(&thr->rwlock);
+	pthread_mutex_lock(&thr->mutex);
 	HASH_FIND(hh, thr->conn_table, dest, sizeof(struct swarmkv_node), conn);
 	if(!conn)
 	{
@@ -398,6 +407,7 @@ int swarmkv_net_send(struct swarmkv_net* net, const struct swarmkv_node* dest, c
 		if(conn)
 		{
 			HASH_ADD(hh, thr->conn_table, peer, sizeof(struct swarmkv_node), conn);
+			conn->is_in_conn_table=1;
 		}
 		else
 		{		
@@ -406,14 +416,18 @@ int swarmkv_net_send(struct swarmkv_net* net, const struct swarmkv_node* dest, c
 									dest->ip_addr, dest->p2p_port,
 									err, evutil_socket_error_to_string(err));
 		}
-	}
+	}	
+	pthread_mutex_unlock(&thr->mutex);
+
+	struct evbuffer* to_send=evbuffer_new();
 	struct swarmkv_msg_hdr msghdr;
 	msghdr.magic=MSG_HDR_MAGIC;
 	msghdr.payload_len=sdslen(data);
 	memcpy(&(msghdr.source), &(net->self), sizeof(msghdr.source));
-	swarmkv_connection_send(conn, (const char*)&msghdr, sizeof(msghdr));
-	swarmkv_connection_send(conn, data, sdslen(data));
-	pthread_rwlock_unlock(&thr->rwlock);
+	evbuffer_add(to_send, (const char*)&msghdr, sizeof(msghdr));
+	evbuffer_add(to_send, data, sdslen(data));
+	swarmkv_connection_send(conn, to_send);
+	evbuffer_free(to_send);
 	return 0;
 }
 static void accept_peer_connection_cb(struct evconnlistener *listener, evutil_socket_t fd, struct sockaddr * addr, int socklen, void *arg)
@@ -425,9 +439,7 @@ static void accept_peer_connection_cb(struct evconnlistener *listener, evutil_so
 	sockaddr2string(addr, peer_ip_str, sizeof(conn->peer_ip), NULL);
 	int thread_id=get_net_thread_id(peer_ip_str, net->n_thread);
 	thr=net->threads[thread_id];
-	pthread_rwlock_wrlock(&thr->rwlock);
 	conn=swarmkv_connection_new_by_fd(thr, fd, addr);
-	pthread_rwlock_unlock(&thr->rwlock);
 
 	MESA_handle_runtime_log(net->logger, RLOG_LV_DEBUG, MODULE_SWAMRKV_NET, "accept connection form peer %s:%u.",
 							conn->peer_ip, conn->peer_port);
@@ -456,7 +468,7 @@ struct swarmkv_net* swarmkv_net_new(const struct swarmkv_node* self, int thread_
 	{	
 		net->threads[i]=ALLOC(struct swarmkv_net_thread_ctx, 1);
 		net->threads[i]->evbase=event_base_new();
-		pthread_rwlock_init(&(net->threads[i]->rwlock), NULL);
+		pthread_mutex_init(&(net->threads[i]->mutex), NULL);
 		net->threads[i]->thread_id=i;
 		net->threads[i]->ref_logger=logger;
 		net->threads[i]->ref_net=net;
@@ -493,14 +505,14 @@ void swarmkv_net_free(struct swarmkv_net* net)
 	{	
 		thr=net->threads[i];
 		event_base_loopexit(thr->evbase, NULL);
-		event_base_free(thr->evbase);		
 		net->threads[i]=NULL;
 		HASH_ITER(hh, thr->conn_table, conn, tmp)
 		{
-			HASH_DELETE(hh, thr->conn_table, conn);
-			// connection is removed from hash table inside swarmkv_connection_free
+			swarmkv_net_conn_table_remove(conn);
 			swarmkv_connection_free(conn);
-		}
+		}		
+		event_base_free(thr->evbase);
+		free(thr);
 	}
 	free(net->threads);
 	evconnlistener_free(net->listener);

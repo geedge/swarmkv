@@ -15,7 +15,7 @@
 
 
 
-#define	MODULE_SWAMRKV_STORE	"swarmkv.store"
+#define	MODULE_SWAMRKV_STORE	module_name_str("swarmkv.store")
 
 
 struct swarmkv_store

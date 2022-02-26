@@ -25,7 +25,8 @@
 #define	LOCAL_HOST	"127.0.0.1"
 
 #define	KEYSPACE_XXHASH_SEED	5210
-#define MODULE_SWARMKV_KEYSPACE		"swarmkv.keyspace"
+
+#define MODULE_SWARMKV_KEYSPACE		module_name_str("swarmkv.keyspace")
 enum slot_state
 {
 	SLOT_STABLE=0,
@@ -74,7 +75,7 @@ struct swarmkv_keyspace
 	pthread_t thr;
 	int readable_tid;
 
-	int node_id;	//Self node ID
+	uuid_t bin_uuid;
 	struct swarmkv_node self;
 	pthread_rwlock_t rwlock;
 	struct key_slot slots[SWARMKV_SLOT_NUM];
@@ -211,7 +212,7 @@ int http_blocking_request(enum evhttp_cmd_type type, const char* host, unsigned 
 	return client->response_code;	
 }
 
-struct swarmkv_keyspace* swarmkv_keyspace_new(const char* cluster_name, struct event_base * evbase, unsigned int http_port, struct swarmkv_node* self, void* logger)
+struct swarmkv_keyspace* swarmkv_keyspace_new(const char* cluster_name, uuid_t bin_uuid, struct event_base * evbase, unsigned int http_port, struct swarmkv_node* self, void* logger)
 {
 	struct swarmkv_keyspace* ks=ALLOC(struct swarmkv_keyspace, 1);
 	ks->health_check_port=http_port;
@@ -220,7 +221,7 @@ struct swarmkv_keyspace* swarmkv_keyspace_new(const char* cluster_name, struct e
 	ks->consul_agent_port=CONSUL_DEFAULT_PORT;
     ks->evbase = evbase;
 	ks->logger = logger;
-	
+	uuid_copy(ks->bin_uuid, bin_uuid);
 	return ks;
 }
 /*
@@ -500,11 +501,11 @@ void __acquire_session_lock_cb(struct evhttp_request *req, void *arg)
 	}
 	consul_watch_leadership_changes_async(ks);
 }
-sds self_print_json(struct swarmkv_node* self)
+sds self_print_json(struct swarmkv_node* self, uuid_t bin_uuid)
 {
 	cJSON* node_info=NULL;
 	char uuid_str[MAX_UUID_STR_LEN];
-	uuid_unparse_lower(self->bin_uuid, uuid_str);
+	uuid_unparse_lower(bin_uuid, uuid_str);
 	node_info=cJSON_CreateObject();
 	
 	cJSON_AddStringToObject(node_info, "ip", self->ip_addr);
@@ -520,7 +521,7 @@ sds self_print_json(struct swarmkv_node* self)
 }
 void consul_acquire_session_lock_async(struct swarmkv_keyspace* ks)
 {
-	sds req_body=self_print_json(&ks->self);
+	sds req_body=self_print_json(&ks->self, ks->bin_uuid);
 
 	char url[SWARMKV_URL_MAX];
 	
@@ -880,7 +881,6 @@ void keyslots_init(struct swarmkv_keyspace* ks)
 		ks->slots[i].slot_id=i;
 		strncpy(ks->slots[i].owner.ip_addr, ks->self.ip_addr, sizeof(ks->slots[i].owner.ip_addr));
 		ks->slots[i].owner.p2p_port=ks->self.p2p_port;
-		uuid_copy(ks->slots[i].owner.bin_uuid, ks->self.bin_uuid);
 	}
 	return;
 }
@@ -911,7 +911,7 @@ static void consul_kv_init_if_nonexist(struct swarmkv_keyspace* ks)
 	resp_code_get=http_blocking_request(EVHTTP_REQ_GET, CONSUL_HOST, ks->consul_agent_port, url, NULL, NULL);
 	if(resp_code_get==404)
 	{
-		self_info=self_print_json(&ks->self);
+		self_info=self_print_json(&ks->self, ks->bin_uuid);
 		resp_code_put=http_blocking_request(EVHTTP_REQ_PUT, CONSUL_HOST, ks->consul_agent_port, url, self_info, NULL);	
 		sdsfree(self_info);
 		if(resp_code_put==200)
