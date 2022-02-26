@@ -10,6 +10,7 @@ struct cmd_exec_arg
 {
 	pthread_cond_t cond;
 	pthread_mutex_t mutex;
+	int is_callback_executed;
 	int success;
 };
 struct cmd_exec_arg* cmd_exec_arg_new()
@@ -26,6 +27,13 @@ void cmd_exec_arg_free(struct cmd_exec_arg* arg)
 
 	free(arg);
 }
+void cmd_exec_arg_clear(struct cmd_exec_arg* arg)
+{
+	arg->success=0;
+	arg->is_callback_executed=0;
+	return;
+}
+
 void error_pthread_cond_timedwait(const int timed_wait_rv)
 {
     fprintf(stderr, "Conditional timed wait, failed.\n");
@@ -49,11 +57,12 @@ int cmd_exec_arg_wait(struct cmd_exec_arg* arg, long timeout_ms)
 {
 	struct timespec max_wait = {0, 0};
 	clock_gettime(CLOCK_REALTIME, &max_wait);
-	max_wait.tv_nsec+=timeout_ms*1000*1000;	
+	max_wait.tv_sec+=timeout_ms/1000;
+	max_wait.tv_nsec+=(timeout_ms%1000)*1000*1000;	
 	int timed_wait_rv=0;
-	if(arg->success)
+	if(arg->is_callback_executed)
 	{
-		return 0;
+		return arg->success;
 	}
 	pthread_mutex_lock(&arg->mutex);
 	timed_wait_rv=pthread_cond_timedwait(&arg->cond, &arg->mutex, &max_wait);
@@ -65,11 +74,20 @@ int cmd_exec_arg_wait(struct cmd_exec_arg* arg, long timeout_ms)
 	}
 	else
 	{
-		return 0;
+		return arg->success;;
 	}
 }
-void cmd_exec_arg_signal(struct cmd_exec_arg* arg)
+
+void cmd_exec_arg_success(struct cmd_exec_arg* arg)
 {
+	arg->is_callback_executed=1;
+	arg->success=1;
+	pthread_cond_signal(&arg->cond);
+}
+void cmd_exec_arg_failed(struct cmd_exec_arg* arg)
+{
+	arg->is_callback_executed=1;
+	arg->success=0;
 	pthread_cond_signal(&arg->cond);
 }
 
@@ -107,9 +125,12 @@ void basic_test_get_callback(const struct swarmkv_reply* reply, void * cb_arg)
 	printf("get %s\n", buff);
 	if(reply->type==SWARMKV_REPLY_STRING && 0==memcmp(reply->str, "zhangsan", reply->len))
 	{
-		arg->success=1;
+		cmd_exec_arg_success(arg);
 	}
-	cmd_exec_arg_signal(arg);
+	else
+	{
+		cmd_exec_arg_failed(arg);
+	}
 	return;
 }
 void basic_test_set_callback(const struct swarmkv_reply* reply, void * cb_arg)
@@ -118,11 +139,14 @@ void basic_test_set_callback(const struct swarmkv_reply* reply, void * cb_arg)
 	char buff[1024];
 	swarmkv_reply_print(reply, buff, sizeof(buff));
 	printf("set %s\n", buff);
-	if(reply->type==SWARMKV_REPLY_STATUS && 0==memcpy(reply->str, "OK", reply->len))
+	if(reply->type==SWARMKV_REPLY_STATUS && 0==memcmp(reply->str, "OK", reply->len))
 	{
-		arg->success=1;
+		cmd_exec_arg_success(arg);
 	}
-	cmd_exec_arg_signal(arg);
+	else
+	{
+		cmd_exec_arg_failed(arg);
+	}
 	return;
 }
 
@@ -159,20 +183,21 @@ TEST_F(SwarmkvTwoNodes, SimpleSetGet)
 	struct swarmkv* db2=SwarmkvTwoNodes::db2;
 	const char* key="name";
 	const char* val="zhangsan";
-	int is_timeout=0;
+	int exec_successful=0;
 
 	arg=cmd_exec_arg_new();
 	swarmkv_set_string(db1, key, strlen(key), val, strlen(val), basic_test_set_callback, arg);
-	is_timeout=cmd_exec_arg_wait(arg, 100);//100ms
-	EXPECT_EQ(is_timeout, 0);
-	EXPECT_EQ(arg->success, 1);
-	arg->success=0;
+	exec_successful=cmd_exec_arg_wait(arg, 100);//100ms
+	EXPECT_EQ(exec_successful, 1);
+	cmd_exec_arg_clear(arg);
 	swarmkv_get_string(db2, key, strlen(key), basic_test_get_callback, arg);
 	cmd_exec_arg_wait(arg, 100);//100ms
-	EXPECT_EQ(is_timeout, 0);
-	EXPECT_EQ(arg->success, 1);
+	EXPECT_EQ(exec_successful, 1);
 	cmd_exec_arg_free(arg);
 	arg=NULL;
+}
+TEST_F(SwarmkvTwoNodes, Wait)
+{
 	sleep(1800);
 }
 
@@ -205,18 +230,16 @@ TEST_F(SwarmkvBasicTest, SimpleSetGet)
 	struct swarmkv* db=SwarmkvBasicTest::db;
 	const char* key="name";
 	const char* val="zhangsan";
-	int is_timeout=0;
+	int exec_successful=0;
 
 	arg=cmd_exec_arg_new();
 	swarmkv_set_string(db, key, strlen(key), val, strlen(val), basic_test_set_callback, arg);
-	is_timeout=cmd_exec_arg_wait(arg, 100);//100ms
-	EXPECT_EQ(is_timeout, 0);
-	EXPECT_EQ(arg->success, 1);
-	arg->success=0;
+	exec_successful=cmd_exec_arg_wait(arg, 100);//100ms
+	EXPECT_EQ(exec_successful, 1);
+	cmd_exec_arg_clear(arg);
 	swarmkv_get_string(db, key, strlen(key), basic_test_get_callback, arg);
 	cmd_exec_arg_wait(arg, 100);//100ms
-	EXPECT_EQ(is_timeout, 0);
-	EXPECT_EQ(arg->success, 1);
+	EXPECT_EQ(exec_successful, 1);
 	cmd_exec_arg_free(arg);
 	arg=NULL;
 }
