@@ -107,11 +107,11 @@ struct swarmkv_reply* deserialize_reply(mpack_node_t reply_node)
 		case SWARMKV_REPLY_ARRAY:
 			array_node=mpack_node_map_cstr(reply_node, "element");
 			reply->n_element=mpack_node_array_length(array_node);
-			reply->element=ALLOC(struct swarmkv_reply*, reply->n_element);
+			reply->elements=ALLOC(struct swarmkv_reply*, reply->n_element);
 			for(i=0; i<reply->n_element; i++)
 			{
 				item=mpack_node_array_at(array_node, i);
-				reply->element[i]=deserialize_reply(item);
+				reply->elements[i]=deserialize_reply(item);
 			}
 			break;
 		default:
@@ -142,9 +142,10 @@ struct swarmkv_msg* swarmkv_msg_deserialize(const char* data, size_t len)
 		msg->cmd=ALLOC(struct swarmkv_cmd, 1);
 		cmd_node=mpack_node_map_cstr(root, "cmd");
 		item=mpack_node_map_cstr(cmd_node, "op");
-		msg->cmd->op=mpack_node_int(item);
+//		msg->cmd->op=mpack_node_int(item);
 		args_node=mpack_node_map_cstr(cmd_node, "args");
-		msg->cmd->n_args=mpack_node_array_length(args_node);
+//		msg->cmd->n_args=mpack_node_array_length(args_node);
+		msg->cmd=swarmkv_cmd_new(mpack_node_int(item), mpack_node_array_length(args_node));
 		for(i=0; i<msg->cmd->n_args; i++)
 		{
 			item=mpack_node_array_at(args_node, i);
@@ -195,7 +196,7 @@ sds serialize_reply(const struct swarmkv_reply* reply)
 			mpack_build_array(&reply_mpack);
 			for(i=0; i<reply->n_element; i++)
 			{
-				element=serialize_reply(reply->element[i]);
+				element=serialize_reply(reply->elements[i]);
 				mpack_write_object_bytes(&reply_mpack, element, sdslen(element));
 				sdsfree(element);
 			}

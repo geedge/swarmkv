@@ -22,11 +22,12 @@ Following are terminologies used in Swarm KV.
 
 Vocabularies
 
-| Name | Explaination                                                 |
-| ---- | ------------------------------------------------------------ |
-| KV   | Key-value pair                                               |
-| Node | Instances in a Swarm KV cluster. A swarmkv node is identified with its IP, P2P port and UUID. |
-| Slot | KVs are partitioned in different slots, and keys of one table are scattered in many slots.  Each slot is maintained by one node. |
+| Name        | Explaination                                                 |
+| ----------- | ------------------------------------------------------------ |
+| KV          | Key-value pair                                               |
+| Node        | Instances in a Swarm KV cluster. A swarmkv node is identified with its IP, P2P port and UUID. |
+| Slot        | KVs are partitioned in different slots, and keys of one table are scattered in many slots.  Each slot is maintained by one node. |
+| Transaction | A command and its reply.                                     |
 
 SwarmKV Data Types
 
@@ -40,14 +41,13 @@ SwarmKV operations
 - Get, Set, Delete
 - TTL
 
-| Command Operator  | Command Args | Response                                 |
-| ----------------- | ------------ | ---------------------------------------- |
-| GET               | Key          |                                          |
-| SET               |              |                                          |
-| HGET              |              |                                          |
-| CLUSTER OBJ_OWNER | Key          | 1) "192.168.1.200"<br/>2) (integer) 5211 |
-
-
+| Command Operator  | Command Args           | Response                                                     |
+| ----------------- | ---------------------- | ------------------------------------------------------------ |
+| GET               | Key                    |                                                              |
+| SET               | key value              |                                                              |
+| HGET              |                        |                                                              |
+| CLUSTER OBJ_OWNER | key                    | 1) "192.168.1.200"<br/>2) (integer) 5211                     |
+| SYNC              | key_version origin_cmd | status reply, "OK" or "out of sync". The "out of sync" reply triggers a new sync cmd which wraps a set cmd. |
 
 
 
@@ -176,9 +176,13 @@ When a master node A fails, if slots owned by A has a replica which is node B, t
 
 ,  in which,  N is slot id, Y contains a 32-bit node ID, UUID format version, IP and port. 
 
-## KV Operation
+## Cache Model
 
 The swarmkv's cache model is inspired by [Redis server-assisted client side caching](https://redis.io/topics/client-side-caching). The object owner remembers what keys a given peer accessed, and sends update messages when the same keys are modified.  
+
+
+
+## KV Operation
 
 When a requester executes a command, it takes the following steps
 
@@ -211,12 +215,12 @@ If a node is failed, peers will detect it by not replying ping message
 
 Messages between nodes is start with a fixed length header and a variable length payload. The payload is serialized with [MessagePack](https://msgpack.org/index.html) format.  For readability, we use JSON to describe the request and response here.
 
-Request payload
+Command message
 
 ```json
 {
     "msg_type":"cmd",
-    "need_reply": true,
+    "do_not_reply": false,
     "txn_seq": 7237914459,
     "txn_initiator": "ebe5a57c-cb33-4b2f-968f-44c4b87ea8d9",
     "cmd":{
@@ -227,12 +231,11 @@ Request payload
             "address",
             "avatar"
         ]
-    },
-    "do_not_reply":0
+    }
 }
 ```
 
-Response payload
+Reply message
 
 ```json
 {
@@ -255,6 +258,25 @@ Response payload
                 "string":"0c 74 65 78 74 20 20 20 20 43 6f 70 79 72 69 67 68 74 20 28 63 29 20 31 39 39 38 20 48 65 77 6c 65 74 74 2d 50 61 63 6b 61 72 64 20 43 6f 6d 70 61 6e 79 20 20 64 65 73 63 20 20 20 20 20 20 20 12 73 52 47 42 20 49 45 43 36 31 39 36 36 2d 32 2e 31 20 20 20 20 20 20 20 20 20 20 20 12 73 52 47 42 20 49 45 43 36 31 39 36 36 2d 32 2e 31 20 20 00"
             }
         ]
+    }
+}
+```
+
+Cache synchronization message
+
+```json
+{
+	"msg_type":"sync",
+	"txn_seq": 7237914460,
+    "txn_initiator": "ebe5a57c-cb33-4b2f-968f-44c4b87ea8d9",
+    "object_version":101,
+    "cmd":{
+        "op":"HMSET",
+        "args":[
+            "user1",
+            "phone_number",
+            "+86 186 0000 0000"
+        ]       
     }
 }
 ```

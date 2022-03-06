@@ -33,7 +33,7 @@ struct swarmkv_reply
 	int len; /* Length of string */
 	char *str; /* Used for both SWARMKV_REPLY_ERROR and SWARMKV_REPLY_STRING */
 	size_t n_element;	 /* number of elements, for SWARMKV_REPLY_ARRAY */
-	struct swarmkv_reply **element;/* elements vector for SWARMKV_REPLY_ARRAY */
+	struct swarmkv_reply **elements;/* elements vector for SWARMKV_REPLY_ARRAY */
 };
 void swarmkv_reply_free(struct swarmkv_reply *reply);
 

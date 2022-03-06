@@ -1,5 +1,8 @@
 #pragma once
 #include <sys/time.h>
+#ifdef __cplusplus
+extern "C"{
+#endif
 
 enum e_future_error
 {
@@ -39,4 +42,8 @@ void * promise_get_ctx(struct promise * p);
 void * promise_dettach_ctx(struct promise * p);
 //return 1 on a meaningful timeout, or 0 on no timeout.
 int promise_get_timeout(struct promise * p, struct timeval * timeout);
+
+#ifdef __cplusplus 
+}//end extern "C"
+#endif
 

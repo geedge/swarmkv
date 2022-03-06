@@ -26,6 +26,7 @@ enum swarmkv_operator
 	SWARMKV_OP_THROTTLESET,	//THROTTLESET .. throttle
 	SWARMKV_OP_EXPIRE,	//EXPIRE key seconds
 	SWARMKV_OP_CLUSTER_OBJ_OWNER,	//CLUSTER OBJ_OWNER key [NX]
+	SWARMKV_OP_CLUSTER_SYNC,		//CLUSTER SYNC object_version $POPULATE_COMMAND
 	__SWARMKV_CMD_MAX
 };
 
@@ -33,8 +34,14 @@ struct swarmkv_cmd
 {
 	enum swarmkv_operator op;
 	size_t n_args;
-	sds args[MAX_CMD_ARGS];
+	sds *args;
 };
+void swarmkv_common_global_init(void);
+void swarmkv_common_global_deinit(void);
+
+const char* swarmkv_cmd_op2str(enum swarmkv_operator op);
+enum swarmkv_operator swarmkv_cmd_str2op(const char* opstr);
+
 
 struct swarmkv_cmd* swarmkv_cmd_new(enum swarmkv_operator op, size_t n_args);
 void swarmkv_cmd_free(struct swarmkv_cmd* p);
