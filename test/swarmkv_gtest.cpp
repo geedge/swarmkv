@@ -136,10 +136,33 @@ void basic_test_get_callback(const struct swarmkv_reply* reply, void * cb_arg)
 void basic_test_set_callback(const struct swarmkv_reply* reply, void * cb_arg)
 {
 	struct cmd_exec_arg* arg=(struct cmd_exec_arg*)cb_arg;
-	char buff[1024];
-	swarmkv_reply_print(reply, buff, sizeof(buff));
-	printf("set %s\n", buff);
 	if(reply->type==SWARMKV_REPLY_STATUS && 0==memcmp(reply->str, "OK", reply->len))
+	{
+		cmd_exec_arg_success(arg);
+	}
+	else
+	{
+		cmd_exec_arg_failed(arg);
+	}
+	return;
+}
+void basic_test_del_callback(const struct swarmkv_reply* reply, void * cb_arg)
+{
+	struct cmd_exec_arg* arg=(struct cmd_exec_arg*)cb_arg;
+	if(reply->type==SWARMKV_REPLY_STATUS && 0==memcmp(reply->str, "OK", reply->len))
+	{
+		cmd_exec_arg_success(arg);
+	}
+	else
+	{
+		cmd_exec_arg_failed(arg);
+	}
+	return;
+}
+void expect_get_null_callback(const struct swarmkv_reply* reply, void * cb_arg)
+{
+	struct cmd_exec_arg* arg=(struct cmd_exec_arg*)cb_arg;
+	if(reply->type==SWARMKV_REPLY_INTEGER && reply->integer==1)
 	{
 		cmd_exec_arg_success(arg);
 	}
@@ -181,7 +204,7 @@ TEST_F(SwarmkvTwoNodes, SimpleSetGet)
 	struct cmd_exec_arg *arg=NULL;
 	struct swarmkv* db1=SwarmkvTwoNodes::db1;
 	struct swarmkv* db2=SwarmkvTwoNodes::db2;
-	const char* key="name";
+	const char* key="id001";
 	const char* val="zhangsan";
 	int exec_successful=0;
 
@@ -196,6 +219,34 @@ TEST_F(SwarmkvTwoNodes, SimpleSetGet)
 	cmd_exec_arg_free(arg);
 	arg=NULL;
 }
+TEST_F(SwarmkvTwoNodes, Delete)
+{
+	struct cmd_exec_arg *arg=NULL;
+	struct swarmkv* db1=SwarmkvTwoNodes::db1;
+	struct swarmkv* db2=SwarmkvTwoNodes::db2;
+	const char* key="id002";
+	const char* val="lisi";	
+	int exec_successful=0;
+
+	arg=cmd_exec_arg_new();
+	swarmkv_set_string(db1, key, strlen(key), val, strlen(val), basic_test_set_callback, arg);
+	exec_successful=cmd_exec_arg_wait(arg, 100);//100ms
+	EXPECT_EQ(exec_successful, 1);
+	cmd_exec_arg_clear(arg);
+	
+	swarmkv_del(db2, key, strlen(key), basic_test_del_callback, arg);
+	exec_successful=cmd_exec_arg_wait(arg, 100);//100ms
+	EXPECT_EQ(exec_successful, 1);
+	cmd_exec_arg_clear(arg);
+
+	swarmkv_get_string(db2, key, strlen(key), expect_get_null_callback, arg);
+	exec_successful=cmd_exec_arg_wait(arg, 100);//100ms
+	EXPECT_EQ(exec_successful, 1);
+	cmd_exec_arg_free(arg);
+	arg=NULL;
+
+}
+
 TEST_F(SwarmkvTwoNodes, Wait)
 {
 	sleep(1800);

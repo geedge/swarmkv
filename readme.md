@@ -43,8 +43,9 @@ SwarmKV operations
 
 | Command Operator  | Command Args           | Response                                                     |
 | ----------------- | ---------------------- | ------------------------------------------------------------ |
-| GET               | Key                    |                                                              |
+| GET               | key                    |                                                              |
 | SET               | key value              |                                                              |
+| DEL               | key                    |                                                              |
 | HGET              |                        |                                                              |
 | CLUSTER OBJ_OWNER | key                    | 1) "192.168.1.200"<br/>2) (integer) 5211                     |
 | SYNC              | key_version origin_cmd | status reply, "OK" or "out of sync". The "out of sync" reply triggers a new sync cmd which wraps a set cmd. |

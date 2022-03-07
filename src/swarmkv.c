@@ -667,7 +667,12 @@ int swarmkv_hset_string(struct      swarmkv_store *store,
 	return 0;
 }				
 void swarmkv_del(struct swarmkv * db, const char * key, size_t keylen, swarmkv_cmd_callback_func_t *cb, void *cb_arg)
-{
+{	
+	struct swarmkv_cmd *cmd=NULL;
+	cmd=swarmkv_cmd_new(SWARMKV_OP_DEL, 1);	
+	cmd->args[0]=sdsnewlen(key, keylen);
+	swarmkv_exec(db, cmd, cb, cb_arg);
+	swarmkv_cmd_free(cmd);
 	return;
 }
 
