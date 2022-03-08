@@ -351,7 +351,7 @@ int swarmkv_store_exec(struct swarmkv_store *store, const struct swarmkv_cmd *cm
 			{
 				r->type=SWARMKV_REPLY_STRING;
 				r->len=sdslen(ctr->obj.value);
-				r->str=ALLOC(char,r->len);
+				r->str=ALLOC(char, r->len);
 				memcpy(r->str, ctr->obj.value, r->len);
 			}
 			else

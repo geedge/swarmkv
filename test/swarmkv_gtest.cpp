@@ -4,6 +4,7 @@
 #include <string.h>
 #include <pthread.h>
 #include <asm/errno.h>
+#include <sys/syscall.h>
 
 
 struct cmd_exec_arg
@@ -12,12 +13,16 @@ struct cmd_exec_arg
 	pthread_mutex_t mutex;
 	int is_callback_executed;
 	int success;
+	int api_invoking_tid;
+	int callback_invoking_tid;
+	int is_sync_callback;
 };
 struct cmd_exec_arg* cmd_exec_arg_new()
 {
 	struct cmd_exec_arg* arg=(struct cmd_exec_arg*)calloc(sizeof(struct cmd_exec_arg), 1);
 	pthread_cond_init(&arg->cond, NULL);
 	pthread_mutex_init(&arg->mutex, NULL);
+	arg->api_invoking_tid = syscall(SYS_gettid);
 	return arg;
 }
 void cmd_exec_arg_free(struct cmd_exec_arg* arg)
@@ -31,6 +36,9 @@ void cmd_exec_arg_clear(struct cmd_exec_arg* arg)
 {
 	arg->success=0;
 	arg->is_callback_executed=0;
+	arg->api_invoking_tid = syscall(SYS_gettid);
+	arg->callback_invoking_tid=0;
+	arg->is_sync_callback=0;
 	return;
 }
 
@@ -82,6 +90,11 @@ void cmd_exec_arg_success(struct cmd_exec_arg* arg)
 {
 	arg->is_callback_executed=1;
 	arg->success=1;
+	arg->callback_invoking_tid = syscall(SYS_gettid);
+	if(arg->callback_invoking_tid==arg->api_invoking_tid)
+	{
+		arg->is_sync_callback=1;
+	}
 	pthread_cond_signal(&arg->cond);
 }
 void cmd_exec_arg_failed(struct cmd_exec_arg* arg)
@@ -89,6 +102,11 @@ void cmd_exec_arg_failed(struct cmd_exec_arg* arg)
 	arg->is_callback_executed=1;
 	arg->success=0;
 	pthread_cond_signal(&arg->cond);
+	if(arg->callback_invoking_tid==arg->api_invoking_tid)
+	{
+		arg->is_sync_callback=1;
+	}
+
 }
 
 size_t swarmkv_reply_print(const struct swarmkv_reply* reply, char* buff, size_t buff_sz)
@@ -244,6 +262,79 @@ TEST_F(SwarmkvTwoNodes, Delete)
 	EXPECT_EQ(exec_successful, 1);
 	cmd_exec_arg_free(arg);
 	arg=NULL;
+
+}
+void sync_cache_get_callback1(const struct swarmkv_reply* reply, void * cb_arg)
+{
+	struct cmd_exec_arg* arg=(struct cmd_exec_arg*)cb_arg;
+	char buff[1024];
+	swarmkv_reply_print(reply, buff, sizeof(buff));
+	printf("get %s\n", buff);
+	if(reply->type==SWARMKV_REPLY_STRING && 0==memcmp(reply->str, "lisi", reply->len))
+	{
+		cmd_exec_arg_success(arg);
+	}
+	else
+	{
+		cmd_exec_arg_failed(arg);
+	}
+	return;
+}
+void sync_cache_get_callback2(const struct swarmkv_reply* reply, void * cb_arg)
+{
+	struct cmd_exec_arg* arg=(struct cmd_exec_arg*)cb_arg;
+	char buff[1024];
+	swarmkv_reply_print(reply, buff, sizeof(buff));
+	printf("get %s\n", buff);
+	if(reply->type==SWARMKV_REPLY_STRING && 0==memcmp(reply->str, "wang2mazi", reply->len))
+	{
+		cmd_exec_arg_success(arg);
+	}
+	else
+	{
+		cmd_exec_arg_failed(arg);
+	}
+	return;
+}
+
+TEST_F(SwarmkvTwoNodes, SyncCache)
+{
+	struct cmd_exec_arg *arg=NULL;
+	struct swarmkv* db1=SwarmkvTwoNodes::db1;
+	struct swarmkv* db2=SwarmkvTwoNodes::db2;
+	const char* key="id003";
+	int exec_successful=0;
+
+
+	//db1: set id003 lisi	
+	const char* val1="lisi";
+	arg=cmd_exec_arg_new();
+	swarmkv_set_string(db1, key, strlen(key), val1, strlen(val1), basic_test_set_callback, arg);
+	exec_successful=cmd_exec_arg_wait(arg, 100);//100ms
+	EXPECT_EQ(exec_successful, 1);
+	cmd_exec_arg_clear(arg);
+
+	//db2: get id003
+	swarmkv_get_string(db2, key, strlen(key), sync_cache_get_callback1, arg);
+	exec_successful=cmd_exec_arg_wait(arg, 100);//100ms
+	EXPECT_EQ(exec_successful, 1);
+	EXPECT_EQ(arg->is_sync_callback, 0);
+	cmd_exec_arg_clear(arg);
+
+	//db1: set id003 wang2mazi	
+	const char* val2="wang2mazi";
+	swarmkv_set_string(db1, key, strlen(key), val2, strlen(val2), basic_test_set_callback, arg);
+	exec_successful=cmd_exec_arg_wait(arg, 100);//100ms
+	EXPECT_EQ(exec_successful, 1);
+	cmd_exec_arg_clear(arg);
+
+	//db2: get id003
+	arg=cmd_exec_arg_new();
+	swarmkv_get_string(db1, key, strlen(key), sync_cache_get_callback2, arg);
+	exec_successful=cmd_exec_arg_wait(arg, 100);//100ms
+	EXPECT_EQ(exec_successful, 1);
+	EXPECT_EQ(arg->is_sync_callback, 1);
+	cmd_exec_arg_clear(arg);
 
 }
 
