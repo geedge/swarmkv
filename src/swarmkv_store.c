@@ -359,7 +359,6 @@ int swarmkv_store_exec(struct swarmkv_store *store, const struct swarmkv_cmd *cm
 				swarmkv_reply_set_nil(r);
 			}
 			n_reply=1;
-			*reply=r;
 			break;
 		case SWARMKV_OP_SET:
 			assert(cmd->n_args==2);
@@ -380,7 +379,6 @@ int swarmkv_store_exec(struct swarmkv_store *store, const struct swarmkv_cmd *cm
 			//write operation triggers cache sync message. 
 			obj_container_get_accessed_nodes(ctr, accessed_nodes, n_accessed_node);
 			*sync_cmd=sync_cmd_new(ctr->version, cmd);
-			*reply=r;
 			break;
 		case SWARMKV_OP_DEL:
 			if(ctr)
@@ -397,6 +395,7 @@ int swarmkv_store_exec(struct swarmkv_store *store, const struct swarmkv_cmd *cm
 			{
 				swarmkv_reply_set_integer(r, 0);
 			}
+			
 			break;
 		default:
 			free(r);
@@ -404,6 +403,7 @@ int swarmkv_store_exec(struct swarmkv_store *store, const struct swarmkv_cmd *cm
 			assert(0);
 			break;
 	}
+	*reply=r;
 	//Record accessing node
 	if(ctr && accessing_node)
 	{

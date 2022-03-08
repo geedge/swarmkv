@@ -149,7 +149,7 @@ void basic_test_set_callback(const struct swarmkv_reply* reply, void * cb_arg)
 void basic_test_del_callback(const struct swarmkv_reply* reply, void * cb_arg)
 {
 	struct cmd_exec_arg* arg=(struct cmd_exec_arg*)cb_arg;
-	if(reply->type==SWARMKV_REPLY_STATUS && 0==memcmp(reply->str, "OK", reply->len))
+	if(reply->type==SWARMKV_REPLY_INTEGER && reply->integer==1)
 	{
 		cmd_exec_arg_success(arg);
 	}
@@ -162,7 +162,7 @@ void basic_test_del_callback(const struct swarmkv_reply* reply, void * cb_arg)
 void expect_get_null_callback(const struct swarmkv_reply* reply, void * cb_arg)
 {
 	struct cmd_exec_arg* arg=(struct cmd_exec_arg*)cb_arg;
-	if(reply->type==SWARMKV_REPLY_INTEGER && reply->integer==1)
+	if(reply->type==SWARMKV_REPLY_NIL)
 	{
 		cmd_exec_arg_success(arg);
 	}
