@@ -1,6 +1,6 @@
 #pragma once
 #include "swarmkv_common.h"
-
+#include "swarmkv/swarmkv.h"
 #include <event2/event.h>
 #include <event2/listener.h>
 #include <event2/bufferevent.h>
@@ -40,12 +40,18 @@ int swarmkv_keyspace_periodic(struct swarmkv_keyspace* keyspace, int msec_since_
 int swarmkv_keyspace_set_consul_port(struct swarmkv_keyspace* ks, unsigned int consul_port);
 int swarmkv_keyspace_set_dryrun(struct swarmkv_keyspace* ks);
 int swarmkv_keyspace_set_selfip(struct swarmkv_keyspace* ks, const char* ip);
+int swarmkv_keyspace_is_myself(struct swarmkv_keyspace* ks, const struct swarmkv_node *node);
 
-int swarmkv_keyspace_get_key_owner(struct swarmkv_keyspace* ks, const char *key, size_t keylen, struct swarmkv_node* owner);
-
-int swarmkv_keyspace_get_obj_owner(struct swarmkv_keyspace *ks, const char *key, size_t keylen, struct swarmkv_node *owner);
-void swarmkv_keyspace_set_obj_owner(struct swarmkv_keyspace* ks, const char *key, size_t keylen, const struct swarmkv_node* owner);
-void swarmkv_keyspace_del_obj_owner(struct swarmkv_keyspace* ks, const char *key, size_t keylen);
-int swarmkv_keyspace_set_obj_owner_if_NoneXist(struct swarmkv_keyspace* ks, const char *key, size_t keylen, const struct swarmkv_node* in, struct swarmkv_node* out);
+int swarmkv_keyspace_get_key_owner(struct swarmkv_keyspace* ks, sds key, struct swarmkv_node *owner);
+struct swarmkv_cmd *swarmkv_keyspace_cmd_new(enum swarmkv_operator store_op, const sds key, const struct swarmkv_node *in);
+enum key_route_result
+{
+	__INVALID,
+	NOT_FOUND,
+	FOUND,
+	ASK
+};	
+enum key_route_result swarmkv_keyspace_reply2node(enum swarmkv_operator keyspace_op, const struct swarmkv_reply *reply, struct swarmkv_node *out);
+void swarmkv_keyspace_exec(struct swarmkv_keyspace* ks, const struct swarmkv_cmd *cmd, struct swarmkv_reply **out);
 
 

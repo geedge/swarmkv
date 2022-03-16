@@ -11,10 +11,11 @@ struct swarmkv_msg
 	uuid_t txn_initiator_uuid;
 	unsigned long long txn_seq;
 	int do_not_reply;//only used in cmd msg
+	int do_not_free;
 	union
 	{
-		struct swarmkv_cmd* cmd;
-		struct swarmkv_reply* reply;
+		struct swarmkv_cmd *cmd;
+		struct swarmkv_reply *reply;
 	};
 };
 
@@ -25,10 +26,11 @@ struct swarmkv_msg* swarmkv_msg_new(uuid_t initiator_uuid, unsigned long long tx
 	uuid_copy(msg->txn_initiator_uuid, initiator_uuid);
 	return msg;
 }
-void swarmkv_msg_add_cmd(struct swarmkv_msg* msg, struct swarmkv_cmd* cmd)
+void swarmkv_msg_add0_cmd(struct swarmkv_msg* msg, const struct swarmkv_cmd* cmd)
 {
+	msg->do_not_free=1;
 	msg->type=SWARMKV_MSG_TYPE_CMD;
-	msg->cmd=cmd;
+	msg->cmd=(struct swarmkv_cmd*) cmd;
 }
 void swarmkv_msg_add_reply(struct swarmkv_msg* msg, struct swarmkv_reply* reply)
 {
@@ -40,7 +42,7 @@ void swarmkv_msg_free(struct swarmkv_msg* msg)
 {
 	if(msg->type==SWARMKV_MSG_TYPE_CMD)
 	{
-		if(msg->cmd) swarmkv_cmd_free(msg->cmd);
+		if(msg->cmd && !msg->do_not_free) swarmkv_cmd_free(msg->cmd);
 		msg->cmd=NULL;
 	}
 	else

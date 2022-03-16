@@ -41,14 +41,17 @@ SwarmKV operations
 - Get, Set, Delete
 - TTL
 
-| Command Operator  | Command Args           | Response                                                     |
-| ----------------- | ---------------------- | ------------------------------------------------------------ |
-| GET               | key                    |                                                              |
-| SET               | key value              |                                                              |
-| DEL               | key                    |                                                              |
-| HGET              |                        |                                                              |
-| CLUSTER OBJ_OWNER | key                    | 1) "192.168.1.200"<br/>2) (integer) 5211                     |
-| SYNC              | key_version origin_cmd | status reply, "OK" or "out of sync". The "out of sync" reply triggers a new sync cmd which wraps a set cmd. |
+| Command Operator    | Command Args                                                 | Response                                                     |
+| ------------------- | ------------------------------------------------------------ | ------------------------------------------------------------ |
+| GET                 | key                                                          |                                                              |
+| SET                 | key value                                                    |                                                              |
+| DEL                 | key                                                          |                                                              |
+| HGET                |                                                              |                                                              |
+| CLUSTER OBJ_OWNER   | key                                                          | 1) "192.168.1.200"<br/>2) (integer) 5211                     |
+| CLUSTER SETSLOT     | slot IMPORTING node-id<br/>slot MIGRATING node-id<br/>slot NODE node-id<br/>slot STABLE |                                                              |
+| MIGRATESLOT         | slot                                                         | 1) key1<br/>2) "192.168.1.200"<br/>3) (integer) 5211<br/>4) key2<br/>5) "192.168.1.200"<br/>6) (integer) 5211<br/>... ... |
+| CLUSTER MIGRATESLOT | slot source_node dest_nodes                                  | status reply,                                                |
+| SYNC                | key_version origin_cmd                                       | status reply, "OK" or "out of sync". The "out of sync" reply triggers a new sync cmd which wraps a set cmd. |
 
 
 
@@ -152,24 +155,29 @@ Except for node in dry run mode, cluster nodes will watch leadership changes and
 
 ### Keyspace reorganization
 
-The keyspace is sharding to slots and each slot is owned by one node. This information is recorded in the global shared slot table, which is maintained by the cluster leader.
+The keyspace is sharding to slots and each slot is owned by one node. This information is recorded in the global shared slot table. If any node's health check failed, the cluster leader will set its replica to own the slots.
 
-When adding a new node, the operation is **Move slot N from node A to node B**,  it has the following steps:
+You can use `CLUSTER ADDNODE`The swarmkv-cli is used for adding nodes.
 
-- Cluster leader sends move command to node B
-- Node B sends MIGRATE command to node A and sets local slot N to IMPORTING
-- Node A sets local slot N to MIGRATING and sends key owner mapping to node B. During which:
+When adding a new node, the operation is **Move slot k from `source node`  to `destination node`**,  it has the following steps:
+
+- Cluster leader sends `MOVESLOT k source_node destination_node` to the destination node
+- The destination node sets its slot k to IMPORTING
+- The destination node sends the command `SETSLOT k MIGRATING destination_node` to the source node
+- The source node sets slot k to MIGRATING and replies OK
   - When a slot is set as MIGRATING, the node will accept all queries that are about this hash slot, but only if the key in question exists, otherwise the query is forwarded using a -ASK redirection to the node that is target of the migration.
   - When a slot is set as IMPORTING, the node will accept all queries that are about this hash slot, but only if the request is preceded by an ASKING command. If the ASKING command was not given by the client, the query is redirected to the real hash slot owner via a -MOVED redirection error, as would happen normally.
-- After the migration, node A sets slot N's owner to node B. 
-- Node B notifies the cluster leader that slot N is migrated to node B.
-- Cluster leader append slot assignment operation to other server nodes (Raft Protocol), and broadcast the slot operation to the entire cluster.
+- The destination node sends command `MIGRATESLOT k destination_node` to the source node
+- The source node replies destination node with keys and object owner map
+- The destination node sends  `SLOTMOVED k destination_node` to the cluster leader
+- Cluster leader updates the global slot table in Consul KV, so that the all nodes receive the change.
+- The source node releases local slot k.
 
 What if someone fails during the migration?
 
-- If the cluster leader fails, the new leader will receive node B's notification and update the slot table.
-- If node B fails, node A still owns slot N, and after a timeout without receiving slot table update, it will restore it to a stable state.
-- if node A fails, node B aborts this migration and waits for the cluster leader to update the global slot table.
+- If the cluster leader fails, the new leader will receive destination node's notification and update the slot table.
+- If the destination node fails, the source node still owns slot k, and after a timeout without receiving slot table update, it will restore it to a stable state.
+- if the source node fails, the destination node aborts this migration and waits for the cluster leader to update the global slot table.
 
 When a master node A fails, if slots owned by A has a replica which is node B, the cluster leader will promote node B to slot owner. It has the following steps:
 
@@ -331,6 +339,8 @@ The source files are organized as follows:
 [Apache Geode](http://geode.apache.org/) is a data management platform (JAVA) that provides real-time, consistent access to data-intensive applications throughout widely distributed cloud architectures. 
 
 [Apache Ignite](https://ignite.apache.org/) is a distributed database for high-performance computing with in-memory speed.
+
+[Tarantool](https://www.tarantool.io/en/) is an in-memory computing platform consisting of a database and an application server.
 
 ## References
 

@@ -13,7 +13,7 @@ struct swarmkv_msg;
 
 struct swarmkv_msg* swarmkv_msg_new(uuid_t initiator_uuid, unsigned long long txn_sequence);
 //swarmkv_msg_add_** obtains data ownership from the caller.
-void swarmkv_msg_add_cmd(struct swarmkv_msg *msg, struct swarmkv_cmd *cmd);
+void swarmkv_msg_add0_cmd(struct swarmkv_msg* msg, const struct swarmkv_cmd* cmd);
 void swarmkv_msg_add_reply(struct swarmkv_msg *msg, struct swarmkv_reply *reply);
 void swarmkv_msg_set_sequence(struct swarmkv_msg *msg, unsigned long long txn_sequence);
 

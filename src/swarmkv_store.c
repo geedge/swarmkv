@@ -86,20 +86,6 @@ void obj_container_get_accessed_nodes(struct obj_container *ctr, struct swarmkv_
 	*node_list=ALLOC(struct swarmkv_node, *n_node);
 	memcpy(*node_list, first, (*n_node)*sizeof(struct swarmkv_node));
 }
-int is_read_operator(enum swarmkv_operator op)
-{
-	int ret=0;
-	switch(op)
-	{
-		case SWARMKV_OP_GET:
-		case SWARMKV_OP_HGET:
-		case SWARMKV_OP_HGETALL:
-			ret=1;
-		default:
-			break;
-	}
-	return ret;
-}
 int obj_container_remove_accessed_node(struct obj_container *ctr, const struct swarmkv_node *node)
 {
 	struct swarmkv_node *found=NULL;
@@ -114,29 +100,11 @@ int obj_container_remove_accessed_node(struct obj_container *ctr, const struct s
 	}
 	return 0;
 }
-void swarmkv_reply_set_status(struct swarmkv_reply *r, const char* status)
-{
-	r->type=SWARMKV_REPLY_STATUS;
-	r->len=strlen(status)+1;
-	r->str=ALLOC(char, r->len);
-	strcpy(r->str, "OK");
-	return;
-}
-void swarmkv_reply_set_nil(struct swarmkv_reply *r)
-{
-	r->type=SWARMKV_REPLY_NIL;
-	return;
-}
-void swarmkv_reply_set_integer(struct swarmkv_reply* r, long long integer)
-{
-	r->type=SWARMKV_REPLY_INTEGER;
-	r->integer=integer;
-}
+
 
 void swarmkv_store_cache_sync(struct swarmkv_store *store, const struct swarmkv_cmd *sync_cmd, struct swarmkv_reply **reply)
 {
 	struct obj_container* ctr=NULL;
-	struct swarmkv_reply *r=NULL;
 	assert(sync_cmd->op == SWARMKV_OP_CLUSTER_SYNC);
 	long long original_obj_version=atoll(sync_cmd->args[0]);
 	struct swarmkv_cmd __cmd;
@@ -150,7 +118,6 @@ void swarmkv_store_cache_sync(struct swarmkv_store *store, const struct swarmkv_
 	sds key=cmd->args[0];
 	
 	HASH_FIND(hh, store->cached_obj_table, key, sdslen(key), ctr);
-	r=ALLOC(struct swarmkv_reply, 1);
 	switch (cmd->op)
 	{
 		case SWARMKV_OP_SET:
@@ -214,17 +181,15 @@ void swarmkv_store_cache_sync(struct swarmkv_store *store, const struct swarmkv_
 			assert(0);
 			break;
 	}
-	swarmkv_reply_set_status(r, "OK");
-	*reply=r;
+	*reply=swarmkv_reply_new_status("OK");
 	return;
 out_of_sync:	
-	swarmkv_reply_set_status(r, "out of sync");
 	if(ctr)
 	{
 		HASH_DELETE(hh, store->cached_obj_table, ctr);
 		obj_container_free(ctr);
 	}
-	*reply=r;
+	*reply=swarmkv_reply_new_status("out of sync");
 	return;
 }
 
@@ -338,7 +303,7 @@ void swarmkv_store_process_sync_reply(struct swarmkv_store *store, sds key, cons
 int swarmkv_store_exec(struct swarmkv_store *store, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply, 
 	 const struct swarmkv_node* accessing_node, struct swarmkv_cmd **sync_cmd, struct swarmkv_node **accessed_nodes, size_t *n_accessed_node)
 {	
-	struct swarmkv_reply *r=ALLOC(struct swarmkv_reply, 1);
+	struct swarmkv_reply *r=NULL;
 	struct obj_container* ctr=NULL;
 	sds key=cmd->args[0];
 	HASH_FIND(hh, store->owned_obj_table, key, sdslen(key), ctr);
@@ -349,14 +314,11 @@ int swarmkv_store_exec(struct swarmkv_store *store, const struct swarmkv_cmd *cm
 			assert(cmd->n_args==1);
 			if(ctr)
 			{
-				r->type=SWARMKV_REPLY_STRING;
-				r->len=sdslen(ctr->obj.value);
-				r->str=ALLOC(char, r->len);
-				memcpy(r->str, ctr->obj.value, r->len);
+				r=swarmkv_reply_new_string(ctr->obj.value, sdslen(ctr->obj.value));
 			}
 			else
 			{
-				swarmkv_reply_set_nil(r);
+				r=swarmkv_reply_new_nil();
 			}
 			n_reply=1;
 			break;
@@ -375,7 +337,7 @@ int swarmkv_store_exec(struct swarmkv_store *store, const struct swarmkv_cmd *cm
 				ctr->obj.value=sdsdup(cmd->args[1]);
 				HASH_ADD_KEYPTR(hh, store->owned_obj_table, ctr->obj.key, sdslen(ctr->obj.key), ctr);
 			}
-			swarmkv_reply_set_status(r, "OK");
+			r=swarmkv_reply_new_status("OK");
 			//write operation triggers cache sync message. 
 			obj_container_get_accessed_nodes(ctr, accessed_nodes, n_accessed_node);
 			*sync_cmd=sync_cmd_new(ctr->version, cmd);
@@ -385,7 +347,7 @@ int swarmkv_store_exec(struct swarmkv_store *store, const struct swarmkv_cmd *cm
 			{
 				ctr->version++;
 				HASH_DELETE(hh, store->owned_obj_table, ctr);
-				swarmkv_reply_set_integer(r, 1);
+				r=swarmkv_reply_new_integer(1);
 				obj_container_get_accessed_nodes(ctr, accessed_nodes, n_accessed_node);				
 				*sync_cmd=sync_cmd_new(ctr->version, cmd);
 				obj_container_free(ctr);
@@ -393,13 +355,11 @@ int swarmkv_store_exec(struct swarmkv_store *store, const struct swarmkv_cmd *cm
 			}
 			else
 			{
-				swarmkv_reply_set_integer(r, 0);
+				r=swarmkv_reply_new_integer(0);
 			}
 			
 			break;
 		default:
-			free(r);
-			r=NULL;
 			assert(0);
 			break;
 	}
