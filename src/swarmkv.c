@@ -26,20 +26,12 @@
 int SWARMKV_VERSION_2_0_0_tiger_year=0;
 #define	MODULE_SWAMRKV_CORE	module_name_str("swarmkv.core")
 
-struct swarmkv_params
-{
-	unsigned int http_port;
-	unsigned int p2p_port;
-	int minimum_replica_num;
-	int dry_run;
-	int disable_cache;
-};
 struct swarmkv_thread_ctx
 {
 	pthread_t thr;
 	int readable_tid;
 	unsigned int thread_id;
-	struct swarmkv *db;	
+	struct swarmkv *db;
 	time_t lastime;
 };
 
@@ -55,9 +47,9 @@ struct swarmkv_rr
 };
 struct swarmkv
 {
-	char cluster_name[SWARMKV_SYMBOL_MAX];
+	char db_name[SWARMKV_SYMBOL_MAX];
 	uuid_t bin_uuid;
-	struct swarmkv_params para;
+	struct swarmkv_options *opts;
 	int nr_worker_threads;
 	struct swarmkv_node self;
 	struct swarmkv_thread_ctx *worker_threads[SWARMKV_THREAD_MAX];
@@ -99,7 +91,7 @@ static void swarmkv_rr_free(struct swarmkv *db, struct swarmkv_rr *txn)
 void swarmkv_create_thread_ctx(struct swarmkv *db)
 {
 	int i=0;
-	for(i=0; i<db->nr_worker_threads; i++)
+	for(i=0; i<db->opts->nr_worker_threads; i++)
 	{
 		db->worker_threads[i] = ALLOC(struct swarmkv_thread_ctx, 1);
 		db->worker_threads[i]->thread_id = i;
@@ -369,7 +361,7 @@ static void swarmkv_exec(struct swarmkv *db, const struct swarmkv_cmd *cmd, swar
 		cb(reply, cb_arg);
 		goto fast_out;
 	}
-	if(is_read_operator(cmd->op) && !db->para.disable_cache)
+	if(is_read_operator(cmd->op) && !db->opts->disable_cache)
 	{
 		is_cache_hit=swarmkv_store_cache_exec(db->store, cmd, &reply);
 		if(is_cache_hit)
@@ -570,51 +562,101 @@ void *swarmkv_worker_thread(void *arg)
 void swarmkv_threads_run(struct swarmkv *db)
 {
 	int i = 0;
-	for (i = 0; i < db->nr_worker_threads; i++)
+	for (i = 0; i < db->opts->nr_worker_threads; i++)
 	{
 		pthread_create(&db->worker_threads[i]->thr, NULL, swarmkv_worker_thread, (void *) (db->worker_threads[i]));
 	}
 	return;
 }
 
-struct swarmkv *swarmkv_open(const char * cluster_name, const char* self_ip, unsigned int http_port, unsigned int p2p_port, void * logger)
+struct swarmkv_options* swarmkv_options_new(void)
+{
+	struct swarmkv_options *opts=ALLOC(struct swarmkv_options, 1);
+	opts->consul_port=8500;
+	opts->p2p_port=5210;
+	opts->health_check_port=5211;
+	opts->loglevel=0;
+	strcpy(opts->bind_address, "127.0.0.1");
+	uuid_generate(opts->bin_uuid);
+	opts->nr_worker_threads=1;
+	return opts;
+}
+int swarmkv_options_set_p2p_port(struct swarmkv_options *opts, unsigned int p2p_port)
+{
+	opts->p2p_port=p2p_port;
+	return 0;
+}
+int swarmkv_options_set_health_check_port(struct swarmkv_options *opts, unsigned int health_check_port)
+{
+	opts->health_check_port=health_check_port;
+	return 0;
+}
+
+int swarmkv_options_set_bind_address(struct swarmkv_options *opts, const char* ip_addr)
+{
+	strncpy(opts->bind_address, ip_addr, sizeof(opts->bind_address));
+	return 0;
+}
+int swarmkv_options_set_logger(struct swarmkv_options *opts, void *logger)
+{
+	opts->MESA_handle_logger=logger;
+	return 0;
+}
+
+int swarmkv_options_set_consul_port(struct swarmkv_options *opts, unsigned int consul_port)
+{
+	opts->consul_port=consul_port;
+	return 0;
+}
+int swarmkv_options_set_dryrun(struct swarmkv_options *opts)
+{
+	opts->dryrun=1;
+	opts->p2p_port=0;
+	return 0;
+}
+
+struct swarmkv *swarmkv_open(struct swarmkv_options* opts, const char * db_name, char **err)
 {
 	struct swarmkv *db = NULL;
-	int ret = 0;
 	future_promise_library_init(NULL);
 	swarmkv_common_global_init();
 
 	db=ALLOC(struct swarmkv, 1);
-	strncpy(db->cluster_name, cluster_name, sizeof(db->cluster_name));
-	db->logger=logger;
-	db->nr_worker_threads=2;
-	db->para.http_port=http_port;
-	db->para.p2p_port=p2p_port;
+	strncpy(db->db_name, db_name, sizeof(db->db_name));
+	db->opts=opts;
+	if(opts->MESA_handle_logger)
+	{
+		db->logger=opts->MESA_handle_logger;
+	}
+	else
+	{
+		char log_path[1024]="";
+		snprintf(log_path, sizeof(log_path), "swarmkv_%s.log", db_name);
+		db->logger=MESA_create_runtime_log_handle("log_path", opts->loglevel);
+	}
 	swarmkv_create_thread_ctx(db);
 
-	uuid_generate(db->bin_uuid);
-	db->self.p2p_port=p2p_port;
-	strncpy(db->self.ip_addr, self_ip, sizeof(db->self.ip_addr));
+	uuid_copy(db->bin_uuid, opts->bin_uuid);
+	db->self.p2p_port=opts->p2p_port;
+	strncpy(db->self.ip_addr, opts->bind_address, sizeof(db->self.ip_addr));
 	
 	db->rr_sequence_generator=1;
-	db->net=swarmkv_net_new(&db->self, db->nr_worker_threads, db->logger);
+	db->net=swarmkv_net_new(opts, &db->self, db->logger, err);
+	if(*err)
+	{
+		goto error_out;
+	}
 	swarmkv_net_set_recv_cb(db->net, msg_read_callback, db);
 		
 	struct event_base *evbase=swarmkv_net_get_eventbase(db->net, 0);
-	db->ks=swarmkv_keyspace_new(cluster_name, db->bin_uuid, evbase, http_port, &db->self, logger);
-	
-	if(db->para.dry_run)
-	{
-		swarmkv_keyspace_set_dryrun(db->ks);
-	}
-	ret=swarmkv_keyspace_init(db->ks);
-	if(ret<0)
+	db->ks=swarmkv_keyspace_new(db->opts, db_name, evbase, db->logger, err);
+	if(*err)
 	{
 		goto error_out;
 	}
 	db->store=swarmkv_store_new();
 	swarmkv_threads_run(db);
-	MESA_handle_runtime_log(db->logger, RLOG_LV_INFO, MODULE_SWAMRKV_CORE, "swarmkv cluster %s opened.", db->cluster_name);
+	MESA_handle_runtime_log(db->logger, RLOG_LV_INFO, MODULE_SWAMRKV_CORE, "swarmkv cluster %s opened.", db->db_name);
 	return db;
 error_out:
 	if(db->net)
@@ -627,6 +669,8 @@ error_out:
 		swarmkv_keyspace_free(db->ks);
 		db->ks=NULL;
 	}
+	free(db->opts);
+	db->opts=NULL;
 	free(db);
 	db=NULL;
 	return NULL;
@@ -647,7 +691,14 @@ void swarmkv_close(struct swarmkv * db)
 	}
 	swarmkv_net_free(db->net);
 	db->net=NULL;
-	MESA_handle_runtime_log(db->logger, RLOG_LV_INFO, MODULE_SWAMRKV_CORE, "swarmkv cluster %s closed.", db->cluster_name);
+	MESA_handle_runtime_log(db->logger, RLOG_LV_INFO, MODULE_SWAMRKV_CORE, "swarmkv cluster %s closed.", db->db_name);
+	if(db->opts->MESA_handle_logger != db->logger)
+	{
+		MESA_destroy_runtime_log_handle(db->logger);
+		db->logger=NULL;
+	}
+	free(db->opts);
+	db->opts=NULL;
 	free(db);
 	return;
 }

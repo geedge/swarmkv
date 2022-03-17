@@ -37,11 +37,19 @@ struct swarmkv_reply
 };
 void swarmkv_reply_free(struct swarmkv_reply *reply);
 
-struct swarmkv;
 typedef void swarmkv_cmd_callback_func_t(const struct swarmkv_reply* reply, void * arg);
 
+struct swarmkv;
+struct swarmkv_options;
+struct swarmkv_options* swarmkv_options_new(void);
+int swarmkv_options_set_p2p_port(struct swarmkv_options *opts, unsigned int p2p_port);
+int swarmkv_options_set_health_check_port(struct swarmkv_options *opts, unsigned int health_check_port);
+int swarmkv_options_set_bind_address(struct swarmkv_options *opts, const char* ip_addr);
+int swarmkv_options_set_logger(struct swarmkv_options *opts, void *logger);
+int swarmkv_options_set_consul_port(struct swarmkv_options *opts, unsigned int consul_port);
+int swarmkv_options_set_dryrun(struct swarmkv_options *opts);
 
-struct swarmkv *swarmkv_open(const char * cluster_name, const char* self_ip, unsigned int http_port, unsigned int p2p_port, void * logger);
+struct swarmkv *swarmkv_open(struct swarmkv_options *opts, const char * db_name, char **err);
 void swarmkv_close(struct swarmkv * db);
 
 

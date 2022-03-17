@@ -22,6 +22,7 @@
 #include <errno.h>
 #include <pthread.h>
 
+
 #define	MODULE_SWAMRKV_NET	module_name_str("swarmkv.net")
 #define	MSG_HDR_MAGIC	0x5210
 struct swarmkv_msg_hdr
@@ -64,7 +65,7 @@ struct swarmkv_net_thread_ctx
 };
 struct swarmkv_net
 {
-	int n_thread;
+	size_t n_thread;
 	int n_connection;
 	struct swarmkv_node self;
 	struct swarmkv_net_thread_ctx **threads;
@@ -454,17 +455,17 @@ static void __accept_error_cb(struct evconnlistener *listener, void *arg)
 							err, evutil_socket_error_to_string(err));		
 }
 
-struct swarmkv_net* swarmkv_net_new(const struct swarmkv_node* self, int thread_num, void* logger)
+struct swarmkv_net* swarmkv_net_new(const struct swarmkv_options *opts, const struct swarmkv_node* self, void* logger, char **err)
 {
-	int i=0;
+	size_t i=0;
 	struct swarmkv_net* net=NULL;	
     /* adds locking, only required if accessed from separate threads */
 	evthread_use_pthreads();
 	net=ALLOC(struct swarmkv_net, 1);
 	net->logger=logger;
-	net->n_thread=thread_num;
-	net->threads=ALLOC(struct swarmkv_net_thread_ctx*, thread_num);
-	for(i=0; i<thread_num; i++)
+	net->n_thread=opts->nr_worker_threads;
+	net->threads=ALLOC(struct swarmkv_net_thread_ctx*, opts->nr_worker_threads);
+	for(i=0; i<opts->nr_worker_threads; i++)
 	{	
 		net->threads[i]=ALLOC(struct swarmkv_net_thread_ctx, 1);
 		net->threads[i]->evbase=event_base_new();
@@ -474,16 +475,24 @@ struct swarmkv_net* swarmkv_net_new(const struct swarmkv_node* self, int thread_
 		net->threads[i]->ref_net=net;
 	}
 	memcpy(&(net->self), self, sizeof(struct swarmkv_node));
-	//Refer to http://www.wangafu.net/~nickm/libevent-book/Ref8_listener.html
-	struct sockaddr_in sin;
-	memset(&sin, 0, sizeof(sin));
-	sin.sin_family = AF_INET;
-	sin.sin_addr.s_addr = htonl(0);	// Listen on 0.0.0.0
-	sin.sin_port = htons((unsigned short)self->p2p_port);
 
-	net->listener=evconnlistener_new_bind(net->threads[0]->evbase, accept_peer_connection_cb, net, 
-										LEV_OPT_CLOSE_ON_FREE|LEV_OPT_REUSEABLE, -1, (struct sockaddr*)&sin, sizeof(sin));	
-	evconnlistener_set_error_cb(net->listener, __accept_error_cb);
+
+	if(!opts->dryrun)
+	{
+		//Refer to http://www.wangafu.net/~nickm/libevent-book/Ref8_listener.html
+		struct sockaddr_in sin;
+		memset(&sin, 0, sizeof(sin));
+		sin.sin_family = AF_INET;
+		sin.sin_addr.s_addr = htonl(0);	// Listen on 0.0.0.0
+		sin.sin_port = htons((unsigned short)self->p2p_port);
+		net->listener=evconnlistener_new_bind(net->threads[0]->evbase, accept_peer_connection_cb, net, 
+											LEV_OPT_CLOSE_ON_FREE|LEV_OPT_REUSEABLE, -1, (struct sockaddr*)&sin, sizeof(sin));
+		if(!net->listener)
+		{
+			asprintf(err, "listen on port %u failed", self->p2p_port);
+		}
+		evconnlistener_set_error_cb(net->listener, __accept_error_cb);
+	}
 	return net;
 }
 void swarmkv_net_stop(struct swarmkv_net* net)

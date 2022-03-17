@@ -21,7 +21,7 @@ struct swarmkv_msg
 
 struct swarmkv_msg* swarmkv_msg_new(uuid_t initiator_uuid, unsigned long long txn_sequence)
 {	
-	struct swarmkv_msg* msg=ALLOC(struct swarmkv_msg, 1);
+	struct swarmkv_msg *msg=ALLOC(struct swarmkv_msg, 1);
 	msg->txn_seq=txn_sequence;
 	uuid_copy(msg->txn_initiator_uuid, initiator_uuid);
 	return msg;

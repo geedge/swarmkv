@@ -7,6 +7,8 @@
 #include <sys/syscall.h>
 
 
+
+
 struct cmd_exec_arg
 {
 	pthread_cond_t cond;
@@ -191,7 +193,7 @@ void expect_get_null_callback(const struct swarmkv_reply* reply, void * cb_arg)
 	return;
 }
 
-class SwarmkvTwoNodes : public testing::Test 
+class SwarmkvBasicTest : public testing::Test 
 {
 
 protected:	
@@ -199,13 +201,81 @@ protected:
 	{
 		void* logger=NULL;
 		const char* log_path="./basic-test.log";
+		char *err=NULL;
 		logger=MESA_create_runtime_log_handle(log_path, 0);
-		db1=swarmkv_open("swarmkv-2-nodes", "192.168.232.171", 5210, 5211, logger);
-		db2=swarmkv_open("swarmkv-2-nodes", "192.168.232.171", 5220, 5221, logger);
-		if(!db1)
+		struct swarmkv_options* opts=swarmkv_options_new();
+		swarmkv_options_set_p2p_port(opts, 5210);
+		swarmkv_options_set_health_check_port(opts, 5211);
+		swarmkv_options_set_logger(opts, logger);
+		db=swarmkv_open(opts, "swarmkv-basic-test", &err);
+		if(err)
 		{
-			printf("swarmkv_open failed, see %s for details.\n", log_path);
+			printf("swarmkv_open failed: %s.\n", err);
+			free(err);
 		}
+	}
+	static void TearDownTestCase()
+	{
+		swarmkv_close(db);
+	}	
+ 	// Some expensive resource shared by all tests.
+	static struct swarmkv* db;
+};
+struct swarmkv* SwarmkvBasicTest::db;
+TEST_F(SwarmkvBasicTest, SimpleSetGet)
+{
+	struct cmd_exec_arg *arg=NULL;
+	struct swarmkv* db=SwarmkvBasicTest::db;
+	const char* key="name";
+	const char* val="zhangsan";
+	int exec_successful=0;
+
+	arg=cmd_exec_arg_new();
+	swarmkv_set_string(db, key, strlen(key), val, strlen(val), basic_test_set_callback, arg);
+	exec_successful=cmd_exec_arg_wait(arg, 100);//100ms
+	EXPECT_EQ(exec_successful, 1);
+	cmd_exec_arg_clear(arg);
+	swarmkv_get_string(db, key, strlen(key), basic_test_get_callback, arg);
+	cmd_exec_arg_wait(arg, 100);//100ms
+	EXPECT_EQ(exec_successful, 1);
+	cmd_exec_arg_free(arg);
+	arg=NULL;
+}
+
+class SwarmkvTwoNodes : public testing::Test 
+{
+
+protected:	
+	static void SetUpTestCase()
+	{
+		void* logger=NULL;
+		char *err=NULL;
+		const char *log_path="./basic-test.log";
+		logger=MESA_create_runtime_log_handle(log_path, 0);
+		struct swarmkv_options* opts1=swarmkv_options_new();
+		swarmkv_options_set_p2p_port(opts1, 5210);
+		swarmkv_options_set_health_check_port(opts1, 5211);
+		swarmkv_options_set_logger(opts1, logger);
+		db1=swarmkv_open(opts1, "swarmkv-2-nodes", &err);
+		if(err)
+		{
+			printf("swarmkv_open failed: %s\n", err);
+			free(err);
+			err=NULL;
+		}
+
+		struct swarmkv_options* opts2=swarmkv_options_new();
+		swarmkv_options_set_p2p_port(opts2, 5220);
+		swarmkv_options_set_health_check_port(opts2, 5221);
+		swarmkv_options_set_logger(opts2, logger);
+		db2=swarmkv_open(opts2, "swarmkv-2-nodes", &err);
+		if(err)
+		{
+			printf("swarmkv_open failed: %s\n", err);
+			free(err);
+			err=NULL;
+		}
+
 	}
 	static void TearDownTestCase()
 	{
@@ -339,53 +409,6 @@ TEST_F(SwarmkvTwoNodes, SyncCache)
 }
 
 TEST_F(SwarmkvTwoNodes, Wait)
-{
-	sleep(1800);
-}
-
-class SwarmkvBasicTest : public testing::Test 
-{
-
-protected:	
-	static void SetUpTestCase()
-	{
-		void* logger=NULL;
-		const char* log_path="./basic-test.log";
-		logger=MESA_create_runtime_log_handle(log_path, 0);
-		db=swarmkv_open("swarmkv-basic-test", "192.168.232.171", 5210, 5211, logger);
-		if(!db)
-		{
-			printf("swarmkv_open failed, see %s for details.\n", log_path);
-		}
-	}
-	static void TearDownTestCase()
-	{
-		swarmkv_close(db);
-	}	
- 	// Some expensive resource shared by all tests.
-	static struct swarmkv* db;
-};
-struct swarmkv* SwarmkvBasicTest::db;
-TEST_F(SwarmkvBasicTest, SimpleSetGet)
-{
-	struct cmd_exec_arg *arg=NULL;
-	struct swarmkv* db=SwarmkvBasicTest::db;
-	const char* key="name";
-	const char* val="zhangsan";
-	int exec_successful=0;
-
-	arg=cmd_exec_arg_new();
-	swarmkv_set_string(db, key, strlen(key), val, strlen(val), basic_test_set_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, 100);//100ms
-	EXPECT_EQ(exec_successful, 1);
-	cmd_exec_arg_clear(arg);
-	swarmkv_get_string(db, key, strlen(key), basic_test_get_callback, arg);
-	cmd_exec_arg_wait(arg, 100);//100ms
-	EXPECT_EQ(exec_successful, 1);
-	cmd_exec_arg_free(arg);
-	arg=NULL;
-}
-TEST_F(SwarmkvBasicTest, Wait)
 {
 	sleep(1800);
 }

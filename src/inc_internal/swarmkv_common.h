@@ -11,6 +11,20 @@ struct swarmkv_node
 	char ip_addr[INET6_ADDRSTRLEN];	//#define INET6_ADDRSTRLEN 46 (#include <arpa/inet.h>, see man inet_ntop
 	unsigned int p2p_port;	//host order
 };
+struct swarmkv_options
+{
+	unsigned int health_check_port;
+	unsigned int p2p_port;
+	int minimum_replica_num;
+	int dryrun;
+	int disable_cache;
+	unsigned int consul_port;
+	void *MESA_handle_logger;
+	int loglevel;
+	char bind_address[SWARMKV_SYMBOL_MAX];
+	uuid_t bin_uuid;
+	size_t nr_worker_threads;
+};
 
 enum swarmkv_operator
 {

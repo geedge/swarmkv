@@ -5,6 +5,7 @@ set(SWARMKV_VERSION ${SWARMKV_MAJOR_VERSION}.${SWARMKV_MINOR_VERSION}.${SWARMKV_
 
 message(STATUS "SwarmKV, Version: ${SWARMKV_VERSION}")
 
+add_definitions(-D_GNU_SOURCE) 
 add_definitions(-fPIC)
 set(SWARMKV_SRC swarmkv.c swarmkv_store.c swarmkv_common.c swarmkv_message.c swarmkv_net.c swarmkv_keyspace.c swarmkv_utils.c future_promise.cpp)
 set(LIB_SOURCE_FILES

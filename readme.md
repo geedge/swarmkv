@@ -319,12 +319,13 @@ The worker threads are responsible for:
 
 The source files are organized as follows:
 
-- swarmkv.c event loop, orchestration
-- swarmkv_store.c  kv operation, key hash table is implemented with [uthash](https://troydhanson.github.io/uthash/). Use [sds](https://github.com/antirez/sds) as dynamic string library.
-- swarmkv_keyspace.c: The control plane of SwarmKV. Interact with [HashiCorp Consul](https://www.consul.io/) for node discovery, slot assignment, and leader election.
+- src/swarmkv.c event loop, orchestration
+- src/swarmkv_store.c  kv operation, key hash table is implemented with [uthash](https://troydhanson.github.io/uthash/). Use [sds](https://github.com/antirez/sds) as dynamic string library.
+- src/swarmkv_keyspace.c: The control plane of SwarmKV. Interact with [HashiCorp Consul](https://www.consul.io/) for node discovery, slot assignment, and leader election.
   - The keyspace is partitioned by key slots among the participating nodes. 
-- swarmkv_message.c: Message is encoded to [MessagePack](https://msgpack.org/index.html) format by [mpack](https://github.com/ludocode/mpack) library.
-- swarmkv_net.c: High performance P2P communication via [libevent](https://libevent.org/).
+- src/swarmkv_message.c: Message is encoded to [MessagePack](https://msgpack.org/index.html) format by [mpack](https://github.com/ludocode/mpack) library.
+- src/swarmkv_net.c: High performance P2P communication via [libevent](https://libevent.org/).
+- tools/swarmkv_cli: CLI implementation faciliated by [linenoise](https://github.com/antirez/linenoise).
 
 ## Similar Projects
 

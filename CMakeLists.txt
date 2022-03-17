@@ -38,6 +38,7 @@ include_directories(include)
 add_subdirectory(vendor)
 add_subdirectory(src)
 add_subdirectory(test)
+add_subdirectory(tools)
 
 #LINK_DIRECTORIES(
 #    ${PROJECT_BINARY_DIR}/lib
