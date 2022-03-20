@@ -19,6 +19,8 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <sys/syscall.h>
+#include <sys/prctl.h>
 
 #define	CONSUL_HOST	"127.0.0.1"
 #define	CONSUL_DEFAULT_PORT	8500
@@ -100,10 +102,9 @@ struct swarmkv_keyspace
 	char consul_session_id[SWARMKV_SYMBOL_MAX];
 
 	struct evhttp* http_server;
-	int is_initializing;
-
+	struct event_base * evbase;
+	
 	//reference, no need free
-	struct event_base * evbase;	
 	void *logger;
 };
 void consul_acquire_session_lock_async(struct swarmkv_keyspace* ks);
@@ -264,7 +265,7 @@ int consul_service_register(struct swarmkv_keyspace* ks)
 	char* payload=NULL;
 	payload=cJSON_Print(service);
 	sds req_body=sdsnew(payload);
-	printf("%s\n", req_body);
+	//printf("%s\n", req_body);
 	free(payload);
 	
 	sds resp_body=NULL;
@@ -326,6 +327,25 @@ void __consul_session_create_cb(struct evhttp_request *req, void *arg)
 	}
 	return;
 }
+static void __ks_dummy_event_handler(evutil_socket_t fd, short what, void * arg)
+{
+	return;
+}
+
+void *swarmkv_keyspace_thread(void *arg)
+{
+	struct swarmkv_keyspace *ks=(struct swarmkv_keyspace *)arg;
+	char thread_name[16];
+	snprintf(thread_name, sizeof(thread_name), "swarmkv-ks");
+	prctl(PR_SET_NAME, (unsigned long long) thread_name, NULL, NULL, NULL);
+
+	struct event * ev = event_new(ks->evbase, -1, EV_PERSIST, __ks_dummy_event_handler, NULL);
+	struct timeval timer_delay = {2, 0};
+	evtimer_add(ev, &timer_delay);
+
+	event_base_dispatch(ks->evbase);
+	return NULL;
+}
 
 void consul_create_session_async(struct swarmkv_keyspace* ks)
 {
@@ -334,8 +354,6 @@ void consul_create_session_async(struct swarmkv_keyspace* ks)
 	cJSON_AddStringToObject(session, "LockDelay", "5s");
 	cJSON_AddStringToObject(session, "Name", "swarmkv-leader-election-lock");
 	cJSON_AddStringToObject(session, "Behavior", "release");
-//	snprintf(ttl, sizeof(ttl), "%ds", CONSUL_SESSION_TIMEOUT_SECONDS);
-//	cJSON_AddStringToObject(session, "TTL", ttl);
 
 	service_check=cJSON_CreateObject();
 	cJSON_AddStringToObject(service_check, "ID", ks->consul_check_id);
@@ -343,18 +361,11 @@ void consul_create_session_async(struct swarmkv_keyspace* ks)
 	cJSON_AddItemToArray(service_check_array, service_check);
 	cJSON_AddItemToObject(session, "ServiceChecks", service_check_array);
 
-/*
-	char* p[1];
-	p[0]=ks->cluster_name;
-	check_array=cJSON_CreateStringArray(p, 1);
-	cJSON_AddItemToObject(session, "Checks", check_array);
-	
-*/
 	char* payload=NULL;
 	payload=cJSON_Print(session);
 	sds req_body=sdsnew(payload);
 	free(payload);
-	printf("%s\n", req_body);
+//	printf("%s\n", req_body);
 
 	char url[SWARMKV_URL_MAX]="";
 	snprintf(url, sizeof(url), "/v1/session/create");
@@ -743,10 +754,6 @@ void __watch_slots_changes_cb(struct evhttp_request *req, void *arg)
 		MESA_handle_runtime_log(ks->logger, RLOG_LV_INFO, MODULE_SWARMKV_KEYSPACE, "key slots update finished.");
 	}
 	consul_watch_slots_changes_async(ks);
-	if(ks->is_initializing)
-	{
-		event_base_loopexit(ks->evbase, NULL);
-	}
 }
 static sds keyslots_print_json(struct key_slot slots[], size_t n_slot)
 {
@@ -810,7 +817,7 @@ static sds keyslots_print_json(struct key_slot slots[], size_t n_slot)
 	}
 	char* payload=NULL;
 	payload=cJSON_Print(slot_array);
-	printf("%s\n", payload);
+//	printf("%s\n", payload);
 	printed=sdsnew(payload);
 	free(payload);
 	cJSON_Delete(slot_array);
@@ -876,12 +883,22 @@ void handle_failed_nodes(struct swarmkv_keyspace* ks, struct swarmkv_node* nodes
 		//slot owner has left the cluster.
 		if(j==n_node)
 		{
-			k=random()%n_node;
-			MESA_handle_runtime_log(ks->logger, RLOG_LV_INFO, MODULE_SWARMKV_KEYSPACE, "key slots %d owner is changed from %s:%u to %s:%u.",
-									i, slots_copy[i].owner.ip_addr, slots_copy[i].owner.p2p_port, nodes[k].ip_addr, nodes[k].p2p_port);
-			//TODO: node replication
-			memcpy(&(slots_copy[i].owner), nodes+k, sizeof(struct swarmkv_node));
-			slots_number_effect_by_failed_node++;
+			if(n_node)
+			{
+				k=random()%n_node;
+				MESA_handle_runtime_log(ks->logger, RLOG_LV_INFO, MODULE_SWARMKV_KEYSPACE, "key slots %d owner is changed from %s:%u to %s:%u.",
+										i, slots_copy[i].owner.ip_addr, slots_copy[i].owner.p2p_port, nodes[k].ip_addr, nodes[k].p2p_port);
+				//TODO: node replication
+				memcpy(&(slots_copy[i].owner), nodes+k, sizeof(struct swarmkv_node));
+				slots_number_effect_by_failed_node++;
+			}
+			else
+			{
+				MESA_handle_runtime_log(ks->logger, RLOG_LV_INFO, MODULE_SWARMKV_KEYSPACE, "no available nodes, key slots %d owner is changed from %s:%u to myself.",
+										i, slots_copy[i].owner.ip_addr, slots_copy[i].owner.p2p_port);
+				memcpy(&(slots_copy[i].owner), &(ks->self), sizeof(struct swarmkv_node));
+				slots_number_effect_by_failed_node++;
+			}
 		}
 	}
 	if(slots_number_effect_by_failed_node)
@@ -922,6 +939,7 @@ void __watch_nodes_changes_cb(struct evhttp_request *req, void *arg)
 	const char* tmp=NULL;
 	cJSON *health_reponse=NULL, *record=NULL, *item=NULL, *service=NULL;
 	struct swarmkv_node nodes[SWARMKV_NODE_MAX];
+	memset(nodes, 0, sizeof(nodes));
 	if(!req || !evhttp_request_get_response_code(req))
 	{
 		int errcode = EVUTIL_SOCKET_ERROR();
@@ -955,11 +973,11 @@ void __watch_nodes_changes_cb(struct evhttp_request *req, void *arg)
 		struct evkeyvalq *input_headers=evhttp_request_get_input_headers(req);	
 		tmp=evhttp_find_header(input_headers, "X-Consul-Index");
 		sscanf(tmp, "%d", &ks->consul_nodes_modify_idx);
-	}
-	if(ks->is_leader)
-	{
-		handle_failed_nodes(ks, nodes, i);
-		consul_watch_nodes_changes_async(ks);
+		if(ks->is_leader)
+		{
+			handle_failed_nodes(ks, nodes, i);
+			consul_watch_nodes_changes_async(ks);
+		}
 	}
 }
 void consul_watch_nodes_changes_async(struct swarmkv_keyspace* ks)
@@ -1034,23 +1052,23 @@ static void consul_kv_init_if_nonexist(struct swarmkv_keyspace* ks)
 	}
 
 }
-struct swarmkv_keyspace* swarmkv_keyspace_new(const struct swarmkv_options *opts, const char* db_name, struct event_base * evbase, void *logger, char **err)
+struct swarmkv_keyspace* swarmkv_keyspace_new(const struct swarmkv_options *opts, const char* db_name, void *logger, char **err)
 {
 	struct swarmkv_keyspace* ks=ALLOC(struct swarmkv_keyspace, 1);
 	strncpy(ks->db_name, db_name, sizeof(ks->db_name));
-	strncpy(ks->self.ip_addr, opts->bind_address, sizeof(ks->self));
+	strncpy(ks->self.ip_addr, opts->bind_address, sizeof(ks->self.ip_addr));
 	ks->self.p2p_port=opts->p2p_port;
 	ks->health_check_port=opts->health_check_port;
 	ks->consul_agent_port=opts->consul_port;
-    ks->evbase = evbase;
+    ks->evbase = event_base_new();
 	ks->logger = logger;
 	ks->dryrun= opts->dryrun;
 	uuid_copy(ks->bin_uuid, opts->bin_uuid);
 
 	int ret=-1;
-	ks->is_initializing=1;
 	keyslots_init(ks);
-	consul_kv_init_if_nonexist(ks);
+	consul_kv_init_if_nonexist(ks);	
+	pthread_create(&(ks->thr), NULL, swarmkv_keyspace_thread, (void *) ks);
 	consul_watch_slots_changes_async(ks);
 	if(ks->dryrun)
 	{
@@ -1060,17 +1078,15 @@ struct swarmkv_keyspace* swarmkv_keyspace_new(const struct swarmkv_options *opts
 	ks->http_server=http_server_new(ks->evbase, ks->health_check_port, ks->logger);
 	if(!ks->http_server)
 	{
-		asprintf(err, "Health check HTTP server start failed");
-		MESA_handle_runtime_log(ks->logger, RLOG_LV_FATAL, MODULE_SWARMKV_KEYSPACE, "HTTP server start failed");
+		asprintf(err, "health check HTTP server start failed.");
+		MESA_handle_runtime_log(ks->logger, RLOG_LV_FATAL, MODULE_SWARMKV_KEYSPACE, "health check HTTP server start failed.");
 		goto error_out;
 	}
-	event_base_dispatch(ks->evbase);
-	ks->is_initializing=0;
 
 	ret=consul_service_register(ks);
 	if(ret<0)
 	{	
-		asprintf(err, "Health check HTTP server start failed");
+		asprintf(err, "consul service register failed.");
 		MESA_handle_runtime_log(ks->logger, RLOG_LV_FATAL, MODULE_SWARMKV_KEYSPACE, "consul service register failed.");
 		goto error_out;
 	}
@@ -1085,6 +1101,7 @@ error_out:
 
 void swarmkv_keyspace_free(struct swarmkv_keyspace* ks)
 {
+	event_base_loopexit(ks->evbase, NULL);
 	if(ks->http_server)
 	{
 		evhttp_free(ks->http_server);
@@ -1102,7 +1119,7 @@ void swarmkv_keyspace_free(struct swarmkv_keyspace* ks)
 			key_entry_free(key_entry);
 		}		
 	}
-	
+	event_base_free(ks->evbase);
 	free(ks);
 	return;
 }
@@ -1313,7 +1330,7 @@ void swarmkv_keyspace_exec(struct swarmkv_keyspace* ks, const struct swarmkv_cmd
  struct swarmkv_cmd *swarmkv_keyspace_cmd_new(enum swarmkv_operator store_op, const sds key, const struct swarmkv_node *in)
  {
 	struct swarmkv_cmd *cmd=NULL;
-	if(is_read_operator(store_op))
+	if(is_store_read_operator(store_op))
 	{
 		cmd=swarmkv_cmd_new(SWARMKV_OP_KEYSPACE_GET, 1);
 		cmd->args[0]=sdsdup(key);

@@ -216,7 +216,7 @@ sds swarmkv_msg_serialize(const struct swarmkv_msg* msg)
 {
 	char *root_mpack_buff=NULL, *cmd_mpack_buff=NULL, *args_mpack_buff=NULL;
 	size_t root_mpack_sz=0, cmd_mpack_sz=0, args_mpack_sz=0;
-	sds reply_mpack_buff;
+	sds reply_mpack_buff=NULL;
 
 	mpack_writer_t root, cmd, args;	
 	size_t i=0;

@@ -21,6 +21,7 @@
 #include <stdio.h>
 #include <errno.h>
 #include <pthread.h>
+#include <unistd.h> //usleep
 
 
 #define	MODULE_SWAMRKV_NET	module_name_str("swarmkv.net")
@@ -270,7 +271,10 @@ static void peer_conn_event_cb(struct bufferevent *bev, short events, void *arg)
 								err, evutil_socket_error_to_string(err));
 	}
 	pthread_mutex_lock(&thr->mutex);
-	swarmkv_net_conn_table_remove(conn);
+	if(conn->is_in_conn_table)
+	{
+		swarmkv_net_conn_table_remove(conn);
+	}
 	pthread_mutex_unlock(&thr->mutex);
 	swarmkv_connection_free(conn);
 	return;
@@ -289,6 +293,8 @@ void connect_peer_eventcb(struct bufferevent *bev, short events, void *arg)
 		bufferevent_write_buffer(conn->bev, conn->buff_for_sending);
 		bufferevent_setcb(conn->bev, peer_conn_read_cb, NULL, peer_conn_event_cb, conn);
 		bufferevent_enable(conn->bev, EV_READ | EV_WRITE);
+		MESA_handle_runtime_log(thr->ref_logger, RLOG_LV_DEBUG, MODULE_SWAMRKV_NET, "peer %s:%u is connected.",
+								conn->peer.ip_addr, conn->peer.p2p_port);
     }
 	else if (events & BEV_EVENT_ERROR)
     {
@@ -416,12 +422,14 @@ int swarmkv_net_send(struct swarmkv_net* net, const struct swarmkv_node* dest, c
 			MESA_handle_runtime_log(logger, RLOG_LV_FATAL, MODULE_SWAMRKV_NET, "connect to %s:%u failed, reason %d (%s).",
 									dest->ip_addr, dest->p2p_port,
 									err, evutil_socket_error_to_string(err));
+			return -1;
 		}
 	}	
 	pthread_mutex_unlock(&thr->mutex);
 
 	struct evbuffer* to_send=evbuffer_new();
 	struct swarmkv_msg_hdr msghdr;
+	memset(&msghdr, 0, sizeof(msghdr));
 	msghdr.magic=MSG_HDR_MAGIC;
 	msghdr.payload_len=sdslen(data);
 	memcpy(&(msghdr.source), &(net->self), sizeof(msghdr.source));
@@ -477,22 +485,22 @@ struct swarmkv_net* swarmkv_net_new(const struct swarmkv_options *opts, const st
 	memcpy(&(net->self), self, sizeof(struct swarmkv_node));
 
 
-	if(!opts->dryrun)
+	//Refer to http://www.wangafu.net/~nickm/libevent-book/Ref8_listener.html
+	struct sockaddr_in sin;
+	memset(&sin, 0, sizeof(sin));
+	sin.sin_family = AF_INET;
+	sin.sin_addr.s_addr = htonl(0);	// Listen on 0.0.0.0
+	sin.sin_port = htons((unsigned short)self->p2p_port);
+	net->listener=evconnlistener_new_bind(net->threads[0]->evbase, accept_peer_connection_cb, net, 
+										LEV_OPT_CLOSE_ON_FREE|LEV_OPT_REUSEABLE, -1, (struct sockaddr*)&sin, sizeof(sin));
+	if(!net->listener)
 	{
-		//Refer to http://www.wangafu.net/~nickm/libevent-book/Ref8_listener.html
-		struct sockaddr_in sin;
-		memset(&sin, 0, sizeof(sin));
-		sin.sin_family = AF_INET;
-		sin.sin_addr.s_addr = htonl(0);	// Listen on 0.0.0.0
-		sin.sin_port = htons((unsigned short)self->p2p_port);
-		net->listener=evconnlistener_new_bind(net->threads[0]->evbase, accept_peer_connection_cb, net, 
-											LEV_OPT_CLOSE_ON_FREE|LEV_OPT_REUSEABLE, -1, (struct sockaddr*)&sin, sizeof(sin));
-		if(!net->listener)
-		{
-			asprintf(err, "listen on port %u failed", self->p2p_port);
-		}
-		evconnlistener_set_error_cb(net->listener, __accept_error_cb);
+		asprintf(err, "listen on port %u failed", self->p2p_port);
+		free(net);
+		return NULL;
 	}
+	evconnlistener_set_error_cb(net->listener, __accept_error_cb);
+	
 	return net;
 }
 void swarmkv_net_stop(struct swarmkv_net* net)
@@ -510,10 +518,15 @@ void swarmkv_net_free(struct swarmkv_net* net)
 	struct swarmkv_net_thread_ctx *thr=NULL;
 	struct swarmkv_connection *conn=NULL, *tmp=NULL;
 
+	evconnlistener_free(net->listener);
 	for(i=0; i<net->n_thread; i++)
 	{	
 		thr=net->threads[i];
 		event_base_loopexit(thr->evbase, NULL);
+		while(!event_base_got_exit(thr->evbase))
+		{
+			usleep(100);
+		}
 		net->threads[i]=NULL;
 		HASH_ITER(hh, thr->conn_table, conn, tmp)
 		{
@@ -524,7 +537,6 @@ void swarmkv_net_free(struct swarmkv_net* net)
 		free(thr);
 	}
 	free(net->threads);
-	evconnlistener_free(net->listener);
 
 	free(net);
 	return;
@@ -542,7 +554,10 @@ void swarmkv_net_dispath(struct swarmkv_net* net, int thread_id)
 	struct event * ev = event_new(net->threads[thread_id]->evbase, -1, EV_PERSIST, __dummy_event_handler, net);
 	struct timeval timer_delay = {2, 0};
 	evtimer_add(ev, &timer_delay);
-	event_base_dispatch(net->threads[thread_id]->evbase);
+	int ret=0;
+	ret=event_base_dispatch(net->threads[thread_id]->evbase);
+	printf("event_base_dispatch returns %d\n", ret);
+	return;
 }
 struct event_base * swarmkv_net_get_eventbase(struct swarmkv_net* net, int thread_id)
 {

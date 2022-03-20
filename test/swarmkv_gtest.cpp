@@ -5,9 +5,7 @@
 #include <pthread.h>
 #include <asm/errno.h>
 #include <sys/syscall.h>
-
-
-
+#include <unistd.h>
 
 struct cmd_exec_arg
 {
@@ -19,7 +17,7 @@ struct cmd_exec_arg
 	int callback_invoking_tid;
 	int is_sync_callback;
 };
-struct cmd_exec_arg* cmd_exec_arg_new()
+struct cmd_exec_arg* cmd_exec_arg_new(void)
 {
 	struct cmd_exec_arg* arg=(struct cmd_exec_arg*)calloc(sizeof(struct cmd_exec_arg), 1);
 	pthread_cond_init(&arg->cond, NULL);
@@ -103,13 +101,13 @@ void cmd_exec_arg_failed(struct cmd_exec_arg* arg)
 {
 	arg->is_callback_executed=1;
 	arg->success=0;
-	pthread_cond_signal(&arg->cond);
 	if(arg->callback_invoking_tid==arg->api_invoking_tid)
 	{
 		arg->is_sync_callback=1;
 	}
-
+	pthread_cond_signal(&arg->cond);
 }
+
 
 size_t swarmkv_reply_print(const struct swarmkv_reply* reply, char* buff, size_t buff_sz)
 {
@@ -142,7 +140,7 @@ void basic_test_get_callback(const struct swarmkv_reply* reply, void * cb_arg)
 	struct cmd_exec_arg* arg=(struct cmd_exec_arg*)cb_arg;
 	char buff[1024];
 	swarmkv_reply_print(reply, buff, sizeof(buff));
-	printf("get %s\n", buff);
+//	printf("get %s\n", buff);
 	if(reply->type==SWARMKV_REPLY_STRING && 0==memcmp(reply->str, "zhangsan", reply->len))
 	{
 		cmd_exec_arg_success(arg);
@@ -240,6 +238,8 @@ TEST_F(SwarmkvBasicTest, SimpleSetGet)
 	EXPECT_EQ(exec_successful, 1);
 	cmd_exec_arg_free(arg);
 	arg=NULL;
+	
+	sleep(1);
 }
 
 class SwarmkvTwoNodes : public testing::Test 
@@ -339,7 +339,7 @@ void sync_cache_get_callback1(const struct swarmkv_reply* reply, void * cb_arg)
 	struct cmd_exec_arg* arg=(struct cmd_exec_arg*)cb_arg;
 	char buff[1024];
 	swarmkv_reply_print(reply, buff, sizeof(buff));
-	printf("get %s\n", buff);
+//	printf("get %s\n", buff);
 	if(reply->type==SWARMKV_REPLY_STRING && 0==memcmp(reply->str, "lisi", reply->len))
 	{
 		cmd_exec_arg_success(arg);
@@ -355,7 +355,7 @@ void sync_cache_get_callback2(const struct swarmkv_reply* reply, void * cb_arg)
 	struct cmd_exec_arg* arg=(struct cmd_exec_arg*)cb_arg;
 	char buff[1024];
 	swarmkv_reply_print(reply, buff, sizeof(buff));
-	printf("get %s\n", buff);
+//	printf("get %s\n", buff);
 	if(reply->type==SWARMKV_REPLY_STRING && 0==memcmp(reply->str, "wang2mazi", reply->len))
 	{
 		cmd_exec_arg_success(arg);

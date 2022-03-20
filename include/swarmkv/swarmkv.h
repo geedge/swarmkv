@@ -48,12 +48,14 @@ int swarmkv_options_set_bind_address(struct swarmkv_options *opts, const char* i
 int swarmkv_options_set_logger(struct swarmkv_options *opts, void *logger);
 int swarmkv_options_set_consul_port(struct swarmkv_options *opts, unsigned int consul_port);
 int swarmkv_options_set_dryrun(struct swarmkv_options *opts);
+int swarmkv_options_set_worker_thread_number(struct swarmkv_options *opts, size_t nr_worker_threads);
 
 struct swarmkv *swarmkv_open(struct swarmkv_options *opts, const char * db_name, char **err);
 void swarmkv_close(struct swarmkv * db);
 
 
 
+struct swarmkv_reply* swarmkv_command(struct swarmkv *db, const char *format, ...);
 
 void swarmkv_get_string(struct swarmkv * db, 
 	const char * key, size_t keylen, swarmkv_cmd_callback_func_t * cb, void * arg);

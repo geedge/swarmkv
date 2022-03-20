@@ -24,4 +24,7 @@
 	(type *)( (char *)__mptr - offsetof(type,member) );})
 #endif
 const char*	module_name_str(const char*name);
+const char* swarmkv_util_pthread_cond_timedwait_error_to_string(const int timed_wait_rv);
+
+
 

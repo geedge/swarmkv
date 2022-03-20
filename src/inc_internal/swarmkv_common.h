@@ -48,7 +48,7 @@ enum swarmkv_operator
 	SWARMKV_OP_KEYSPACE_SETSLOT,	//KEYSPACE SETSLOT slot_id IMPORTING host port|MIGRATING host port|NODE host port|STABLE
 
 	SWARMKV_OP_CLUSTER_SYNC,		//CLUSTER SYNC object_version $POPULATE_COMMAND
-	__SWARMKV_CMD_MAX
+	__SWARMKV_OP_MAX
 };
 
 struct swarmkv_cmd
@@ -62,6 +62,8 @@ void swarmkv_common_global_deinit(void);
 
 const char* swarmkv_cmd_op2str(enum swarmkv_operator op);
 enum swarmkv_operator swarmkv_cmd_str2op(const char* opstr);
+int has_sub_operator(const char* op_str);
+int command_str2op(const char* op_str, const char *sub_op_str, enum swarmkv_operator *op);
 
 
 struct swarmkv_cmd* swarmkv_cmd_new(enum swarmkv_operator op, size_t n_args);
@@ -72,11 +74,12 @@ struct swarmkv_reply* swarmkv_reply_new_string(const char* str, size_t sz);
 struct swarmkv_reply* swarmkv_reply_new_integer(long long integer);
 struct swarmkv_reply* swarmkv_reply_new_array(size_t n_element);
 struct swarmkv_reply* swarmkv_reply_new_nil(void);
-struct swarmkv_reply* swarmkv_reply_new_status(const char* status);
-struct swarmkv_reply* swarmkv_reply_new_error(const char* err_msg);
-
+struct swarmkv_reply* swarmkv_reply_new_status(const char *format, ...);
+struct swarmkv_reply* swarmkv_reply_new_error(const char *format, ...);
+struct swarmkv_reply *swarmkv_reply_dup(const struct swarmkv_reply *origin);
 
 void node2reply(const struct swarmkv_node *node, struct swarmkv_reply* reply[2]);
 void sds2node(const sds args[2], struct swarmkv_node *node);
-int is_read_operator(enum swarmkv_operator op);
+int is_store_read_operator(enum swarmkv_operator op);
+int is_keyspace_operator(enum swarmkv_operator op);
 

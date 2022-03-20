@@ -14,7 +14,7 @@ int swarmkv_store_cache_exec(struct swarmkv_store *store, const struct swarmkv_c
 void swarmkv_store_cache_sync(struct swarmkv_store *store, const struct swarmkv_cmd *sync_cmd, struct swarmkv_reply **reply);
 void swarmkv_store_process_sync_reply(struct swarmkv_store *store, sds key, const struct swarmkv_node* peer, const struct swarmkv_reply* reply, struct swarmkv_cmd **full_sync_cmd);
 
-int is_read_operator(enum swarmkv_operator op);
+int is_store_read_operator(enum swarmkv_operator op);
 int swarmkv_store_remove_accessed_node(struct swarmkv_store *store, sds key, const struct swarmkv_node *node);
 
 

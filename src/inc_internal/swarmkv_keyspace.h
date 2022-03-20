@@ -15,7 +15,7 @@
 struct swarmkv_keyspace;
 
 
-struct swarmkv_keyspace* swarmkv_keyspace_new(const struct swarmkv_options *opts, const char* db_name, struct event_base * evbase, void *logger, char **err);
+struct swarmkv_keyspace* swarmkv_keyspace_new(const struct swarmkv_options *opts, const char* db_name, void *logger, char **err);
 void swarmkv_keyspace_free(struct swarmkv_keyspace* keyspace);
 
 
