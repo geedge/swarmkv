@@ -10,7 +10,7 @@ void swarmkv_store_free(struct swarmkv_store* store);
 
 int swarmkv_store_exec(struct swarmkv_store *store, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply, 
 	 const struct swarmkv_node* accessing_node, struct swarmkv_cmd **sync_cmd, struct swarmkv_node **accessed_nodes, size_t *n_accessed_node);
-int swarmkv_store_cache_exec(struct swarmkv_store *store, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply);
+int swarmkv_store_cache_read(struct swarmkv_store *store, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply);
 void swarmkv_store_cache_sync(struct swarmkv_store *store, const struct swarmkv_cmd *sync_cmd, struct swarmkv_reply **reply);
 void swarmkv_store_process_sync_reply(struct swarmkv_store *store, sds key, const struct swarmkv_node* peer, const struct swarmkv_reply* reply, struct swarmkv_cmd **full_sync_cmd);
 

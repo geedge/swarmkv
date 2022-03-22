@@ -61,7 +61,7 @@ void swarmkv_common_global_init(void);
 void swarmkv_common_global_deinit(void);
 
 const char* swarmkv_cmd_op2str(enum swarmkv_operator op);
-enum swarmkv_operator swarmkv_cmd_str2op(const char* opstr);
+enum swarmkv_operator swarmkv_cmd_str2op(const char* opstr, size_t len);
 int has_sub_operator(const char* op_str);
 int command_str2op(const char* op_str, const char *sub_op_str, enum swarmkv_operator *op);
 
@@ -82,4 +82,5 @@ void node2reply(const struct swarmkv_node *node, struct swarmkv_reply* reply[2])
 void sds2node(const sds args[2], struct swarmkv_node *node);
 int is_store_read_operator(enum swarmkv_operator op);
 int is_keyspace_operator(enum swarmkv_operator op);
+int is_store_del_operator(enum swarmkv_operator op);
 

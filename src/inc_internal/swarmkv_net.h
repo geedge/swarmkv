@@ -14,7 +14,3 @@ int swarmkv_net_send(struct swarmkv_net* net, const struct swarmkv_node* dest, c
 void swarmkv_net_dispath(struct swarmkv_net* net, int thread_id);
 void swarmkv_net_stop(struct swarmkv_net* net);
 
-struct event_base * swarmkv_net_get_eventbase(struct swarmkv_net* net, int thread_id);
-
-
-

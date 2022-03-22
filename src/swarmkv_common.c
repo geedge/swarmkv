@@ -143,6 +143,20 @@ int is_store_read_operator(enum swarmkv_operator op)
 	}
 	return ret;
 }
+int is_store_del_operator(enum swarmkv_operator op)
+{
+	int ret=0;
+	switch(op)
+	{
+		case SWARMKV_OP_DEL:
+		case SWARMKV_OP_HDEL:
+			ret=1;
+		default:
+			break;
+	}
+	return ret;
+
+}
 int is_keyspace_operator(enum swarmkv_operator op)
 {
 	int ret=0;
@@ -233,7 +247,7 @@ void swarmkv_common_global_init(void)
 		p=ALLOC(struct str2op, 1);
 		strcpy(p->str, g_swarmkv_common_op2str[i]);
 		p->op=i;
-		HASH_ADD_STR(g_swarmkv_common_str2op_map, str, p);
+		HASH_ADD(hh, g_swarmkv_common_str2op_map, str, strlen(p->str), p);
 	}
 	g_swarmkv_common_init=1;
 }
@@ -244,16 +258,16 @@ int has_sub_operator(const char* op_str)
 	for(i=0; i<__SWARMKV_OP_MAX; i++)
 	{
 		p=strcasestr(g_swarmkv_common_op2str[i], op_str);
-		if(p && p==g_swarmkv_common_op2str[i] && *(p+strlen(op_str)+1)==' ')
+		if(p && p==g_swarmkv_common_op2str[i] && *(p+strlen(op_str))==' ')
 		{
 			return 1;
 		}
 		else
 		{
-			return 0;
+			continue;
 		}
 	}
-	return -1;
+	return 0;
 }
 int command_str2op(const char* op_str, const char *sub_op_str, enum swarmkv_operator *op)
 {
@@ -294,10 +308,10 @@ const char* swarmkv_cmd_op2str(enum swarmkv_operator op)
 
 	return g_swarmkv_common_op2str[op];
 }
-enum swarmkv_operator swarmkv_cmd_str2op(const char* opstr)
+enum swarmkv_operator swarmkv_cmd_str2op(const char* opstr, size_t len)
 {
 	struct str2op *p=NULL;
-	HASH_FIND_STR(g_swarmkv_common_str2op_map, opstr, p);
+	HASH_FIND(hh, g_swarmkv_common_str2op_map, opstr, len, p);
 	return p->op;	
 }
 

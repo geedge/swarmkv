@@ -139,7 +139,7 @@ void swarmkv_store_cache_sync(struct swarmkv_store *store, const struct swarmkv_
 		case SWARMKV_OP_DEL:
 			if(ctr)
 			{
-				HASH_DELETE(hh, store->owned_obj_table, ctr);
+				HASH_DELETE(hh, store->cached_obj_table, ctr);
 				obj_container_free(ctr);
 				ctr=NULL;
 			}
@@ -193,18 +193,19 @@ out_of_sync:
 	return;
 }
 
-int swarmkv_store_cache_exec(struct swarmkv_store *store, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
+int swarmkv_store_cache_read(struct swarmkv_store *store, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
 {
-	int n_reply=0;
+	int is_cache_hit=0;
 	struct obj_container* ctr=NULL;
 	struct swarmkv_reply *r=NULL;
 
 	sds key=cmd->args[0];
-	HASH_FIND(hh, store->owned_obj_table, key, sdslen(key), ctr);
-	if(ctr)
+	HASH_FIND(hh, store->cached_obj_table, key, sdslen(key), ctr);
+	if(!ctr)
 	{
-		return n_reply;
+		return is_cache_hit;
 	}
+	is_cache_hit=1;
 	r=ALLOC(struct swarmkv_reply, 1);
 	switch (cmd->op)
 	{
@@ -216,7 +217,6 @@ int swarmkv_store_cache_exec(struct swarmkv_store *store, const struct swarmkv_c
 				r->len=sdslen(ctr->obj.value);
 				r->str=ALLOC(char, r->len);
 				memcpy(r->str, ctr->obj.value, sdslen(ctr->obj.value));
-				n_reply=1;
 				*reply=r;
 			}		
 			break;
@@ -226,7 +226,7 @@ int swarmkv_store_cache_exec(struct swarmkv_store *store, const struct swarmkv_c
 			assert(0);
 			break;
 	}
-	return n_reply;
+	return is_cache_hit;
 }
 struct swarmkv_store* swarmkv_store_new()
 {

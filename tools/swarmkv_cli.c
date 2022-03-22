@@ -37,7 +37,7 @@ void print_reply(const struct swarmkv_reply *reply)
 			printf("(error) %s\n", reply->str);
 			break;
 		case SWARMKV_REPLY_STATUS:
-			printf("%s", reply->str);
+			printf("%s\n", reply->str);
 			break;
 		case SWARMKV_REPLY_STRING:
 			printf("\"%s\"\n", reply->str);

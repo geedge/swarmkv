@@ -191,68 +191,67 @@ static void peer_conn_read_cb(struct bufferevent *bev, void *arg)
 	{
 		MESA_handle_runtime_log(thr->ref_logger, RLOG_LV_FATAL, MODULE_SWAMRKV_NET, "connection %s:%u is killed",
 									conn->peer_ip, conn->peer_port);
-		pthread_mutex_lock(&thr->mutex);
-		swarmkv_net_conn_table_remove(conn);
-		pthread_mutex_unlock(&thr->mutex);
-		
+		assert(conn->is_in_conn_table==0);		
 		swarmkv_connection_free(conn);
 		return;
 	}
 	const char *recv_buff=NULL;
 	struct swarmkv_msg_hdr* hdr=NULL;
-	
-	if(conn->recv_state==RECEIVING_HDR)
+	while(1)
 	{
-		assert(conn->expect_payload_len==0);
-		recv_buff=(const char*) evbuffer_pullup(input, sizeof(struct swarmkv_msg_hdr));
-		if(!recv_buff)
+		if(conn->recv_state==RECEIVING_HDR)
 		{
-			bufferevent_setwatermark(bev, EV_READ, sizeof(struct swarmkv_msg_hdr), 0);
-			conn->recv_state=RECEIVING_HDR;
-			return;
-		}
-		hdr=(struct swarmkv_msg_hdr*)recv_buff;
-		if(hdr->magic!=MSG_HDR_MAGIC)
-		{
-			MESA_handle_runtime_log(thr->ref_logger, RLOG_LV_FATAL, MODULE_SWAMRKV_NET, "invalid message header magic from %s:%u",
-									conn->peer_ip, conn->peer_port);									
-			pthread_mutex_lock(&thr->mutex);
-			swarmkv_net_conn_table_remove(conn);
-			pthread_mutex_unlock(&thr->mutex);
-			
-			swarmkv_connection_free(conn);
-			return;
-		}
-		if(!conn->is_in_conn_table)
-		{
-			swarmkv_connection_set_peer(conn, &hdr->source);
-			pthread_mutex_lock(&thr->mutex);
-			swarmkv_net_conn_table_overwrite(thr, conn);			
-			pthread_mutex_unlock(&thr->mutex);
+			assert(conn->expect_payload_len==0);
+			recv_buff=(const char*) evbuffer_pullup(input, sizeof(struct swarmkv_msg_hdr));
+			if(!recv_buff)
+			{
+				bufferevent_setwatermark(bev, EV_READ, sizeof(struct swarmkv_msg_hdr), 0);
+				conn->recv_state=RECEIVING_HDR;
+				break;
+			}
+			hdr=(struct swarmkv_msg_hdr*)recv_buff;
+			if(hdr->magic!=MSG_HDR_MAGIC)
+			{
+				MESA_handle_runtime_log(thr->ref_logger, RLOG_LV_FATAL, MODULE_SWAMRKV_NET, "invalid message header magic from %s:%u",
+										conn->peer_ip, conn->peer_port);									
+				pthread_mutex_lock(&thr->mutex);
+				swarmkv_net_conn_table_remove(conn);
+				pthread_mutex_unlock(&thr->mutex);
+				
+				swarmkv_connection_free(conn);
+				break;
+			}
+			if(!conn->is_in_conn_table)
+			{
+				swarmkv_connection_set_peer(conn, &hdr->source);
+				pthread_mutex_lock(&thr->mutex);
+				swarmkv_net_conn_table_overwrite(thr, conn);			
+				pthread_mutex_unlock(&thr->mutex);
 
-			MESA_handle_runtime_log(thr->ref_logger, RLOG_LV_INFO, MODULE_SWAMRKV_NET, 
-						"new peer connection from %s:%d has been set, source address is %s:%u.",
-										conn->peer.ip_addr, conn->peer.p2p_port,
-										conn->peer_ip, conn->peer_port);
-		}
-		conn->recv_state=RECEIVING_PAYLOAD;
-		conn->expect_payload_len=hdr->payload_len;
-		evbuffer_drain(input, sizeof(struct swarmkv_msg_hdr));
-		hdr=NULL;
-	}
-	if(conn->recv_state==RECEIVING_PAYLOAD)
-	{
-		recv_buff=(const char*)evbuffer_pullup(input, conn->expect_payload_len);
-		if(!recv_buff)//not enough buffer
-		{
-			bufferevent_setwatermark(conn->bev, EV_READ, conn->expect_payload_len, 0);
+				MESA_handle_runtime_log(thr->ref_logger, RLOG_LV_INFO, MODULE_SWAMRKV_NET, 
+							"new peer connection from %s:%d has been set, source address is %s:%u.",
+											conn->peer.ip_addr, conn->peer.p2p_port,
+											conn->peer_ip, conn->peer_port);
+			}
 			conn->recv_state=RECEIVING_PAYLOAD;
-			return;
+			conn->expect_payload_len=hdr->payload_len;
+			evbuffer_drain(input, sizeof(struct swarmkv_msg_hdr));
+			hdr=NULL;
 		}
-		thr->ref_net->callback_func(&(conn->peer), recv_buff, conn->expect_payload_len, thr->ref_net->callback_arg);
-		evbuffer_drain(input, conn->expect_payload_len);
-		conn->expect_payload_len=0;
-		conn->recv_state=RECEIVING_HDR;
+		if(conn->recv_state==RECEIVING_PAYLOAD)
+		{
+			recv_buff=(const char*)evbuffer_pullup(input, conn->expect_payload_len);
+			if(!recv_buff)//not enough buffer
+			{
+				bufferevent_setwatermark(conn->bev, EV_READ, conn->expect_payload_len, 0);
+				conn->recv_state=RECEIVING_PAYLOAD;
+				break;
+			}
+			thr->ref_net->callback_func(&(conn->peer), recv_buff, conn->expect_payload_len, thr->ref_net->callback_arg);
+			evbuffer_drain(input, conn->expect_payload_len);
+			conn->expect_payload_len=0;
+			conn->recv_state=RECEIVING_HDR;
+		}
 	}
 	return;
 }
@@ -316,7 +315,7 @@ struct swarmkv_connection* swarmkv_connection_new_by_connect(struct swarmkv_net_
 	struct swarmkv_connection* conn=ALLOC(struct swarmkv_connection, 1);
 	conn->buff_for_sending=evbuffer_new();
 	evbuffer_enable_locking(conn->buff_for_sending, NULL);
-	conn->bev=bufferevent_socket_new(base, -1, BEV_OPT_UNLOCK_CALLBACKS|BEV_OPT_DEFER_CALLBACKS|BEV_OPT_THREADSAFE);
+	conn->bev=bufferevent_socket_new(base, -1, BEV_OPT_DEFER_CALLBACKS|BEV_OPT_THREADSAFE);//BEV_OPT_UNLOCK_CALLBACKS|
 	bufferevent_setcb(conn->bev, NULL, NULL, connect_peer_eventcb, conn);
 	memcpy(&conn->peer, dest, sizeof(struct swarmkv_node));
 	conn->thread_id=thr->thread_id;
@@ -367,7 +366,7 @@ struct swarmkv_connection* swarmkv_connection_new_by_fd(struct swarmkv_net_threa
 	evbuffer_enable_locking(conn->buff_for_sending, NULL);
 	evutil_make_socket_nonblocking(fd);
 	sockaddr2string(addr, conn->peer_ip, sizeof(conn->peer_ip), &(conn->peer_port));
-	conn->bev=bufferevent_socket_new(thr->evbase, fd, BEV_OPT_UNLOCK_CALLBACKS|BEV_OPT_DEFER_CALLBACKS|BEV_OPT_THREADSAFE);
+	conn->bev=bufferevent_socket_new(thr->evbase, fd, BEV_OPT_DEFER_CALLBACKS|BEV_OPT_THREADSAFE);//BEV_OPT_UNLOCK_CALLBACKS|
 	//use BEV_OPT_THREADSAFE option for safely access from threads that calling swarmkv_net_send.
 	//? use BEV_OPT_UNLOCK_CALLBACKS option because swarmkv_net_send write buffer to output_buffer, and peer_conn_read_cb read input_buffer.
 	conn->fd=fd;
@@ -378,18 +377,31 @@ struct swarmkv_connection* swarmkv_connection_new_by_fd(struct swarmkv_net_threa
 	return conn;
 }
 
-void swarmkv_connection_send(struct swarmkv_connection* conn, struct evbuffer* buff)
+void swarmkv_connection_send(struct swarmkv_connection *conn, const void *hdr, size_t hdr_sz, const void *payload, size_t payload_sz)
 {
 	struct evbuffer* output_buffer=NULL;
 	output_buffer=bufferevent_get_output(conn->bev);
+	
 	if(output_buffer)
 	{
-		evbuffer_add_buffer(output_buffer, buff);
+		evbuffer_add(output_buffer, hdr, hdr_sz);
+		evbuffer_add(output_buffer, payload, payload_sz);
 	}
 	else
 	{
-		evbuffer_add_buffer(conn->buff_for_sending, buff);
+		evbuffer_add(conn->buff_for_sending, hdr, hdr_sz);
+		evbuffer_add(conn->buff_for_sending, payload, payload_sz);
+
 	}
+	/*
+	bufferevent_lock(conn->bev);
+	int ret=0;
+	ret=bufferevent_write(conn->bev, hdr, hdr_sz);
+	assert(ret==0);
+	ret=bufferevent_write(conn->bev, payload, payload_sz);
+	assert(ret==0);
+	bufferevent_unlock(conn->bev);
+*/
 	return;
 }
 static int get_net_thread_id(const char* peer_ip, size_t n_thread)
@@ -422,21 +434,18 @@ int swarmkv_net_send(struct swarmkv_net* net, const struct swarmkv_node* dest, c
 			MESA_handle_runtime_log(logger, RLOG_LV_FATAL, MODULE_SWAMRKV_NET, "connect to %s:%u failed, reason %d (%s).",
 									dest->ip_addr, dest->p2p_port,
 									err, evutil_socket_error_to_string(err));
+			pthread_mutex_unlock(&thr->mutex);
 			return -1;
 		}
 	}	
 	pthread_mutex_unlock(&thr->mutex);
 
-	struct evbuffer* to_send=evbuffer_new();
 	struct swarmkv_msg_hdr msghdr;
 	memset(&msghdr, 0, sizeof(msghdr));
 	msghdr.magic=MSG_HDR_MAGIC;
 	msghdr.payload_len=sdslen(data);
 	memcpy(&(msghdr.source), &(net->self), sizeof(msghdr.source));
-	evbuffer_add(to_send, (const char*)&msghdr, sizeof(msghdr));
-	evbuffer_add(to_send, data, sdslen(data));
-	swarmkv_connection_send(conn, to_send);
-	evbuffer_free(to_send);
+	swarmkv_connection_send(conn, &msghdr, sizeof(msghdr), data, sdslen(data));
 	return 0;
 }
 static void accept_peer_connection_cb(struct evconnlistener *listener, evutil_socket_t fd, struct sockaddr * addr, int socklen, void *arg)
@@ -554,13 +563,8 @@ void swarmkv_net_dispath(struct swarmkv_net* net, int thread_id)
 	struct event * ev = event_new(net->threads[thread_id]->evbase, -1, EV_PERSIST, __dummy_event_handler, net);
 	struct timeval timer_delay = {2, 0};
 	evtimer_add(ev, &timer_delay);
-	int ret=0;
-	ret=event_base_dispatch(net->threads[thread_id]->evbase);
-	printf("event_base_dispatch returns %d\n", ret);
+	event_base_dispatch(net->threads[thread_id]->evbase);
 	return;
 }
-struct event_base * swarmkv_net_get_eventbase(struct swarmkv_net* net, int thread_id)
-{
-	return net->threads[thread_id]->evbase;
-}
+
 

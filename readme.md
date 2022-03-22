@@ -230,8 +230,8 @@ Command message
 {
     "msg_type":"cmd",
     "do_not_reply": false,
-    "txn_seq": 7237914459,
-    "txn_initiator": "ebe5a57c-cb33-4b2f-968f-44c4b87ea8d9",
+    "rr_seq": 7237914459,
+    "requester": "ebe5a57c-cb33-4b2f-968f-44c4b87ea8d9",
     "cmd":{
         "op":"HMGET",
         "args":[
@@ -249,8 +249,8 @@ Reply message
 ```json
 {
 	"msg_type":"reply",
-    "txn_seq": 7237914459,
-    "txn_initiator": "ebe5a57c-cb33-4b2f-968f-44c4b87ea8d9",
+    "rr_seq": 7237914459,
+    "requester": "ebe5a57c-cb33-4b2f-968f-44c4b87ea8d9",
     "reply":{
         "reply_type":"array",
         "element":[
@@ -325,7 +325,7 @@ The source files are organized as follows:
   - The keyspace is partitioned by key slots among the participating nodes. 
 - src/swarmkv_message.c: Message is encoded to [MessagePack](https://msgpack.org/index.html) format by [mpack](https://github.com/ludocode/mpack) library.
 - src/swarmkv_net.c: High performance P2P communication via [libevent](https://libevent.org/).
-- tools/swarmkv_cli: CLI implementation faciliated by [linenoise](https://github.com/antirez/linenoise).
+- tools/swarmkv_cli: CLI implementation facilitated by [linenoise](https://github.com/antirez/linenoise).
 
 ## Similar Projects
 

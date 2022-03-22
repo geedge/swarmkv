@@ -875,7 +875,7 @@ void handle_failed_nodes(struct swarmkv_keyspace* ks, struct swarmkv_node* nodes
 	{
 		for(j=0; j<n_node; j++)
 		{
-			if(memcmp(&(slots_copy[i].owner), nodes+j, sizeof(struct swarmkv_node)))
+			if(0==memcmp(&(slots_copy[i].owner), nodes+j, sizeof(struct swarmkv_node)))
 			{
 				break;
 			}
@@ -1102,6 +1102,10 @@ error_out:
 void swarmkv_keyspace_free(struct swarmkv_keyspace* ks)
 {
 	event_base_loopexit(ks->evbase, NULL);
+	while(!event_base_got_exit(ks->evbase))
+	{
+		usleep(100);
+	}
 	if(ks->http_server)
 	{
 		evhttp_free(ks->http_server);
