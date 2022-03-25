@@ -175,7 +175,21 @@ int is_keyspace_operator(enum swarmkv_operator op)
 	}
 	return ret;
 }
-
+int is_cache_operator(enum swarmkv_operator op)
+{
+	int ret=0;
+	switch(op)
+	{
+		case SWARMKV_OP_CACHE_DEL:
+		case SWARMKV_OP_CACHE_SET:
+			ret=1;
+			break;
+		default:
+			ret=0;
+			break;
+	}
+	return ret;
+}
 struct swarmkv_cmd* swarmkv_cmd_new(enum swarmkv_operator op, size_t n_args)
 {
 	struct swarmkv_cmd* cmd=ALLOC(struct swarmkv_cmd, 1);
@@ -233,13 +247,20 @@ void swarmkv_common_global_init(void)
 	g_swarmkv_common_op2str[SWARMKV_OP_DECRBY]="DECRBY";
 	g_swarmkv_common_op2str[SWARMKV_OP_THROTTLESET]="THROTTLESET";
 	g_swarmkv_common_op2str[SWARMKV_OP_EXPIRE]="EXPIRE";
+	
 	g_swarmkv_common_op2str[SWARMKV_OP_KEYSPACE_SET]="KEYSPACE SET";
 	g_swarmkv_common_op2str[SWARMKV_OP_KEYSPACE_SETNXGET]="KEYSPACE SETNXGET";
 	g_swarmkv_common_op2str[SWARMKV_OP_KEYSPACE_GET]="KEYSPACE GET";
 	g_swarmkv_common_op2str[SWARMKV_OP_KEYSPACE_DEL]="KEYSPACE DEL";
 	g_swarmkv_common_op2str[SWARMKV_OP_KEYSPACE_GETSLOTKEYS]="KEYSPACE GETSLOTKEYS";
 	g_swarmkv_common_op2str[SWARMKV_OP_KEYSPACE_SETSLOT]="KEYSPACE SETSLOT";
-	g_swarmkv_common_op2str[SWARMKV_OP_CLUSTER_SYNC]="CLUSTER SYNC";
+	g_swarmkv_common_op2str[SWARMKV_OP_KEYSPACE_KEYS]="KEYSPACE KEYS";
+	
+	g_swarmkv_common_op2str[SWARMKV_OP_CACHE_SET]="SYNC SET";
+	g_swarmkv_common_op2str[SWARMKV_OP_CACHE_DEL]="SYNC DEL";
+
+	g_swarmkv_common_op2str[SWARMKV_OP_CLUSTER_KEYS]="CLUSTER KEYS";
+	g_swarmkv_common_op2str[SWARMKV_OP_CLUSTER_ADDNODE]="CLUSTER ADDNODE";
 	int i=0;
 	struct str2op *p=NULL;
 	for(i=0; i<__SWARMKV_OP_MAX; i++)

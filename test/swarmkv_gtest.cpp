@@ -220,7 +220,7 @@ protected:
 	static struct swarmkv* db;
 };
 struct swarmkv* SwarmkvBasicTest::db;
-TEST_F(SwarmkvBasicTest, SimpleSetGet)
+TEST_F(SwarmkvBasicTest, SetGet)
 {
 	struct cmd_exec_arg *arg=NULL;
 	struct swarmkv* db=SwarmkvBasicTest::db;
@@ -233,13 +233,32 @@ TEST_F(SwarmkvBasicTest, SimpleSetGet)
 	exec_successful=cmd_exec_arg_wait(arg, 100);//100ms
 	EXPECT_EQ(exec_successful, 1);
 	cmd_exec_arg_clear(arg);
+
 	swarmkv_get_string(db, key, strlen(key), basic_test_get_callback, arg);
 	cmd_exec_arg_wait(arg, 100);//100ms
 	EXPECT_EQ(exec_successful, 1);
 	cmd_exec_arg_free(arg);
 	arg=NULL;
+}
+TEST_F(SwarmkvBasicTest, Delete)
+{
+	struct cmd_exec_arg *arg=NULL;
+	struct swarmkv* db=SwarmkvBasicTest::db;
+	const char* key="name2";
+	const char* val="zhangsan";
+	int exec_successful=0;
+
+	arg=cmd_exec_arg_new();
+	swarmkv_set_string(db, key, strlen(key), val, strlen(val), basic_test_set_callback, arg);
+	exec_successful=cmd_exec_arg_wait(arg, 100);//100ms
+	EXPECT_EQ(exec_successful, 1);
+	cmd_exec_arg_clear(arg);
 	
-	sleep(1);
+	swarmkv_del(db, key, strlen(key), basic_test_del_callback, arg);
+	cmd_exec_arg_wait(arg, 100);//100ms
+	EXPECT_EQ(exec_successful, 1);
+	cmd_exec_arg_free(arg);
+	arg=NULL;
 }
 
 class SwarmkvTwoNodes : public testing::Test 
@@ -287,7 +306,7 @@ protected:
 };
 struct swarmkv* SwarmkvTwoNodes::db1;
 struct swarmkv* SwarmkvTwoNodes::db2;
-TEST_F(SwarmkvTwoNodes, SimpleSetGet)
+TEST_F(SwarmkvTwoNodes, SetGet)
 {
 	struct cmd_exec_arg *arg=NULL;
 	struct swarmkv* db1=SwarmkvTwoNodes::db1;
@@ -383,7 +402,7 @@ void sync_cache_get_callback2(const struct swarmkv_reply* reply, void * cb_arg)
 	return;
 }
 
-TEST_F(SwarmkvTwoNodes, SyncCache)
+TEST_F(SwarmkvTwoNodes, CacheSync)
 {
 	struct cmd_exec_arg *arg=NULL;
 	struct swarmkv* db1=SwarmkvTwoNodes::db1;

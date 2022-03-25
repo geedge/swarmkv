@@ -70,7 +70,7 @@ struct swarmkv_writeoptions
 {
 
 };
-struct swarmkv_reply *store_exec_and_cache_sync(struct swarmkv *db, const struct swarmkv_cmd *cmd, const struct swarmkv_node *accessing_node);
+struct swarmkv_reply *store_exec_and_sync_cache(struct swarmkv *db, const struct swarmkv_cmd *cmd, const struct swarmkv_node *accessing_node);
 
 
 static struct swarmkv_rr* swarmkv_rr_new(struct swarmkv *db, swarmkv_rr_callback_func_t * cb, void * cb_arg)
@@ -200,7 +200,7 @@ static void keyspace_route_on_succ(void* result, void* user)
 	struct swarmkv_reply *reply=NULL;
 	if(swarmkv_keyspace_is_myself(db->ks, obj_owner))
 	{
-		reply=store_exec_and_cache_sync(db, ctx->cmd, NULL);
+		reply=store_exec_and_sync_cache(db, ctx->cmd, NULL);
 		cmd_exec_on_succ(reply, ctx);
 		swarmkv_reply_free(reply);
 	}
@@ -314,18 +314,19 @@ void cache_sync_ctx_free(struct cache_sync_ctx* ctx)
 }
 static void cache_sync_on_succ(void* result, void* user)
 {
-	const struct swarmkv_reply* reply=(const struct swarmkv_reply*) result;
 	struct cache_sync_ctx *ctx=(struct cache_sync_ctx *)user;
-
-	struct swarmkv_cmd *full_sync_cmd=NULL;
-	struct swarmkv *db=ctx->db;
-
-	swarmkv_store_process_sync_reply(db->store, ctx->key, &ctx->node, reply, &full_sync_cmd);
-	if(full_sync_cmd)
+	const struct swarmkv_reply* reply=(const struct swarmkv_reply*) result;
+	if(reply->type==SWARMKV_REPLY_STATUS)
+	{ 
+		assert(0==strncasecmp(reply->str, "OK", 2));
+	}
+	else if(reply->type==SWARMKV_REPLY_INTEGER)
 	{
-		send_cache_sync_msg(db, ctx->key, full_sync_cmd, &ctx->node);
-		swarmkv_cmd_free(full_sync_cmd);
-		full_sync_cmd=NULL;
+		assert(reply->integer==1);
+	}
+	else
+	{
+		assert(0);
 	}
 	cache_sync_ctx_free(ctx);
 	return;
@@ -335,6 +336,7 @@ static void cache_sync_on_fail(enum e_future_error err, const char * what, void 
 {
 	struct cache_sync_ctx *ctx=(struct cache_sync_ctx *)user;
 	cache_sync_ctx_free(ctx);
+	return;
 }
 
 void send_cache_sync_msg(struct swarmkv* db, const sds key, const struct swarmkv_cmd *sync_cmd, struct swarmkv_node *accessed_node)
@@ -342,19 +344,19 @@ void send_cache_sync_msg(struct swarmkv* db, const sds key, const struct swarmkv
 	struct cache_sync_ctx* ctx=ALLOC(struct cache_sync_ctx, 1);	
 	ctx->db=db;
 	memcpy(&ctx->node, accessed_node, sizeof(struct swarmkv_node));
-	ctx->key=sdsdup(key);		
+	ctx->key=sdsdup(key);
 	ctx->f_send_sync_cmd=future_create("cache_sync", cache_sync_on_succ, cache_sync_on_fail, ctx);
 	cmd_exec_async(ctx->f_send_sync_cmd, db, &ctx->node, sync_cmd);
 	return;
 }
-struct swarmkv_reply *store_exec_and_cache_sync(struct swarmkv *db, const struct swarmkv_cmd *cmd, const struct swarmkv_node *accessing_node)
+struct swarmkv_reply *store_exec_and_sync_cache(struct swarmkv *db, const struct swarmkv_cmd *cmd, const struct swarmkv_node *accessing_node)
 {
 	struct swarmkv_node *accessed_node_list=NULL;
 	struct swarmkv_cmd *sync_cmd=NULL;
 	size_t n_accessed_node=0, i=0;
 	struct swarmkv_reply *reply=NULL;
 
-	swarmkv_store_exec(db->store, cmd, &reply, accessing_node, &sync_cmd, &accessed_node_list, &n_accessed_node);
+	reply=swarmkv_store_exec(db->store, cmd, accessing_node, &sync_cmd, &accessed_node_list, &n_accessed_node);
 	for(i=0; i<n_accessed_node; i++)
 	{
 		send_cache_sync_msg(db, cmd->args[0], sync_cmd, accessed_node_list+i);
@@ -438,7 +440,7 @@ static void swarmkv_exec(struct swarmkv *db, const struct swarmkv_cmd *cmd, swar
 	}
 	if(self_is_objowner)
 	{
-		reply=store_exec_and_cache_sync(db, cmd, NULL);
+		reply=store_exec_and_sync_cache(db, cmd, NULL);
 		cb(reply, cb_arg);
 		goto fast_out;
 	}
@@ -492,13 +494,13 @@ void cmd_msg_processing(struct swarmkv* db, uuid_t requester_uuid, unsigned long
 	{
 		swarmkv_keyspace_exec(db->ks, cmd, &reply);
 	}
-	else if(cmd->op == SWARMKV_OP_CLUSTER_SYNC)
+	else if(is_cache_operator(cmd->op))
 	{
-		swarmkv_store_cache_sync(db->store, cmd, &reply);
+		swarmkv_store_update_cache(db->store, cmd, &reply);
 	}
 	else
 	{
-		reply=store_exec_and_cache_sync(db, cmd, peer);
+		reply=store_exec_and_sync_cache(db, cmd, peer);
 	}
 	struct swarmkv_msg* reply_msg=NULL;
 	reply_msg=swarmkv_msg_new(requester_uuid, rr_seq);

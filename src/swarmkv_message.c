@@ -10,8 +10,7 @@ struct swarmkv_msg
 	enum swarmkv_msg_type type;
 	uuid_t requester_uuid;
 	unsigned long long rr_seq;
-	int do_not_reply;//only used in cmd msg
-	int do_not_free;
+	int do_not_free;	//local use, do not send.
 	union
 	{
 		struct swarmkv_cmd *cmd;
@@ -140,13 +139,9 @@ struct swarmkv_msg* swarmkv_msg_deserialize(const char* data, size_t len)
 
 	if(msg->type==SWARMKV_MSG_TYPE_CMD)
 	{		
-		msg->do_not_reply=mpack_node_int(mpack_node_map_cstr(root, "do_not_reply"));
-		msg->cmd=ALLOC(struct swarmkv_cmd, 1);
 		cmd_node=mpack_node_map_cstr(root, "cmd");
 		item=mpack_node_map_cstr(cmd_node, "op");
-//		msg->cmd->op=mpack_node_int(item);
 		args_node=mpack_node_map_cstr(cmd_node, "args");
-//		msg->cmd->n_args=mpack_node_array_length(args_node);
 		enum swarmkv_operator op=swarmkv_cmd_str2op(mpack_node_str(item), mpack_node_strlen(item));
 		msg->cmd=swarmkv_cmd_new(op, mpack_node_array_length(args_node));
 		for(i=0; i<msg->cmd->n_args; i++)
@@ -155,7 +150,8 @@ struct swarmkv_msg* swarmkv_msg_deserialize(const char* data, size_t len)
 			p=mpack_node_str(item);
 			sz=mpack_node_strlen(item);
 			msg->cmd->args[i]=sdsnewlen(p, sz);
-		}
+		}	
+		msg->cmd->do_not_reply=mpack_node_int(mpack_node_map_cstr(cmd_node, "dnr"));
 	}
 	else
 	{
@@ -216,11 +212,10 @@ sds serialize_reply(const struct swarmkv_reply* reply)
 }
 sds swarmkv_msg_serialize(const struct swarmkv_msg* msg)
 {
-	char *root_mpack_buff=NULL, *cmd_mpack_buff=NULL, *args_mpack_buff=NULL;
-	size_t root_mpack_sz=0, cmd_mpack_sz=0;
-	sds reply_mpack_buff=NULL;
+	char *root_mpack_buff=NULL;
+	size_t root_mpack_sz=0;
 
-	mpack_writer_t root, cmd;	
+	mpack_writer_t root;	
 	size_t i=0;
 	
 
@@ -235,33 +230,24 @@ sds swarmkv_msg_serialize(const struct swarmkv_msg* msg)
 	
 	if(msg->type==SWARMKV_MSG_TYPE_CMD)
 	{
-		mpack_write_cstr(&root, "do_not_reply");
-		mpack_write_int(&root, msg->do_not_reply);
-		
-		
-		mpack_writer_init_growable(&cmd, &cmd_mpack_buff, &cmd_mpack_sz);
-		mpack_build_map(&cmd);
-		mpack_write_cstr(&cmd, "op");
-		mpack_write_cstr(&cmd, swarmkv_cmd_op2str(msg->cmd->op));
-		mpack_write_cstr(&cmd, "args");		
-		mpack_build_array(&cmd);
+		mpack_write_cstr(&root, "cmd");
+		mpack_build_map(&root);
+		mpack_write_cstr(&root, "op");
+		mpack_write_cstr(&root, swarmkv_cmd_op2str(msg->cmd->op));
+		mpack_write_cstr(&root, "args");
+		mpack_build_array(&root);
 		for(i=0; i<msg->cmd->n_args; i++)
 		{
-			mpack_write_str(&cmd, msg->cmd->args[i], (uint32_t)sdslen(msg->cmd->args[i]));
+			mpack_write_str(&root, msg->cmd->args[i], (uint32_t)sdslen(msg->cmd->args[i]));
 		}
-		mpack_complete_array(&cmd);
-		mpack_complete_map(&cmd);
-		mpack_writer_destroy(&cmd);
-		free(args_mpack_buff);
-		args_mpack_buff=NULL;
-
-		mpack_write_cstr(&root, "cmd");
-		mpack_write_object_bytes(&root, cmd_mpack_buff, cmd_mpack_sz);
-		free(cmd_mpack_buff);
-		cmd_mpack_buff=NULL;
+		mpack_complete_array(&root);
+		mpack_write_cstr(&root, "dnr");//do not reply
+		mpack_write_int(&root, msg->cmd->do_not_reply);		
+		mpack_complete_map(&root);
 	}
 	else
-	{
+	{		
+		sds reply_mpack_buff=NULL;
 		mpack_write_cstr(&root, "reply");
 		reply_mpack_buff=serialize_reply(msg->reply);
 		mpack_write_object_bytes(&root, reply_mpack_buff, sdslen(reply_mpack_buff));

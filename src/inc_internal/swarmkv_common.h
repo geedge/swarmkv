@@ -46,14 +46,20 @@ enum swarmkv_operator
 	SWARMKV_OP_KEYSPACE_DEL,		//KEYSPACE DEL key
 	SWARMKV_OP_KEYSPACE_GETSLOTKEYS,//KEYSPACE GETSLOTKYES slot_id
 	SWARMKV_OP_KEYSPACE_SETSLOT,	//KEYSPACE SETSLOT slot_id IMPORTING host port|MIGRATING host port|NODE host port|STABLE
+	SWARMKV_OP_KEYSPACE_KEYS,		//KEYSPACE KEYS pattern
 
-	SWARMKV_OP_CLUSTER_SYNC,		//CLUSTER SYNC object_version $POPULATE_COMMAND
+	SWARMKV_OP_CACHE_SET,	//CACHE SET key snapshot
+	SWARMKV_OP_CACHE_DEL,	//CACHE DEL key
+	
+	SWARMKV_OP_CLUSTER_KEYS,	//CLUSTER KEYS pattern
+	SWARMKV_OP_CLUSTER_ADDNODE,	//CLUSTER ADDNODE host port
 	__SWARMKV_OP_MAX
 };
 
 struct swarmkv_cmd
 {
 	enum swarmkv_operator op;
+	int do_not_reply;
 	size_t n_args;
 	sds *args;
 };
@@ -81,6 +87,8 @@ struct swarmkv_reply *swarmkv_reply_dup(const struct swarmkv_reply *origin);
 void node2reply(const struct swarmkv_node *node, struct swarmkv_reply* reply[2]);
 void sds2node(const sds args[2], struct swarmkv_node *node);
 int is_store_read_operator(enum swarmkv_operator op);
-int is_keyspace_operator(enum swarmkv_operator op);
 int is_store_del_operator(enum swarmkv_operator op);
+
+int is_keyspace_operator(enum swarmkv_operator op);
+int is_cache_operator(enum swarmkv_operator op);
 

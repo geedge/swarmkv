@@ -315,6 +315,7 @@ struct swarmkv_connection* swarmkv_connection_new_by_connect(struct swarmkv_net_
 	struct swarmkv_connection* conn=ALLOC(struct swarmkv_connection, 1);
 	conn->buff_for_sending=evbuffer_new();
 	evbuffer_enable_locking(conn->buff_for_sending, NULL);
+	//http://www.wangafu.net/~nickm/libevent-book/Ref6_bufferevent.html
 	conn->bev=bufferevent_socket_new(base, -1, BEV_OPT_DEFER_CALLBACKS|BEV_OPT_THREADSAFE);//BEV_OPT_UNLOCK_CALLBACKS|
 	bufferevent_setcb(conn->bev, NULL, NULL, connect_peer_eventcb, conn);
 	memcpy(&conn->peer, dest, sizeof(struct swarmkv_node));
