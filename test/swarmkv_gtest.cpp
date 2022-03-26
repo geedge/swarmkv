@@ -6,7 +6,7 @@
 #include <asm/errno.h>
 #include <sys/syscall.h>
 #include <unistd.h>
-
+#define	CMD_EXEC_TIMEOUT_MS	1000*1800
 struct cmd_exec_arg
 {
 	pthread_cond_t cond;
@@ -230,12 +230,12 @@ TEST_F(SwarmkvBasicTest, SetGet)
 
 	arg=cmd_exec_arg_new();
 	swarmkv_set_string(db, key, strlen(key), val, strlen(val), basic_test_set_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, 100);//100ms
+	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
 	EXPECT_EQ(exec_successful, 1);
 	cmd_exec_arg_clear(arg);
 
 	swarmkv_get_string(db, key, strlen(key), basic_test_get_callback, arg);
-	cmd_exec_arg_wait(arg, 100);//100ms
+	cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
 	EXPECT_EQ(exec_successful, 1);
 	cmd_exec_arg_free(arg);
 	arg=NULL;
@@ -250,12 +250,12 @@ TEST_F(SwarmkvBasicTest, Delete)
 
 	arg=cmd_exec_arg_new();
 	swarmkv_set_string(db, key, strlen(key), val, strlen(val), basic_test_set_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, 100);//100ms
+	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
 	EXPECT_EQ(exec_successful, 1);
 	cmd_exec_arg_clear(arg);
 	
 	swarmkv_del(db, key, strlen(key), basic_test_del_callback, arg);
-	cmd_exec_arg_wait(arg, 100);//100ms
+	cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
 	EXPECT_EQ(exec_successful, 1);
 	cmd_exec_arg_free(arg);
 	arg=NULL;
@@ -317,18 +317,18 @@ TEST_F(SwarmkvTwoNodes, SetGet)
 
 	arg=cmd_exec_arg_new();
 	swarmkv_set_string(db1, key, strlen(key), val1, strlen(val1), basic_test_set_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, 100);//100ms
+	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
 	EXPECT_EQ(exec_successful, 1);
 	cmd_exec_arg_clear(arg);
 
 	swarmkv_get_string(db2, key, strlen(key), basic_test_get_callback, arg);
-	cmd_exec_arg_wait(arg, 100);//100ms
+	cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
 	EXPECT_EQ(exec_successful, 1);
 	cmd_exec_arg_clear(arg);
 
 	arg=cmd_exec_arg_new();
 	swarmkv_set_string(db1, key, strlen(key), val2, strlen(val2), basic_test_set_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, 100);//100ms
+	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
 	EXPECT_EQ(exec_successful, 1);
 	cmd_exec_arg_clear(arg);
 	
@@ -346,22 +346,22 @@ TEST_F(SwarmkvTwoNodes, Delete)
 
 	arg=cmd_exec_arg_new();
 	swarmkv_set_string(db1, key, strlen(key), val, strlen(val), basic_test_set_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, 100);//100ms
+	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
 	EXPECT_EQ(exec_successful, 1);
 	cmd_exec_arg_clear(arg);
 	
 	swarmkv_del(db2, key, strlen(key), basic_test_del_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, 100);//100ms
+	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
 	EXPECT_EQ(exec_successful, 1);
 	cmd_exec_arg_clear(arg);
 
 	swarmkv_get_string(db1, key, strlen(key), expect_get_null_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, 100);//100ms
+	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
 	EXPECT_EQ(exec_successful, 1);
 	cmd_exec_arg_clear(arg);
 
 	swarmkv_get_string(db2, key, strlen(key), expect_get_null_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, 100);//100ms
+	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
 	EXPECT_EQ(exec_successful, 1);
 	cmd_exec_arg_clear(arg);
 
@@ -415,13 +415,13 @@ TEST_F(SwarmkvTwoNodes, CacheSync)
 	const char* val1="lisi";
 	arg=cmd_exec_arg_new();
 	swarmkv_set_string(db1, key, strlen(key), val1, strlen(val1), basic_test_set_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, 100);//100ms
+	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
 	EXPECT_EQ(exec_successful, 1);
 	cmd_exec_arg_clear(arg);
 
 	//db2: get id003
 	swarmkv_get_string(db2, key, strlen(key), sync_cache_get_callback1, arg);
-	exec_successful=cmd_exec_arg_wait(arg, 100);//100ms
+	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
 	EXPECT_EQ(exec_successful, 1);
 	EXPECT_EQ(arg->is_sync_callback, 0);
 	cmd_exec_arg_clear(arg);
@@ -429,13 +429,13 @@ TEST_F(SwarmkvTwoNodes, CacheSync)
 	//db1: set id003 wang2mazi	
 	const char* val2="wang2mazi";
 	swarmkv_set_string(db1, key, strlen(key), val2, strlen(val2), basic_test_set_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, 100);//100ms
+	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
 	EXPECT_EQ(exec_successful, 1);
 	cmd_exec_arg_clear(arg);
 
 	//db2: get id003
 	swarmkv_get_string(db1, key, strlen(key), sync_cache_get_callback2, arg);
-	exec_successful=cmd_exec_arg_wait(arg, 100);//100ms
+	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
 	EXPECT_EQ(exec_successful, 1);
 	EXPECT_EQ(arg->is_sync_callback, 1);
 	cmd_exec_arg_clear(arg);

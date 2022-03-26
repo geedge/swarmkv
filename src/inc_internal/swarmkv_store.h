@@ -9,12 +9,11 @@ void swarmkv_store_free(struct swarmkv_store* store);
 
 
 struct swarmkv_reply *swarmkv_store_exec(struct swarmkv_store *store, const struct swarmkv_cmd *cmd, 
-	 const struct swarmkv_node* accessing_node, struct swarmkv_cmd **out_sync_cmd, struct swarmkv_node **accessed_nodes, size_t *n_accessed_node);
+	 const struct swarmkv_node_addr* accessing_node, struct swarmkv_cmd **out_sync_cmd, struct swarmkv_node_addr **accessed_nodes, size_t *n_accessed_node);
 int swarmkv_store_cache_read(struct swarmkv_store *store, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply);
 void swarmkv_store_update_cache(struct swarmkv_store *store, const struct swarmkv_cmd *sync_cmd, struct swarmkv_reply **reply);
-void swarmkv_store_process_sync_reply(struct swarmkv_store *store, sds key, const struct swarmkv_node* peer, const struct swarmkv_reply* reply, struct swarmkv_cmd **full_sync_cmd);
+void swarmkv_store_process_sync_reply(struct swarmkv_store *store, sds key, const struct swarmkv_node_addr* peer, const struct swarmkv_reply* reply, struct swarmkv_cmd **full_sync_cmd);
 
-int is_store_read_operator(enum swarmkv_operator op);
-int swarmkv_store_remove_accessed_node(struct swarmkv_store *store, sds key, const struct swarmkv_node *node);
+int swarmkv_store_exists_key(struct swarmkv_store *store, const sds key);
 
 

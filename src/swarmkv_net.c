@@ -30,7 +30,7 @@ struct swarmkv_msg_hdr
 {
 	unsigned long long magic;
 	unsigned long long payload_len;
-	struct swarmkv_node source;
+	struct swarmkv_node_addr source;
 	//MessagePack payload
 };
 enum receive_state
@@ -40,7 +40,7 @@ enum receive_state
 };
 struct swarmkv_connection
 {
-	struct swarmkv_node peer;
+	struct swarmkv_node_addr peer;
 	char peer_ip[INET6_ADDRSTRLEN];
 	unsigned int peer_port;
 	int thread_id;
@@ -68,7 +68,7 @@ struct swarmkv_net
 {
 	size_t n_thread;
 	int n_connection;
-	struct swarmkv_node self;
+	struct swarmkv_node_addr self;
 	struct swarmkv_net_thread_ctx **threads;
 	
 	struct evconnlistener *listener;	
@@ -145,7 +145,7 @@ static void swarmkv_connection_kill(struct swarmkv_connection* conn)
 	bufferevent_trigger(conn->bev, EV_READ, BEV_TRIG_IGNORE_WATERMARKS);
 	return;
 }
-static void swarmkv_connection_set_peer(struct swarmkv_connection* conn, struct swarmkv_node *peer)
+static void swarmkv_connection_set_peer(struct swarmkv_connection* conn, struct swarmkv_node_addr *peer)
 {
 	memcpy(&conn->peer, peer, sizeof(conn->peer));
 	return;
@@ -155,7 +155,7 @@ static void swarmkv_net_conn_table_overwrite(struct swarmkv_net_thread_ctx* thr,
 {
 	struct swarmkv_connection* tmp_conn=NULL;
 	assert(conn->is_in_conn_table==0);
-	HASH_FIND(hh, thr->conn_table, &(conn->peer), sizeof(struct swarmkv_node), tmp_conn);
+	HASH_FIND(hh, thr->conn_table, &(conn->peer), sizeof(struct swarmkv_node_addr), tmp_conn);
 	if(tmp_conn)
 	{
 		MESA_handle_runtime_log(thr->ref_logger, RLOG_LV_FATAL, MODULE_SWAMRKV_NET, 
@@ -308,7 +308,7 @@ void connect_peer_eventcb(struct bufferevent *bev, short events, void *arg)
     }
 }
 
-struct swarmkv_connection* swarmkv_connection_new_by_connect(struct swarmkv_net_thread_ctx* thr, const struct swarmkv_node* dest)
+struct swarmkv_connection* swarmkv_connection_new_by_connect(struct swarmkv_net_thread_ctx* thr, const struct swarmkv_node_addr* dest)
 {
 	struct event_base *base=thr->evbase;
 	
@@ -318,7 +318,7 @@ struct swarmkv_connection* swarmkv_connection_new_by_connect(struct swarmkv_net_
 	//http://www.wangafu.net/~nickm/libevent-book/Ref6_bufferevent.html
 	conn->bev=bufferevent_socket_new(base, -1, BEV_OPT_DEFER_CALLBACKS|BEV_OPT_THREADSAFE);//BEV_OPT_UNLOCK_CALLBACKS|
 	bufferevent_setcb(conn->bev, NULL, NULL, connect_peer_eventcb, conn);
-	memcpy(&conn->peer, dest, sizeof(struct swarmkv_node));
+	memcpy(&conn->peer, dest, sizeof(struct swarmkv_node_addr));
 	conn->thread_id=thr->thread_id;
 	conn->ref_thr_ctx=thr;
 	conn->peer_port=dest->p2p_port;
@@ -411,7 +411,7 @@ static int get_net_thread_id(const char* peer_ip, size_t n_thread)
 	return thread_id;
 }
 
-int swarmkv_net_send(struct swarmkv_net* net, const struct swarmkv_node* dest, const sds data)
+int swarmkv_net_send(struct swarmkv_net* net, const struct swarmkv_node_addr* dest, const sds data)
 {
 	struct swarmkv_connection* conn=NULL;
 	int err=0, thread_id=0;
@@ -420,13 +420,13 @@ int swarmkv_net_send(struct swarmkv_net* net, const struct swarmkv_node* dest, c
 	void* logger=net->logger;
 
 	pthread_mutex_lock(&thr->mutex);
-	HASH_FIND(hh, thr->conn_table, dest, sizeof(struct swarmkv_node), conn);
+	HASH_FIND(hh, thr->conn_table, dest, sizeof(struct swarmkv_node_addr), conn);
 	if(!conn)
 	{
 		conn=swarmkv_connection_new_by_connect(thr, dest);
 		if(conn)
 		{
-			HASH_ADD(hh, thr->conn_table, peer, sizeof(struct swarmkv_node), conn);
+			HASH_ADD(hh, thr->conn_table, peer, sizeof(struct swarmkv_node_addr), conn);
 			conn->is_in_conn_table=1;
 		}
 		else
@@ -473,7 +473,7 @@ static void __accept_error_cb(struct evconnlistener *listener, void *arg)
 							err, evutil_socket_error_to_string(err));		
 }
 
-struct swarmkv_net* swarmkv_net_new(const struct swarmkv_options *opts, const struct swarmkv_node* self, void* logger, char **err)
+struct swarmkv_net* swarmkv_net_new(const struct swarmkv_options *opts, const struct swarmkv_node_addr* self, void* logger, char **err)
 {
 	size_t i=0;
 	struct swarmkv_net* net=NULL;	
@@ -492,7 +492,7 @@ struct swarmkv_net* swarmkv_net_new(const struct swarmkv_options *opts, const st
 		net->threads[i]->ref_logger=logger;
 		net->threads[i]->ref_net=net;
 	}
-	memcpy(&(net->self), self, sizeof(struct swarmkv_node));
+	memcpy(&(net->self), self, sizeof(struct swarmkv_node_addr));
 
 
 	//Refer to http://www.wangafu.net/~nickm/libevent-book/Ref8_listener.html

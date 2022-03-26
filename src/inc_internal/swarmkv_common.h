@@ -5,11 +5,16 @@
 #include <netinet/ip.h>
 #include <uuid/uuid.h>
 
-struct swarmkv_node
+struct swarmkv_node_addr
 {
 //	uuid_t bin_uuid;
 	char ip_addr[INET6_ADDRSTRLEN];	//#define INET6_ADDRSTRLEN 46 (#include <arpa/inet.h>, see man inet_ntop
 	unsigned int p2p_port;	//host order
+};
+struct swarmkv_node
+{	
+	struct swarmkv_node_addr addr;
+	uuid_t bin_uuid;
 };
 struct swarmkv_options
 {
@@ -39,22 +44,32 @@ enum swarmkv_operator
 	SWARMKV_OP_DECRBY,	//OP_DECRBY key number
 	SWARMKV_OP_THROTTLESET,	//THROTTLESET .. throttle
 	SWARMKV_OP_EXPIRE,	//EXPIRE key seconds
+	SWARMKV_OP_EXISTS,	//EXISTS key
 
 	SWARMKV_OP_KEYSPACE_SET,		//KEYSPACE SET key host port (of object owner)
 	SWARMKV_OP_KEYSPACE_SETNXGET,	//KEYSPACE SETNXGET key host port (of object owner)
 	SWARMKV_OP_KEYSPACE_GET,		//KEYSPACE GET key
 	SWARMKV_OP_KEYSPACE_DEL,		//KEYSPACE DEL key
-	SWARMKV_OP_KEYSPACE_GETSLOTKEYS,//KEYSPACE GETSLOTKYES slot_id
+	SWARMKV_OP_KEYSPACE_GETKEYSINSLOT,//KEYSPACE GETKEYSINSLOT slot_id
 	SWARMKV_OP_KEYSPACE_SETSLOT,	//KEYSPACE SETSLOT slot_id IMPORTING host port|MIGRATING host port|NODE host port|STABLE
 	SWARMKV_OP_KEYSPACE_KEYS,		//KEYSPACE KEYS pattern
-
+	
 	SWARMKV_OP_CACHE_SET,	//CACHE SET key snapshot
 	SWARMKV_OP_CACHE_DEL,	//CACHE DEL key
-	
+
+	//following command is ONLY available for blocking query with swarmkv_command().
+	SWARMKV_OP_CLUSTER_NODES,	//CLUSTER NODES
+	SWARMKV_OP_CLUSTER_SLOTS,	//CLUSTER SLOTS
 	SWARMKV_OP_CLUSTER_KEYS,	//CLUSTER KEYS pattern
 	SWARMKV_OP_CLUSTER_ADDNODE,	//CLUSTER ADDNODE host port
 	__SWARMKV_OP_MAX
 };
+int is_store_read_operator(enum swarmkv_operator op);
+int is_store_del_operator(enum swarmkv_operator op);
+
+int is_keyspace_operator(enum swarmkv_operator op);
+int is_cache_operator(enum swarmkv_operator op);
+
 
 struct swarmkv_cmd
 {
@@ -77,6 +92,8 @@ void swarmkv_cmd_free(struct swarmkv_cmd* p);
 struct swarmkv_cmd* swarmkv_cmd_dup(const struct swarmkv_cmd* origin);
 
 struct swarmkv_reply* swarmkv_reply_new_string(const char* str, size_t sz);
+struct swarmkv_reply* swarmkv_reply_new_string_fmt(const char *format, ...);
+
 struct swarmkv_reply* swarmkv_reply_new_integer(long long integer);
 struct swarmkv_reply* swarmkv_reply_new_array(size_t n_element);
 struct swarmkv_reply* swarmkv_reply_new_nil(void);
@@ -84,11 +101,10 @@ struct swarmkv_reply* swarmkv_reply_new_status(const char *format, ...);
 struct swarmkv_reply* swarmkv_reply_new_error(const char *format, ...);
 struct swarmkv_reply *swarmkv_reply_dup(const struct swarmkv_reply *origin);
 
-void node2reply(const struct swarmkv_node *node, struct swarmkv_reply* reply[2]);
-void sds2node(const sds args[2], struct swarmkv_node *node);
-int is_store_read_operator(enum swarmkv_operator op);
-int is_store_del_operator(enum swarmkv_operator op);
+void node2reply(const struct swarmkv_node_addr *node, struct swarmkv_reply* reply[2]);
+void sds2node_addr(const sds args[2], struct swarmkv_node_addr *node);
+int swarmkv_node_compare(const struct swarmkv_node *node1, const struct swarmkv_node *node2);
+void swarmkv_node_copy(struct swarmkv_node *dst, const struct swarmkv_node *src);
+int swarmkv_node_addr_compare(const struct swarmkv_node_addr *addr1, const struct swarmkv_node_addr *addr2);
 
-int is_keyspace_operator(enum swarmkv_operator op);
-int is_cache_operator(enum swarmkv_operator op);
 

@@ -43,7 +43,7 @@ struct swarmkv_object
 		struct obj_container* hash;
 	};
 };
-UT_icd ut_swarmkv_node_icd = {sizeof(struct swarmkv_node), NULL, NULL, NULL};
+UT_icd ut_swarmkv_node_icd = {sizeof(struct swarmkv_node_addr), NULL, NULL, NULL};
 
 struct obj_container
 {
@@ -201,16 +201,16 @@ struct obj_container *obj_container_deserialize(const sds blob)
 }
 int node_cmp(const void *a, const void *b)
 {
-	return memcmp(a, b, sizeof(struct swarmkv_node));
+	return memcmp(a, b, sizeof(struct swarmkv_node_addr));
 }
-static int obj_containter_setnx_accessed_node(struct obj_container *ctr, const struct swarmkv_node *node)
+static int obj_containter_setnx_accessed_node(struct obj_container *ctr, const struct swarmkv_node_addr *node)
 {
-	struct swarmkv_node* found=NULL;
+	struct swarmkv_node_addr* found=NULL;
 	if(!ctr->accessed_node_list)
 	{
 		utarray_new(ctr->accessed_node_list, &ut_swarmkv_node_icd);
 	}
-	found=(struct swarmkv_node*)utarray_find(ctr->accessed_node_list, node, node_cmp);
+	found=(struct swarmkv_node_addr*)utarray_find(ctr->accessed_node_list, node, node_cmp);
 	if(found)
 	{
 		return 0;
@@ -219,21 +219,21 @@ static int obj_containter_setnx_accessed_node(struct obj_container *ctr, const s
 	utarray_sort(ctr->accessed_node_list, node_cmp);
 	return 1;
 }
-void obj_container_get_accessed_nodes(struct obj_container *ctr, struct swarmkv_node **node_list, size_t *n_node)
+void obj_container_get_accessed_nodes(struct obj_container *ctr, struct swarmkv_node_addr **node_list, size_t *n_node)
 {
-	struct swarmkv_node *first=NULL;
+	struct swarmkv_node_addr *first=NULL;
 	if(!ctr->accessed_node_list)
 	{
 		utarray_new(ctr->accessed_node_list, &ut_swarmkv_node_icd);
 	}
-	first=(struct swarmkv_node *)utarray_front(ctr->accessed_node_list);
+	first=(struct swarmkv_node_addr *)utarray_front(ctr->accessed_node_list);
 	*n_node=utarray_len(ctr->accessed_node_list);
-	*node_list=ALLOC(struct swarmkv_node, *n_node);
-	memcpy(*node_list, first, (*n_node)*sizeof(struct swarmkv_node));
+	*node_list=ALLOC(struct swarmkv_node_addr, *n_node);
+	memcpy(*node_list, first, (*n_node)*sizeof(struct swarmkv_node_addr));
 }
-int obj_container_remove_accessed_node(struct obj_container *ctr, const struct swarmkv_node *node)
+int obj_container_remove_accessed_node(struct obj_container *ctr, const struct swarmkv_node_addr *node)
 {
-	struct swarmkv_node *found=NULL;
+	struct swarmkv_node_addr *found=NULL;
 	size_t found_idx=0;
 	if(!ctr->accessed_node_list)
 	{
@@ -373,7 +373,7 @@ static struct swarmkv_reply *__store_exec(struct obj_container** table, const st
 				ctr->obj.val_string=sdsdup(cmd->args[1]);
 				obj_container_join(table, ctr);
 			}
-			swarmkv_reply_new_integer(atoll(ctr->obj.val_string));
+			reply=swarmkv_reply_new_integer(atoll(ctr->obj.val_string));
 			break;
 		default:
 			assert(0);
@@ -387,7 +387,7 @@ error_out:
 }
 
 struct swarmkv_reply *swarmkv_store_exec(struct swarmkv_store *store, const struct swarmkv_cmd *cmd, 
-	 const struct swarmkv_node* accessing_node, struct swarmkv_cmd **out_sync_cmd, struct swarmkv_node **accessed_nodes, size_t *n_accessed_node)
+	 const struct swarmkv_node_addr* accessing_node, struct swarmkv_cmd **out_sync_cmd, struct swarmkv_node_addr **accessed_nodes, size_t *n_accessed_node)
 {	
 	struct swarmkv_reply *reply=NULL;
 	struct obj_container *ctr=NULL;
@@ -412,8 +412,8 @@ struct swarmkv_reply *swarmkv_store_exec(struct swarmkv_store *store, const stru
 			sync_cmd=swarmkv_cmd_new(SWARMKV_OP_CACHE_SET, 2);
 			sync_cmd->args[0]=sdsdup(cmd->args[0]);
 			sync_cmd->args[1]=obj_container_serialize(ctr);
-			*accessed_nodes=ALLOC(struct swarmkv_node, 1);
-			memcpy(*accessed_nodes, accessing_node, sizeof(struct swarmkv_node));
+			*accessed_nodes=ALLOC(struct swarmkv_node_addr, 1);
+			memcpy(*accessed_nodes, accessing_node, sizeof(struct swarmkv_node_addr));
 			*n_accessed_node=1;
 		}
 	}
@@ -504,5 +504,18 @@ void swarmkv_store_update_cache(struct swarmkv_store *store, const struct swarmk
 			break;
 	}
 	return;
+}
+int swarmkv_store_exists_key(struct swarmkv_store *store, const sds key)
+{
+	struct obj_container *ctr=NULL;
+	ctr=obj_container_find(&(store->owned_obj_table), key);
+	if(ctr)
+	{
+		return 1;
+	}
+	else
+	{
+		return 0;
+	}
 }
 

@@ -24,7 +24,7 @@ typedef int (
 *keyspace_send_msg_func
 )   (
     struct swarmkv_keyspace* keyspace,
-    struct swarmkv_node* node,
+    struct swarmkv_node_addr* node,
     void *user_data,
     const char* send_buff,
     size_t buff_sz
@@ -39,10 +39,10 @@ int swarmkv_keyspace_periodic(struct swarmkv_keyspace* keyspace, int msec_since_
 int swarmkv_keyspace_set_consul_port(struct swarmkv_keyspace* ks, unsigned int consul_port);
 int swarmkv_keyspace_set_dryrun(struct swarmkv_keyspace* ks);
 int swarmkv_keyspace_set_selfip(struct swarmkv_keyspace* ks, const char* ip);
-int swarmkv_keyspace_is_myself(struct swarmkv_keyspace* ks, const struct swarmkv_node *node);
+int swarmkv_keyspace_is_myself(struct swarmkv_keyspace* ks, const struct swarmkv_node_addr *node);
 
-int swarmkv_keyspace_get_key_owner(struct swarmkv_keyspace* ks, sds key, struct swarmkv_node *owner);
-struct swarmkv_cmd *swarmkv_keyspace_cmd_new(enum swarmkv_operator store_op, const sds key, const struct swarmkv_node *in);
+int swarmkv_keyspace_get_key_owner(struct swarmkv_keyspace* ks, sds key, struct swarmkv_node_addr *owner);
+struct swarmkv_cmd *swarmkv_keyspace_cmd_new(enum swarmkv_operator store_op, const sds key, const struct swarmkv_node_addr *in);
 enum key_route_result
 {
 	__INVALID,
@@ -50,7 +50,9 @@ enum key_route_result
 	FOUND,
 	ASK
 };	
-enum key_route_result swarmkv_keyspace_reply2node(enum swarmkv_operator keyspace_op, const struct swarmkv_reply *reply, struct swarmkv_node *out);
+enum key_route_result swarmkv_keyspace_reply2node(enum swarmkv_operator keyspace_op, const struct swarmkv_reply *reply, struct swarmkv_node_addr *out);
 void swarmkv_keyspace_exec(struct swarmkv_keyspace* ks, const struct swarmkv_cmd *cmd, struct swarmkv_reply **out);
+void swarmkv_keyspace_get_cluster_nodes(struct swarmkv_keyspace *ks, struct swarmkv_reply **pp_reply);
+void swarmkv_keyspace_get_cluster_slots(struct swarmkv_keyspace *ks, struct swarmkv_reply **pp_reply);
 
 

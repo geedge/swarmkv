@@ -17,6 +17,17 @@ struct swarmkv_reply* swarmkv_reply_new_string(const char* str, size_t sz)
 	memcpy(reply->str, str, sz);
 	return reply;
 }
+struct swarmkv_reply* swarmkv_reply_new_string_fmt(const char *format, ...)
+{
+	struct swarmkv_reply *reply=ALLOC(struct swarmkv_reply, 1);
+	reply->type=SWARMKV_REPLY_STRING;
+	va_list ap;
+    va_start(ap,format);
+	reply->len=vasprintf(&(reply->str), format, ap);
+    va_end(ap);
+	return reply;
+
+}
 struct swarmkv_reply* swarmkv_reply_new_array(size_t n_element)
 {
 	struct swarmkv_reply *reply=ALLOC(struct swarmkv_reply, 1);
@@ -47,7 +58,7 @@ struct swarmkv_reply* swarmkv_reply_new_status(const char *format, ...)
     va_start(ap,format);
 	reply->len=vasprintf(&(reply->str), format, ap);
     va_end(ap);
-		return reply;
+	return reply;
 }
 struct swarmkv_reply* swarmkv_reply_new_error(const char *format, ...)
 {
@@ -61,16 +72,29 @@ struct swarmkv_reply* swarmkv_reply_new_error(const char *format, ...)
 	
 	return reply;
 }
-void node2reply(const struct swarmkv_node *node, struct swarmkv_reply* reply[2])
+void node2reply(const struct swarmkv_node_addr *node, struct swarmkv_reply* reply[2])
 {
 	reply[0]=swarmkv_reply_new_string(node->ip_addr, strlen(node->ip_addr)+1);
 	reply[1]=swarmkv_reply_new_integer(node->p2p_port);
 	return;
 }
-void sds2node(const sds args[2], struct swarmkv_node *node)
+void sds2node_addr(const sds args[2], struct swarmkv_node_addr *node_addr)
 {
-	strncpy(node->ip_addr, args[0], sizeof(node->ip_addr));
-	node->p2p_port=(unsigned int)atoll(args[1]);
+	strncpy(node_addr->ip_addr, args[0], sizeof(node_addr->ip_addr));
+	node_addr->p2p_port=(unsigned int)atoll(args[1]);
+	return;
+}
+int swarmkv_node_compare(const struct swarmkv_node *node1, const struct swarmkv_node *node2)
+{
+	return memcmp(node1, node2, sizeof(struct swarmkv_node));
+}
+int swarmkv_node_addr_compare(const struct swarmkv_node_addr *addr1, const struct swarmkv_node_addr *addr2)
+{
+	return memcmp(addr1, addr2, sizeof(struct swarmkv_node_addr));
+}
+void swarmkv_node_copy(struct swarmkv_node *dst, const struct swarmkv_node *src)
+{
+	memcpy(dst, src, sizeof(struct swarmkv_node));
 	return;
 }
 struct swarmkv_reply *swarmkv_reply_dup(const struct swarmkv_reply *origin)
@@ -166,7 +190,9 @@ int is_keyspace_operator(enum swarmkv_operator op)
 		case SWARMKV_OP_KEYSPACE_SETNXGET:
 		case SWARMKV_OP_KEYSPACE_GET:
 		case SWARMKV_OP_KEYSPACE_DEL:
-		case SWARMKV_OP_KEYSPACE_GETSLOTKEYS:
+		case SWARMKV_OP_KEYSPACE_GETKEYSINSLOT:
+		case SWARMKV_OP_KEYSPACE_SETSLOT:
+		case SWARMKV_OP_KEYSPACE_KEYS:
 			ret=1;
 			break;
 		default:
@@ -247,18 +273,21 @@ void swarmkv_common_global_init(void)
 	g_swarmkv_common_op2str[SWARMKV_OP_DECRBY]="DECRBY";
 	g_swarmkv_common_op2str[SWARMKV_OP_THROTTLESET]="THROTTLESET";
 	g_swarmkv_common_op2str[SWARMKV_OP_EXPIRE]="EXPIRE";
+	g_swarmkv_common_op2str[SWARMKV_OP_EXISTS]="EXISTS";
 	
 	g_swarmkv_common_op2str[SWARMKV_OP_KEYSPACE_SET]="KEYSPACE SET";
 	g_swarmkv_common_op2str[SWARMKV_OP_KEYSPACE_SETNXGET]="KEYSPACE SETNXGET";
 	g_swarmkv_common_op2str[SWARMKV_OP_KEYSPACE_GET]="KEYSPACE GET";
 	g_swarmkv_common_op2str[SWARMKV_OP_KEYSPACE_DEL]="KEYSPACE DEL";
-	g_swarmkv_common_op2str[SWARMKV_OP_KEYSPACE_GETSLOTKEYS]="KEYSPACE GETSLOTKEYS";
+	g_swarmkv_common_op2str[SWARMKV_OP_KEYSPACE_GETKEYSINSLOT]="KEYSPACE GETKEYSINSLOT";
 	g_swarmkv_common_op2str[SWARMKV_OP_KEYSPACE_SETSLOT]="KEYSPACE SETSLOT";
 	g_swarmkv_common_op2str[SWARMKV_OP_KEYSPACE_KEYS]="KEYSPACE KEYS";
 	
 	g_swarmkv_common_op2str[SWARMKV_OP_CACHE_SET]="SYNC SET";
 	g_swarmkv_common_op2str[SWARMKV_OP_CACHE_DEL]="SYNC DEL";
 
+	g_swarmkv_common_op2str[SWARMKV_OP_CLUSTER_NODES]="CLUSTER NODES";
+	g_swarmkv_common_op2str[SWARMKV_OP_CLUSTER_SLOTS]="CLUSTER SLOTS";
 	g_swarmkv_common_op2str[SWARMKV_OP_CLUSTER_KEYS]="CLUSTER KEYS";
 	g_swarmkv_common_op2str[SWARMKV_OP_CLUSTER_ADDNODE]="CLUSTER ADDNODE";
 	int i=0;
