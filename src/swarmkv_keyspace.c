@@ -2,6 +2,7 @@
 #include "swarmkv_utils.h"
 #include "swarmkv_limits.h"
 #include "swarmkv_net.h"
+#include "swarmkv_error.h"
 
 #include "cJSON.h"
 #include "sds.h"
@@ -30,9 +31,6 @@
 #define	KEYSPACE_XXHASH_SEED	5210
 
 #define MODULE_SWARMKV_KEYSPACE		module_name_str("swarmkv.keyspace")
-const char *error_cluster_leader_not_found="ERR cluster leader not found";
-const char *error_list_health_node_failed="ERR list health node failed";
-const char *error_read_slot_table_failed="ERR read slot table failed";
 
 enum slot_state
 {
@@ -83,6 +81,7 @@ static inline int get_slot_id(const char* key, size_t keylen)
 
 struct swarmkv_keyspace
 {
+	struct swarmkv_module module;
 	char db_name[SWARMKV_SYMBOL_MAX];
 	pthread_t thr;
 	int readable_tid;
@@ -919,6 +918,9 @@ void handle_failed_nodes(struct swarmkv_keyspace* ks, struct swarmkv_node* healt
 			slots_number_effect_by_failed_node++;
 		}
 	}
+	//For generating compact slot assignment
+	//Request body(1155868 bytes) too large, max size: 524288 bytes. 
+	//See https://www.consul.io/docs/agent/options.html#kv_max_value_size.
 	int slots_rebalanced_per_node=slots_number_effect_by_failed_node/n_node;
 	int health_node_offset=0;
 	
@@ -935,18 +937,21 @@ void handle_failed_nodes(struct swarmkv_keyspace* ks, struct swarmkv_node* healt
 		//slot owner has left the cluster.
 		if(j==n_node)
 		{
+
 			if(k==slots_rebalanced_per_node && health_node_offset<n_node)
 			{
 				k=0;
 				health_node_offset++;
 			}			
 			new_owner=health_nodes+health_node_offset;
+			/*
 			uuid_unparse_lower(old_owner->bin_uuid, uuid_str1);
 			uuid_unparse_lower(new_owner->bin_uuid, uuid_str2);
 			MESA_handle_runtime_log(ks->logger, RLOG_LV_INFO, MODULE_SWARMKV_KEYSPACE, "key slots %d owner is changed from %s %s:%u to %s %s:%u.",
 									i, 
 									uuid_str1, old_owner->addr.ip_addr, old_owner->addr.p2p_port, 
 									uuid_str2, new_owner->addr.ip_addr, new_owner->addr.p2p_port);
+			*/
 			memcpy(old_owner, new_owner, sizeof(struct swarmkv_node));
 			k++;
 		}
@@ -957,8 +962,6 @@ void handle_failed_nodes(struct swarmkv_keyspace* ks, struct swarmkv_node* healt
 		new_slots_json=keyslots_print_json(slots_copy, SWARMKV_SLOT_NUM);
 		char url[SWARMKV_URL_MAX]="";
 		snprintf(url, sizeof(url), "/v1/kv/swarmkv/%s/slots", ks->db_name);
-		//Request body(1155868 bytes) too large, max size: 524288 bytes. 
-		//See https://www.consul.io/docs/agent/options.html#kv_max_value_size.
 		struct evhttp_request* request=evhttp_request_new(__propagate_slot_table_cb, ks);
 		struct evhttp_connection* conn=evhttp_connection_base_new(ks->evbase, NULL, CONSUL_HOST, ks->consul_agent_port);	
 		evhttp_connection_set_timeout(conn, 20);
@@ -1113,9 +1116,20 @@ static void consul_kv_init_if_nonexist(struct swarmkv_keyspace* ks)
 	}
 
 }
-struct swarmkv_keyspace* swarmkv_keyspace_new(const struct swarmkv_options *opts, const char* db_name, void *logger, char **err)
+static struct swarmkv_keyspace *module2keyspace(struct swarmkv_module *module)
+{
+	//type safety check
+	assert(0==strcmp(module->name, "keyspace"));
+	struct swarmkv_keyspace *ks=container_of(module, struct swarmkv_keyspace, module);
+	assert(ks==module->mod_ctx);
+	return ks;
+}
+
+struct swarmkv_module* swarmkv_keyspace_new(const struct swarmkv_options *opts, const char* db_name, void *logger, char **err)
 {
 	struct swarmkv_keyspace* ks=ALLOC(struct swarmkv_keyspace, 1);
+	strncpy(ks->module.name, "keyspace", sizeof(ks->module.name));
+	ks->module.mod_ctx=ks;
 	strncpy(ks->db_name, db_name, sizeof(ks->db_name));
 	strncpy(ks->self.addr.ip_addr, opts->bind_address, sizeof(ks->self.addr.ip_addr));
 	ks->self.addr.p2p_port=opts->p2p_port;
@@ -1134,7 +1148,7 @@ struct swarmkv_keyspace* swarmkv_keyspace_new(const struct swarmkv_options *opts
 	if(ks->dryrun)
 	{
 		MESA_handle_runtime_log(ks->logger, RLOG_LV_INFO, MODULE_SWARMKV_KEYSPACE, "work on dry run mode.");
-		return ks;
+		return &(ks->module);
 	}
 	ks->http_server=http_server_new(ks->evbase, ks->health_check_port, ks->logger);
 	if(!ks->http_server)
@@ -1153,15 +1167,17 @@ struct swarmkv_keyspace* swarmkv_keyspace_new(const struct swarmkv_options *opts
 	}
 	consul_watch_leadership_changes_async(ks);
 	
-	return ks;
+	return &(ks->module);
 
 error_out:
 	free(ks);
 	return NULL;
 }
 
-void swarmkv_keyspace_free(struct swarmkv_keyspace* ks)
+void swarmkv_keyspace_free(struct swarmkv_module* module)
 {
+	struct swarmkv_keyspace *ks = module2keyspace(module);
+
 	event_base_loopexit(ks->evbase, NULL);
 	while(!event_base_got_exit(ks->evbase))
 	{
@@ -1189,7 +1205,7 @@ void swarmkv_keyspace_free(struct swarmkv_keyspace* ks)
 	return;
 }
 
-int swarmkv_keyspace_get_key_owner(struct swarmkv_keyspace* ks, sds key, struct swarmkv_node_addr *owner)
+static int swarmkv_keyspace_get_key_owner(struct swarmkv_keyspace* ks, const sds key, struct swarmkv_node_addr *owner)
 {
 	int self_is_keyowner=0;
 	int slot_id=get_slot_id(key, sdslen(key));
@@ -1201,7 +1217,7 @@ int swarmkv_keyspace_get_key_owner(struct swarmkv_keyspace* ks, sds key, struct 
 	{
 		self_is_keyowner=1;
 	}
-	memcpy(owner, &(keyowner.addr), sizeof(struct swarmkv_node_addr));
+	swarmkv_node_addr_copy(owner, &(keyowner.addr));
 	return self_is_keyowner;
 }
 
@@ -1217,60 +1233,8 @@ int swarmkv_keyspace_is_myself(struct swarmkv_keyspace* ks, const struct swarmkv
 		return 0;
 	}
 }
-static void get_slot_keys(struct key_slot *slot, const struct swarmkv_cmd *cmd, struct swarmkv_reply **out)
-{
-	size_t n_keys_in_slot=0, i=0;
-	struct swarmkv_reply *r=NULL;
-	struct key_route_entry *key_entry=NULL, *tmp=NULL;
-	assert(cmd->op==SWARMKV_OP_KEYSPACE_GETKEYSINSLOT);
-	n_keys_in_slot=HASH_COUNT(slot->keyroute_table);
-	r=swarmkv_reply_new_array(n_keys_in_slot*3);				
-	HASH_ITER(hh, slot->keyroute_table, key_entry, tmp)
-	{
-		r->elements[i]=swarmkv_reply_new_string(key_entry->key, sdslen(key_entry->key));
-		node2reply(&(key_entry->owner), r->elements+1);
-		i+=3;
-	}
-	*out=r;
-	return;
-}
-static void set_slot(struct key_slot *slot, const struct swarmkv_cmd *cmd, struct swarmkv_reply **out)
-{
-	assert(cmd->op==SWARMKV_OP_KEYSPACE_SETSLOT);
-	struct swarmkv_node_addr node;
-	//KEYSPACE SETSLOT slot_id IMPORTING host port|MIGRATING host port|NODE host port|STABLE
-	*out=NULL;
-	if(cmd->n_args==4)
-	{
-		sds2node_addr(cmd->args+2, &node);
-	}
-	if(strcmp(cmd->args[1], "IMPORTING"))
-	{
-		slot->state=STATE_IMPORTING;
-		memcpy(&(slot->peer), &node, sizeof(node));
-	}
-	else if(strcmp(cmd->args[1], "MIGRATING"))
-	{
-		slot->state=STATE_MIGRATING;
-		memcpy(&(slot->peer), &node, sizeof(node));
-	}
-	else if(strcmp(cmd->args[1], "NODE"))
-	{
-		slot->state=STATE_STABLE;
-		memcpy(&(slot->owner), &node, sizeof(node));
-	}
-	else if(strcmp(cmd->args[1], "STABLE"))
-	{
-		slot->state=STATE_STABLE;
-	}
-	else
-	{
-		assert(0);
-		*out=swarmkv_reply_new_error("invalid argument");
-	}
-	if(!*out) *out=swarmkv_reply_new_status("OK");
-	return;
-}
+
+
 static int consul_get_cluster_leader_block(const char *db_name, unsigned int consul_agent_port, struct swarmkv_node *leader)
 {
 	cJSON *leader_json=NULL, *item=NULL;
@@ -1309,221 +1273,35 @@ static int consul_list_health_nodes_block(const char *db_name, unsigned int cons
 	sdsfree(resp_body);
 	return 0;
 }
-static void get_cluster_nodes(struct swarmkv_keyspace* ks, struct swarmkv_reply **pp_reply)
-{
-	int ret=0;
-	struct swarmkv_node leader; 	
-	struct swarmkv_node nodes[SWARMKV_NODE_MAX];
-	size_t n_node=SWARMKV_NODE_MAX;
-	ret=consul_get_cluster_leader_block(ks->db_name, ks->consul_agent_port, &leader);
-	if(ret<0)
-	{
-		*pp_reply=swarmkv_reply_new_error(error_cluster_leader_not_found);
-		return;
-	}
-	ret=consul_list_health_nodes_block(ks->db_name, ks->consul_agent_port, nodes, &n_node);
-	if(ret<0)
-	{
-		*pp_reply=swarmkv_reply_new_error(error_cluster_leader_not_found);
-		return;
-	}
-	size_t i=0;
-	char uuid_str[37];
-	int is_leader;
-	struct swarmkv_reply *r=swarmkv_reply_new_array(n_node);
-	for(i=0; i<n_node; i++)
-	{
-		uuid_unparse_lower(nodes[i].bin_uuid, uuid_str);
-		if(0==swarmkv_node_compare(&leader, nodes+i))
-		{
-			is_leader=1;
-		}
-		else
-		{
-			is_leader=0;
-		}
-		r->elements[i]=swarmkv_reply_new_string_fmt("%s %s:%u %s", uuid_str,
-																nodes[i].addr.ip_addr,
-																nodes[i].addr.p2p_port,
-																is_leader?"leader":"follower");
-	}
-	*pp_reply=r;
-	return;
-}
-void swarmkv_keyspace_exec(struct swarmkv_keyspace* ks, const struct swarmkv_cmd *cmd, struct swarmkv_reply **pp_reply)
-{
-	struct swarmkv_reply *r=NULL;
-	struct key_route_entry *key_entry=NULL;
-	int slot_id=-1;
-	struct swarmkv_node_addr obj_owner;
-	struct key_slot* slot=NULL;
 
-	//key slot operations
-	if(cmd->op==SWARMKV_OP_KEYSPACE_GETKEYSINSLOT)
-	{
-		slot_id=(int)atoll(cmd->args[0]);
-		slot=&(ks->slots[slot_id]);
-		if(!swarmkv_keyspace_is_myself(ks, &(slot->owner.addr)))
-		{
-			*pp_reply=swarmkv_reply_new_error("node is not slot owner");
-			return;
-		}
-		pthread_mutex_lock(&slot->mutex);
-		get_slot_keys(slot, cmd, pp_reply);
-		pthread_mutex_unlock(&slot->mutex);
-		return;
-	}
-	if(cmd->op==SWARMKV_OP_KEYSPACE_SETSLOT)
-	{
-		slot_id=(int)atoll(cmd->args[0]);
-		slot=&(ks->slots[slot_id]);
-		
-		pthread_mutex_lock(&slot->mutex);
-		set_slot(slot, cmd, pp_reply);	
-		pthread_mutex_unlock(&slot->mutex);
-		return;
-	}
-	//key owner operations
-	slot_id=get_slot_id(cmd->args[0], sdslen(cmd->args[0]));
-	slot=&(ks->slots[slot_id]);
-	
-	if( 0==swarmkv_node_compare(&(slot->owner), &(ks->self))&& slot->state==STATE_STABLE)
-	{
-		MESA_handle_runtime_log(ks->logger, RLOG_LV_FATAL, MODULE_SWARMKV_KEYSPACE, 
-			"weird behavior: set an object owner (key=%.5s) of slot %d, which key owner should be %s:%u",
-			cmd->args[0], slot_id, slot->owner.addr.ip_addr, slot->owner.addr.p2p_port);	
-	}
-	
-	HASH_FIND(hh, slot->keyroute_table, cmd->args[0], sdslen(cmd->args[0]), key_entry);
-	
-	if(!key_entry && slot->state==STATE_MIGRATING)
-	{
-		r=swarmkv_reply_new_array(3);
-		r->elements[0]=swarmkv_reply_new_string("ASK", 4);
-		r->elements[1]=swarmkv_reply_new_string(slot->peer.addr.ip_addr, strlen(slot->peer.addr.ip_addr)+1);
-		r->elements[2]=swarmkv_reply_new_integer(slot->peer.addr.p2p_port);
-		*pp_reply=r;
-		pthread_mutex_unlock(&slot->mutex);
-		return;
-	}
-
-	switch(cmd->op)
-	{
-		case SWARMKV_OP_KEYSPACE_SET://KEYSPACE SET key obj_owner_ip obj_owner_port
-			strncpy(obj_owner.ip_addr, cmd->args[1], sizeof(obj_owner.ip_addr));
-			obj_owner.p2p_port=(unsigned int)atoll(cmd->args[2]);
-			if(key_entry)
-			{
-				memcpy(&(key_entry->owner), &obj_owner, sizeof(obj_owner));
-			}
-			else
-			{
-				key_entry=key_entry_new(cmd->args[0], &obj_owner);
-				HASH_ADD_KEYPTR(hh, slot->keyroute_table, key_entry->key, sdslen(key_entry->key), key_entry);
-			}
-			r=swarmkv_reply_new_status("OK");
-			break;
-		case SWARMKV_OP_KEYSPACE_SETNXGET: //KEYSPACE SETNXGET key obj_owner_ip obj_owner_port
-			strncpy(obj_owner.ip_addr, cmd->args[1], sizeof(obj_owner.ip_addr));
-			obj_owner.p2p_port=(unsigned int)atoll(cmd->args[2]);
-			if(!key_entry)
-			{
-				key_entry=key_entry_new(cmd->args[0], &obj_owner);
-				HASH_ADD_KEYPTR(hh, slot->keyroute_table, key_entry->key, sdslen(key_entry->key), key_entry);
-			}
-			r=swarmkv_reply_new_array(2);
-			node2reply(&(key_entry->owner), r->elements);
-			break;
-		case SWARMKV_OP_KEYSPACE_GET:
-			if(key_entry)
-			{
-				r=swarmkv_reply_new_array(2);
-				node2reply(&(key_entry->owner), r->elements);
-			}
-			else
-			{
-				r=swarmkv_reply_new_nil();
-			}
-			break;
-		case SWARMKV_OP_KEYSPACE_DEL:
-			if(key_entry)
-			{
-				HASH_DELETE(hh, slot->keyroute_table, key_entry);
-				r=swarmkv_reply_new_array(2);
-				node2reply(&(key_entry->owner), r->elements);
-				key_entry_free(key_entry);
-			}
-			else
-			{
-				r=swarmkv_reply_new_nil();
-			}
-			break;
-		default:
-			assert(0);
-			break;
-	}
-	*pp_reply=r;
-	
-	pthread_mutex_unlock(&slot->mutex);
-	return;
-}
- struct swarmkv_cmd *swarmkv_keyspace_cmd_new(enum swarmkv_operator store_op, const sds key, const struct swarmkv_node_addr *in)
- {
-	struct swarmkv_cmd *cmd=NULL;
-	if(is_store_read_operator(store_op))
-	{
-		cmd=swarmkv_cmd_new(SWARMKV_OP_KEYSPACE_GET, 1);
-		cmd->args[0]=sdsdup(key);
-	}
-	else if(store_op==SWARMKV_OP_DEL)
-	{
-		cmd=swarmkv_cmd_new(SWARMKV_OP_KEYSPACE_DEL, 1);
-		cmd->args[0]=sdsdup(key);		
-	}
-	else
-	{
-		cmd=swarmkv_cmd_new(SWARMKV_OP_KEYSPACE_SETNXGET, 3);
-		cmd->args[0]=sdsdup(key);
-		cmd->args[1]=sdsnew(in->ip_addr);
-		cmd->args[2]=sdsfromlonglong(in->p2p_port);
-	}
-	return cmd;
- }
-enum key_route_result swarmkv_keyspace_reply2node(enum swarmkv_operator keyspace_op, const struct swarmkv_reply *reply, struct swarmkv_node_addr *out)
+enum key_route_result swarmkv_keyspace_reply2node(const struct swarmkv_reply *reply, struct swarmkv_node_addr *out)
 {
 	int offset_node_ip=0;
 	enum key_route_result ret=__INVALID;
-	if(keyspace_op==SWARMKV_OP_KEYSPACE_SETNXGET ||
-		keyspace_op==SWARMKV_OP_KEYSPACE_GET ||
-		keyspace_op==SWARMKV_OP_KEYSPACE_DEL)
+
+	if(reply->type==SWARMKV_REPLY_ARRAY)
 	{
-		if(reply->type==SWARMKV_REPLY_ARRAY)
+		if(0==strncasecmp(reply->elements[0]->str, "ASK", reply->elements[0]->len))
 		{
-			if(0==strncasecmp(reply->elements[0]->str, "ASK", reply->elements[0]->len))
-			{
-				offset_node_ip++;
-				ret=ASK;
-			}
-			else
-			{
-				ret=FOUND;
-			}
-			strncpy(out->ip_addr, reply->elements[offset_node_ip]->str, sizeof(out->ip_addr));
-			out->p2p_port=(unsigned int)(reply->elements[offset_node_ip+1]->integer);
+			offset_node_ip++;
+			ret=ASK;
 		}
 		else
 		{
-			ret=NOT_FOUND;
+			ret=FOUND;
 		}
+		memset(out, 0, sizeof(struct swarmkv_node_addr));
+		strncpy(out->ip_addr, reply->elements[offset_node_ip]->str, sizeof(out->ip_addr));
+		out->p2p_port=(unsigned int)(reply->elements[offset_node_ip+1]->integer);
 	}
+	else
+	{
+		ret=NOT_FOUND;
+	}
+	
 	return ret;
 }
-void swarmkv_keyspace_get_cluster_nodes(struct swarmkv_keyspace *ks, struct swarmkv_reply **pp_reply)
-{
-	get_cluster_nodes(ks, pp_reply);
-	return;
-}
-static int consul_get_slots_block(const char *db_name, unsigned int consul_agent_port,  struct swarmkv_reply **pp_reply)
+static int consul_get_slots_blocked(const char *db_name, unsigned int consul_agent_port,  struct swarmkv_reply **pp_reply)
 {
 	char url[SWARMKV_URL_MAX]="";
 	sds resp_body=NULL;
@@ -1559,14 +1337,465 @@ static int consul_get_slots_block(const char *db_name, unsigned int consul_agent
 	return 0;
 }
 
-void swarmkv_keyspace_get_cluster_slots(struct swarmkv_keyspace *ks, struct swarmkv_reply **pp_reply)
+int swarmkv_keyspace_get_slot_owner_addr(struct swarmkv_keyspace *ks, int slot_id, struct swarmkv_node_addr *addr)
 {
-	int ret=0;
-	ret=consul_get_slots_block(ks->db_name, ks->consul_agent_port, pp_reply);
-	if(ret<0)
+	int self_is_slot_owner;
+	struct swarmkv_node owner;
+	pthread_rwlock_rdlock(&ks->rwlock);
+	swarmkv_node_copy(&owner, &(ks->slots[slot_id].owner));
+	pthread_rwlock_unlock(&ks->rwlock);
+	if(0==swarmkv_node_addr_compare(&owner.addr, &(ks->self.addr)))
 	{
-		*pp_reply=swarmkv_reply_new_error(error_read_slot_table_failed);
+		self_is_slot_owner=1;
 	}
+	swarmkv_node_addr_copy(addr, &(owner.addr));
+	return self_is_slot_owner;
+}
+
+void keyspace_setslot_command_as_owner(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)
+{
+	/*KEYSPACE SETSLOT node-ip node-port <slot> IMPORTING ip port | MIGRATING ip port | NODE ip port | STABLE*/
+
+	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
+	int slot_id=-1;
+	struct key_slot* slot=NULL;
+	struct swarmkv_node_addr target, peer, *p=NULL;
+
+	if(cmd->argc<6)
+	{
+		*reply=swarmkv_reply_new_error(error_wrong_number_of_arg);
+		return;
+	}
+
+	sds2node_addr(cmd->argv+2, &target);
+	assert(0==swarmkv_node_addr_compare(&(ks->self.addr), &(target)));
+	enum slot_state state;
+	sds str_state=cmd->argv[5];
+	p=&peer;
+	if(0==strcasecmp(str_state, "IMPORTING"))
+	{
+		state=STATE_IMPORTING;
+		sds2node_addr(cmd->argv+6, &peer);
+	}
+	else if(0==strcasecmp(str_state, "MIGRATING"))
+	{
+		state=STATE_MIGRATING;
+		sds2node_addr(cmd->argv+6, &peer);
+	}
+	else if(0==strcasecmp(str_state, "NODE"))
+	{
+		state=STATE_STABLE;
+		sds2node_addr(cmd->argv+6, &peer);
+	}
+	else if(0==strcasecmp(str_state, "STABLE"))
+	{
+		state=STATE_STABLE;
+		p=NULL;
+	}
+	else
+	{
+		*reply=swarmkv_reply_new_error("unknwon state %s", str_state);
+		return;
+	}
+	
+	slot_id=(int)atoll(cmd->argv[2]);
+	slot=&(ks->slots[slot_id]);
+	
+	pthread_mutex_lock(&slot->mutex);
+	slot->state=state;
+	if(p)
+	{
+		swarmkv_node_addr_copy(&(slot->peer.addr), p);
+	}
+	pthread_mutex_unlock(&slot->mutex);
+	*reply=swarmkv_reply_new_status("OK");
 	return;
 }
+enum cmd_fastpath_result keyspace_setslot_command_fastpath(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
+{
+	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
+	enum cmd_fastpath_result ret=0;
+
+	struct swarmkv_node_addr target;
+	sds2node_addr(cmd->argv+2, &target);
+	
+	if(0!=swarmkv_node_addr_compare(&(ks->self.addr), &(target)))
+	{
+		*reply=swarmkv_reply_new_array(2);
+		node_addr2reply(&target, (*reply)->elements);
+		ret=NEED_EXEC_REMOTE;
+	}
+	else
+	{
+		keyspace_setslot_command_as_owner(mod_keyspace, cmd, NULL, reply);
+		ret=FINISHED;
+	}
+
+	return ret;
+
+}
+
+void keyspace_getkeysinslot_command_as_owner(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)
+{
+	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
+	int slot_id=-1;
+	struct key_slot* slot=NULL;
+
+	slot_id=(int)atoll(cmd->argv[2]);
+	slot=&(ks->slots[slot_id]);
+	assert(0==swarmkv_node_addr_compare(&(ks->self.addr), &(slot->owner.addr)));
+	size_t n_keys_in_slot=0, i=0;
+	struct swarmkv_reply *r=NULL;
+	struct key_route_entry *key_entry=NULL, *tmp=NULL;
+
+	pthread_mutex_lock(&slot->mutex);
+	n_keys_in_slot=HASH_COUNT(slot->keyroute_table);
+	r=swarmkv_reply_new_array(n_keys_in_slot*3);				
+	HASH_ITER(hh, slot->keyroute_table, key_entry, tmp)
+	{
+		r->elements[i]=swarmkv_reply_new_string(key_entry->key, sdslen(key_entry->key));
+		node_addr2reply(&(key_entry->owner), r->elements+i+1);
+		i+=3;
+	}
+	pthread_mutex_unlock(&slot->mutex);
+
+	*reply=r;
+	return;
+}
+
+
+enum cmd_fastpath_result keyspace_getkeysinslot_command_fastpath(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
+{
+/*KEYSPACE GETKEYSINSLOT <slot>*/
+	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
+	int slot_id=-1;
+	struct key_slot* slot=NULL;
+	enum cmd_fastpath_result ret=0;
+
+	slot_id=(int)atoll(cmd->argv[2]);
+	slot=&(ks->slots[slot_id]);
+	
+	pthread_mutex_lock(&slot->mutex);
+	if(0!=swarmkv_node_addr_compare(&(ks->self.addr), &(slot->owner.addr)))
+	{
+		*reply=swarmkv_reply_new_array(2);
+		node_addr2reply(&(slot->owner.addr), (*reply)->elements);
+		ret=NEED_EXEC_REMOTE;
+	}
+	else
+	{
+		keyspace_getkeysinslot_command_as_owner(mod_keyspace, cmd, NULL, reply);
+		ret=FINISHED;
+	}
+	pthread_mutex_unlock(&slot->mutex);
+
+	return ret;
+}
+
+
+struct swarmkv_reply *make_ask_reply(struct key_slot* slot)
+{
+	struct swarmkv_reply *reply=NULL;
+	assert(slot->state==STATE_MIGRATING);
+	reply=swarmkv_reply_new_array(3);
+	reply->elements[0]=swarmkv_reply_new_string("ASK", 4);
+	reply->elements[1]=swarmkv_reply_new_string(slot->peer.addr.ip_addr, strlen(slot->peer.addr.ip_addr)+1);
+	reply->elements[2]=swarmkv_reply_new_integer(slot->peer.addr.p2p_port);
+	return reply;
+}
+
+void keyspace_get_command_as_owner(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)
+{
+	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
+	struct key_route_entry *key_entry=NULL;
+	int slot_id=-1;
+	struct key_slot* slot=NULL;
+	const sds key=cmd->argv[2];
+
+	slot_id=get_slot_id(key, sdslen(key));
+	slot=&(ks->slots[slot_id]);
+
+	pthread_mutex_lock(&slot->mutex);
+	HASH_FIND(hh, slot->keyroute_table, key, sdslen(key), key_entry);
+	
+	if(!key_entry && slot->state==STATE_MIGRATING)
+	{
+		*reply=make_ask_reply(slot);
+		pthread_mutex_unlock(&slot->mutex);
+		return;
+	}
+
+	if(key_entry)
+	{
+		*reply=swarmkv_reply_new_array(2);
+		node_addr2reply(&(key_entry->owner), (*reply)->elements);
+	}
+	else
+	{
+		*reply=swarmkv_reply_new_nil();
+	}
+	pthread_mutex_unlock(&slot->mutex);
+
+}
+enum cmd_fastpath_result keyspace_get_command_fastpath(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
+{
+/*KEYSPACE GET <key> */
+	int self_is_keyowner=0;
+	sds key=cmd->argv[2];
+	struct swarmkv_node_addr keyowner;
+	memset(&keyowner, 0, sizeof(keyowner));
+	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
+	self_is_keyowner=swarmkv_keyspace_get_key_owner(ks, key, &keyowner);
+	if(self_is_keyowner)
+	{
+		keyspace_get_command_as_owner(mod_keyspace, cmd, NULL, reply);
+		return FINISHED;
+	}
+	else
+	{
+		*reply=swarmkv_reply_new_array(2);
+		node_addr2reply(&(keyowner), (*reply)->elements);
+		return NEED_EXEC_REMOTE;
+	}
+}
+
+void keyspace_set_command_as_owner(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)
+{
+/* KEYSPACE SET <key> <host> <port>  */
+
+	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
+	struct key_route_entry *key_entry=NULL;
+	int slot_id=-1;
+	struct swarmkv_node_addr obj_owner;
+	struct key_slot* slot=NULL;
+	const sds key=cmd->argv[2];
+
+	slot_id=get_slot_id(key, sdslen(key));
+	slot=&(ks->slots[slot_id]);
+
+	pthread_mutex_lock(&slot->mutex);
+	HASH_FIND(hh, slot->keyroute_table, key, sdslen(key), key_entry);
+	
+	if(!key_entry && slot->state==STATE_MIGRATING)
+	{
+		*reply=make_ask_reply(slot);
+		pthread_mutex_unlock(&slot->mutex);
+		return;
+	}
+	sds2node_addr(cmd->argv+2, &obj_owner);
+	if(key_entry)
+	{
+		swarmkv_node_addr_copy(&(key_entry->owner), &obj_owner);
+	}
+	else
+	{
+		key_entry=key_entry_new(cmd->argv[0], &obj_owner);
+		HASH_ADD_KEYPTR(hh, slot->keyroute_table, key_entry->key, sdslen(key_entry->key), key_entry);
+	}
+	*reply=swarmkv_reply_new_status("OK");
+	
+	pthread_mutex_unlock(&slot->mutex);
+}
+
+enum cmd_fastpath_result keyspace_set_command_fastpath(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
+{
+	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
+	struct swarmkv_node_addr obj_owner;
+	const sds key=cmd->argv[2];
+
+	int self_is_keyowner=0;
+	self_is_keyowner=swarmkv_keyspace_get_key_owner(ks, key, &obj_owner);
+	if(self_is_keyowner)	
+	{
+		keyspace_set_command_as_owner(mod_keyspace, cmd, NULL, reply);
+		return FINISHED;
+	}
+	else
+	{
+		return NEED_EXEC_REMOTE;
+	}
+}
+
+void keyspace_setnxget_command_as_owner(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)
+{
+	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
+	struct key_route_entry *key_entry=NULL;
+	int slot_id=-1;
+	struct swarmkv_node_addr obj_owner;
+	const sds key=cmd->argv[2];
+	struct key_slot* slot=NULL;
+	memset(&obj_owner, 0, sizeof(obj_owner));
+	slot_id=get_slot_id(key, sdslen(key));
+	slot=&(ks->slots[slot_id]);
+	
+	pthread_mutex_lock(&slot->mutex);
+	HASH_FIND(hh, slot->keyroute_table, key, sdslen(key), key_entry);
+	
+	if(!key_entry && slot->state==STATE_MIGRATING)
+	{
+		*reply=make_ask_reply(slot);
+		pthread_mutex_unlock(&slot->mutex);
+		return;
+	}
+	if(cmd->argc<3)//object owner not specified
+	{
+		assert(cmd->argc==1);
+		swarmkv_node_addr_copy(&obj_owner, &(ks->self.addr));
+	}
+	else
+	{
+		sds2node_addr(cmd->argv+3, &obj_owner);
+	}
+	if(!key_entry)
+	{
+		key_entry=key_entry_new(key, &obj_owner);
+		HASH_ADD_KEYPTR(hh, slot->keyroute_table, key_entry->key, sdslen(key_entry->key), key_entry);
+	}
+	*reply=swarmkv_reply_new_array(2);
+	node_addr2reply(&(key_entry->owner), (*reply)->elements);
+	
+	pthread_mutex_unlock(&slot->mutex);
+	return;
+}
+enum cmd_fastpath_result keyspace_setnxget_command_fastpath(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
+{
+	int self_is_keyowner=0;
+	sds key=cmd->argv[2];
+	struct swarmkv_node_addr keyowner;
+	memset(&keyowner, 0, sizeof(keyowner));
+	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
+
+	self_is_keyowner=swarmkv_keyspace_get_key_owner(ks, key, &keyowner);
+	if(self_is_keyowner)
+	{
+		keyspace_setnxget_command_as_owner(mod_keyspace, cmd, NULL, reply);
+		return FINISHED;
+	}
+	else
+	{
+		*reply=swarmkv_reply_new_array(2);
+		node_addr2reply(&(keyowner), (*reply)->elements);
+		return NEED_EXEC_REMOTE;
+	}
+
+}
+
+void keyspace_del_command_as_owner(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)
+{
+	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
+	struct key_route_entry *key_entry=NULL;
+	int slot_id=-1;
+	struct key_slot* slot=NULL;
+	const sds key=cmd->argv[2];
+	
+	slot_id=get_slot_id(key, sdslen(key));
+	slot=&(ks->slots[slot_id]);
+	
+	pthread_mutex_lock(&slot->mutex);
+	HASH_FIND(hh, slot->keyroute_table, key, sdslen(key), key_entry);
+	
+	if(!key_entry && slot->state==STATE_MIGRATING)
+	{
+		*reply=make_ask_reply(slot);
+		pthread_mutex_unlock(&slot->mutex);
+		return;
+	}
+
+	if(key_entry)
+	{
+		HASH_DELETE(hh, slot->keyroute_table, key_entry);
+		*reply=swarmkv_reply_new_array(2);
+		node_addr2reply(&(key_entry->owner), (*reply)->elements);
+		key_entry_free(key_entry);
+	}
+	else
+	{
+		*reply=swarmkv_reply_new_nil();
+	}
+	pthread_mutex_unlock(&slot->mutex);
+	return;
+}
+enum cmd_fastpath_result keyspace_del_command_fastpath(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
+{
+/*KEYSPACE DEL <key> */
+	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
+	int self_is_keyowner=0;
+	const sds key=cmd->argv[2];
+	struct swarmkv_node_addr keyowner;
+	memset(&keyowner, 0, sizeof(keyowner));
+
+	self_is_keyowner=swarmkv_keyspace_get_key_owner(ks, key, &keyowner);
+	if(self_is_keyowner)
+	{
+		keyspace_del_command_as_owner(mod_keyspace, cmd, NULL, reply);
+		return FINISHED;
+	}
+	else
+	{
+		*reply=swarmkv_reply_new_array(2);
+		node_addr2reply(&keyowner, (*reply)->elements);
+		return NEED_EXEC_REMOTE;
+	}
+	
+}
+static void get_cluster_nodes(struct swarmkv_keyspace* ks, struct swarmkv_reply **reply)
+{
+	int ret=0;
+	struct swarmkv_node leader; 	
+	struct swarmkv_node nodes[SWARMKV_NODE_MAX];
+	size_t n_node=SWARMKV_NODE_MAX;
+	ret=consul_get_cluster_leader_block(ks->db_name, ks->consul_agent_port, &leader);
+	if(ret<0)
+	{
+		*reply=swarmkv_reply_new_error(error_cluster_leader_not_found);
+		return;
+	}
+	ret=consul_list_health_nodes_block(ks->db_name, ks->consul_agent_port, nodes, &n_node);
+	if(ret<0)
+	{
+		*reply=swarmkv_reply_new_error(error_cluster_leader_not_found);
+		return;
+	}
+	size_t i=0;
+	char uuid_str[37];
+	int is_leader;
+	struct swarmkv_reply *r=swarmkv_reply_new_array(n_node);
+	for(i=0; i<n_node; i++)
+	{
+		uuid_unparse_lower(nodes[i].bin_uuid, uuid_str);
+		if(0==swarmkv_node_compare(&leader, nodes+i))
+		{
+			is_leader=1;
+		}
+		else
+		{
+			is_leader=0;
+		}
+		r->elements[i]=swarmkv_reply_new_string_fmt("%s %s:%u %s", uuid_str,
+																nodes[i].addr.ip_addr,
+																nodes[i].addr.p2p_port,
+																is_leader?"leader":"follower");
+	}
+	*reply=r;
+	return;
+}
+
+enum cmd_fastpath_result cluster_nodes_command_fastpath(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
+{
+	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
+	get_cluster_nodes(ks, reply);
+	return FINISHED;
+}
+enum cmd_fastpath_result cluster_slots_command_fastpath(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
+{
+	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
+	int ret=0;
+	ret=consul_get_slots_blocked(ks->db_name, ks->consul_agent_port, reply);
+	if(ret<0)
+	{
+		*reply=swarmkv_reply_new_error(error_read_slot_table_failed);
+	}
+	return FINISHED;
+}
+
 

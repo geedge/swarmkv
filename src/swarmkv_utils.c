@@ -32,5 +32,10 @@ const char* swarmkv_util_pthread_cond_timedwait_error_to_string(const int timed_
     }
 	return "Conditional timed failed, unknown reason.";
 }
+char* toLower(char* s)
+{
+  for(char *p=s; *p; p++) *p=tolower(*p);
+  return s;
+}
 
 

@@ -1,5 +1,6 @@
 #pragma once
 #include "swarmkv_common.h"
+#include "swarmkv_cmd_spec.h"
 #include "swarmkv/swarmkv.h"
 #include <event2/event.h>
 #include <event2/listener.h>
@@ -12,37 +13,35 @@
 #include <unistd.h>
 #include <string.h>
 
-struct swarmkv_keyspace;
 
 
-struct swarmkv_keyspace* swarmkv_keyspace_new(const struct swarmkv_options *opts, const char* db_name, void *logger, char **err);
-void swarmkv_keyspace_free(struct swarmkv_keyspace* keyspace);
+struct swarmkv_module* swarmkv_keyspace_new(const struct swarmkv_options *opts, const char* db_name, void *logger, char **err);
+void swarmkv_keyspace_free(struct swarmkv_module* mod_keyspace);
+
+void keyspace_get_command_as_owner(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply);
+enum cmd_fastpath_result keyspace_get_command_fastpath(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply);
+
+void keyspace_set_command_as_owner(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd,  const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply);
+enum cmd_fastpath_result keyspace_set_command_fastpath(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply);
+
+void keyspace_setnxget_command_as_owner(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply);
+enum cmd_fastpath_result keyspace_setnxget_command_fastpath(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply);
+
+void keyspace_del_command_as_owner(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply);
+enum cmd_fastpath_result keyspace_del_command_fastpath(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply);
+
+void keyspace_setslot_command_as_owner(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply);
+enum cmd_fastpath_result keyspace_setslot_command_fastpath(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply);
+
+void keyspace_getkeysinslot_command_as_owner(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply);
+enum cmd_fastpath_result keyspace_getkeysinslot_command_fastpath(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply);
+
+
+enum cmd_fastpath_result cluster_nodes_command_fastpath(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply);
+enum cmd_fastpath_result cluster_slots_command_fastpath(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply);
 
 
 
-typedef int (
-*keyspace_send_msg_func
-)   (
-    struct swarmkv_keyspace* keyspace,
-    struct swarmkv_node_addr* node,
-    void *user_data,
-    const char* send_buff,
-    size_t buff_sz
-    );
-//send_msg_cb is used to sent raft messages and gossip ping messages to peers.
-int swarmkv_keyspace_set_callback(struct swarmkv_keyspace* keyspace, keyspace_send_msg_func send_msg_cb);
-int swarmkv_keyspace_recevie_msg(struct swarmkv_keyspace* keyspace, int node_id, const char* recv_buf, size_t buff_sz);
-int swarmkv_keyspace_periodic(struct swarmkv_keyspace* keyspace, int msec_since_last_period);
-
-
-
-int swarmkv_keyspace_set_consul_port(struct swarmkv_keyspace* ks, unsigned int consul_port);
-int swarmkv_keyspace_set_dryrun(struct swarmkv_keyspace* ks);
-int swarmkv_keyspace_set_selfip(struct swarmkv_keyspace* ks, const char* ip);
-int swarmkv_keyspace_is_myself(struct swarmkv_keyspace* ks, const struct swarmkv_node_addr *node);
-
-int swarmkv_keyspace_get_key_owner(struct swarmkv_keyspace* ks, sds key, struct swarmkv_node_addr *owner);
-struct swarmkv_cmd *swarmkv_keyspace_cmd_new(enum swarmkv_operator store_op, const sds key, const struct swarmkv_node_addr *in);
 enum key_route_result
 {
 	__INVALID,
@@ -50,9 +49,6 @@ enum key_route_result
 	FOUND,
 	ASK
 };	
-enum key_route_result swarmkv_keyspace_reply2node(enum swarmkv_operator keyspace_op, const struct swarmkv_reply *reply, struct swarmkv_node_addr *out);
-void swarmkv_keyspace_exec(struct swarmkv_keyspace* ks, const struct swarmkv_cmd *cmd, struct swarmkv_reply **out);
-void swarmkv_keyspace_get_cluster_nodes(struct swarmkv_keyspace *ks, struct swarmkv_reply **pp_reply);
-void swarmkv_keyspace_get_cluster_slots(struct swarmkv_keyspace *ks, struct swarmkv_reply **pp_reply);
+enum key_route_result swarmkv_keyspace_reply2node(const struct swarmkv_reply *reply, struct swarmkv_node_addr *out);
 
 

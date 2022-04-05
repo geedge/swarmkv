@@ -1,7 +1,3 @@
-#include "swarmkv/swarmkv.h"
-#include "swarmkv_common.h"
-#include "swarmkv_net.h"
-#include "swarmkv_keyspace.h"
 #include "swarmkv_store.h"
 #include "swarmkv_utils.h"
 
@@ -19,37 +15,31 @@
 
 #define	MODULE_SWAMRKV_STORE	module_name_str("swarmkv.store")
 
-enum swarmkv_obj_type
-{
-	OBJ_TYPE_STRING,
-	OBJ_TYPE_HASH,
-	OBJ_TYPE_THROTTLE,
-	__SWARMKV_OBJ_TYPE_MAX
-};
-
 struct swarmkv_store
-{	
+{
+	struct swarmkv_module module;
 	struct obj_container* owned_obj_table;
 	struct obj_container* cached_obj_table;
+	send_cmd_func *send_cmd;
+	struct swarmkv *handle_send_cmd;
+	int disable_cache;
 };
 
-struct swarmkv_object
-{
-	enum swarmkv_obj_type type;
-	sds key;
-	union
-	{
-		sds val_string;
-		struct obj_container* hash;
-	};
-};
+
 UT_icd ut_swarmkv_node_icd = {sizeof(struct swarmkv_node_addr), NULL, NULL, NULL};
 
+struct swarmkv_store *module2store(struct swarmkv_module *module)
+{
+	assert(0==strcmp(module->name, "store"));
+	struct swarmkv_store *store=container_of(module, struct swarmkv_store, module);
+	assert(store==module->mod_ctx);
+	return store;
+}
 struct obj_container
 {
-	struct swarmkv_object obj;
+	struct swarmkv_obj obj;
 	char is_in_table;
-	UT_array *accessed_node_list; //used by value owner for cache invalidate notification
+	UT_array *accessed_node_list; //used by value owner for cache synchronization
 	UT_hash_handle hh;
 };
 static struct obj_container *obj_container_new(enum swarmkv_obj_type type, const sds key)
@@ -59,28 +49,7 @@ static struct obj_container *obj_container_new(enum swarmkv_obj_type type, const
 	ctr->obj.key=sdsdup(key);
 	return ctr;
 }
-static struct obj_container *obj_container_find(struct obj_container **table, const sds key)
-{
-	struct obj_container *ctr=NULL;
-	HASH_FIND(hh, *table, key, sdslen(key), ctr);
-	return ctr;
-}
-static void obj_container_join(struct obj_container **table, struct obj_container *ctr)
-{
-//	struct obj_container *tmp=NULL;
-//	HASH_FIND(hh, table, ctr->obj.key, sdslen(ctr->obj.key), tmp);
-//	assert(tmp==NULL);
-//	if(!tmp)
-	HASH_ADD_KEYPTR(hh, *table, ctr->obj.key, sdslen(ctr->obj.key), ctr);
-	ctr->is_in_table=1;
-	return;	
-}
-static void obj_container_remove(struct obj_container **table, struct obj_container *ctr)
-{
-	HASH_DELETE(hh, *table, ctr);
-	ctr->is_in_table=0;
-	return;
-}
+
 static void obj_container_free(struct obj_container *ctr)
 {
 	assert(!ctr->is_in_table);
@@ -112,32 +81,53 @@ static void obj_container_free(struct obj_container *ctr)
 	free(ctr);
 	return;
 }
-sds obj_container_serialize(const struct obj_container *ctr)
+
+static struct obj_container *obj_container_find(struct obj_container **table, const sds key)
+{
+	struct obj_container *ctr=NULL;
+	HASH_FIND(hh, *table, key, sdslen(key), ctr);
+	return ctr;
+}
+static void obj_container_join(struct obj_container **table, struct obj_container *ctr)
+{
+	HASH_ADD_KEYPTR(hh, *table, ctr->obj.key, sdslen(ctr->obj.key), ctr);
+	ctr->is_in_table=1;
+	return;	
+}
+static void obj_container_remove(struct obj_container **table, struct obj_container *ctr)
+{
+	HASH_DELETE(hh, *table, ctr);
+	ctr->is_in_table=0;
+	return;
+}
+
+static sds obj_container_serialize(const struct obj_container *ctr)
 {
 	sds blob=NULL;
 	mpack_writer_t snapshot_mpack;
 	char *mpack_buff=NULL;
 	size_t mpack_sz=0;
+	const struct swarmkv_obj *obj = &(ctr->obj);
 	struct obj_container *field=NULL, *tmp_field=NULL;
 
 	mpack_writer_init_growable(&snapshot_mpack, &mpack_buff, &mpack_sz);
 	mpack_build_map(&snapshot_mpack);
 
 	mpack_write_cstr(&snapshot_mpack, "t");
-	mpack_write_int(&snapshot_mpack, ctr->obj.type);
+	mpack_write_int(&snapshot_mpack, obj->type);
 
 	mpack_write_cstr(&snapshot_mpack, "k");
-	mpack_write_str(&snapshot_mpack, ctr->obj.key, sdslen(ctr->obj.key));
+	mpack_write_str(&snapshot_mpack, obj->key, sdslen(obj->key));
 
 	mpack_write_cstr(&snapshot_mpack, "v");
-	switch(ctr->obj.type)
+	switch(obj->type)
 	{
 		case OBJ_TYPE_STRING:
-			mpack_write_str(&snapshot_mpack, ctr->obj.val_string, sdslen(ctr->obj.val_string));
+			mpack_write_str(&snapshot_mpack, obj->val_string, sdslen(obj->val_string));
 			break;
 		case OBJ_TYPE_HASH:
 			mpack_build_array(&snapshot_mpack);
-			HASH_ITER(hh, ctr->obj.hash, field, tmp_field)
+			HASH_ITER(hh, obj->hash, field, tmp_field)
 			{
 				mpack_write_str(&snapshot_mpack, field->obj.key, sdslen(field->obj.key));
 				mpack_write_str(&snapshot_mpack, field->obj.val_string, sdslen(field->obj.val_string));
@@ -153,7 +143,7 @@ sds obj_container_serialize(const struct obj_container *ctr)
 	free(mpack_buff);
 	return blob;
 }
-struct obj_container *obj_container_deserialize(const sds blob)
+static struct obj_container *obj_container_deserialize(const sds blob)
 {
 	struct obj_container *ctr=ALLOC(struct obj_container, 1);
 	struct obj_container *field=NULL;
@@ -199,11 +189,11 @@ struct obj_container *obj_container_deserialize(const sds blob)
 
 	return ctr;
 }
-int node_cmp(const void *a, const void *b)
+static int node_cmp(const void *a, const void *b)
 {
 	return memcmp(a, b, sizeof(struct swarmkv_node_addr));
 }
-static int obj_containter_setnx_accessed_node(struct obj_container *ctr, const struct swarmkv_node_addr *node)
+static int obj_container_setnx_accessed_node(struct obj_container *ctr, const struct swarmkv_node_addr *node)
 {
 	struct swarmkv_node_addr* found=NULL;
 	if(!ctr->accessed_node_list)
@@ -219,19 +209,20 @@ static int obj_containter_setnx_accessed_node(struct obj_container *ctr, const s
 	utarray_sort(ctr->accessed_node_list, node_cmp);
 	return 1;
 }
-void obj_container_get_accessed_nodes(struct obj_container *ctr, struct swarmkv_node_addr **node_list, size_t *n_node)
+
+static struct swarmkv_node_addr *obj_container_iterate_accessed_nodes(struct obj_container *ctr, int *iterator)
 {
-	struct swarmkv_node_addr *first=NULL;
-	if(!ctr->accessed_node_list)
+	struct swarmkv_node_addr *addr=NULL;
+	if(ctr->accessed_node_list && *iterator < utarray_len(ctr->accessed_node_list))
 	{
-		utarray_new(ctr->accessed_node_list, &ut_swarmkv_node_icd);
+		addr=utarray_eltptr(ctr->accessed_node_list, *iterator);
+		(*iterator)++;
 	}
-	first=(struct swarmkv_node_addr *)utarray_front(ctr->accessed_node_list);
-	*n_node=utarray_len(ctr->accessed_node_list);
-	*node_list=ALLOC(struct swarmkv_node_addr, *n_node);
-	memcpy(*node_list, first, (*n_node)*sizeof(struct swarmkv_node_addr));
+	return addr;
 }
-int obj_container_remove_accessed_node(struct obj_container *ctr, const struct swarmkv_node_addr *node)
+
+/*
+static int obj_container_remove_accessed_node(struct obj_container *ctr, const struct swarmkv_node_addr *node)
 {
 	struct swarmkv_node_addr *found=NULL;
 	size_t found_idx=0;
@@ -248,14 +239,223 @@ int obj_container_remove_accessed_node(struct obj_container *ctr, const struct s
 	}
 	return 0;
 }
+*/
 
-struct swarmkv_store* swarmkv_store_new()
+struct cache_notify_ctx
+{
+	sds key;
+	struct swarmkv_node_addr peer;
+	struct future *f_cache_notify;
+	struct swarmkv_store *store;
+};
+void cache_sync_ctx_free(struct cache_notify_ctx* ctx)
+{
+	future_destroy(ctx->f_cache_notify);
+	ctx->f_cache_notify=NULL;
+	sdsfree(ctx->key);
+	ctx->key=NULL;
+	free(ctx);
+	return;
+}
+
+static void cache_notify_on_succ(void* result, void* user)
+{
+	struct cache_notify_ctx *ctx=(struct cache_notify_ctx *)user;
+	const struct swarmkv_reply* reply=(const struct swarmkv_reply*) result;
+	if(reply->type==SWARMKV_REPLY_STATUS)
+	{ 
+		assert(0==strncasecmp(reply->str, "OK", 2));
+	}
+	else if(reply->type==SWARMKV_REPLY_INTEGER)
+	{
+		assert(reply->integer==1);
+	}
+	else
+	{
+		assert(0);
+	}
+	cache_sync_ctx_free(ctx);
+	return;
+
+}
+static void cache_notify_on_fail(enum e_future_error err, const char * what, void * user)
+{
+	struct cache_notify_ctx *ctx=(struct cache_notify_ctx *)user;
+	cache_sync_ctx_free(ctx);
+	return;
+}
+void store_cache_notify_one(struct swarmkv_store *store, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *peer)
+{
+	struct cache_notify_ctx* ctx=NULL;
+	ctx=ALLOC(struct cache_notify_ctx, 1);	
+	ctx->store=store;
+	swarmkv_node_addr_copy(&(ctx->peer), peer);
+	ctx->key=sdsdup(cmd->argv[1]);
+	ctx->f_cache_notify=future_create("cache_sync", cache_notify_on_succ, cache_notify_on_fail, ctx);
+	store->send_cmd(store->handle_send_cmd, cmd, peer, ctx->f_cache_notify);
+	return;
+}
+void store_cache_notify_all(struct swarmkv_module *mod_store, enum cache_sync_op op, struct swarmkv_obj *obj)
+{
+	struct swarmkv_store *store=module2store(mod_store);
+	struct obj_container *ctr=container_of(obj, struct obj_container, obj);
+
+	struct swarmkv_cmd *sync_cmd=NULL;
+	if(op==CACHE_SET)
+	{
+		sync_cmd=swarmkv_cmd_new(4);
+		sync_cmd->argv[0]=sdsnew("cache");
+		sync_cmd->argv[1]=sdsnew("set");
+		sync_cmd->argv[2]=sdsdup(obj->key);
+		sync_cmd->argv[3]=obj_container_serialize(ctr);
+	}
+	else	//CACHE_DEL
+	{
+		sync_cmd=swarmkv_cmd_new(3);
+		sync_cmd->argv[0]=sdsnew("cache");
+		sync_cmd->argv[1]=sdsnew("del");
+		sync_cmd->argv[2]=sdsdup(obj->key);
+	}
+	int iterator=0;
+	struct swarmkv_node_addr *accessed_node=NULL;
+	while((accessed_node=obj_container_iterate_accessed_nodes(ctr, &iterator)) && accessed_node)
+	{
+		store_cache_notify_one(store, sync_cmd, accessed_node);
+	}
+	swarmkv_cmd_free(sync_cmd);
+}
+int store_obj_setnx_accessed_node(struct swarmkv_module* mod_store, struct swarmkv_obj *obj, const struct swarmkv_node_addr *node)
+{
+	struct swarmkv_store *store=module2store(mod_store);
+	struct obj_container *ctr=container_of(obj, struct obj_container, obj);
+	int added=0;
+	added=obj_container_setnx_accessed_node(ctr, node);
+	if(added)
+	{
+		struct swarmkv_cmd *sync_cmd=NULL;
+		sync_cmd=swarmkv_cmd_new(4);
+		sync_cmd->argv[0]=sdsnew("cache");
+		sync_cmd->argv[1]=sdsnew("set");
+		sync_cmd->argv[2]=sdsdup(obj->key);
+		sync_cmd->argv[3]=obj_container_serialize(ctr);
+		store_cache_notify_one(store, sync_cmd, node);
+		swarmkv_cmd_free(sync_cmd);
+		sync_cmd=NULL;
+		return 1;
+	}
+	return 0;
+}
+struct swarmkv_obj *swarmkv_obj_new(enum swarmkv_obj_type type, const sds key)
+{
+	struct obj_container *ctr=obj_container_new(type, key);
+	return &(ctr->obj);
+}
+void swarmkv_obj_free(struct swarmkv_obj *obj)
+{
+	struct obj_container *ctr=container_of(obj, struct obj_container, obj);
+	obj_container_free(ctr);
+	return;
+}
+
+
+void store_add_obj(struct swarmkv_module *mod_store, struct swarmkv_obj *obj)
+{
+	struct swarmkv_store *store=module2store(mod_store);
+	struct obj_container *ctr=container_of(obj, struct obj_container, obj);
+	obj_container_join(&(store->owned_obj_table), ctr);
+	return;	
+
+}
+void store_remove_obj(struct swarmkv_module *mod_store, struct swarmkv_obj *obj)
+{
+	struct swarmkv_store *store=module2store(mod_store);
+	struct obj_container *ctr=container_of(obj, struct obj_container, obj);
+	obj_container_remove(&(store->owned_obj_table), ctr);
+	return;
+}
+
+struct swarmkv_obj *store_lookup(struct swarmkv_module* mod_store, sds key)
+{
+	struct swarmkv_store *store=module2store(mod_store);
+	struct obj_container *ctr=NULL;
+	ctr=obj_container_find(&(store->owned_obj_table), key);
+	if(ctr)
+	{
+		return &(ctr->obj);
+	}
+	else
+	{
+		return NULL;
+	}
+}
+
+
+struct swarmkv_obj *store_cache_lookup(struct swarmkv_module* mod_store, sds key)
+{
+	struct swarmkv_store *store=module2store(mod_store);
+	struct obj_container *ctr=NULL;
+	if(store->disable_cache)
+	{
+		return NULL;
+	}
+	ctr=obj_container_find(&(store->cached_obj_table), key);
+	if(ctr)
+	{
+		return &(ctr->obj);
+	}
+	else
+	{
+		return NULL;
+	}
+}
+void store_cache_refresh(struct swarmkv_module *mod_store, enum cache_sync_op op, const sds key, const sds blob)
+{
+	struct swarmkv_store *store=module2store(mod_store);
+	struct obj_container *ctr=NULL;	
+	ctr=obj_container_find(&(store->cached_obj_table), key);
+	HASH_FIND(hh, store->cached_obj_table, key, sdslen(key), ctr);
+	switch (op)
+	{
+		case CACHE_SET:
+			if(ctr)
+			{
+				obj_container_remove(&(store->cached_obj_table), ctr);
+				obj_container_free(ctr);
+				ctr=NULL;
+			}
+			ctr=obj_container_deserialize(blob);
+			obj_container_join(&(store->cached_obj_table), ctr);
+			break;
+		case CACHE_DEL:
+			if(ctr)
+			{
+				obj_container_remove(&(store->cached_obj_table), ctr);
+				obj_container_free(ctr);
+				ctr=NULL;
+			}
+			break;
+		default:
+			assert(0);
+			break;
+	}
+	return;
+}
+
+
+struct swarmkv_module *swarmkv_store_new(send_cmd_func *send_cmd, void *handle_send_cmd, int disable_cache)
 {
 	struct swarmkv_store* store=ALLOC(struct swarmkv_store, 1);
-	return store;
+	strncpy(store->module.name, "store", sizeof(store->module.name));
+	store->module.mod_ctx=store;
+	store->send_cmd=send_cmd;
+	store->handle_send_cmd=handle_send_cmd;
+	store->disable_cache=disable_cache;
+	return &(store->module);
 }
-void swarmkv_store_free(struct swarmkv_store* store)
+
+void swarmkv_store_free(struct swarmkv_module *module)
 {
+	struct swarmkv_store *store=module2store(module);
 	struct obj_container *ctr=NULL, *tmp=NULL;
 	HASH_ITER(hh, store->owned_obj_table, ctr, tmp)
 	{
@@ -273,249 +473,4 @@ void swarmkv_store_free(struct swarmkv_store* store)
 	return;
 }
 
-
-const char *error_wrong_type="WRONGTYPE Operation against a key holding the wrong kind of value";
-const char *error_wrong_number_of_arg="ERR wrong number of arguments";
-const char *error_unknown_command="ERR unknown command";
-const char *error_value_not_integer="ERR value is not an integer or out of range";
-
-static struct swarmkv_reply *__store_exec(struct obj_container** table, const struct swarmkv_cmd *cmd, struct obj_container **out)
-{
-	struct swarmkv_reply *reply=NULL;
-	struct obj_container* ctr=NULL;
-	const sds key=cmd->args[0];
-	ctr=obj_container_find(table, key);
-	switch (cmd->op)
-	{
-		case SWARMKV_OP_GET:		
-			if(cmd->n_args!=1)
-			{
-				reply=swarmkv_reply_new_error(error_wrong_number_of_arg);
-				goto error_out;
-			}
-			if(ctr && ctr->obj.type!=OBJ_TYPE_STRING)
-			{
-				reply=swarmkv_reply_new_error(error_wrong_type);
-				goto error_out;
-			}
-			if(ctr)
-			{
-				reply=swarmkv_reply_new_string(ctr->obj.val_string, sdslen(ctr->obj.val_string));
-			}
-			else
-			{
-				reply=swarmkv_reply_new_nil();
-			}
-			break;
-		case SWARMKV_OP_SET:
-			if(cmd->n_args!=2)
-			{
-				reply=swarmkv_reply_new_error(error_wrong_number_of_arg);
-				goto error_out;
-			}
-			if(ctr && ctr->obj.type!=OBJ_TYPE_STRING)
-			{
-				reply=swarmkv_reply_new_error(error_wrong_type);
-				goto error_out;
-			}
-			if(ctr)
-			{
-				sdsfree(ctr->obj.val_string);
-				ctr->obj.val_string=sdsdup(cmd->args[1]);
-			}
-			else
-			{
-				ctr=obj_container_new(OBJ_TYPE_STRING, key);
-				ctr->obj.val_string=sdsdup(cmd->args[1]);
-				obj_container_join(table, ctr);
-			}
-			reply=swarmkv_reply_new_status("OK");
-			break;
-		case SWARMKV_OP_DEL:
-			if(cmd->n_args!=1)
-			{
-				reply=swarmkv_reply_new_error(error_wrong_number_of_arg);
-				goto error_out;
-			}
-			if(ctr)
-			{
-				obj_container_remove(table, ctr);
-				reply=swarmkv_reply_new_integer(1);
-			}
-			else
-			{
-				reply=swarmkv_reply_new_integer(0);
-			}	
-			break;
-		case SWARMKV_OP_INCRBY:
-			if(cmd->n_args!=2)
-			{
-				reply=swarmkv_reply_new_error(error_wrong_number_of_arg);
-				goto error_out;
-			}
-			if(ctr && ctr->obj.type!=OBJ_TYPE_STRING)
-			{
-				reply=swarmkv_reply_new_error(error_wrong_type);
-				goto error_out;
-			}
-			if(ctr)
-			{
-				long long value=0, delta=0;
-				value=atoll(ctr->obj.val_string);
-				delta=atoll(cmd->args[1]);
-				value+=delta;
-				sdsfree(ctr->obj.val_string);
-				ctr->obj.val_string=sdsfromlonglong(value);
-			}
-			else
-			{
-				ctr=obj_container_new(OBJ_TYPE_STRING, key);
-				ctr->obj.val_string=sdsdup(cmd->args[1]);
-				obj_container_join(table, ctr);
-			}
-			reply=swarmkv_reply_new_integer(atoll(ctr->obj.val_string));
-			break;
-		default:
-			assert(0);
-			reply=swarmkv_reply_new_error(error_unknown_command);
-			break;
-	}
-	*out=ctr;
-error_out:
-	return reply;
-
-}
-
-struct swarmkv_reply *swarmkv_store_exec(struct swarmkv_store *store, const struct swarmkv_cmd *cmd, 
-	 const struct swarmkv_node_addr* accessing_node, struct swarmkv_cmd **out_sync_cmd, struct swarmkv_node_addr **accessed_nodes, size_t *n_accessed_node)
-{	
-	struct swarmkv_reply *reply=NULL;
-	struct obj_container *ctr=NULL;
-	struct swarmkv_cmd *sync_cmd=NULL;
-	int first_read=0;
-	reply=__store_exec(&(store->owned_obj_table), cmd, &ctr);
-
-	if(!ctr)
-	{
-		goto not_update_cache;
-	}
-	
-	if(ctr->is_in_table && accessing_node)
-	{
-		first_read=obj_containter_setnx_accessed_node(ctr, accessing_node);
-	}
-	
-	if(is_store_read_operator(cmd->op))
-	{
-		if(accessing_node && first_read)
-		{
-			sync_cmd=swarmkv_cmd_new(SWARMKV_OP_CACHE_SET, 2);
-			sync_cmd->args[0]=sdsdup(cmd->args[0]);
-			sync_cmd->args[1]=obj_container_serialize(ctr);
-			*accessed_nodes=ALLOC(struct swarmkv_node_addr, 1);
-			memcpy(*accessed_nodes, accessing_node, sizeof(struct swarmkv_node_addr));
-			*n_accessed_node=1;
-		}
-	}
-	else if(is_store_del_operator(cmd->op))
-	{
-		sync_cmd=swarmkv_cmd_new(SWARMKV_OP_CACHE_DEL, 1);
-		sync_cmd->args[0]=sdsdup(cmd->args[0]);
-		obj_container_get_accessed_nodes(ctr, accessed_nodes, n_accessed_node);
-	}
-	else
-	{
-		sync_cmd=swarmkv_cmd_new(SWARMKV_OP_CACHE_SET, 2);
-		sync_cmd->args[0]=sdsdup(cmd->args[0]);
-		sync_cmd->args[1]=obj_container_serialize(ctr);
-		obj_container_get_accessed_nodes(ctr, accessed_nodes, n_accessed_node);
-	}
-	
-	*out_sync_cmd=sync_cmd;
-	if(!ctr->is_in_table)
-	{
-		obj_container_free(ctr);
-	}
-not_update_cache:	
-	return reply;
-}
-int swarmkv_store_cache_read(struct swarmkv_store *store, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
-{
-	int is_cache_hit=0;
-	struct obj_container* ctr=NULL;
-	struct swarmkv_reply *r=NULL;
-	
-	assert(is_store_read_operator(cmd->op));
-	
-	r=__store_exec(&(store->cached_obj_table), cmd, &ctr);
-	if(r->type==SWARMKV_REPLY_NIL)
-	{
-		is_cache_hit=0;
-		swarmkv_reply_free(r);
-		r=NULL;
-	}
-	else
-	{
-		*reply=r;
-	}
-	if(ctr)
-	{
-		assert(ctr->is_in_table);
-	}
-	return is_cache_hit;
-}
-
-void swarmkv_store_update_cache(struct swarmkv_store *store, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
-{
-	struct obj_container *ctr=NULL;
-	sds key=cmd->args[0];
-	struct obj_container **table=&(store->cached_obj_table);
-
-	ctr=obj_container_find(table, key);
-	switch (cmd->op)
-	{
-		case SWARMKV_OP_CACHE_SET:
-			if(ctr)
-			{
-				obj_container_remove(table, ctr);
-				obj_container_free(ctr);
-				ctr=NULL;
-			}
-			ctr=obj_container_deserialize(cmd->args[1]);
-			obj_container_join(table, ctr);			
-			*reply=swarmkv_reply_new_status("OK");
-			break;
-		case SWARMKV_OP_CACHE_DEL:
-			if(ctr)
-			{
-				obj_container_remove(table, ctr);
-				obj_container_free(ctr);
-				ctr=NULL;
-				*reply=swarmkv_reply_new_integer(1);
-			}
-			else
-			{
-				*reply=swarmkv_reply_new_integer(0);
-			}
-			break;
-		default:
-			assert(0);
-			*reply=swarmkv_reply_new_error(error_unknown_command);
-			break;
-	}
-	return;
-}
-int swarmkv_store_exists_key(struct swarmkv_store *store, const sds key)
-{
-	struct obj_container *ctr=NULL;
-	ctr=obj_container_find(&(store->owned_obj_table), key);
-	if(ctr)
-	{
-		return 1;
-	}
-	else
-	{
-		return 0;
-	}
-}
 

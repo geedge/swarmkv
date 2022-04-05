@@ -2,18 +2,51 @@
 
 #include "swarmkv/swarmkv.h"
 #include "swarmkv_common.h"
+#include "future_promise.h"
+
+enum swarmkv_obj_type
+{
+	OBJ_TYPE_STRING,
+	OBJ_TYPE_HASH,
+	OBJ_TYPE_THROTTLE,
+	__SWARMKV_OBJ_TYPE_MAX
+};
+struct obj_container;
+struct swarmkv_obj
+{
+	enum swarmkv_obj_type type;
+	sds key;
+	union
+	{
+		sds val_string;
+		struct obj_container* hash;		
+	};
+};
+
 
 struct swarmkv_store;
-struct swarmkv_store* swarmkv_store_new();
-void swarmkv_store_free(struct swarmkv_store* store);
+typedef void send_cmd_func(struct swarmkv *handle, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *peer, struct future *f);
+struct swarmkv_module *swarmkv_store_new(send_cmd_func *send_cmd, void *handle_send_cmd, int disable_cache);
+void swarmkv_store_free(struct swarmkv_module* mod_store);
 
+void hash_obj_add_field(struct swarmkv_obj *obj, sds field, sds value);
+void hash_obj_del_field(struct swarmkv_obj *obj, sds field);
 
-struct swarmkv_reply *swarmkv_store_exec(struct swarmkv_store *store, const struct swarmkv_cmd *cmd, 
-	 const struct swarmkv_node_addr* accessing_node, struct swarmkv_cmd **out_sync_cmd, struct swarmkv_node_addr **accessed_nodes, size_t *n_accessed_node);
-int swarmkv_store_cache_read(struct swarmkv_store *store, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply);
-void swarmkv_store_update_cache(struct swarmkv_store *store, const struct swarmkv_cmd *sync_cmd, struct swarmkv_reply **reply);
-void swarmkv_store_process_sync_reply(struct swarmkv_store *store, sds key, const struct swarmkv_node_addr* peer, const struct swarmkv_reply* reply, struct swarmkv_cmd **full_sync_cmd);
+struct swarmkv_obj *swarmkv_obj_new(enum swarmkv_obj_type type, const sds key);
+void swarmkv_obj_free(struct swarmkv_obj *obj);
 
-int swarmkv_store_exists_key(struct swarmkv_store *store, const sds key);
+struct swarmkv_obj *store_lookup(struct swarmkv_module* mod_store, sds key);
+void store_add_obj(struct swarmkv_module *mod_store, struct swarmkv_obj *obj);
+void store_remove_obj(struct swarmkv_module *mod_store, struct swarmkv_obj *obj);
+int store_obj_setnx_accessed_node(struct swarmkv_module* mod_store, struct swarmkv_obj *obj, const struct swarmkv_node_addr *node);
 
+struct swarmkv_obj *store_cache_lookup(struct swarmkv_module* mod_store, sds key);
+
+enum cache_sync_op
+{
+	CACHE_SET,
+	CACHE_DEL
+};
+void store_cache_notify_all(struct swarmkv_module *mod_store, enum cache_sync_op op, struct swarmkv_obj *obj);
+void store_cache_refresh(struct swarmkv_module *mod_store, enum cache_sync_op op, const sds key, const sds blob);
 

@@ -72,31 +72,44 @@ struct swarmkv_reply* swarmkv_reply_new_error(const char *format, ...)
 	
 	return reply;
 }
-void node2reply(const struct swarmkv_node_addr *node, struct swarmkv_reply* reply[2])
+void node_addr2reply(const struct swarmkv_node_addr *node, struct swarmkv_reply* reply[2])
 {
 	reply[0]=swarmkv_reply_new_string(node->ip_addr, strlen(node->ip_addr)+1);
 	reply[1]=swarmkv_reply_new_integer(node->p2p_port);
 	return;
 }
-void sds2node_addr(const sds args[2], struct swarmkv_node_addr *node_addr)
+void node_addr2sds(const struct swarmkv_node_addr *node, sds argv[2])
 {
-	strncpy(node_addr->ip_addr, args[0], sizeof(node_addr->ip_addr));
-	node_addr->p2p_port=(unsigned int)atoll(args[1]);
+	argv[0]=sdsnew(node->ip_addr);
+	argv[1]=sdsfromlonglong(node->p2p_port);
+	return;
+}
+void sds2node_addr(const sds argv[2], struct swarmkv_node_addr *node_addr)
+{
+	memset(node_addr, 0, sizeof(struct swarmkv_node_addr));
+	strncpy(node_addr->ip_addr, argv[0], sizeof(node_addr->ip_addr));
+	node_addr->p2p_port=(unsigned int)atoll(argv[1]);
 	return;
 }
 int swarmkv_node_compare(const struct swarmkv_node *node1, const struct swarmkv_node *node2)
 {
 	return memcmp(node1, node2, sizeof(struct swarmkv_node));
 }
-int swarmkv_node_addr_compare(const struct swarmkv_node_addr *addr1, const struct swarmkv_node_addr *addr2)
-{
-	return memcmp(addr1, addr2, sizeof(struct swarmkv_node_addr));
-}
 void swarmkv_node_copy(struct swarmkv_node *dst, const struct swarmkv_node *src)
 {
 	memcpy(dst, src, sizeof(struct swarmkv_node));
 	return;
 }
+int swarmkv_node_addr_compare(const struct swarmkv_node_addr *addr1, const struct swarmkv_node_addr *addr2)
+{
+	return memcmp(addr1, addr2, sizeof(struct swarmkv_node_addr));
+}
+void swarmkv_node_addr_copy(struct swarmkv_node_addr *dst, const struct swarmkv_node_addr *src)
+{
+	memcpy(dst, src, sizeof(struct swarmkv_node_addr));
+	return;
+}
+
 struct swarmkv_reply *swarmkv_reply_dup(const struct swarmkv_reply *origin)
 {
 	struct swarmkv_reply *copy=ALLOC(struct swarmkv_reply, 1);
@@ -153,99 +166,34 @@ void swarmkv_reply_free(struct swarmkv_reply *reply)
 	}
 	free(reply);
 }
-int is_store_read_operator(enum swarmkv_operator op)
-{
-	int ret=0;
-	switch(op)
-	{
-		case SWARMKV_OP_GET:
-		case SWARMKV_OP_HGET:
-		case SWARMKV_OP_HGETALL:
-			ret=1;
-		default:
-			break;
-	}
-	return ret;
-}
-int is_store_del_operator(enum swarmkv_operator op)
-{
-	int ret=0;
-	switch(op)
-	{
-		case SWARMKV_OP_DEL:
-		case SWARMKV_OP_HDEL:
-			ret=1;
-		default:
-			break;
-	}
-	return ret;
-
-}
-int is_keyspace_operator(enum swarmkv_operator op)
-{
-	int ret=0;
-	switch(op)
-	{
-		case SWARMKV_OP_KEYSPACE_SET:
-		case SWARMKV_OP_KEYSPACE_SETNXGET:
-		case SWARMKV_OP_KEYSPACE_GET:
-		case SWARMKV_OP_KEYSPACE_DEL:
-		case SWARMKV_OP_KEYSPACE_GETKEYSINSLOT:
-		case SWARMKV_OP_KEYSPACE_SETSLOT:
-		case SWARMKV_OP_KEYSPACE_KEYS:
-			ret=1;
-			break;
-		default:
-			ret=0;
-			break;
-	}
-	return ret;
-}
-int is_cache_operator(enum swarmkv_operator op)
-{
-	int ret=0;
-	switch(op)
-	{
-		case SWARMKV_OP_CACHE_DEL:
-		case SWARMKV_OP_CACHE_SET:
-			ret=1;
-			break;
-		default:
-			ret=0;
-			break;
-	}
-	return ret;
-}
-struct swarmkv_cmd* swarmkv_cmd_new(enum swarmkv_operator op, size_t n_args)
+struct swarmkv_cmd* swarmkv_cmd_new(size_t argc)
 {
 	struct swarmkv_cmd* cmd=ALLOC(struct swarmkv_cmd, 1);
-	cmd->op=op;
-	cmd->n_args=n_args;
-	cmd->args=ALLOC(sds, n_args);
+	cmd->argc=argc;
+	cmd->argv=ALLOC(sds, argc);
 	return cmd;
 }
 void swarmkv_cmd_free(struct swarmkv_cmd* p)
 {
 	size_t i=0;
-	for(i=0; i<p->n_args; i++)
+	for(i=0; i<p->argc; i++)
 	{
-		sdsfree(p->args[i]);
-		p->args[i]=NULL;
+		sdsfree(p->argv[i]);
+		p->argv[i]=NULL;
 	}
-	free(p->args);
-	p->args=NULL;
+	free(p->argv);
+	p->argv=NULL;
 	free(p);
 }
 struct swarmkv_cmd* swarmkv_cmd_dup(const struct swarmkv_cmd* origin)
 {
 	struct swarmkv_cmd* copy=ALLOC(struct swarmkv_cmd, 1);
-	copy->op=origin->op;
-	copy->n_args=origin->n_args;
-	copy->args=ALLOC(sds, copy->n_args);
+	copy->argc=origin->argc;
+	copy->argv=ALLOC(sds, copy->argc);
 	size_t i=0;
-	for(i=0; i<origin->n_args; i++)
+	for(i=0; i<origin->argc; i++)
 	{
-		copy->args[i]=sdsdup(origin->args[i]);
+		copy->argv[i]=sdsdup(origin->argv[i]);
 	}
 	return copy;
 }
@@ -288,8 +236,9 @@ void swarmkv_common_global_init(void)
 
 	g_swarmkv_common_op2str[SWARMKV_OP_CLUSTER_NODES]="CLUSTER NODES";
 	g_swarmkv_common_op2str[SWARMKV_OP_CLUSTER_SLOTS]="CLUSTER SLOTS";
-	g_swarmkv_common_op2str[SWARMKV_OP_CLUSTER_KEYS]="CLUSTER KEYS";
 	g_swarmkv_common_op2str[SWARMKV_OP_CLUSTER_ADDNODE]="CLUSTER ADDNODE";
+	g_swarmkv_common_op2str[SWARMKV_OP_CLUSTER_KEYS]="CLUSTER KEYS";
+
 	int i=0;
 	struct str2op *p=NULL;
 	for(i=0; i<__SWARMKV_OP_MAX; i++)

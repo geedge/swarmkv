@@ -1,0 +1,180 @@
+#include "swarmkv/swarmkv.h"
+#include "swarmkv_common.h"
+
+#include "swarmkv_utils.h"
+
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+#include <pthread.h>
+
+extern void swarmkv_exec(struct swarmkv *db, const struct swarmkv_cmd *cmd, swarmkv_cmd_callback_func_t * cb, void * cb_arg);
+
+struct swarmkv_readoptions
+{
+
+};
+struct swarmkv_writeoptions
+{
+
+};
+
+struct swarmkv_options* swarmkv_options_new(void)
+{
+	struct swarmkv_options *opts=ALLOC(struct swarmkv_options, 1);
+	opts->consul_port=8500;
+	opts->p2p_port=5210;
+	opts->health_check_port=5211;
+	opts->loglevel=0;
+	strcpy(opts->bind_address, "127.0.0.1");
+	uuid_generate(opts->bin_uuid);
+	opts->nr_worker_threads=1;
+	return opts;
+}
+int swarmkv_options_set_p2p_port(struct swarmkv_options *opts, unsigned int p2p_port)
+{
+	opts->p2p_port=p2p_port;
+	return 0;
+}
+int swarmkv_options_set_health_check_port(struct swarmkv_options *opts, unsigned int health_check_port)
+{
+	opts->health_check_port=health_check_port;
+	return 0;
+}
+
+int swarmkv_options_set_bind_address(struct swarmkv_options *opts, const char* ip_addr)
+{
+	strncpy(opts->bind_address, ip_addr, sizeof(opts->bind_address));
+	return 0;
+}
+int swarmkv_options_set_logger(struct swarmkv_options *opts, void *logger)
+{
+	opts->MESA_handle_logger=logger;
+	return 0;
+}
+
+int swarmkv_options_set_consul_port(struct swarmkv_options *opts, unsigned int consul_port)
+{
+	opts->consul_port=consul_port;
+	return 0;
+}
+int swarmkv_options_set_dryrun(struct swarmkv_options *opts)
+{
+	opts->dryrun=1;
+	opts->p2p_port=15210;//overrides default p2p port
+	return 0;
+}
+int swarmkv_options_set_worker_thread_number(struct swarmkv_options *opts, size_t nr_worker_threads)
+{
+	opts->nr_worker_threads=nr_worker_threads;
+	return 0;
+}
+
+
+void swarmkv_set_string(struct swarmkv * db, 
+	const char * key, size_t keylen, const char * value, size_t vallen, swarmkv_cmd_callback_func_t * cb, void * cb_arg)
+
+{
+	struct swarmkv_cmd *cmd=NULL;
+	cmd=swarmkv_cmd_new(3);
+	cmd->argv[0]=sdsnew("set");
+	cmd->argv[1]=sdsnewlen(key, keylen);
+	cmd->argv[2]=sdsnewlen(value, vallen);
+
+	swarmkv_exec(db, cmd, cb, cb_arg);
+	swarmkv_cmd_free(cmd);
+	return;
+	
+}
+
+void swarmkv_get_string(struct swarmkv * db,
+				const char *key, size_t keylen, swarmkv_cmd_callback_func_t *cb, void *cb_arg)
+{
+	struct swarmkv_cmd *cmd=NULL;
+	cmd=swarmkv_cmd_new(2);
+	cmd->argv[0]=sdsnew("get");
+	cmd->argv[1]=sdsnewlen(key, keylen);
+	swarmkv_exec(db, cmd, cb, cb_arg);
+	swarmkv_cmd_free(cmd);
+	return;
+}
+int swarmkv_hset_string(struct swarmkv *db,
+				const char *key, size_t keylen, const char* member, size_t memberlen, const char *value, size_t vallen)
+{
+	return 0;
+}				
+void swarmkv_del(struct swarmkv * db, const char * key, size_t keylen, swarmkv_cmd_callback_func_t *cb, void *cb_arg)
+{	
+	struct swarmkv_cmd *cmd=NULL;
+	cmd=swarmkv_cmd_new(2);	
+	cmd->argv[0]=sdsnew("del");
+	cmd->argv[1]=sdsnewlen(key, keylen);
+	swarmkv_exec(db, cmd, cb, cb_arg);
+	swarmkv_cmd_free(cmd);
+	return;
+}
+struct blocking_query_ctx
+{
+	pthread_cond_t cond;
+	pthread_mutex_t mutex;
+	struct swarmkv_reply* reply;
+};
+void blocking_query_cb(const struct swarmkv_reply* reply, void * arg)
+{
+	struct blocking_query_ctx *ctx=(struct blocking_query_ctx*) arg;
+	ctx->reply=swarmkv_reply_dup(reply);
+	pthread_cond_signal(&ctx->cond);
+	return;
+}
+struct swarmkv_reply* swarmkv_command(struct swarmkv *db, const char *format, ...)
+{
+	char *cmd_str=NULL;
+    va_list ap;
+    va_start(ap,format);
+	vasprintf(&cmd_str, format, ap);
+    va_end(ap);
+	char *sub_token_v[256];
+	int i=0, subtoken_c=0;
+	char *token=NULL, *saveptr=NULL;
+	for (token = cmd_str; subtoken_c<256; token= NULL, subtoken_c++)
+	{
+		sub_token_v[subtoken_c] = strtok_r(token, " ", &saveptr);
+		if (sub_token_v[subtoken_c] == NULL)
+			break;
+	}
+	struct swarmkv_cmd *cmd=NULL;
+	struct swarmkv_reply *reply=NULL;
+	cmd=swarmkv_cmd_new(subtoken_c);
+	for(i=0; i<subtoken_c; i++)
+	{
+		cmd->argv[i]=sdsnew(sub_token_v[i]);
+	}
+	struct blocking_query_ctx ctx;
+	memset(&ctx, 0, sizeof(ctx));
+	pthread_cond_init(&ctx.cond, NULL);
+	pthread_mutex_init(&ctx.mutex, NULL);
+	swarmkv_exec(db, cmd, blocking_query_cb, &ctx);
+	struct timespec max_wait = {0, 0};
+	clock_gettime(CLOCK_REALTIME, &max_wait);
+	max_wait.tv_sec+=1800;
+	int timed_wait_rv=0;
+	if(NULL==ctx.reply)
+	{
+		pthread_mutex_lock(&ctx.mutex);
+		timed_wait_rv=pthread_cond_timedwait(&ctx.cond, &ctx.mutex, &max_wait);
+		pthread_mutex_unlock(&ctx.mutex);
+		if(timed_wait_rv)
+		{
+			printf("%s\n", swarmkv_util_pthread_cond_timedwait_error_to_string(timed_wait_rv));
+			assert(0);
+			ctx.reply=swarmkv_reply_new_error("timeout");
+		}
+	}
+	reply=ctx.reply;
+	ctx.reply=NULL;
+
+	if(cmd) swarmkv_cmd_free(cmd);
+	free(cmd_str);
+	return reply;
+}
+

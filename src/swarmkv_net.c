@@ -159,7 +159,7 @@ static void swarmkv_net_conn_table_overwrite(struct swarmkv_net_thread_ctx* thr,
 	if(tmp_conn)
 	{
 		MESA_handle_runtime_log(thr->ref_logger, RLOG_LV_FATAL, MODULE_SWAMRKV_NET, 
-			"accept duplicated connection form peer %s:%u, previous connection is %s.",
+			"accept duplicated connection form peer %s:%u, previous connection is %s:%u.",
 							tmp_conn->peer_ip, tmp_conn->peer_port);
 		swarmkv_net_conn_table_remove(tmp_conn);
 		swarmkv_connection_kill(tmp_conn);

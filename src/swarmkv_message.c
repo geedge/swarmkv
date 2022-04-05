@@ -128,7 +128,7 @@ struct swarmkv_msg* swarmkv_msg_deserialize(const char* data, size_t len)
 	mpack_tree_t tree;
 	mpack_tree_init_data(&tree, data, len);
 	mpack_tree_parse(&tree);
-	mpack_node_t tmp_node, item, cmd_node, args_node, reply_node;
+	mpack_node_t tmp_node, item, cmd_node, argv_node, reply_node;
 	const char *p=NULL;
 	size_t sz;
 	mpack_node_t root=mpack_tree_root(&tree);
@@ -140,18 +140,15 @@ struct swarmkv_msg* swarmkv_msg_deserialize(const char* data, size_t len)
 	if(msg->type==SWARMKV_MSG_TYPE_CMD)
 	{		
 		cmd_node=mpack_node_map_cstr(root, "cmd");
-		item=mpack_node_map_cstr(cmd_node, "op");
-		args_node=mpack_node_map_cstr(cmd_node, "args");
-		enum swarmkv_operator op=swarmkv_cmd_str2op(mpack_node_str(item), mpack_node_strlen(item));
-		msg->cmd=swarmkv_cmd_new(op, mpack_node_array_length(args_node));
-		for(i=0; i<msg->cmd->n_args; i++)
+		argv_node=mpack_node_map_cstr(cmd_node, "argv");
+		msg->cmd=swarmkv_cmd_new(mpack_node_array_length(argv_node));
+		for(i=0; i<msg->cmd->argc; i++)
 		{
-			item=mpack_node_array_at(args_node, i);
+			item=mpack_node_array_at(argv_node, i);
 			p=mpack_node_str(item);
 			sz=mpack_node_strlen(item);
-			msg->cmd->args[i]=sdsnewlen(p, sz);
+			msg->cmd->argv[i]=sdsnewlen(p, sz);
 		}	
-		msg->cmd->do_not_reply=mpack_node_int(mpack_node_map_cstr(cmd_node, "dnr"));
 	}
 	else
 	{
@@ -232,17 +229,13 @@ sds swarmkv_msg_serialize(const struct swarmkv_msg* msg)
 	{
 		mpack_write_cstr(&root, "cmd");
 		mpack_build_map(&root);
-		mpack_write_cstr(&root, "op");
-		mpack_write_cstr(&root, swarmkv_cmd_op2str(msg->cmd->op));
-		mpack_write_cstr(&root, "args");
+		mpack_write_cstr(&root, "argv");
 		mpack_build_array(&root);
-		for(i=0; i<msg->cmd->n_args; i++)
+		for(i=0; i<msg->cmd->argc; i++)
 		{
-			mpack_write_str(&root, msg->cmd->args[i], (uint32_t)sdslen(msg->cmd->args[i]));
+			mpack_write_str(&root, msg->cmd->argv[i], (uint32_t)sdslen(msg->cmd->argv[i]));
 		}
 		mpack_complete_array(&root);
-		mpack_write_cstr(&root, "dnr");//do not reply
-		mpack_write_int(&root, msg->cmd->do_not_reply);		
 		mpack_complete_map(&root);
 	}
 	else
