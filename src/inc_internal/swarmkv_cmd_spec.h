@@ -35,7 +35,7 @@ typedef void command_proc_as_owner_func (struct swarmkv_module *module, const st
 struct swarmkv_cmd_spec
 {
 	const char *name;
-	const char *sub_name;
+	const char *hint;
 	int arity; /* Number of arguments, it is possible to use -N to say >= N */
     int key_offset; /* The argument that's a key (-1 = no keys) */
 	enum cmd_key_flag flag; /* Command flag, see CMD_*. */	

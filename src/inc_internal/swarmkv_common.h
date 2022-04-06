@@ -42,7 +42,7 @@ enum swarmkv_operator
 enum cmd_fastpath_result
 {
 	NEED_KEY_ROUTE,
-	NEED_EXEC_REMOTE,
+	REDIRECT,
 	FINISHED
 };
 struct swarmkv_module

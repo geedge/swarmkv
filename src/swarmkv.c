@@ -1,6 +1,7 @@
 #include "swarmkv/swarmkv.h"
 
 #include "swarmkv_common.h"
+#include "swarmkv_cmd_spec.h"
 #include "swarmkv_limits.h"
 #include "swarmkv_utils.h"
 #include "swarmkv_error.h"
@@ -18,7 +19,7 @@
 #include "uthash.h"
 #include "sds.h"
 
-
+#include <stdio.h>
 #include <assert.h>
 #include <uuid/uuid.h>
 #include <time.h>
@@ -299,16 +300,84 @@ const struct swarmkv_cmd_spec *get_spec_by_argv(struct swarmkv *db, size_t argc,
 	}
 	return NULL;
 }
+static struct swarmkv_cmd *make_keyroute_cmd(enum cmd_key_flag flag, const sds key, const struct swarmkv_node_addr *obj_owner)
+{
+	struct swarmkv_cmd *keyroute_cmd=NULL;
+	switch(flag)
+	{
+		case CMD_KEY_RO:
+			keyroute_cmd=swarmkv_cmd_new(3);
+			keyroute_cmd->argv[0]=sdsnew("keyspace");
+			keyroute_cmd->argv[1]=sdsnew("get");
+			keyroute_cmd->argv[2]=sdsdup(key);
+			break;
+		case CMD_KEY_OW:
+			if(obj_owner)
+			{
+				keyroute_cmd=swarmkv_cmd_new(5);
+				keyroute_cmd->argv[0]=sdsnew("keyspace");
+				keyroute_cmd->argv[1]=sdsnew("setnxget");
+				keyroute_cmd->argv[2]=sdsdup(key);
+				node_addr2sds(obj_owner, keyroute_cmd->argv+3);
+			}
+			else
+			{
+				keyroute_cmd=swarmkv_cmd_new(3);
+				keyroute_cmd->argv[0]=sdsnew("keyspace");
+				keyroute_cmd->argv[1]=sdsnew("setnxget");
+				keyroute_cmd->argv[2]=sdsdup(key);
+			}				
+			break;
+		case CMD_KEY_RM:
+			keyroute_cmd=swarmkv_cmd_new(3);
+			keyroute_cmd->argv[0]=sdsnew("keyspace");
+			keyroute_cmd->argv[1]=sdsnew("del");
+			keyroute_cmd->argv[2]=sdsdup(key);
+			break;
+		default:
+			assert(0);
+			break;
+	}
+	return keyroute_cmd;
+}
+struct swarmkv_reply *check_cmd_args(const struct swarmkv_cmd_spec *spec, const struct swarmkv_cmd *cmd)
+{
+	struct swarmkv_reply *err_reply=NULL;
+	size_t expect_argc=0;
+	if(strchr(spec->name, ' '))
+	{
+		expect_argc=spec->arity+2;
+	}
+	else
+	{
+		expect_argc=spec->arity+1;
+	}
+	if(cmd->argc<expect_argc)
+	{
+		err_reply=swarmkv_reply_new_error(error_wrong_number_of_arg, spec->name);
+	}
+	return err_reply;
+}
 void swarmkv_exec(struct swarmkv *db, const struct swarmkv_cmd *cmd, swarmkv_cmd_callback_func_t * cb, void * cb_arg)
 {
 	const struct swarmkv_cmd_spec *spec=NULL;
 	struct swarmkv_reply *reply=NULL, *keyspace_reply=NULL;
-	enum cmd_fastpath_result next_step, keyspace_next_step;
+	enum cmd_fastpath_result fastpath_ret, keyspace_next_step;
+	struct promise *p=NULL;
 	struct cmd_exec_ctx *ctx=NULL;
+	struct swarmkv_node_addr peer;
+
 	spec=get_spec_by_argv(db, cmd->argc, cmd->argv);
 	if(!spec)
 	{		
 		MESA_handle_runtime_log(db->logger, RLOG_LV_FATAL, MODULE_SWAMRKV_CORE, "Unknown command op %s", cmd->argv[0]);
+		return;
+	}
+	reply=check_cmd_args(spec, cmd);
+	if(reply)//error happens
+	{
+		cb(reply, cb_arg);
+		swarmkv_reply_free(reply);
 		return;
 	}
 	ctx=ALLOC(struct cmd_exec_ctx, 1);
@@ -318,96 +387,62 @@ void swarmkv_exec(struct swarmkv *db, const struct swarmkv_cmd *cmd, swarmkv_cmd
 	ctx->cb_arg=cb_arg;
 	ctx->db=db;
 	ctx->f_caller=future_create("exec_cmd", generic_exec_on_success, generic_exec_on_fail, ctx);
-	next_step=spec->proc_fastpath(spec->module, cmd, &reply);
-	if(next_step==NEED_KEY_ROUTE)
+	fastpath_ret=spec->proc_fastpath(spec->module, cmd, &reply);
+
+	if(fastpath_ret==FINISHED)
 	{
-		sds key=cmd->argv[spec->key_offset];
-		switch(spec->flag)
-		{
-			case CMD_KEY_RO:
-				ctx->keyspace_cmd=swarmkv_cmd_new(3);
-				ctx->keyspace_cmd->argv[0]=sdsnew("keyspace");
-				ctx->keyspace_cmd->argv[1]=sdsnew("get");
-				ctx->keyspace_cmd->argv[2]=sdsdup(key);
-				keyspace_next_step=keyspace_get_command_fastpath(db->mod_keyspace, ctx->keyspace_cmd, &keyspace_reply);
-				break;
-			case CMD_KEY_OW:
-				if(db->opts->dryrun)
-				{
-					ctx->keyspace_cmd=swarmkv_cmd_new(3);
-					ctx->keyspace_cmd->argv[0]=sdsnew("keyspace");
-					ctx->keyspace_cmd->argv[1]=sdsnew("setnxget");
-					ctx->keyspace_cmd->argv[2]=sdsdup(key);
-					keyspace_next_step=keyspace_setnxget_command_fastpath(db->mod_keyspace, ctx->keyspace_cmd, &keyspace_reply);
-				}
-				else
-				{
-					ctx->keyspace_cmd=swarmkv_cmd_new(5);
-					ctx->keyspace_cmd->argv[0]=sdsnew("keyspace");
-					ctx->keyspace_cmd->argv[1]=sdsnew("setnxget");
-					ctx->keyspace_cmd->argv[2]=sdsdup(key);
-					node_addr2sds(&db->self, ctx->keyspace_cmd->argv+3);
-					keyspace_next_step=keyspace_setnxget_command_fastpath(db->mod_keyspace, ctx->keyspace_cmd, &keyspace_reply);
-				}				
-				break;
-			case CMD_KEY_RM:
-				ctx->keyspace_cmd=swarmkv_cmd_new(3);
-				ctx->keyspace_cmd->argv[0]=sdsnew("keyspace");
-				ctx->keyspace_cmd->argv[1]=sdsnew("del");
-				ctx->keyspace_cmd->argv[2]=sdsdup(key);
-				keyspace_next_step=keyspace_del_command_fastpath(db->mod_keyspace, ctx->keyspace_cmd, &keyspace_reply);
-				break;
-			default:
-				assert(0);
-				break;
-		}
-		struct swarmkv_node_addr addr;
+		goto fastpath_out;
+	}
+	
+	if(fastpath_ret==REDIRECT) //keyspace cmd falls in this branch
+	{
+		swarmkv_keyspace_reply2node(reply, &peer);	
+		exec_command_at_peer(db, cmd, &peer, ctx->f_caller);
+		swarmkv_reply_free(reply);
+		reply=NULL;
+	}
+	
+	if(fastpath_ret==NEED_KEY_ROUTE)
+	{
+		ctx->keyspace_cmd=make_keyroute_cmd(spec->flag, cmd->argv[spec->key_offset], db->opts->dryrun? NULL:(&db->self));
+		
+		const struct swarmkv_cmd_spec *keyspace_spec=NULL;
+		keyspace_spec=get_spec_by_argv(db, ctx->keyspace_cmd->argc, ctx->keyspace_cmd->argv);
+		keyspace_next_step=keyspace_spec->proc_fastpath(db->mod_keyspace, ctx->keyspace_cmd, &keyspace_reply);
+		
 		enum key_route_result ret;
-		ret=swarmkv_keyspace_reply2node(keyspace_reply, &addr);
-		if(keyspace_next_step==NEED_EXEC_REMOTE||ret==ASK)//reply is keyowner, do key route
+		ret=swarmkv_keyspace_reply2node(keyspace_reply, &peer);	
+		swarmkv_reply_free(keyspace_reply);
+		keyspace_reply=NULL;
+		
+		if(keyspace_next_step==REDIRECT)//reply is keyowner, do key route
 		{
 			ctx->f_key_route=future_create("key_route", generic_route_on_success, generic_route_on_fail, ctx);
-			exec_command_at_peer(db, ctx->keyspace_cmd, &addr, ctx->f_key_route);
+			exec_command_at_peer(db, ctx->keyspace_cmd, &peer, ctx->f_key_route);
 		}
 		else if(ret==NOT_FOUND)
 		{
 			reply=cmd_flag_to_keyspace_no_obj_owner_reply(spec->flag);
-			next_step=FINISHED;
+			goto fastpath_out;
 		}
-		else if(0==swarmkv_node_addr_compare(&(db->self), &addr))	//reply is object owner, execute command at there
+		else if(0==swarmkv_node_addr_compare(&(db->self), &peer))	//reply is object owner, execute command at there
 		{
 			spec->proc_as_owner(spec->module, cmd, NULL, &reply);
-			next_step=FINISHED;
+			goto fastpath_out;
 		}
 		else
 		{
-			next_step=NEED_EXEC_REMOTE;
-		}
-	}
-
-	if(next_step==NEED_EXEC_REMOTE) //keyspace cmd also falls in this branch
-	{
-		enum key_route_result ret;
-		struct swarmkv_node_addr owner;
-		ret=swarmkv_keyspace_reply2node(keyspace_reply, &owner);
-		if(ret==FOUND || ret==ASK)
-		{
-			exec_command_at_peer(db, cmd, &owner, ctx->f_caller);
-		}
-		else
-		{
-			reply=cmd_flag_to_keyspace_no_obj_owner_reply(spec->flag);
-			next_step=FINISHED;
+			exec_command_at_peer(db, cmd, &peer, ctx->f_caller);		
 		}
 	}
 	
-	if(next_step==FINISHED)
-	{
-		struct promise *p=future_to_promise(ctx->f_caller);
-		promise_success(p, reply);
-		//ctx is freed at generic_exec_on_success.
-		swarmkv_reply_free(reply);
-	}
+	return;
+	
+fastpath_out:
+	p=future_to_promise(ctx->f_caller);
+	promise_success(p, reply);
+	//ctx is freed at generic_exec_on_success.
+	swarmkv_reply_free(reply);
 	return;
 }
 
@@ -421,7 +456,12 @@ void cmd_msg_processing(struct swarmkv* db, uuid_t requester_uuid, unsigned long
 		MESA_handle_runtime_log(db->logger, RLOG_LV_FATAL, MODULE_SWAMRKV_CORE, "Unknown command %d", cmd->argv[0]);
 		return;
 	}
-	spec->proc_as_owner(spec->module, cmd, peer, &reply);
+	reply=check_cmd_args(spec, cmd);
+	if(!reply)//no error
+	{
+		spec->proc_as_owner(spec->module, cmd, peer, &reply);
+	}
+
 
 	struct swarmkv_msg* reply_msg=NULL;
 	reply_msg=swarmkv_msg_new(requester_uuid, rr_seq);
@@ -485,14 +525,15 @@ void msg_read_callback(const struct swarmkv_node_addr * peer, const char* data, 
 	swarmkv_msg_free(msg_received);
 }
 
-void command_register(struct swarmkv_cmd_spec **table,
-						const char* name, int arity, int key_offset, enum cmd_key_flag flag,
+void command_register(struct swarmkv_cmd_spec **table, const char *name, const char *hint,
+						int arity, int key_offset, enum cmd_key_flag flag,
 						command_proc_fastpath_func *proc_fastpath, command_proc_as_owner_func *proc_as_onwer, struct swarmkv_module *module)
 {
 	struct swarmkv_cmd_spec *spec=NULL;
 
 	spec=ALLOC(struct swarmkv_cmd_spec, 1);
 	spec->name=name;
+	spec->hint=hint;
 	spec->arity=arity;
 	spec->key_offset=key_offset;
 	spec->flag=flag;
@@ -504,42 +545,52 @@ void command_register(struct swarmkv_cmd_spec **table,
 }
 void command_spec_init(struct swarmkv *db)
 {
-	command_register(&(db->command_table), "get", 1, 1, CMD_KEY_RO,
+	command_register(&(db->command_table), "get", "GET key",
+					1, 1, CMD_KEY_RO,
 					get_command_fastpath, get_command_as_owner, db->mod_store);
-	command_register(&(db->command_table), "set", 2, 1, CMD_KEY_OW,
+	command_register(&(db->command_table), "set", "SET key value",
+					2, 1, CMD_KEY_OW,
 					set_command_fastpath, set_command_as_owner, db->mod_store);
-	command_register(&(db->command_table), "del", 1, 1, CMD_KEY_RM,
+	command_register(&(db->command_table), "del", "DEL key",
+					1, 1, CMD_KEY_RM,
 					del_command_fastpath, del_command_as_owner, db->mod_store);
-	command_register(&(db->command_table), "incrby", 2, 1, CMD_KEY_OW,
+	command_register(&(db->command_table), "incrby", "INCRBY key increment",
+					2, 1, CMD_KEY_OW,
 					incrby_command_fastpath, incrby_command_as_owner, db->mod_store);
 
-	command_register(&(db->command_table), "cache set", 2, 2, CMD_KEY_NA,
+	command_register(&(db->command_table), "cache set", "CACHE SET key blob",
+					2, 2, CMD_KEY_NA,
 					NULL, cache_set_command_as_owner, db->mod_store);
-	command_register(&(db->command_table), "cache del", 2, 2, CMD_KEY_NA,
+	command_register(&(db->command_table), "cache del", "CACHE DEL key",
+					1, 2, CMD_KEY_NA,
 					NULL, cache_del_command_as_owner, db->mod_store);
 
-	command_register(&(db->command_table), "keyspace get", 1, 2, CMD_KEY_RO,
+	command_register(&(db->command_table), "keyspace get", "KEYSPACE GET key",
+					1, 2, CMD_KEY_RO,
 					keyspace_get_command_fastpath, keyspace_get_command_as_owner, db->mod_keyspace);
-	command_register(&(db->command_table), "keyspace set", 1, 2, CMD_KEY_OW,
+	command_register(&(db->command_table), "keyspace set", "KEYSPACE SET key IP port",
+					1, 2, CMD_KEY_OW,
 					keyspace_set_command_fastpath, keyspace_set_command_as_owner, db->mod_keyspace);
-	command_register(&(db->command_table), "keyspace setnxget", 1, 2, CMD_KEY_OW,
+	command_register(&(db->command_table), "keyspace setnxget", "KEYSPACE SETNXGET key IP port",
+					1, 2, CMD_KEY_OW,
 					keyspace_setnxget_command_fastpath, keyspace_setnxget_command_as_owner, db->mod_keyspace);
-	command_register(&(db->command_table), "keyspace del", 1, 2, CMD_KEY_RM,
+	command_register(&(db->command_table), "keyspace del", "KEYSPACE DEL key",
+					1, 2, CMD_KEY_RM,
 					keyspace_del_command_fastpath, keyspace_del_command_as_owner, db->mod_keyspace);
 
-	command_register(&(db->command_table), "keyspace setslot", 1, 2, CMD_KEY_NA,
+	command_register(&(db->command_table), "keyspace setslot", "KEYSPACE SETSLOT node-IP node-port <slot> IMPORTING peer-IP peer-port | MIGRATING peer-IP peer-port | NODE peer-IP peer-port | STABLE",
+					1, 2, CMD_KEY_NA,
 					keyspace_setslot_command_fastpath, keyspace_setslot_command_as_owner, db->mod_keyspace);
 
-	command_register(&(db->command_table), "keyspace getkeysinslot", 1, 2, CMD_KEY_NA,
+	command_register(&(db->command_table), "keyspace getkeysinslot", "KEYSPACE GETKEYSINSLOT slot",
+					1, 2, CMD_KEY_NA,
 					keyspace_getkeysinslot_command_fastpath, keyspace_getkeysinslot_command_as_owner, db->mod_keyspace);
 
-
-	
-
-
-	command_register(&(db->command_table), "cluster nodes", 0, -1, CMD_KEY_NA,
+	command_register(&(db->command_table), "cluster nodes", "CLUSTER NODES",
+					0, -1, CMD_KEY_NA,
 					cluster_nodes_command_fastpath, NULL, db->mod_keyspace);
-	command_register(&(db->command_table), "cluster slots", 0, -1, CMD_KEY_NA,
+	command_register(&(db->command_table), "cluster slots", "CLUSTER SLOTS",
+					0, -1, CMD_KEY_NA,
 					cluster_slots_command_fastpath, NULL, db->mod_keyspace);
 	return;
 }
@@ -656,6 +707,15 @@ void swarmkv_close(struct swarmkv * db)
 	}
 	swarmkv_net_free(db->net);
 	db->net=NULL;
+
+	struct swarmkv_cmd_spec *spec=NULL, *tmp_spec=NULL;
+	
+	HASH_ITER(hh, db->command_table, spec, tmp_spec)
+	{
+		HASH_DELETE(hh, db->command_table, spec);
+		free(spec);
+	}
+
 	MESA_handle_runtime_log(db->logger, RLOG_LV_INFO, MODULE_SWAMRKV_CORE, "swarmkv cluster %s closed.", db->db_name);
 	if(db->opts->MESA_handle_logger != db->logger)
 	{

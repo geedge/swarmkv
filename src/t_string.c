@@ -56,6 +56,7 @@ void set_command_as_owner(struct swarmkv_module *mod_store, const struct swarmkv
 	struct swarmkv_obj *obj=NULL;
 	const sds key=cmd->argv[1];
 	const sds value=cmd->argv[2];
+
 	obj=store_lookup(mod_store, key);
 
 	if(obj && obj->type!=OBJ_TYPE_STRING)
@@ -97,15 +98,10 @@ enum cmd_fastpath_result set_command_fastpath(struct swarmkv_module *mod_store, 
 
 void del_command_as_owner(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)
 {
-	struct obj_container *ctr=NULL;
 	const sds key=cmd->argv[1];
 	struct swarmkv_obj *obj=NULL;
 	obj=store_lookup(mod_store, key);
-	if(cmd->argc<2)
-	{
-		*reply=swarmkv_reply_new_error(error_wrong_number_of_arg);
-		return;
-	}
+
 	if(obj)
 	{
 		store_remove_obj(mod_store, obj);
@@ -121,7 +117,7 @@ void del_command_as_owner(struct swarmkv_module *mod_store, const struct swarmkv
 	//   and will be notified by store_cache_notify_all() later.
 	// - If not, the key is deleted, cache is unnecessary.
 	
-	if(ctr)
+	if(obj)
 	{
 		store_cache_notify_all(mod_store, CACHE_DEL, obj);
 		swarmkv_obj_free(obj);
@@ -139,11 +135,7 @@ void incrby_command_as_owner(struct swarmkv_module *mod_store, const struct swar
 {
 	struct swarmkv_obj *obj=NULL;
 	const sds key=cmd->argv[1];
-	if(cmd->argc!=2)
-	{
-		*reply=swarmkv_reply_new_error(error_wrong_number_of_arg);
-		return;
-	}
+
 	obj=store_lookup(mod_store, key);
 	if(obj && obj->type!=OBJ_TYPE_STRING)
 	{

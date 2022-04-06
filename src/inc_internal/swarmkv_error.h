@@ -1,7 +1,7 @@
 #pragma once
 
 #define	error_wrong_type			"WRONGTYPE Operation against a key holding the wrong kind of value"
-#define	error_wrong_number_of_arg	"ERR wrong number of arguments"
+#define	error_wrong_number_of_arg	"ERR wrong number of arguments for '%s' command"
 #define	error_unknown_command		"ERR unknown command"
 #define	error_value_not_integer		"ERR value is not an integer or out of range"
 
