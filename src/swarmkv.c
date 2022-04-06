@@ -281,7 +281,7 @@ const struct swarmkv_cmd_spec *get_spec_by_argv(struct swarmkv *db, size_t argc,
 	const struct swarmkv_cmd_spec *spec=NULL;
 	char name[256]="";
 	strncpy(name, argv[0], sizeof(name));
-	toLower(name);
+	toUpper(name);
 	HASH_FIND(hh, db->command_table, name, strlen(name), spec);
 	if(spec)
 	{
@@ -292,7 +292,7 @@ const struct swarmkv_cmd_spec *get_spec_by_argv(struct swarmkv *db, size_t argc,
 		return NULL;
 	}
 	snprintf(name, sizeof(name), "%s %s", argv[0], argv[1]);
-	toLower(name);
+	toUpper(name);
 	HASH_FIND(hh, db->command_table, name, strlen(name), spec);
 	if(spec)
 	{
@@ -545,51 +545,51 @@ void command_register(struct swarmkv_cmd_spec **table, const char *name, const c
 }
 void command_spec_init(struct swarmkv *db)
 {
-	command_register(&(db->command_table), "get", "GET key",
+	command_register(&(db->command_table), "GET", "key",
 					1, 1, CMD_KEY_RO,
 					get_command_fastpath, get_command_as_owner, db->mod_store);
-	command_register(&(db->command_table), "set", "SET key value",
+	command_register(&(db->command_table), "SET", "key value",
 					2, 1, CMD_KEY_OW,
 					set_command_fastpath, set_command_as_owner, db->mod_store);
-	command_register(&(db->command_table), "del", "DEL key",
+	command_register(&(db->command_table), "DEL", "key",
 					1, 1, CMD_KEY_RM,
 					del_command_fastpath, del_command_as_owner, db->mod_store);
-	command_register(&(db->command_table), "incrby", "INCRBY key increment",
+	command_register(&(db->command_table), "INCRBY", "key increment",
 					2, 1, CMD_KEY_OW,
 					incrby_command_fastpath, incrby_command_as_owner, db->mod_store);
 
-	command_register(&(db->command_table), "cache set", "CACHE SET key blob",
+	command_register(&(db->command_table), "CACHE SET", "key blob",
 					2, 2, CMD_KEY_NA,
 					NULL, cache_set_command_as_owner, db->mod_store);
-	command_register(&(db->command_table), "cache del", "CACHE DEL key",
+	command_register(&(db->command_table), "CACHE DEL", "key",
 					1, 2, CMD_KEY_NA,
 					NULL, cache_del_command_as_owner, db->mod_store);
 
-	command_register(&(db->command_table), "keyspace get", "KEYSPACE GET key",
+	command_register(&(db->command_table), "KEYSPACE GET", "key",
 					1, 2, CMD_KEY_RO,
 					keyspace_get_command_fastpath, keyspace_get_command_as_owner, db->mod_keyspace);
-	command_register(&(db->command_table), "keyspace set", "KEYSPACE SET key IP port",
+	command_register(&(db->command_table), "KEYSPACE SET", "key IP port",
 					1, 2, CMD_KEY_OW,
 					keyspace_set_command_fastpath, keyspace_set_command_as_owner, db->mod_keyspace);
-	command_register(&(db->command_table), "keyspace setnxget", "KEYSPACE SETNXGET key IP port",
+	command_register(&(db->command_table), "KEYSPACE SETNXGET", "key IP port",
 					1, 2, CMD_KEY_OW,
 					keyspace_setnxget_command_fastpath, keyspace_setnxget_command_as_owner, db->mod_keyspace);
-	command_register(&(db->command_table), "keyspace del", "KEYSPACE DEL key",
+	command_register(&(db->command_table), "KEYSPACE DEL", "key",
 					1, 2, CMD_KEY_RM,
 					keyspace_del_command_fastpath, keyspace_del_command_as_owner, db->mod_keyspace);
 
-	command_register(&(db->command_table), "keyspace setslot", "KEYSPACE SETSLOT node-IP node-port <slot> IMPORTING peer-IP peer-port | MIGRATING peer-IP peer-port | NODE peer-IP peer-port | STABLE",
+	command_register(&(db->command_table), "KEYSPACE SETSLOT", "node-IP node-port <slot> IMPORTING peer-IP peer-port | MIGRATING peer-IP peer-port | NODE peer-IP peer-port | STABLE",
 					1, 2, CMD_KEY_NA,
 					keyspace_setslot_command_fastpath, keyspace_setslot_command_as_owner, db->mod_keyspace);
 
-	command_register(&(db->command_table), "keyspace getkeysinslot", "KEYSPACE GETKEYSINSLOT slot",
+	command_register(&(db->command_table), "KEYSPACE GETKEYSINSLOT", "slot",
 					1, 2, CMD_KEY_NA,
 					keyspace_getkeysinslot_command_fastpath, keyspace_getkeysinslot_command_as_owner, db->mod_keyspace);
 
-	command_register(&(db->command_table), "cluster nodes", "CLUSTER NODES",
+	command_register(&(db->command_table), "CLUSTER NODES", "",
 					0, -1, CMD_KEY_NA,
 					cluster_nodes_command_fastpath, NULL, db->mod_keyspace);
-	command_register(&(db->command_table), "cluster slots", "CLUSTER SLOTS",
+	command_register(&(db->command_table), "CLUSTER SLOTS", "",
 					0, -1, CMD_KEY_NA,
 					cluster_slots_command_fastpath, NULL, db->mod_keyspace);
 	return;
@@ -624,7 +624,32 @@ const struct swarmkv_cmd_spec *get_spec_by_op_str(struct swarmkv *db, const char
 	}
 	return NULL;
 }
-
+size_t swarmkv_get_possible_command_name(struct swarmkv *db, const char *prefix, const char* cmd_names[], size_t sz)
+{
+	struct swarmkv_cmd_spec *spec=NULL, *tmp_spec=NULL;
+	size_t n_matched=0;
+	HASH_ITER(hh, db->command_table, spec, tmp_spec)
+	{
+		if(0==strncasecmp(spec->name, prefix, strlen(prefix)) && n_matched<sz)
+		{
+			cmd_names[n_matched]=spec->name;
+			n_matched++;
+		}
+	}
+	return n_matched;
+}
+const char *swarmkv_get_command_hint(struct swarmkv *db, const char* cmd_name)
+{
+	struct swarmkv_cmd_spec *spec=NULL, *tmp_spec=NULL;
+	HASH_ITER(hh, db->command_table, spec, tmp_spec)
+	{
+		if(0==strcasecmp(spec->name, cmd_name))
+		{
+			return spec->hint;
+		}
+	}
+	return NULL;
+}
 struct swarmkv *swarmkv_open(struct swarmkv_options* opts, const char * db_name, char **err)
 {
 	struct swarmkv *db = NULL;

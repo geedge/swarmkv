@@ -6,21 +6,32 @@
 #include "linenoise/linenoise.h"
 #include "swarmkv/swarmkv.h"
 
-void completion(const char *buf, linenoiseCompletions *lc) {
-    if (buf[0] == 'h') {
-        linenoiseAddCompletion(lc,"hello");
-        linenoiseAddCompletion(lc,"hello there");
-    }
-//	strcasecmp("")
+struct swarmkv *global_db=NULL;
+
+void completion(const char *buf, linenoiseCompletions *lc)
+{
+	size_t n_matched=0, i=0;
+	const char *possible_cmd[32];
+	n_matched=swarmkv_get_possible_command_name(global_db, buf, possible_cmd, 32);
+	for(i=0; i<n_matched; i++)
+	{
+		linenoiseAddCompletion(lc, possible_cmd[i]);
+	}
 }
 
-char *hints(const char *buf, int *color, int *bold) {
-    if (!strcasecmp(buf,"hello")) {
-        *color = 35;
-        *bold = 0;
-        return " World";
-    }
-    return NULL;
+char *hints(const char *buf, int *color, int *bold)
+{
+	const char *p=NULL;
+	static char buff[512];
+	p=swarmkv_get_command_hint(global_db, buf);
+	if(p)
+	{
+		*color = 90;
+		*bold = 0;
+		snprintf(buff, sizeof(buff), " %s", p);
+		return buff;
+	}
+	return NULL;
 }
 void print_reply(const struct swarmkv_reply *reply)
 {
@@ -72,21 +83,20 @@ int main(int argc, char * argv[])
 				sscanf(optarg, "%u", &consul_port);
 				break;
 			default:	
-				fprintf(stderr, "Usage: %s [-n db-name] [-p consul-port]\n", prgname);
+				fprintf(stderr, "Usage: %s [-n global_db-name] [-p consul-port]\n", prgname);
 				break;
 		}
 	}
 	if(!strlen(db_name))
 	{
-		fprintf(stderr, "need [-n db-name]\n");
+		fprintf(stderr, "need [-n global_db-name]\n");
 		return 0;
 	}
 	struct swarmkv_options *opts=swarmkv_options_new();
 	swarmkv_options_set_dryrun(opts);
 	swarmkv_options_set_worker_thread_number(opts, 2);
-	struct swarmkv *db=NULL;
 	char *err=NULL;
-	db=swarmkv_open(opts, db_name, &err);
+	global_db=swarmkv_open(opts, db_name, &err);
 	if(err)
 	{
 		fprintf(stderr, "Open DB %s error: %s", db_name, err);
@@ -112,13 +122,15 @@ int main(int argc, char * argv[])
 
 
 	struct swarmkv_reply *reply=NULL;
-	while((line = linenoise("swarmkv> ")) != NULL)
+	char prompt[256];
+	snprintf(prompt, sizeof(prompt), "%s> ", db_name);
+	while((line = linenoise(prompt)) != NULL)
 	{
 		if(0==strlen(line))
 		{
 			continue;
 		}
-		reply=swarmkv_command(db, line);		
+		reply=swarmkv_command(global_db, line);		
 		print_reply(reply);
 		swarmkv_reply_free(reply);
 		reply=NULL;

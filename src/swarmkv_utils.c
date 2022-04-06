@@ -3,6 +3,7 @@
 #include <sys/syscall.h>   /* For SYS_xxx definitions */
 #include <pthread.h>
 #include <asm/errno.h>
+#include <ctype.h> //tolower, toupper
 
 pid_t gettid()
 {
@@ -35,6 +36,11 @@ const char* swarmkv_util_pthread_cond_timedwait_error_to_string(const int timed_
 char* toLower(char* s)
 {
   for(char *p=s; *p; p++) *p=tolower(*p);
+  return s;
+}
+char* toUpper(char* s)
+{
+  for(char *p=s; *p; p++) *p=toupper(*p);
   return s;
 }
 

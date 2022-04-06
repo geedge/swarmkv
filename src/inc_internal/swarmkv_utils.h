@@ -26,6 +26,8 @@
 const char*	module_name_str(const char*name);
 const char* swarmkv_util_pthread_cond_timedwait_error_to_string(const int timed_wait_rv);
 char* toLower(char* s);
+char* toUpper(char* s);
+
 #ifndef offsetof
 /** Return the offset of a field in a structure. */
 #define offsetof(TYPE, MEMBER)  __builtin_offsetof (TYPE, MEMBER)
