@@ -105,6 +105,7 @@ struct swarmkv_reply *swarmkv_reply_new_nil(void);
 struct swarmkv_reply *swarmkv_reply_new_status(const char *format, ...);
 struct swarmkv_reply *swarmkv_reply_new_error(const char *format, ...);
 struct swarmkv_reply *swarmkv_reply_dup(const struct swarmkv_reply *origin);
+void swarmkv_reply_merge_array(struct swarmkv_reply **dst, struct swarmkv_reply *src);
 
 void node_addr2reply(const struct swarmkv_node_addr *node, struct swarmkv_reply* reply[2]);
 void sds2node_addr(const sds args[2], struct swarmkv_node_addr *node);

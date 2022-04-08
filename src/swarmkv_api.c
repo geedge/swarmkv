@@ -178,4 +178,3 @@ struct swarmkv_reply* swarmkv_command(struct swarmkv *db, const char *format, ..
 	free(cmd_str);
 	return reply;
 }
-

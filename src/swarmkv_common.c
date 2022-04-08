@@ -141,6 +141,26 @@ struct swarmkv_reply *swarmkv_reply_dup(const struct swarmkv_reply *origin)
 	}
 	return copy;
 }
+void swarmkv_reply_merge_array(struct swarmkv_reply **dst, struct swarmkv_reply *src)
+{
+	if(src->type==SWARMKV_REPLY_NIL) return;
+	if(*dst==NULL)
+	{
+		*dst=swarmkv_reply_new_array(0);
+	}
+	assert((*dst)->type==SWARMKV_REPLY_ARRAY && src->type==SWARMKV_REPLY_ARRAY);
+	(*dst)->elements=(struct swarmkv_reply **)realloc((*dst)->elements, ((*dst)->n_element+src->n_element)*sizeof(struct swarmkv_reply*));
+	size_t i=0;
+	for(i=0; i<src->n_element; i++)
+	{
+		(*dst)->elements[(*dst)->n_element+i]=src->elements[i];
+		src->elements[i]=NULL;
+	}
+	(*dst)->n_element+=src->n_element;
+	src->n_element=0;
+	swarmkv_reply_free(src);
+	return;
+}
 
 void swarmkv_reply_free(struct swarmkv_reply *reply)
 {

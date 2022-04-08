@@ -340,9 +340,8 @@ static struct swarmkv_cmd *make_keyroute_cmd(enum cmd_key_flag flag, const sds k
 	}
 	return keyroute_cmd;
 }
-struct swarmkv_reply *check_cmd_args(const struct swarmkv_cmd_spec *spec, const struct swarmkv_cmd *cmd)
+int is_sufficient_arg_num(const struct swarmkv_cmd_spec *spec, const struct swarmkv_cmd *cmd)
 {
-	struct swarmkv_reply *err_reply=NULL;
 	size_t expect_argc=0;
 	if(strchr(spec->name, ' '))
 	{
@@ -354,9 +353,9 @@ struct swarmkv_reply *check_cmd_args(const struct swarmkv_cmd_spec *spec, const 
 	}
 	if(cmd->argc<expect_argc)
 	{
-		err_reply=swarmkv_reply_new_error(error_wrong_number_of_arg, spec->name);
+		return 0;
 	}
-	return err_reply;
+	return 1;
 }
 void swarmkv_exec(struct swarmkv *db, const struct swarmkv_cmd *cmd, swarmkv_cmd_callback_func_t * cb, void * cb_arg)
 {
@@ -370,12 +369,14 @@ void swarmkv_exec(struct swarmkv *db, const struct swarmkv_cmd *cmd, swarmkv_cmd
 	spec=get_spec_by_argv(db, cmd->argc, cmd->argv);
 	if(!spec)
 	{		
-		MESA_handle_runtime_log(db->logger, RLOG_LV_FATAL, MODULE_SWAMRKV_CORE, "Unknown command op %s", cmd->argv[0]);
+		reply=swarmkv_reply_new_error(error_unknown_command, cmd->argv[0], cmd->argc>1?cmd->argv[1]:" ");
+		cb(reply, cb_arg);
+		swarmkv_reply_free(reply);
 		return;
 	}
-	reply=check_cmd_args(spec, cmd);
-	if(reply)//error happens
+	if(0==is_sufficient_arg_num(spec, cmd))//error happens
 	{
+		reply=swarmkv_reply_new_error(error_wrong_number_of_arg, spec->name);
 		cb(reply, cb_arg);
 		swarmkv_reply_free(reply);
 		return;
@@ -456,17 +457,20 @@ void cmd_msg_processing(struct swarmkv* db, uuid_t requester_uuid, unsigned long
 		MESA_handle_runtime_log(db->logger, RLOG_LV_FATAL, MODULE_SWAMRKV_CORE, "Unknown command %d", cmd->argv[0]);
 		return;
 	}
-	reply=check_cmd_args(spec, cmd);
-	if(!reply)//no error
+	if(is_sufficient_arg_num(spec, cmd))
 	{
 		spec->proc_as_owner(spec->module, cmd, peer, &reply);
+	}
+	else
+	{
+		reply=swarmkv_reply_new_error(error_wrong_number_of_arg, spec->name);
 	}
 
 
 	struct swarmkv_msg* reply_msg=NULL;
 	reply_msg=swarmkv_msg_new(requester_uuid, rr_seq);
 	swarmkv_msg_add_reply(reply_msg, reply);
-	reply=NULL;
+//	reply=NULL;
 	sds buff=swarmkv_msg_serialize(reply_msg);
 	swarmkv_net_send(db->net, peer, buff);
 	swarmkv_msg_free(reply_msg);
@@ -565,6 +569,8 @@ void command_spec_init(struct swarmkv *db)
 					1, 2, CMD_KEY_NA,
 					NULL, cache_del_command_as_owner, db->mod_store);
 
+
+
 	command_register(&(db->command_table), "KEYSPACE GET", "key",
 					1, 2, CMD_KEY_RO,
 					keyspace_get_command_fastpath, keyspace_get_command_as_owner, db->mod_keyspace);
@@ -577,21 +583,23 @@ void command_spec_init(struct swarmkv *db)
 	command_register(&(db->command_table), "KEYSPACE DEL", "key",
 					1, 2, CMD_KEY_RM,
 					keyspace_del_command_fastpath, keyspace_del_command_as_owner, db->mod_keyspace);
-
 	command_register(&(db->command_table), "KEYSPACE SETSLOT", "node-IP node-port <slot> IMPORTING peer-IP peer-port | MIGRATING peer-IP peer-port | NODE peer-IP peer-port | STABLE",
 					1, 2, CMD_KEY_NA,
 					keyspace_setslot_command_fastpath, keyspace_setslot_command_as_owner, db->mod_keyspace);
-
 	command_register(&(db->command_table), "KEYSPACE GETKEYSINSLOT", "slot",
 					1, 2, CMD_KEY_NA,
 					keyspace_getkeysinslot_command_fastpath, keyspace_getkeysinslot_command_as_owner, db->mod_keyspace);
+	command_register(&(db->command_table), "KEYSPACE KEYS", "pattern",
+					3, -1, CMD_KEY_RO,
+					keyspace_keys_command_fastpath, keyspace_keys_command_as_owner, db->mod_keyspace);
 
-	command_register(&(db->command_table), "CLUSTER NODES", "",
+
+	command_register(&(db->command_table), "KEYSPACE NODES", "",
 					0, -1, CMD_KEY_NA,
-					cluster_nodes_command_fastpath, NULL, db->mod_keyspace);
-	command_register(&(db->command_table), "CLUSTER SLOTS", "",
+					keyspace_nodes_command_fastpath, NULL, db->mod_keyspace);
+	command_register(&(db->command_table), "KEYSPACE SLOTS", "",
 					0, -1, CMD_KEY_NA,
-					cluster_slots_command_fastpath, NULL, db->mod_keyspace);
+					keyspace_slots_command_fastpath, NULL, db->mod_keyspace);
 	return;
 }
 

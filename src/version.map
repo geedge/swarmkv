@@ -2,7 +2,8 @@ VERS_3.0{
 global:
 	extern "C" {
 		*swarmkv_*;
-		*SWARMKV_VERSION_*
+		*SWARMKV_VERSION_*;
+		*sds*
 	};
 local: *;
 };
