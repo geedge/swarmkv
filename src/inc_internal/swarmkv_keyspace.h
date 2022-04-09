@@ -34,6 +34,7 @@ enum cmd_fastpath_result keyspace_keys_command_fastpath(struct swarmkv_module *m
 
 enum cmd_fastpath_result keyspace_nodes_command_fastpath(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply);
 enum cmd_fastpath_result keyspace_slots_command_fastpath(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply);
+enum cmd_fastpath_result keyspace_keyslot_command_fastpath(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply);
 
 
 

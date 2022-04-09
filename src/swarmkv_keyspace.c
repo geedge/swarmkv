@@ -1925,4 +1925,12 @@ enum cmd_fastpath_result keyspace_slots_command_fastpath(struct swarmkv_module *
 	}
 	return FINISHED;
 }
+enum cmd_fastpath_result keyspace_keyslot_command_fastpath(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
+{
+/*KEYSPACE KEYSLOT key*/
+	sds key=cmd->argv[2];
+	int slot_id=get_slot_id(key, sdslen(key));
+	*reply=swarmkv_reply_new_integer(slot_id);
+	return FINISHED;
+}
 

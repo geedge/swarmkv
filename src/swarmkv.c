@@ -575,10 +575,10 @@ void command_spec_init(struct swarmkv *db)
 					1, 2, CMD_KEY_RO,
 					keyspace_get_command_fastpath, keyspace_get_command_as_owner, db->mod_keyspace);
 	command_register(&(db->command_table), "KEYSPACE SET", "key IP port",
-					1, 2, CMD_KEY_OW,
+					3, 2, CMD_KEY_OW,
 					keyspace_set_command_fastpath, keyspace_set_command_as_owner, db->mod_keyspace);
 	command_register(&(db->command_table), "KEYSPACE SETNXGET", "key IP port",
-					1, 2, CMD_KEY_OW,
+					3, 2, CMD_KEY_OW,
 					keyspace_setnxget_command_fastpath, keyspace_setnxget_command_as_owner, db->mod_keyspace);
 	command_register(&(db->command_table), "KEYSPACE DEL", "key",
 					1, 2, CMD_KEY_RM,
@@ -592,7 +592,11 @@ void command_spec_init(struct swarmkv *db)
 	command_register(&(db->command_table), "KEYSPACE KEYS", "pattern",
 					3, -1, CMD_KEY_RO,
 					keyspace_keys_command_fastpath, keyspace_keys_command_as_owner, db->mod_keyspace);
+	command_register(&(db->command_table), "KEYSPACE KEYSLOT", "key",
+					1, 2, CMD_KEY_NA,
+					keyspace_keyslot_command_fastpath, NULL, db->mod_keyspace);
 
+	
 
 	command_register(&(db->command_table), "KEYSPACE NODES", "",
 					0, -1, CMD_KEY_NA,
