@@ -63,6 +63,7 @@ void swarmkv_set_string(struct swarmkv * db,
 	const char * key, size_t keylen, const char * value, size_t vallen, swarmkv_cmd_callback_func_t * cb, void * arg);
 
 void swarmkv_del(struct swarmkv * db, const char * key, size_t keylen, swarmkv_cmd_callback_func_t *cb, void *cb_arg);
+void swarmkv_incrby(struct swarmkv * db, const char * key, size_t keylen, long long delta, swarmkv_cmd_callback_func_t *cb, void *cb_arg);
 
 size_t swarmkv_get_possible_command_name(struct swarmkv *db, const char *prefix, const char* cmd_names[], size_t sz);
 const char *swarmkv_get_command_hint(struct swarmkv *db, const char* cmd_name);

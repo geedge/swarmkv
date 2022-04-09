@@ -6,39 +6,6 @@
 #include <uuid/uuid.h>
 #include <MESA/MESA_handle_logger.h>
 
-enum swarmkv_operator
-{
-	SWARMKV_OP_GET,	//GET key, return value
-	SWARMKV_OP_SET,	//SET key value
-	SWARMKV_OP_DEL,	//DEL key
-	SWARMKV_OP_HSET,	//HSET key field value
-	SWARMKV_OP_HGET,	//HGET key field
-	SWARMKV_OP_HGETALL,	//HGETALL key, returen all fields
-	SWARMKV_OP_HDEL,	//HDEL key field
-	SWARMKV_OP_INCRBY,	//INCRBY key number
-	SWARMKV_OP_DECRBY,	//OP_DECRBY key number
-	SWARMKV_OP_THROTTLESET,	//THROTTLESET .. throttle
-	SWARMKV_OP_EXPIRE,	//EXPIRE key seconds
-	SWARMKV_OP_EXISTS,	//EXISTS key
-
-	SWARMKV_OP_KEYSPACE_SET,		//KEYSPACE SET key host port (of object owner)
-	SWARMKV_OP_KEYSPACE_SETNXGET,	//KEYSPACE SETNXGET key host port (of object owner)
-	SWARMKV_OP_KEYSPACE_GET,		//KEYSPACE GET key
-	SWARMKV_OP_KEYSPACE_DEL,		//KEYSPACE DEL key
-	SWARMKV_OP_KEYSPACE_GETKEYSINSLOT,//KEYSPACE GETKEYSINSLOT slot_id
-	SWARMKV_OP_KEYSPACE_SETSLOT,	//KEYSPACE SETSLOT slot_id IMPORTING host port|MIGRATING host port|NODE host port|STABLE
-	SWARMKV_OP_KEYSPACE_KEYS,		//KEYSPACE KEYS pattern
-	
-	SWARMKV_OP_CACHE_SET,	//CACHE SET key snapshot
-	SWARMKV_OP_CACHE_DEL,	//CACHE DEL key
-
-	//following command is ONLY available for blocking query with swarmkv_command().
-	SWARMKV_OP_CLUSTER_NODES,	//CLUSTER NODES
-	SWARMKV_OP_CLUSTER_SLOTS,	//CLUSTER SLOTS
-	SWARMKV_OP_CLUSTER_KEYS,	//CLUSTER KEYS pattern
-	SWARMKV_OP_CLUSTER_ADDNODE,	//CLUSTER ADDNODE host port
-	__SWARMKV_OP_MAX
-};
 enum cmd_fastpath_result
 {
 	NEED_KEY_ROUTE,
@@ -83,14 +50,6 @@ struct swarmkv_cmd
 	size_t argc;
 	sds *argv;
 };
-void swarmkv_common_global_init(void);
-void swarmkv_common_global_deinit(void);
-
-const char* swarmkv_cmd_op2str(enum swarmkv_operator op);
-enum swarmkv_operator swarmkv_cmd_str2op(const char* opstr, size_t len);
-int has_sub_operator(const char* op_str);
-int command_str2op(const char* op_str, const char *sub_op_str, enum swarmkv_operator *op);
-
 
 struct swarmkv_cmd* swarmkv_cmd_new(size_t argc);
 void swarmkv_cmd_free(struct swarmkv_cmd* p);

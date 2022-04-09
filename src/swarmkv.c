@@ -666,7 +666,6 @@ struct swarmkv *swarmkv_open(struct swarmkv_options* opts, const char * db_name,
 {
 	struct swarmkv *db = NULL;
 	future_promise_library_init(NULL);
-	swarmkv_common_global_init();
 
 	db=ALLOC(struct swarmkv, 1);
 	strncpy(db->db_name, db_name, sizeof(db->db_name));

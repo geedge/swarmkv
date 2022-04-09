@@ -114,6 +114,18 @@ void swarmkv_del(struct swarmkv * db, const char * key, size_t keylen, swarmkv_c
 	swarmkv_cmd_free(cmd);
 	return;
 }
+void swarmkv_incrby(struct swarmkv * db, const char * key, size_t keylen, long long delta, swarmkv_cmd_callback_func_t *cb, void *cb_arg)
+{	
+	struct swarmkv_cmd *cmd=NULL;
+	cmd=swarmkv_cmd_new(3);	
+	cmd->argv[0]=sdsnew("incrby");
+	cmd->argv[1]=sdsnewlen(key, keylen);
+	cmd->argv[2]=sdsfromlonglong(delta);
+	swarmkv_exec(db, cmd, cb, cb_arg);
+	swarmkv_cmd_free(cmd);
+	return;
+}
+
 struct blocking_query_ctx
 {
 	pthread_cond_t cond;
