@@ -7,7 +7,7 @@ message(STATUS "SwarmKV, Version: ${SWARMKV_VERSION}")
 
 add_definitions(-D_GNU_SOURCE) 
 add_definitions(-fPIC)
-set(SWARMKV_SRC swarmkv.c swarmkv_store.c swarmkv_api.c t_string.c t_cache.c
+set(SWARMKV_SRC swarmkv.c swarmkv_store.c swarmkv_api.c t_string.c t_cache.c swarmkv_rr.c
 		swarmkv_common.c swarmkv_message.c swarmkv_net.c swarmkv_keyspace.c swarmkv_utils.c future_promise.cpp)
 set(LIB_SOURCE_FILES
 	${CMAKE_CURRENT_SOURCE_DIR}/../deps/mpack/mpack.c

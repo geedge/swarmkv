@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <pthread.h>
 
 
 
@@ -363,6 +364,7 @@ void store_add_obj(struct swarmkv_module *mod_store, struct swarmkv_obj *obj)
 	struct swarmkv_store *store=module2store(mod_store);
 	struct obj_container *ctr=container_of(obj, struct obj_container, obj);
 	obj_container_join(&(store->owned_obj_table), ctr);
+
 	return;	
 
 }
@@ -447,6 +449,7 @@ struct swarmkv_module *swarmkv_store_new(send_cmd_func *send_cmd, void *handle_s
 	struct swarmkv_store* store=ALLOC(struct swarmkv_store, 1);
 	strncpy(store->module.name, "store", sizeof(store->module.name));
 	store->module.mod_ctx=store;
+	pthread_rwlock_init(&(store->module.rwlock), NULL);
 	store->send_cmd=send_cmd;
 	store->handle_send_cmd=handle_send_cmd;
 	store->disable_cache=disable_cache;
@@ -457,6 +460,7 @@ void swarmkv_store_free(struct swarmkv_module *module)
 {
 	struct swarmkv_store *store=module2store(module);
 	struct obj_container *ctr=NULL, *tmp=NULL;
+	pthread_rwlock_destroy(&(store->module.rwlock));
 	HASH_ITER(hh, store->owned_obj_table, ctr, tmp)
 	{
 		obj_container_remove(&(store->owned_obj_table), ctr);

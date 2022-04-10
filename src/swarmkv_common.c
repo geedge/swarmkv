@@ -217,3 +217,4 @@ struct swarmkv_cmd* swarmkv_cmd_dup(const struct swarmkv_cmd* origin)
 	}
 	return copy;
 }
+

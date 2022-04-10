@@ -15,6 +15,7 @@ enum cmd_fastpath_result
 struct swarmkv_module
 {
 	char name[SWARMKV_SYMBOL_MAX];
+	pthread_rwlock_t rwlock;
 	void *mod_ctx;
 };
 

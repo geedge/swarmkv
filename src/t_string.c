@@ -112,10 +112,10 @@ void del_command_as_owner(struct swarmkv_module *mod_store, const struct swarmkv
 		*reply=swarmkv_reply_new_integer(0);
 	}
 
-	// I do NOT call store_obj_setnx_accessed_node() here, because
-	// - If current node has accessed the key, it is already in the watch list, 
+	// I DON'T call store_obj_setnx_accessed_node() here, because
+	// - If current node has accessed the key, it is already in the accessed list, 
 	//   and will be notified by store_cache_notify_all() later.
-	// - If not, the key is deleted, cache is unnecessary.
+	// - If not, the key is deleted, cache notification is unnecessary.
 	
 	if(obj)
 	{

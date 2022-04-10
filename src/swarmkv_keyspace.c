@@ -749,7 +749,7 @@ void __watch_slots_changes_cb(struct evhttp_request *req, void *arg)
 				slot->state=STATE_STABLE;
 			}
 			swarmkv_node_copy(owner, new_slot_owners+i);
-			if(0==swarmkv_node_compare(owner, &(ks->self)))
+			if(0==swarmkv_node_addr_compare(&owner->addr, &(ks->self.addr)))
 			{
 				slot->I_am_owner=1;
 			}
@@ -903,20 +903,21 @@ void handle_failed_nodes(struct swarmkv_keyspace* ks, struct swarmkv_node* healt
 {
 	size_t i=0, j=0, k=0;
 	size_t slots_number_effect_by_failed_node=0;
-	struct key_slot slots_copy[SWARMKV_SLOT_NUM];
+	struct key_slot *slots_copy=NULL;
 	struct swarmkv_node *new_owner=NULL, *old_owner=NULL;
 //	char uuid_str1[37]="", uuid_str2[37]="";
-	memcpy(slots_copy, ks->slots, sizeof(slots_copy));
 	if(n_node==0)
 	{
 		return;
 	}
+	slots_copy=ALLOC(struct key_slot, SWARMKV_SLOT_NUM);
+	memcpy(slots_copy, ks->slots, sizeof(struct key_slot)*SWARMKV_SLOT_NUM);
 	for(i=0; i<SWARMKV_SLOT_NUM; i++)
 	{
 		old_owner=&(slots_copy[i].owner);
 		for(j=0; j<n_node; j++)
 		{
-			if(0==swarmkv_node_compare(old_owner, health_nodes+j))
+			if(0==swarmkv_node_addr_compare(&(old_owner->addr), &(health_nodes[j].addr)))
 			{
 				break;
 			}
@@ -938,7 +939,7 @@ void handle_failed_nodes(struct swarmkv_keyspace* ks, struct swarmkv_node* healt
 		old_owner=&(slots_copy[i].owner);
 		for(j=0; j<n_node; j++)
 		{
-			if(0==swarmkv_node_compare(old_owner, health_nodes+j))
+			if(0==swarmkv_node_addr_compare(&(old_owner->addr), &(health_nodes[j].addr)))
 			{
 				break;
 			}
@@ -992,6 +993,8 @@ void handle_failed_nodes(struct swarmkv_keyspace* ks, struct swarmkv_node* healt
 		sdsfree(new_slots_json);
 		new_slots_json=NULL;
 	}
+	free(slots_copy);
+	slots_copy=NULL;
 	return;
 }
 void json2nodes(sds resp_buff, struct swarmkv_node *nodes, size_t *n_node)
@@ -1139,6 +1142,7 @@ struct swarmkv_module* swarmkv_keyspace_new(const struct swarmkv_options *opts, 
 	struct swarmkv_keyspace* ks=ALLOC(struct swarmkv_keyspace, 1);
 	strncpy(ks->module.name, "keyspace", sizeof(ks->module.name));
 	ks->module.mod_ctx=ks;
+	pthread_rwlock_init(&(ks->module.rwlock), NULL);
 	strncpy(ks->db_name, db_name, sizeof(ks->db_name));
 	strncpy(ks->self.addr.ip_addr, opts->bind_address, sizeof(ks->self.addr.ip_addr));
 	ks->self.addr.p2p_port=opts->p2p_port;
@@ -1210,6 +1214,7 @@ void swarmkv_keyspace_free(struct swarmkv_module* module)
 		}		
 	}
 	event_base_free(ks->evbase);
+	pthread_rwlock_destroy(&(ks->module.rwlock));
 	free(ks);
 	return;
 }

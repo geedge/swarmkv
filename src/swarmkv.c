@@ -1,6 +1,7 @@
 #include "swarmkv/swarmkv.h"
 
 #include "swarmkv_common.h"
+#include "swarmkv_rr.h"
 #include "swarmkv_cmd_spec.h"
 #include "swarmkv_limits.h"
 #include "swarmkv_utils.h"
@@ -40,16 +41,7 @@ struct swarmkv_thread_ctx
 	time_t lastime;
 };
 
-typedef void swarmkv_rr_callback_func_t(const struct swarmkv_reply* reply, void * arg);
-//rr: request and response
-struct swarmkv_rr
-{
-	unsigned long long sequence;
-	struct timespec create_time;
-	swarmkv_rr_callback_func_t* callback_func;
-	void* callback_arg;
-	UT_hash_handle hh;
-};
+
 struct swarmkv
 {
 	char db_name[SWARMKV_SYMBOL_MAX];
@@ -58,9 +50,9 @@ struct swarmkv
 	int nr_worker_threads;
 	struct swarmkv_node_addr self;
 	struct swarmkv_thread_ctx *worker_threads[SWARMKV_THREAD_MAX];
-	struct swarmkv_rr *rr_table;
+	struct swarmkv_rr_mgr *rr_mgr;
 	struct swarmkv_net *net;
-	pthread_rwlock_t rwlock;
+	pthread_mutex_t mutex;
 	void *logger;
 	unsigned long long rr_sequence_generator;
 	struct swarmkv_module *mod_keyspace;
@@ -70,21 +62,6 @@ struct swarmkv
 
 
 
-static struct swarmkv_rr* swarmkv_rr_new(struct swarmkv *db, swarmkv_rr_callback_func_t * cb, void * cb_arg)
-{
-	struct swarmkv_rr *rr=ALLOC(struct swarmkv_rr, 1);
-	rr->sequence=db->rr_sequence_generator++;
-	rr->callback_func=cb;
-	rr->callback_arg=cb_arg;
-	HASH_ADD(hh, db->rr_table, sequence, sizeof(rr->sequence), rr);
-	return rr;
-}
-static void swarmkv_rr_free(struct swarmkv *db, struct swarmkv_rr *rr)
-{
-
-	HASH_DELETE(hh, db->rr_table, rr);
-	free(rr);
-}
 
 void swarmkv_create_thread_ctx(struct swarmkv *db)
 {
@@ -137,8 +114,8 @@ void exec_command_at_peer(struct swarmkv *db, const struct swarmkv_cmd *cmd, con
 
 	assert(0!=swarmkv_node_addr_compare(&db->self, peer_addr));
 
-	struct swarmkv_rr *rr=swarmkv_rr_new(db, cmd_exec_cb, p);
-	struct swarmkv_msg *msg=swarmkv_msg_new(db->bin_uuid, rr->sequence);
+	unsigned long long rr_seq=swarmkv_rr_add(db->rr_mgr, cmd_exec_cb, p);
+	struct swarmkv_msg *msg=swarmkv_msg_new(db->bin_uuid, rr_seq);
 
 	//swarmkv_msg_add0_cmd doesn't change the cmd's ownership
 	swarmkv_msg_add0_cmd(msg, cmd);
@@ -156,7 +133,7 @@ struct cmd_exec_ctx
 {
 	struct swarmkv_cmd *cmd;
 	struct swarmkv_cmd *keyspace_cmd;
-	const struct swarmkv_cmd_spec *spec;
+	struct swarmkv_cmd_spec *spec;
 	swarmkv_cmd_callback_func_t * cb;
 	void * cb_arg;
 	struct swarmkv *db;
@@ -186,6 +163,24 @@ void exec_cmd_ctx_free(struct cmd_exec_ctx *ctx)
 	}
 	free(ctx);
 }
+
+static void spec_lock_module(struct swarmkv_cmd_spec *spec)
+{
+	if(spec->flag==CMD_KEY_RO||spec->flag==CMD_KEY_NA)
+	{
+		pthread_rwlock_rdlock(&(spec->module->rwlock));
+	}
+	else
+	{
+		pthread_rwlock_wrlock(&(spec->module->rwlock));
+	}
+
+}
+static void spec_unlock_module(struct swarmkv_cmd_spec *spec)
+{
+	pthread_rwlock_unlock(&(spec->module->rwlock));
+}
+
 static void generic_exec_on_success(void* result, void* user)
 {	
 	struct cmd_exec_ctx* ctx = (struct cmd_exec_ctx*)user;
@@ -252,7 +247,9 @@ static void generic_route_on_success(void* result, void* user)
 	{
 		if(0==swarmkv_node_addr_compare(&db->self, &obj_owner))
 		{
+			spec_lock_module(ctx->spec);
 			ctx->spec->proc_as_owner(ctx->spec->module, ctx->cmd, NULL, &exec_reply);
+			spec_unlock_module(ctx->spec);
 			goto fastpath;
 		}
 		ctx->f_caller=future_create("exec_cmd", generic_exec_on_success, generic_exec_on_fail, ctx);
@@ -276,9 +273,9 @@ static void generic_route_on_fail(enum e_future_error err, const char * what, vo
 	exec_cmd_ctx_free(ctx);
 }
 
-const struct swarmkv_cmd_spec *get_spec_by_argv(struct swarmkv *db, size_t argc, char* const argv[])
+struct swarmkv_cmd_spec *get_spec_by_argv(struct swarmkv *db, size_t argc, char* const argv[])
 {
-	const struct swarmkv_cmd_spec *spec=NULL;
+	struct swarmkv_cmd_spec *spec=NULL;
 	char name[256]="";
 	strncpy(name, argv[0], sizeof(name));
 	toUpper(name);
@@ -357,9 +354,11 @@ int is_sufficient_arg_num(const struct swarmkv_cmd_spec *spec, const struct swar
 	}
 	return 1;
 }
+
+
 void swarmkv_exec(struct swarmkv *db, const struct swarmkv_cmd *cmd, swarmkv_cmd_callback_func_t * cb, void * cb_arg)
 {
-	const struct swarmkv_cmd_spec *spec=NULL;
+	struct swarmkv_cmd_spec *spec=NULL;
 	struct swarmkv_reply *reply=NULL, *keyspace_reply=NULL;
 	enum cmd_fastpath_result fastpath_ret, keyspace_next_step;
 	struct promise *p=NULL;
@@ -388,7 +387,10 @@ void swarmkv_exec(struct swarmkv *db, const struct swarmkv_cmd *cmd, swarmkv_cmd
 	ctx->cb_arg=cb_arg;
 	ctx->db=db;
 	ctx->f_caller=future_create("exec_cmd", generic_exec_on_success, generic_exec_on_fail, ctx);
+
+	spec_lock_module(spec);
 	fastpath_ret=spec->proc_fastpath(spec->module, cmd, &reply);
+	spec_unlock_module(spec);
 
 	if(fastpath_ret==FINISHED)
 	{
@@ -409,7 +411,10 @@ void swarmkv_exec(struct swarmkv *db, const struct swarmkv_cmd *cmd, swarmkv_cmd
 		
 		const struct swarmkv_cmd_spec *keyspace_spec=NULL;
 		keyspace_spec=get_spec_by_argv(db, ctx->keyspace_cmd->argc, ctx->keyspace_cmd->argv);
-		keyspace_next_step=keyspace_spec->proc_fastpath(db->mod_keyspace, ctx->keyspace_cmd, &keyspace_reply);
+
+		spec_lock_module(spec);
+		keyspace_next_step=keyspace_spec->proc_fastpath(keyspace_spec->module, ctx->keyspace_cmd, &keyspace_reply);
+		spec_unlock_module(spec);
 		
 		enum key_route_result ret;
 		ret=swarmkv_keyspace_reply2node(keyspace_reply, &peer);	
@@ -428,7 +433,9 @@ void swarmkv_exec(struct swarmkv *db, const struct swarmkv_cmd *cmd, swarmkv_cmd
 		}
 		else if(0==swarmkv_node_addr_compare(&(db->self), &peer))	//reply is object owner, execute command at there
 		{
+			spec_lock_module(spec);
 			spec->proc_as_owner(spec->module, cmd, NULL, &reply);
+			spec_unlock_module(spec);
 			goto fastpath_out;
 		}
 		else
@@ -450,7 +457,7 @@ fastpath_out:
 void cmd_msg_processing(struct swarmkv* db, uuid_t requester_uuid, unsigned long long rr_seq, const struct swarmkv_node_addr *peer, const struct swarmkv_cmd *cmd)
 {
 	struct swarmkv_reply* reply=NULL;
-	const struct swarmkv_cmd_spec *spec=NULL;
+	struct swarmkv_cmd_spec *spec=NULL;
 	spec=get_spec_by_argv(db, cmd->argc, cmd->argv);
 	if(!spec)
 	{
@@ -459,7 +466,9 @@ void cmd_msg_processing(struct swarmkv* db, uuid_t requester_uuid, unsigned long
 	}
 	if(is_sufficient_arg_num(spec, cmd))
 	{
+		spec_lock_module(spec);
 		spec->proc_as_owner(spec->module, cmd, peer, &reply);
+		spec_unlock_module(spec);
 	}
 	else
 	{
@@ -481,7 +490,9 @@ void cmd_msg_processing(struct swarmkv* db, uuid_t requester_uuid, unsigned long
 }
 void reply_msg_processing(struct swarmkv* db, uuid_t requester_uuid, unsigned long long rr_seq, const struct swarmkv_node_addr *peer, const struct swarmkv_reply* reply)
 {
-	struct swarmkv_rr *rr=NULL;
+	swarmkv_rr_callback_func_t * cb_func=NULL;
+	void *cb_arg=NULL;
+	int ret=0;
 	char str_uuid[37];
 	if(uuid_compare(requester_uuid, db->opts->bin_uuid))
 	{
@@ -489,14 +500,13 @@ void reply_msg_processing(struct swarmkv* db, uuid_t requester_uuid, unsigned lo
 		MESA_handle_runtime_log(db->logger, RLOG_LV_FATAL, MODULE_SWAMRKV_CORE, "Unknown reply uuid=%s rr_seq=%llu", str_uuid, rr_seq);
 		return;
 	}
-	HASH_FIND(hh, db->rr_table, &rr_seq, sizeof(rr_seq), rr);
-	if(!rr)
+	ret=swarmkv_rr_get(db->rr_mgr, rr_seq, &cb_func, &cb_arg);
+	if(!ret)
 	{
 		MESA_handle_runtime_log(db->logger, RLOG_LV_FATAL, MODULE_SWAMRKV_CORE, "Unknown rr_seq %llu", rr_seq);
 		return;
 	}
-	rr->callback_func(reply, rr->callback_arg);
-	swarmkv_rr_free(db, rr);
+	cb_func(reply, cb_arg);
 	return;
 }
 void msg_read_callback(const struct swarmkv_node_addr * peer, const char* data, size_t len, void* arg)
@@ -578,7 +588,7 @@ void command_spec_init(struct swarmkv *db)
 					3, 2, CMD_KEY_OW,
 					keyspace_set_command_fastpath, keyspace_set_command_as_owner, db->mod_keyspace);
 	command_register(&(db->command_table), "KEYSPACE SETNXGET", "key IP port",
-					3, 2, CMD_KEY_OW,
+					1, 2, CMD_KEY_OW,
 					keyspace_setnxget_command_fastpath, keyspace_setnxget_command_as_owner, db->mod_keyspace);
 	command_register(&(db->command_table), "KEYSPACE DEL", "key",
 					1, 2, CMD_KEY_RM,
@@ -680,6 +690,7 @@ struct swarmkv *swarmkv_open(struct swarmkv_options* opts, const char * db_name,
 		snprintf(log_path, sizeof(log_path), "%s.log", db_name);
 		db->logger=MESA_create_runtime_log_handle(log_path, opts->loglevel);
 	}
+	db->rr_mgr=swarmkv_rr_mgr_new();
 	swarmkv_create_thread_ctx(db);
 
 	uuid_copy(db->bin_uuid, opts->bin_uuid);
@@ -735,12 +746,7 @@ void swarmkv_close(struct swarmkv * db)
 	swarmkv_keyspace_free(db->mod_keyspace);
 	db->mod_keyspace=NULL;
 	
-	struct swarmkv_rr *txn=NULL, *tmp_txn=NULL;
-	
-	HASH_ITER(hh, db->rr_table, txn, tmp_txn)
-	{
-		swarmkv_rr_free(db, txn);
-	}
+	swarmkv_rr_mgr_free(db->rr_mgr);
 	swarmkv_net_free(db->net);
 	db->net=NULL;
 
