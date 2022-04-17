@@ -401,21 +401,24 @@ TEST_F(SwarmkvTwoNodes, Set1K)
 	struct swarmkv* db2=SwarmkvTwoNodes::db2;
 	struct swarmkv* tmp_db=NULL;
 	char key[128]="", val[128]="";
-	int exec_successful=0, i=0;
+	int exec_successful=0, i=0, round=1000, n_success=0;
 
 	arg=cmd_exec_arg_new();	
 	cmd_exec_arg_expect_OK(arg);
-	for(i=0; i<1000; i++)
+	n_success=0;
+	for(i=0; i<round; i++)
 	{ 
 		snprintf(key, sizeof(key), "set1k-%d", i);
 		snprintf(val, sizeof(val), "value-xx-%d", i);
 		tmp_db=i%2?db1:db2;
 		swarmkv_set_string(tmp_db, key, strlen(key), val, strlen(val), generic_callback, arg);
 		exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-		EXPECT_EQ(exec_successful, 1);
+		if(exec_successful) n_success++;
 		cmd_exec_arg_clear(arg);
 	}
-	for(i=0; i<1000; i++)
+	EXPECT_EQ(round, n_success);
+	n_success=0;
+	for(i=0; i<round; i++)
 	{ 
 		snprintf(key, sizeof(key), "set1k-%d", i);
 		snprintf(val, sizeof(val), "value-xx-%d", i);
@@ -423,9 +426,10 @@ TEST_F(SwarmkvTwoNodes, Set1K)
 		cmd_exec_arg_expect_cstring(arg, val);
 		swarmkv_get_string(tmp_db, key, strlen(key), generic_callback, arg);
 		exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-		EXPECT_EQ(exec_successful, 1);
+		if(exec_successful) n_success++;
 		cmd_exec_arg_clear(arg);
-	}	
+	}
+	EXPECT_EQ(round, n_success);
 }
 
 TEST_F(SwarmkvTwoNodes, DEL)
@@ -553,7 +557,7 @@ TEST_F(SwarmkvTwoNodes, CacheSync)
 
 TEST_F(SwarmkvTwoNodes, Wait)
 {
-	sleep(1800);
+	sleep(3600*2);
 }
 
 int main(int argc, char ** argv)

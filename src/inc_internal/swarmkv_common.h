@@ -6,6 +6,13 @@
 #include <uuid/uuid.h>
 #include <MESA/MESA_handle_logger.h>
 
+#include <event2/event.h>
+#include <event2/listener.h>
+#include <event2/bufferevent.h>
+#include <event2/buffer.h>
+#include <event2/thread.h>
+#include <event2/http.h>
+
 enum cmd_fastpath_result
 {
 	NEED_KEY_ROUTE,
@@ -30,6 +37,30 @@ struct swarmkv_node
 	struct swarmkv_node_addr addr;
 	uuid_t bin_uuid;
 };
+enum slot_state
+{
+	STATE_STABLE=0,
+	STATE_MIGRATING,
+	STATE_IMPORTING
+};
+
+struct key_slot
+{
+	int slot_id;
+	enum slot_state state;
+	struct swarmkv_node owner;
+	struct swarmkv_node peer;//peer is used for state MIGRATING and IMPORTING
+//	struct swarmkv_node_addr replica[MAX_REPLICA_NUM];
+	struct key_route_entry* keyroute_table;
+	int I_am_owner;
+	pthread_mutex_t mutex;
+};
+void json_to_keyslots(const char *json_buffer, struct key_slot slots[], size_t n_slot);
+sds keyslots_to_json(struct key_slot slots[], size_t n_slot);
+void json2nodes(const char* resp_buff, struct swarmkv_node *nodes, size_t *n_node);
+void json2leader(const char *resp_body, struct swarmkv_node *leader);
+int get_slot_id(const char* key, size_t keylen);
+
 struct swarmkv_options
 {
 	unsigned int health_check_port;
@@ -75,6 +106,8 @@ int swarmkv_node_compare(const struct swarmkv_node *node1, const struct swarmkv_
 void swarmkv_node_copy(struct swarmkv_node *dst, const struct swarmkv_node *src);
 int swarmkv_node_addr_compare(const struct swarmkv_node_addr *addr1, const struct swarmkv_node_addr *addr2);
 void swarmkv_node_addr_copy(struct swarmkv_node_addr *dst, const struct swarmkv_node_addr *src);
+
+int http_blocking_request(enum evhttp_cmd_type type, const char* host, unsigned int port, const char* url, sds req_body, sds *resp_body);
 
 
 

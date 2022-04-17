@@ -139,33 +139,19 @@ void blocking_query_cb(const struct swarmkv_reply* reply, void * arg)
 	pthread_cond_signal(&ctx->cond);
 	return;
 }
-struct swarmkv_reply* swarmkv_command(struct swarmkv *db, const char *format, ...)
+struct swarmkv_reply *swarmkv_cmd_argv(struct swarmkv *db, size_t argc, sds *argv)
 {
-	char *cmd_str=NULL;
-    va_list ap;
-    va_start(ap,format);
-	vasprintf(&cmd_str, format, ap);
-    va_end(ap);
-	char *sub_token_v[256];
-	int i=0, subtoken_c=0;
-	char *token=NULL, *saveptr=NULL;
-	for (token = cmd_str; subtoken_c<256; token= NULL, subtoken_c++)
-	{
-		sub_token_v[subtoken_c] = strtok_r(token, " ", &saveptr);
-		if (sub_token_v[subtoken_c] == NULL)
-			break;
-	}
 	struct swarmkv_cmd *cmd=NULL;
 	struct swarmkv_reply *reply=NULL;
-	cmd=swarmkv_cmd_new(subtoken_c);
-	for(i=0; i<subtoken_c; i++)
-	{
-		cmd->argv[i]=sdsnew(sub_token_v[i]);
-	}
 	struct blocking_query_ctx ctx;
 	memset(&ctx, 0, sizeof(ctx));
 	pthread_cond_init(&ctx.cond, NULL);
 	pthread_mutex_init(&ctx.mutex, NULL);
+	cmd=swarmkv_cmd_new(argc);
+	for(size_t i=0; i<argc; i++)
+	{
+		cmd->argv[i]=sdsdup(argv[i]);
+	}
 	swarmkv_exec(db, cmd, blocking_query_cb, &ctx);
 	struct timespec max_wait = {0, 0};
 	clock_gettime(CLOCK_REALTIME, &max_wait);
@@ -185,8 +171,26 @@ struct swarmkv_reply* swarmkv_command(struct swarmkv *db, const char *format, ..
 	}
 	reply=ctx.reply;
 	ctx.reply=NULL;
+	swarmkv_cmd_free(cmd);
+	return reply;
+}
+struct swarmkv_reply *swarmkv_command(struct swarmkv *db, const char *format, ...)
+{
+	char *cmd_str=NULL;
+    va_list ap;
+    va_start(ap,format);
+	vasprintf(&cmd_str, format, ap);
+    va_end(ap);
 
-	if(cmd) swarmkv_cmd_free(cmd);
+	int argc=0;
+	sds *argv=NULL;
+	argv=sdssplitargs(cmd_str, &argc);
+	struct swarmkv_reply *reply=NULL;
+	reply=swarmkv_cmd_argv(db, argc, argv);
+
+    if (argv)
+        sdsfreesplitres(argv, argc);
 	free(cmd_str);
+
 	return reply;
 }

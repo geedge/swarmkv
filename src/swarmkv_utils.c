@@ -1,9 +1,11 @@
+#include "swarmkv_utils.h"
 #include <stdio.h>
 #include <unistd.h>
 #include <sys/syscall.h>   /* For SYS_xxx definitions */
 #include <pthread.h>
 #include <asm/errno.h>
 #include <ctype.h> //tolower, toupper
+#include <string.h> //memset
 
 pid_t gettid()
 {

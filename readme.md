@@ -53,7 +53,7 @@ SwarmKV operations
 | CLUSTER MIGRATESLOT | slot source_node dest_nodes                                  | status reply,                                                |
 | SYNC                | key_version origin_cmd                                       | status reply, "OK" or "out of sync". The "out of sync" reply triggers a new sync cmd which wraps a set cmd. |
 
-
+Cluster commands are used for maintainance and debugg, which are only available in *swarmkv-cli*.
 
 # SwarmKV Design
 
@@ -320,11 +320,17 @@ The worker threads are responsible for:
 The source files are organized as follows:
 
 - src/swarmkv.c event loop, orchestration
-- src/swarmkv_store.c  kv operation, key hash table is implemented with [uthash](https://troydhanson.github.io/uthash/). Use [sds](https://github.com/antirez/sds) as dynamic string library.
+- src/swarmkv_store.c  kv operation, key hash table is implemented with [uthash](https://troydhanson.github.io/uthash/). Use [sds](https://github.com/antirez/sds) as a dynamic string library.
+- src/t_string.c string operation
+- src/t_cache.c cache operation
 - src/swarmkv_keyspace.c: The control plane of SwarmKV. Interact with [HashiCorp Consul](https://www.consul.io/) for node discovery, slot assignment, and leader election.
   - The keyspace is partitioned by key slots among the participating nodes. 
+- src/swarmkv_rr.c: Request and response manager.
 - src/swarmkv_message.c: Message is encoded to [MessagePack](https://msgpack.org/index.html) format by [mpack](https://github.com/ludocode/mpack) library.
 - src/swarmkv_net.c: High performance P2P communication via [libevent](https://libevent.org/).
+- src/test/ Unit tests.
+- src/deps/ Dependencies in source codes format, such as [uthash](https://troydhanson.github.io/uthash/), [sds](https://github.com/antirez/sds), [mpack](https://github.com/ludocode/mpack) .
+- src/vendor/  Dependencies in archive format.
 - tools/swarmkv_cli: CLI implementation facilitated by [linenoise](https://github.com/antirez/linenoise).
 
 ## Similar Projects

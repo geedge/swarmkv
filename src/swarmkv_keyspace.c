@@ -6,8 +6,8 @@
 
 #include "cJSON.h"
 #include "sds.h"
+#include "mpack.h"
 #include "base64.h"
-#include "xxhash.h"
 #include "utarray.h"
 #include "uthash.h"
 #include "utlist.h"
@@ -37,28 +37,10 @@
 
 #define	LOCAL_HOST	"127.0.0.1"
 
-#define	KEYSPACE_XXHASH_SEED	5210
 
 #define MODULE_SWARMKV_KEYSPACE		module_name_str("swarmkv.keyspace")
 
-enum slot_state
-{
-	STATE_STABLE=0,
-	STATE_MIGRATING,
-	STATE_IMPORTING
-};
 
-struct key_slot
-{
-	int slot_id;
-	enum slot_state state;
-	struct swarmkv_node owner;
-	struct swarmkv_node peer;//peer is used for state MIGRATING and IMPORTING
-//	struct swarmkv_node_addr replica[MAX_REPLICA_NUM];
-	struct key_route_entry* keyroute_table;
-	int I_am_owner;
-	pthread_mutex_t mutex;
-};
 
 struct key_route_entry
 {
@@ -66,12 +48,19 @@ struct key_route_entry
 	struct swarmkv_node_addr owner;
 	UT_hash_handle hh;
 };
-struct key_route_entry *key_entry_new(const sds key, const struct swarmkv_node_addr* owner)
+struct key_route_entry *key_entry_new_len(const char* key, size_t key_len, const struct swarmkv_node_addr* owner)
 {
 	struct key_route_entry *entry=NULL;
 	entry=ALLOC(struct key_route_entry, 1);
-	entry->key=sdsdup(key);
-	memcpy(&(entry->owner), owner, sizeof(struct swarmkv_node_addr));
+	entry->key=sdsnewlen(key, key_len);
+	swarmkv_node_addr_copy(&(entry->owner), owner);
+	return entry;
+
+}
+struct key_route_entry *key_entry_new(const sds key, const struct swarmkv_node_addr* owner)
+{
+	struct key_route_entry *entry=NULL;
+	entry=key_entry_new_len(key, sdslen(key), owner);
 	return entry;
 }
 
@@ -81,12 +70,7 @@ void key_entry_free(struct key_route_entry *entry)
 	entry->key=NULL;
 	free(entry);
 }
-static inline int get_slot_id(const char* key, size_t keylen)
-{
-	XXH32_hash_t hash = XXH32(key, keylen, KEYSPACE_XXHASH_SEED);
-	int slot_id=hash%SWARMKV_SLOT_NUM;
-	return slot_id;
-}
+
 
 struct swarmkv_keyspace
 {
@@ -154,78 +138,7 @@ struct evhttp* http_server_new(struct event_base* evbase, unsigned port_listen, 
     evhttp_set_cb(http, "/health", health_check_cb, NULL);
 	return http;
 }
-struct http_client
-{
-	int response_code;
-	struct event_base* evbase;
-	struct evhttp_connection* evhttpconn;
-	struct evhttp_request *req;	
-	int error_happens;
-	sds response_body;
-};
-void __http_blocking_request_cb(struct evhttp_request *req, void *arg)
-{	
-	struct http_client* client = (struct http_client*) arg;
-	if(!req || !evhttp_request_get_response_code(req))
-	{
-		client->error_happens=1;
-	}
-	else
-	{		
-		client->response_code=evhttp_request_get_response_code(req);
-		if(client->response_code==200)
-		{
-			struct evbuffer *buf=NULL;
-			buf=evhttp_request_get_input_buffer(client->req);
-			size_t len = evbuffer_get_length(buf);
-			client->response_body=sdsnewlen(SDS_NOINIT, len);
-			len=evbuffer_remove(buf, client->response_body, len);
-		}
-	}
-	event_base_loopbreak(client->evbase);
-}
-int http_blocking_request(enum evhttp_cmd_type type, const char* host, unsigned int port, const char* url, sds req_body, sds* resp_body)
-{
-	struct http_client client_data;
-	struct http_client* client=&client_data;
-	memset(&client_data, 0, sizeof(client_data));
-	client->evbase=event_base_new();	//temporary evbase for blocking query
-    client->evhttpconn = evhttp_connection_base_new(client->evbase, NULL, host, port);
-    client->req = evhttp_request_new(__http_blocking_request_cb, client);
 
-	struct evkeyvalq *output_headers = evhttp_request_get_output_headers(client->req);
-	char hostname[256]="";
-	snprintf(hostname, sizeof(hostname), "%s:%d", host, port);
-	evhttp_add_header(output_headers, "Host", hostname);
-	evhttp_add_header(output_headers, "Connection", "close");
-	if(req_body)
-	{
-		struct evbuffer* output_buffer = evhttp_request_get_output_buffer(client->req);
-		evbuffer_add(output_buffer, req_body, sdslen(req_body));
-		char number[64];
-		snprintf(number, sizeof(number), "%zu", sdslen(req_body));
-		evhttp_add_header(output_headers, "Content-Type", "application/json");
-		evhttp_add_header(output_headers, "Content-Length", number);
-	}
-    evhttp_make_request(client->evhttpconn, client->req, type, url);
-    evhttp_connection_set_timeout(client->evhttpconn, 5);
-    event_base_dispatch(client->evbase);
-	if(client->response_code == 200)
-	{
-		if(resp_body)
-		{
-			*resp_body=client->response_body;
-		}
-		else
-		{
-			sdsfree(client->response_body);			
-		}	
-		client->response_body=NULL;
-	}
-//	evhttp_connection_free(client->evhttpconn);
-	event_base_free(client->evbase);
-	return client->response_code;	
-}
 
 
 /*
@@ -288,7 +201,8 @@ int consul_service_register(struct swarmkv_keyspace* ks)
 	
 	sds resp_body=NULL;
 	int resp_code=0;
-	resp_code=http_blocking_request(EVHTTP_REQ_PUT, CONSUL_HOST, ks->consul_agent_port, "/v1/agent/service/register?replace-existing-checks=true", req_body, &resp_body);
+	resp_code=http_blocking_request(EVHTTP_REQ_PUT, CONSUL_HOST, ks->consul_agent_port, "/v1/agent/service/register?replace-existing-checks=true",
+		req_body,  &resp_body);
 	if(resp_code!=200)
 	{
 		ret=-1;
@@ -662,12 +576,11 @@ void __watch_slots_changes_cb(struct evhttp_request *req, void *arg)
 {
 	struct swarmkv_keyspace* ks=(struct swarmkv_keyspace*)arg;
 	cJSON *metadata_array=NULL, *metadata=NULL, *value=NULL, *modify_idx=NULL;
-	cJSON *slot_table=NULL, *range=NULL, *slot=NULL, *owner=NULL, *ip=NULL, *p2p_port=NULL, *node_uuid=NULL;
 	int resp_code=0;
-	int	i=0, j=0, n_record=0, n_slot=0;
-	int range_start=0, range_end=0;
-	struct swarmkv_node new_slot_owners[SWARMKV_SLOT_NUM];
-	memset(new_slot_owners, 0, sizeof(new_slot_owners));
+	int	i=0;
+
+	struct key_slot *new_slots=NULL;
+
 	if(!req || !evhttp_request_get_response_code(req))
 	{
 		int errcode = EVUTIL_SOCKET_ERROR();
@@ -679,147 +592,62 @@ void __watch_slots_changes_cb(struct evhttp_request *req, void *arg)
 	{
 		resp_code=evhttp_request_get_response_code(req);
 	}
-	if(resp_code==200)
+	if(resp_code!=200)
+	{		
+		consul_watch_slots_changes_async(ks);
+		return;
+	}		
+
+	struct evbuffer *buf=NULL;
+	buf=evhttp_request_get_input_buffer(req);
+	size_t len = evbuffer_get_length(buf);
+	sds resp_body_buff=sdsnewlen(NULL, len);
+	evbuffer_copyout(buf, resp_body_buff, len);
+	metadata_array=cJSON_Parse(resp_body_buff);
+	metadata=cJSON_GetArrayItem(metadata_array, 0);
+	modify_idx=cJSON_GetObjectItem(metadata, "ModifyIndex");
+	ks->consul_slots_modify_idx=modify_idx->valueint;
+	value=cJSON_GetObjectItem(metadata, "Value");
+	sds decode_buffer=sdsnewlen(NULL, BASE64_DECODE_OUT_SIZE(strlen(value->valuestring)));
+	base64_decode(value->valuestring, strlen(value->valuestring), (unsigned char*)decode_buffer);
+
+	new_slots=ALLOC(struct key_slot, SWARMKV_SLOT_NUM);
+	json_to_keyslots(decode_buffer, new_slots, SWARMKV_SLOT_NUM);
+
+	sdsfree(decode_buffer);
+	sdsfree(resp_body_buff);
+
+	struct key_slot *slot=NULL;
+	struct swarmkv_node *owner=NULL;
+	MESA_handle_runtime_log(ks->logger, RLOG_LV_INFO, MODULE_SWARMKV_KEYSPACE, "key slots update started.");
+	for(i=0; i<SWARMKV_SLOT_NUM; i++)
 	{
-		struct evbuffer *buf=NULL;
-		buf=evhttp_request_get_input_buffer(req);
-		size_t len = evbuffer_get_length(buf);
-		sds resp_body_buff=sdsnewlen(NULL, len);
-		evbuffer_copyout(buf, resp_body_buff, len);
-		metadata_array=cJSON_Parse(resp_body_buff);
-		metadata=cJSON_GetArrayItem(metadata_array, 0);
-		modify_idx=cJSON_GetObjectItem(metadata, "ModifyIndex");
-		ks->consul_slots_modify_idx=modify_idx->valueint;
-		value=cJSON_GetObjectItem(metadata, "Value");
-		sds decode_buffer=sdsnewlen(NULL, BASE64_DECODE_OUT_SIZE(strlen(value->valuestring)));
-		base64_decode(value->valuestring, strlen(value->valuestring), (unsigned char*)decode_buffer);
-		
-		slot_table=cJSON_Parse(decode_buffer);
-		n_record=cJSON_GetArraySize(slot_table);
-		for(i=0; i<n_record; i++)
+		slot=ks->slots+i;
+		owner=&(slot->owner);
+		pthread_mutex_lock(&slot->mutex);
+		if(0!=swarmkv_node_compare(owner, &(new_slots[i].owner)))
 		{
-			slot=cJSON_GetArrayItem(slot_table, i);
-			range=cJSON_GetObjectItem(slot, "slot");
-			if(strstr(range->valuestring, "-"))
+			if(slot->state!=STATE_STABLE)
 			{
-				sscanf(range->valuestring, "%d-%d", &range_start, &range_end);
+				MESA_handle_runtime_log(ks->logger, RLOG_LV_INFO, MODULE_SWARMKV_KEYSPACE, "slot %d is reset to STABLE state, owner %s:%u.",
+					slot->slot_id, owner->addr.ip_addr, owner->addr.p2p_port);
+				memset(&(slot->peer), 0, sizeof(slot->peer));
 			}
-			else
-			{
-				sscanf(range->valuestring, "%d", &range_start);
-				range_end=range_start;
-			}
-			owner=cJSON_GetObjectItem(slot, "owner");	
-			ip=cJSON_GetObjectItem(owner, "ip");	
-			p2p_port=cJSON_GetObjectItem(owner, "p2p_port");
-			node_uuid=cJSON_GetObjectItem(owner, "node_uuid");
-			for(j=range_start; j<range_end+1; j++)
-			{
-				strncpy(new_slot_owners[n_slot].addr.ip_addr, ip->valuestring, sizeof(new_slot_owners[n_slot].addr.ip_addr));
-				new_slot_owners[n_slot].addr.p2p_port=(unsigned int)p2p_port->valueint;
-				uuid_parse(node_uuid->valuestring, new_slot_owners[n_slot].bin_uuid);
-				n_slot++;
-			}
+			slot->state=STATE_STABLE;
 		}
-		cJSON_free(metadata_array);
-		cJSON_free(slot_table);
-		sdsfree(decode_buffer);
-		sdsfree(resp_body_buff);
-	}
-	assert(n_slot==0||n_slot==SWARMKV_SLOT_NUM);
-	
-	if(n_slot==SWARMKV_SLOT_NUM)
-	{
-		struct key_slot *slot=NULL;
-		struct swarmkv_node *owner=NULL;
-		MESA_handle_runtime_log(ks->logger, RLOG_LV_INFO, MODULE_SWARMKV_KEYSPACE, "key slots update started.");
-		for(i=0; i<n_slot; i++)
+		swarmkv_node_copy(owner, &(new_slots[i].owner));
+		if(0==swarmkv_node_addr_compare(&owner->addr, &(ks->self.addr)))
 		{
-			slot=ks->slots+i;
-			owner=&(slot->owner);
-			pthread_mutex_lock(&slot->mutex);
-			if(0!=memcmp(owner, new_slot_owners+i, sizeof(struct swarmkv_node)))
-			{
-				if(slot->state!=STATE_STABLE)
-				{
-					MESA_handle_runtime_log(ks->logger, RLOG_LV_INFO, MODULE_SWARMKV_KEYSPACE, "slot %d is reset to STABLE state, owner %s:%u.",
-						slot->slot_id, owner->addr.ip_addr, owner->addr.p2p_port);
-					memset(&(slot->peer), 0, sizeof(slot->peer));
-				}
-				slot->state=STATE_STABLE;
-			}
-			swarmkv_node_copy(owner, new_slot_owners+i);
-			if(0==swarmkv_node_addr_compare(&owner->addr, &(ks->self.addr)))
-			{
-				slot->I_am_owner=1;
-			}
-			else
-			{
-				slot->I_am_owner=0;
-				struct key_route_entry *key_entry=NULL, *tmp=NULL;
-				size_t key_num=HASH_COUNT(slot->keyroute_table);
-				HASH_ITER(hh, slot->keyroute_table, key_entry, tmp)
-				{
-					HASH_DELETE(hh, slot->keyroute_table, key_entry);
-					key_entry_free(key_entry);
-				}
-				if(key_num>0)
-				{
-					MESA_handle_runtime_log(ks->logger, RLOG_LV_DEBUG, MODULE_SWARMKV_KEYSPACE, "key slots %d released %zu keys.",
-						slot->slot_id, key_num);
-				}
-			}
-			pthread_mutex_unlock(&slot->mutex);
+			slot->I_am_owner=1;
 		}
-		MESA_handle_runtime_log(ks->logger, RLOG_LV_INFO, MODULE_SWARMKV_KEYSPACE, "key slots update finished.");
+		pthread_mutex_unlock(&slot->mutex);
 	}
+	MESA_handle_runtime_log(ks->logger, RLOG_LV_INFO, MODULE_SWARMKV_KEYSPACE, "key slots update finished.");
+
 	consul_watch_slots_changes_async(ks);
+	free(new_slots);
 }
-static sds keyslots_print_json(struct key_slot slots[], size_t n_slot)
-{
-	cJSON *slot_array=cJSON_CreateArray();
-	sds printed=NULL;
-	cJSON *slot=NULL, *node=NULL;
-//	cJSON *replica_array=NULL;
-	char range[256]="", uuid_str[38]="";
-	size_t i=0;
-	int start=0, end=0;
-	start=end=slots[0].slot_id;
-	for(i=0; i<n_slot+1; i++)
-	{
-		if(i<n_slot
-			&& 0==swarmkv_node_compare(&(slots[i].owner), &(slots[end].owner)))
-		{
-			end=i;
-			continue;
-		}	
-		slot=cJSON_CreateObject();
-		if(start==end)
-		{
-			snprintf(range, sizeof(range), "%d", start);
-		}
-		else
-		{
-			snprintf(range, sizeof(range), "%d-%d", start, end);
-		}
-		cJSON_AddStringToObject(slot, "slot", range);		
-		node=cJSON_CreateObject();
-		cJSON_AddStringToObject(node, "ip", slots[end].owner.addr.ip_addr);
-		cJSON_AddNumberToObject(node, "p2p_port", slots[end].owner.addr.p2p_port);
-		uuid_unparse_lower(slots[end].owner.bin_uuid, uuid_str);
-		cJSON_AddStringToObject(node, "node_uuid", uuid_str);
-		cJSON_AddItemToObject(slot, "owner", node);
-		cJSON_AddItemToArray(slot_array, slot);
-		start=end=i;
-	}
-	char* payload=NULL;
-	payload=cJSON_Print(slot_array);
-//	printf("%s\n", payload);
-	printed=sdsnew(payload);
-	free(payload);
-	cJSON_Delete(slot_array);
-	return printed;
-}
+
 /*
 void keyslots_print_reply(struct key_slot slots[], size_t n_slot, struct swarmkv_reply **pp_reply)
 {
@@ -969,7 +797,7 @@ void handle_failed_nodes(struct swarmkv_keyspace* ks, struct swarmkv_node* healt
 	if(slots_number_effect_by_failed_node)
 	{		
 		sds new_slots_json=NULL;
-		new_slots_json=keyslots_print_json(slots_copy, SWARMKV_SLOT_NUM);
+		new_slots_json=keyslots_to_json(slots_copy, SWARMKV_SLOT_NUM);
 		char url[SWARMKV_URL_MAX]="";
 		snprintf(url, sizeof(url), "/v1/kv/swarmkv/%s/slots", ks->db_name);
 		struct evhttp_request* request=evhttp_request_new(__propagate_slot_table_cb, ks);
@@ -997,28 +825,7 @@ void handle_failed_nodes(struct swarmkv_keyspace* ks, struct swarmkv_node* healt
 	slots_copy=NULL;
 	return;
 }
-void json2nodes(sds resp_buff, struct swarmkv_node *nodes, size_t *n_node)
-{
-	size_t n_record=0, i=0;
-	cJSON *health_reponse=NULL, *record=NULL, *item=NULL, *service=NULL, *meta=NULL, *meta_node_uuid=NULL;
 
-	health_reponse=cJSON_Parse(resp_buff);
-	n_record=cJSON_GetArraySize(health_reponse);
-	for(i=0; i<n_record && i<*n_node; i++)
-	{
-		record=cJSON_GetArrayItem(health_reponse, i);
-		service=cJSON_GetObjectItem(record, "Service");
-		item=cJSON_GetObjectItem(service, "Address");
-		strncpy(nodes[i].addr.ip_addr, item->valuestring, sizeof(nodes[i].addr.ip_addr));
-		item=cJSON_GetObjectItem(service, "Port");
-		nodes[i].addr.p2p_port=(unsigned int)item->valueint;
-		meta=cJSON_GetObjectItem(service, "Meta");
-		meta_node_uuid=cJSON_GetObjectItem(meta, "node_uuid");
-		uuid_parse(meta_node_uuid->valuestring, nodes[i].bin_uuid); 
-	}
-	cJSON_free(health_reponse);
-	*n_node=i;
-}
 void __watch_nodes_changes_cb(struct evhttp_request *req, void *arg)
 {
 	struct swarmkv_keyspace* ks=(struct swarmkv_keyspace*)arg;
@@ -1090,12 +897,13 @@ static void consul_kv_init_if_nonexist(struct swarmkv_keyspace* ks)
 {
 	char url[SWARMKV_URL_MAX]="";
 	int resp_code_get=0, resp_code_put=0;
-	sds slot_table=NULL, self_info=NULL;
+	sds self_info=NULL;
+	char *slot_table=NULL;
 	snprintf(url, sizeof(url), "/v1/kv/swarmkv/%s/slots", ks->db_name);
 	resp_code_get=http_blocking_request(EVHTTP_REQ_GET, CONSUL_HOST, ks->consul_agent_port, url, NULL, NULL);
 	if(resp_code_get==404)
 	{
-		slot_table=keyslots_print_json(ks->slots, SWARMKV_SLOT_NUM);
+		slot_table=keyslots_to_json(ks->slots, SWARMKV_SLOT_NUM);
 		resp_code_put=http_blocking_request(EVHTTP_REQ_PUT, CONSUL_HOST, ks->consul_agent_port, url, slot_table, NULL);	
 		sdsfree(slot_table);
 		if(resp_code_put==200)
@@ -1249,43 +1057,31 @@ int swarmkv_keyspace_is_myself(struct swarmkv_keyspace* ks, const struct swarmkv
 }
 
 
-static int consul_get_cluster_leader_block(const char *db_name, unsigned int consul_agent_port, struct swarmkv_node *leader)
-{
-	cJSON *leader_json=NULL, *item=NULL;
-	sds resp_body=NULL;
-	int resp_code=0;
-	char url[SWARMKV_URL_MAX]="";
-	snprintf(url, sizeof(url),"/v1/kv/swarmkv/%s/lead?raw=1", db_name);
-	resp_code=http_blocking_request(EVHTTP_REQ_GET, CONSUL_HOST, consul_agent_port, url, NULL, &resp_body);
-	if(resp_code!=200)
-	{
-		return -1;
-	}
-	leader_json=cJSON_Parse(resp_body);
-	item=cJSON_GetObjectItem(leader_json, "ip");
-	strncpy(leader->addr.ip_addr, item->valuestring, sizeof(leader->addr.ip_addr));
-	item=cJSON_GetObjectItem(leader_json, "p2p_port");
-	leader->addr.p2p_port=(unsigned int)item->valueint;
-	item=cJSON_GetObjectItem(leader_json, "node_uuid");
-	uuid_parse(item->valuestring, leader->bin_uuid);
-	sdsfree(resp_body);
-	return 0;
-}
-static int consul_list_health_nodes_block(const char *db_name, unsigned int consul_agent_port, struct swarmkv_node *nodes, size_t *n_nodes)
-{
-	char url[SWARMKV_URL_MAX]="";
-	sds resp_body=NULL;
-	int resp_code=0;
 
-	snprintf(url, sizeof(url), "/v1/health/service/%s?passing=1", db_name);
-	resp_code=http_blocking_request(EVHTTP_REQ_GET, CONSUL_HOST, consul_agent_port, url, NULL, &resp_body);
-	if(resp_code!=200)
+
+struct swarmkv_reply *make_keyspace_reply(enum key_route_result ret, const struct swarmkv_node_addr *peer)
+{
+	struct swarmkv_reply *reply=NULL;
+	switch(ret)
 	{
-		return -1;
+		case NOT_FOUND:
+			reply=swarmkv_reply_new_nil();
+			break;
+		case ASK:
+			reply=swarmkv_reply_new_array(3);
+			reply->elements[0]=swarmkv_reply_new_string("ASK", 4);
+			reply->elements[1]=swarmkv_reply_new_string(peer->ip_addr, strlen(peer->ip_addr)+1);
+			reply->elements[2]=swarmkv_reply_new_integer(peer->p2p_port);
+			break;
+		case FOUND:
+			reply=swarmkv_reply_new_array(2);
+			node_addr2reply(peer, reply->elements);
+			break;
+		default:
+			assert(0);
+			break;
 	}
-	json2nodes(resp_body, nodes, n_nodes);
-	sdsfree(resp_body);
-	return 0;
+	return reply;
 }
 
 enum key_route_result swarmkv_keyspace_reply2node(const struct swarmkv_reply *reply, struct swarmkv_node_addr *out)
@@ -1315,56 +1111,7 @@ enum key_route_result swarmkv_keyspace_reply2node(const struct swarmkv_reply *re
 	
 	return ret;
 }
-static int consul_get_slots_blocked(const char *db_name, unsigned int consul_agent_port,  struct swarmkv_reply **pp_reply)
-{
-	char url[SWARMKV_URL_MAX]="";
-	sds resp_body=NULL;
-	int resp_code=0, n_record=0, i=0;
-	struct swarmkv_reply *r=NULL;
-	snprintf(url, sizeof(url), "/v1/kv/swarmkv/%s/slots?raw=1", db_name);
-	resp_code=http_blocking_request(EVHTTP_REQ_GET, CONSUL_HOST, consul_agent_port, url, NULL, &resp_body);
-	if(resp_code!=200)
-	{
-		return -1;
-	}
-	cJSON *slot_table=NULL, *range=NULL, *slot=NULL, *owner=NULL, *ip=NULL, *p2p_port=NULL, *node_uuid=NULL;
-	slot_table=cJSON_Parse(resp_body);
-	n_record=cJSON_GetArraySize(slot_table);
-	r=swarmkv_reply_new_array((size_t)n_record);
-	for(i=0; i<n_record; i++)
-	{
-		slot=cJSON_GetArrayItem(slot_table, i);
-		range=cJSON_GetObjectItem(slot, "slot");
-		owner=cJSON_GetObjectItem(slot, "owner");	
-		ip=cJSON_GetObjectItem(owner, "ip");	
-		p2p_port=cJSON_GetObjectItem(owner, "p2p_port");
-		node_uuid=cJSON_GetObjectItem(owner, "node_uuid");
-		r->elements[i]=swarmkv_reply_new_string_fmt("%s %s %s:%d", range->valuestring,
-																		node_uuid->valuestring,
-																		ip->valuestring,
-																		p2p_port->valueint);
-		
-	}
-	cJSON_free(slot_table);
-	sdsfree(resp_body);
-	*pp_reply=r;
-	return 0;
-}
 
-int swarmkv_keyspace_get_slot_owner_addr(struct swarmkv_keyspace *ks, int slot_id, struct swarmkv_node_addr *addr)
-{
-	int self_is_slot_owner;
-	struct swarmkv_node owner;
-	pthread_rwlock_rdlock(&ks->rwlock);
-	swarmkv_node_copy(&owner, &(ks->slots[slot_id].owner));
-	pthread_rwlock_unlock(&ks->rwlock);
-	if(0==swarmkv_node_addr_compare(&owner.addr, &(ks->self.addr)))
-	{
-		self_is_slot_owner=1;
-	}
-	swarmkv_node_addr_copy(addr, &(owner.addr));
-	return self_is_slot_owner;
-}
 
 void keyspace_setslot_command_as_owner(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)
 {
@@ -1448,6 +1195,84 @@ enum cmd_fastpath_result keyspace_setslot_command_fastpath(struct swarmkv_module
 	return ret;
 
 }
+static sds key_slot_serialize(const struct key_slot *slot)
+{
+	sds blob=NULL;
+	mpack_writer_t snapshot_mpack;
+	char *mpack_buff=NULL;
+	size_t mpack_sz=0;
+	struct key_route_entry *key_entry=NULL, *tmp=NULL;
+	size_t key_cnt=0;
+	key_cnt=HASH_CNT(hh, slot->keyroute_table);
+
+	mpack_writer_init_growable(&snapshot_mpack, &mpack_buff, &mpack_sz);
+	mpack_build_map(&snapshot_mpack);
+
+	mpack_write_cstr(&snapshot_mpack, "slot_id");
+	mpack_write_int(&snapshot_mpack, slot->slot_id);
+
+	mpack_write_cstr(&snapshot_mpack, "key_cnt");
+	mpack_write_int(&snapshot_mpack, key_cnt);
+
+
+	mpack_write_cstr(&snapshot_mpack, "key_route_table");	
+	mpack_build_array(&snapshot_mpack);
+	HASH_ITER(hh, slot->keyroute_table, key_entry, tmp)
+	{
+		mpack_write_str(&snapshot_mpack, key_entry->key, sdslen(key_entry->key));
+		mpack_write_cstr(&snapshot_mpack, key_entry->owner.ip_addr);
+		mpack_write_int(&snapshot_mpack, key_entry->owner.p2p_port);
+	}
+	mpack_complete_array(&snapshot_mpack);
+	mpack_complete_map(&snapshot_mpack);
+	mpack_writer_destroy(&snapshot_mpack);
+	blob=sdsnewlen(mpack_buff, mpack_sz);
+	free(mpack_buff);
+	return blob;
+}
+long long key_slot_merge_blob(struct key_slot *slot, const sds blob)
+{
+	mpack_tree_t tree;
+	mpack_tree_init_data(&tree, blob, sdslen(blob));
+	mpack_tree_parse(&tree);
+	mpack_node_t root=mpack_tree_root(&tree);
+	mpack_node_t key_item, ip_item, port_item, table;
+	int slot_id=mpack_node_int(mpack_node_map_cstr(root, "slot_id"));
+	assert(slot_id==slot->slot_id);
+	table=mpack_node_map_cstr(root, "key_route_table");
+
+	long long new_added_entry_num=0;
+	
+	size_t key_cnt=mpack_node_int(mpack_node_map_cstr(root, "key_cnt"));
+	size_t entry_num=mpack_node_array_length(table);
+	assert(key_cnt*3==entry_num);
+	struct key_route_entry *key_entry=NULL;
+	struct swarmkv_node_addr obj_owner;
+	for(size_t i=0; i<entry_num; i+=3)
+	{
+		key_item=mpack_node_array_at(table, i);
+		ip_item=mpack_node_array_at(table, i+1);
+		port_item=mpack_node_array_at(table, i+2);
+		mpack_node_copy_cstr(ip_item, obj_owner.ip_addr, sizeof(obj_owner.ip_addr));
+		obj_owner.p2p_port=mpack_node_int(port_item);
+		HASH_FIND(hh, slot->keyroute_table, mpack_node_str(key_item), mpack_node_strlen(key_item), key_entry);
+		if(!key_entry)
+		{
+			key_entry=key_entry_new_len(mpack_node_str(key_item), mpack_node_strlen(key_item), &obj_owner);
+			HASH_ADD_KEYPTR(hh, slot->keyroute_table, key_entry->key, sdslen(key_entry->key), key_entry);
+			new_added_entry_num++;
+		}
+		else
+		{
+			swarmkv_node_addr_copy(&key_entry->owner, &obj_owner);
+		}
+	}
+	if(mpack_tree_destroy(&tree)!= mpack_ok)
+	{
+		assert(0);
+	}
+	return new_added_entry_num;
+}
 
 void keyspace_getkeysinslot_command_as_owner(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)
 {
@@ -1455,52 +1280,34 @@ void keyspace_getkeysinslot_command_as_owner(struct swarmkv_module *mod_keyspace
 	int slot_id=-1;
 	struct key_slot* slot=NULL;
 
-	slot_id=(int)atoll(cmd->argv[2]);
+	slot_id=(int)atoll(cmd->argv[4]);
 	slot=&(ks->slots[slot_id]);
 	assert(0==swarmkv_node_addr_compare(&(ks->self.addr), &(slot->owner.addr)));
-	size_t n_keys_in_slot=0, i=0;
-	struct swarmkv_reply *r=NULL;
-	struct key_route_entry *key_entry=NULL, *tmp=NULL;
-
+	sds blob=NULL;
 	pthread_mutex_lock(&slot->mutex);
-	n_keys_in_slot=HASH_COUNT(slot->keyroute_table);
-	if(n_keys_in_slot)
-	{
-		r=swarmkv_reply_new_array(n_keys_in_slot*3);				
-		HASH_ITER(hh, slot->keyroute_table, key_entry, tmp)
-		{
-			r->elements[i]=swarmkv_reply_new_string(key_entry->key, sdslen(key_entry->key));
-			node_addr2reply(&(key_entry->owner), r->elements+i+1);
-			i+=3;
-		}
-	}
-	else
-	{
-		r=swarmkv_reply_new_nil();
-	}
+	blob=key_slot_serialize(slot);
 	pthread_mutex_unlock(&slot->mutex);
-	
-	*reply=r;
+
+
+	*reply=swarmkv_reply_new_string(blob, sdslen(blob));
+	sdsfree(blob);
+
 	return;
 }
 
 
 enum cmd_fastpath_result keyspace_getkeysinslot_command_fastpath(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
 {
-/*KEYSPACE GETKEYSINSLOT <slot>*/
+/*KEYSPACE GETKEYSINSLOT IP port slot*/
 	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
-	int slot_id=-1;
-	struct key_slot* slot=NULL;
 	enum cmd_fastpath_result ret=0;
-
-	slot_id=(int)atoll(cmd->argv[2]);
-	slot=&(ks->slots[slot_id]);
+	struct swarmkv_node_addr asking_node;
 	
-	pthread_mutex_lock(&slot->mutex);
-	if(0!=swarmkv_node_addr_compare(&(ks->self.addr), &(slot->owner.addr)))
+	sds2node_addr(cmd->argv+2, &asking_node);
+
+	if(0!=swarmkv_node_addr_compare(&(ks->self.addr), &asking_node))
 	{
-		*reply=swarmkv_reply_new_array(2);
-		node_addr2reply(&(slot->owner.addr), (*reply)->elements);
+		*reply=make_keyspace_reply(ASK, &asking_node);
 		ret=REDIRECT;
 	}
 	else
@@ -1508,21 +1315,92 @@ enum cmd_fastpath_result keyspace_getkeysinslot_command_fastpath(struct swarmkv_
 		keyspace_getkeysinslot_command_as_owner(mod_keyspace, cmd, NULL, reply);
 		ret=FINISHED;
 	}
-	pthread_mutex_unlock(&slot->mutex);
 
 	return ret;
 }
-
-
-struct swarmkv_reply *make_ask_reply(struct key_slot* slot)
+void keyspace_addkeystoslot_command_as_owner(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)
 {
-	struct swarmkv_reply *reply=NULL;
-	assert(slot->state==STATE_MIGRATING);
-	reply=swarmkv_reply_new_array(3);
-	reply->elements[0]=swarmkv_reply_new_string("ASK", 4);
-	reply->elements[1]=swarmkv_reply_new_string(slot->peer.addr.ip_addr, strlen(slot->peer.addr.ip_addr)+1);
-	reply->elements[2]=swarmkv_reply_new_integer(slot->peer.addr.p2p_port);
-	return reply;
+	/*KEYSPACE ADDKEYSTOSLOT IP port slot blob*/
+
+	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
+	int slot_id=-1;
+	long long new_added_entry_num=0;
+	struct key_slot* slot=NULL;
+	const sds blob=cmd->argv[5];
+
+	slot_id=(int)atoll(cmd->argv[4]);
+	slot=&(ks->slots[slot_id]);
+
+	assert(cmd->argc==6);
+	
+	pthread_mutex_lock(&slot->mutex);
+	new_added_entry_num=key_slot_merge_blob(slot, blob);
+	pthread_mutex_unlock(&slot->mutex);
+	
+	*reply=swarmkv_reply_new_integer(new_added_entry_num);
+}
+enum cmd_fastpath_result keyspace_addkeystoslot_command_fastpath(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
+{
+/*KEYSPACE ADDKEYSTOSLOT IP port slot key owner-IP owner-port [key ...]*/
+
+	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
+
+	struct swarmkv_node_addr asking_node;
+	
+	sds2node_addr(cmd->argv+2, &asking_node);
+
+	if(0==swarmkv_node_addr_compare(&(ks->self.addr), &asking_node))
+	{
+		keyspace_addkeystoslot_command_as_owner(mod_keyspace, cmd, NULL, reply);
+		return FINISHED;
+	}
+	else
+	{
+		*reply=make_keyspace_reply(ASK, &asking_node);
+		return REDIRECT;
+	}
+}
+void keyspace_delslotkeys_command_as_owner(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)
+{
+/*KEYSPACE DELSLOTKEYS IP port slot*/
+	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
+	int slot_id=-1;
+	struct key_slot* slot=NULL;
+	struct key_route_entry *key_entry=NULL, *tmp=NULL;
+	long long delete_num=0;
+	slot_id=(int)atoll(cmd->argv[4]);
+	slot=&(ks->slots[slot_id]);
+	pthread_mutex_lock(&slot->mutex);
+	HASH_ITER(hh, slot->keyroute_table, key_entry, tmp)
+	{
+		HASH_DELETE(hh, slot->keyroute_table, key_entry);
+		key_entry_free(key_entry);
+		delete_num++;
+	}
+	pthread_mutex_unlock(&slot->mutex);
+	*reply=swarmkv_reply_new_integer(delete_num);
+}
+enum cmd_fastpath_result keyspace_delslotkeys_command_fastpath(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
+{
+/*KEYSPACE DELSLOTKEYS IP port slot*/
+
+	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
+
+	struct swarmkv_node_addr asking_node;
+	
+	sds2node_addr(cmd->argv+2, &asking_node);
+
+	if(0==swarmkv_node_addr_compare(&(ks->self.addr), &asking_node))
+	{
+		keyspace_delslotkeys_command_as_owner(mod_keyspace, cmd, NULL, reply);
+		return FINISHED;
+	}
+	else
+	{
+		*reply=make_keyspace_reply(ASK, &asking_node);
+		return REDIRECT;
+	}
+
 }
 enum KEYSPACE_OP
 {
@@ -1531,30 +1409,7 @@ enum KEYSPACE_OP
 	KEYSPACE_SETNXGET,
 	KEYSPACE_DEL
 };
-struct swarmkv_reply *make_keyspace_reply(enum key_route_result ret, const struct swarmkv_node_addr *peer)
-{
-	struct swarmkv_reply *reply=NULL;
-	switch(ret)
-	{
-		case NOT_FOUND:
-			reply=swarmkv_reply_new_nil();
-			break;
-		case ASK:
-			reply=swarmkv_reply_new_array(3);
-			reply->elements[0]=swarmkv_reply_new_string("ASK", 4);
-			reply->elements[1]=swarmkv_reply_new_string(peer->ip_addr, strlen(peer->ip_addr)+1);
-			reply->elements[2]=swarmkv_reply_new_integer(peer->p2p_port);
-			break;
-		case FOUND:
-			reply=swarmkv_reply_new_array(2);
-			node_addr2reply(peer, reply->elements);
-			break;
-		default:
-			assert(0);
-			break;
-	}
-	return reply;
-}
+
 enum key_route_result keyspace_generic(struct swarmkv_keyspace *ks, enum KEYSPACE_OP op, const sds key, const struct swarmkv_node_addr *expect_objowner, struct swarmkv_node_addr *peer)
 {
 	struct key_route_entry *key_entry=NULL;
@@ -1871,71 +1726,4 @@ enum cmd_fastpath_result keyspace_keys_command_fastpath(struct swarmkv_module *m
 	}
 }
 
-static void get_cluster_nodes(struct swarmkv_keyspace* ks, struct swarmkv_reply **reply)
-{
-	int ret=0;
-	struct swarmkv_node leader; 	
-	struct swarmkv_node nodes[SWARMKV_NODE_MAX];
-	size_t n_node=SWARMKV_NODE_MAX;
-	ret=consul_get_cluster_leader_block(ks->db_name, ks->consul_agent_port, &leader);
-	if(ret<0)
-	{
-		*reply=swarmkv_reply_new_error(error_cluster_leader_not_found);
-		return;
-	}
-	ret=consul_list_health_nodes_block(ks->db_name, ks->consul_agent_port, nodes, &n_node);
-	if(ret<0)
-	{
-		*reply=swarmkv_reply_new_error(error_cluster_leader_not_found);
-		return;
-	}
-	size_t i=0;
-	char uuid_str[37];
-	int is_leader;
-	struct swarmkv_reply *r=swarmkv_reply_new_array(n_node);
-	for(i=0; i<n_node; i++)
-	{
-		uuid_unparse_lower(nodes[i].bin_uuid, uuid_str);
-		if(0==swarmkv_node_compare(&leader, nodes+i))
-		{
-			is_leader=1;
-		}
-		else
-		{
-			is_leader=0;
-		}
-		r->elements[i]=swarmkv_reply_new_string_fmt("%s %s %u %s", uuid_str,
-																nodes[i].addr.ip_addr,
-																nodes[i].addr.p2p_port,
-																is_leader?"leader":"follower");
-	}
-	*reply=r;
-	return;
-}
-
-enum cmd_fastpath_result keyspace_nodes_command_fastpath(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
-{
-	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
-	get_cluster_nodes(ks, reply);
-	return FINISHED;
-}
-enum cmd_fastpath_result keyspace_slots_command_fastpath(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
-{
-	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
-	int ret=0;
-	ret=consul_get_slots_blocked(ks->db_name, ks->consul_agent_port, reply);
-	if(ret<0)
-	{
-		*reply=swarmkv_reply_new_error(error_read_slot_table_failed);
-	}
-	return FINISHED;
-}
-enum cmd_fastpath_result keyspace_keyslot_command_fastpath(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
-{
-/*KEYSPACE KEYSLOT key*/
-	sds key=cmd->argv[2];
-	int slot_id=get_slot_id(key, sdslen(key));
-	*reply=swarmkv_reply_new_integer(slot_id);
-	return FINISHED;
-}
 

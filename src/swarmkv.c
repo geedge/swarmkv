@@ -596,24 +596,20 @@ void command_spec_init(struct swarmkv *db)
 	command_register(&(db->command_table), "KEYSPACE SETSLOT", "node-IP node-port <slot> IMPORTING peer-IP peer-port | MIGRATING peer-IP peer-port | NODE peer-IP peer-port | STABLE",
 					1, 2, CMD_KEY_NA,
 					keyspace_setslot_command_fastpath, keyspace_setslot_command_as_owner, db->mod_keyspace);
-	command_register(&(db->command_table), "KEYSPACE GETKEYSINSLOT", "slot",
+	command_register(&(db->command_table), "KEYSPACE GETKEYSINSLOT", "IP port slot",
 					1, 2, CMD_KEY_NA,
 					keyspace_getkeysinslot_command_fastpath, keyspace_getkeysinslot_command_as_owner, db->mod_keyspace);
-	command_register(&(db->command_table), "KEYSPACE KEYS", "pattern",
+	command_register(&(db->command_table), "KEYSPACE ADDKEYSTOSLOT", "IP port slot blob",
+					1, 2, CMD_KEY_NA,
+					keyspace_addkeystoslot_command_fastpath, keyspace_addkeystoslot_command_as_owner, db->mod_keyspace);
+	command_register(&(db->command_table), "KEYSPACE DELSLOTKEYS", "IP port slot",
+					1, 2, CMD_KEY_NA,
+					keyspace_delslotkeys_command_fastpath, keyspace_delslotkeys_command_as_owner, db->mod_keyspace);
+
+	command_register(&(db->command_table), "KEYSPACE KEYS", "IP port pattern",
 					3, -1, CMD_KEY_RO,
 					keyspace_keys_command_fastpath, keyspace_keys_command_as_owner, db->mod_keyspace);
-	command_register(&(db->command_table), "KEYSPACE KEYSLOT", "key",
-					1, 2, CMD_KEY_NA,
-					keyspace_keyslot_command_fastpath, NULL, db->mod_keyspace);
-
 	
-
-	command_register(&(db->command_table), "KEYSPACE NODES", "",
-					0, -1, CMD_KEY_NA,
-					keyspace_nodes_command_fastpath, NULL, db->mod_keyspace);
-	command_register(&(db->command_table), "KEYSPACE SLOTS", "",
-					0, -1, CMD_KEY_NA,
-					keyspace_slots_command_fastpath, NULL, db->mod_keyspace);
 	return;
 }
 

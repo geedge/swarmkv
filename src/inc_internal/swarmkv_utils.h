@@ -1,5 +1,7 @@
 #pragma once
+
 #include <assert.h>
+
 #define ALLOC(type, number) ((type *)calloc(sizeof(type), number))
 #define	FREE(p)	{free(*p);*p=NULL;}
 
@@ -28,4 +30,5 @@ const char* swarmkv_util_pthread_cond_timedwait_error_to_string(const int timed_
 char* toLower(char* s);
 char* toUpper(char* s);
 int stringmatchlen(const char *pattern, int patternLen, const char *string, int stringLen, int nocase);
+
 

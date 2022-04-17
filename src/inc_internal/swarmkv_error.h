@@ -10,3 +10,6 @@
 #define	error_read_slot_table_failed	"ERR read slot table failed"
 #define error_keyspace_obj_owner_not_found "ERR can't find object owner from keyspace"
 
+#define error_cluster_addnode_node_is_not_active	"ERR candinate node is not active"
+#define error_cluster_addnode_node_has_slot 		"ERR candinate node already has some slots"
+

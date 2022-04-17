@@ -4,6 +4,8 @@
 #include "swarmkv_limits.h"
 
 #include "uthash.h"
+#include "xxhash.h"
+#include "cJSON.h"
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -22,7 +24,7 @@ struct swarmkv_reply* swarmkv_reply_new_string_fmt(const char *format, ...)
 	struct swarmkv_reply *reply=ALLOC(struct swarmkv_reply, 1);
 	reply->type=SWARMKV_REPLY_STRING;
 	va_list ap;
-    va_start(ap,format);
+    va_start(ap, format);
 	reply->len=vasprintf(&(reply->str), format, ap);
     va_end(ap);
 	return reply;
@@ -55,7 +57,7 @@ struct swarmkv_reply* swarmkv_reply_new_status(const char *format, ...)
 	struct swarmkv_reply *reply=ALLOC(struct swarmkv_reply, 1);
 	reply->type=SWARMKV_REPLY_STATUS;
 	va_list ap;
-    va_start(ap,format);
+    va_start(ap, format);
 	reply->len=vasprintf(&(reply->str), format, ap);
     va_end(ap);
 	return reply;
@@ -66,7 +68,7 @@ struct swarmkv_reply* swarmkv_reply_new_error(const char *format, ...)
 	reply->type=SWARMKV_REPLY_ERROR;
 	reply->str=ALLOC(char, reply->len);
 	va_list ap;
-    va_start(ap,format);
+    va_start(ap, format);
 	reply->len=vasprintf(&(reply->str), format, ap);
     va_end(ap);
 	
@@ -91,22 +93,34 @@ void sds2node_addr(const sds argv[2], struct swarmkv_node_addr *node_addr)
 	node_addr->p2p_port=(unsigned int)atoll(argv[1]);
 	return;
 }
-int swarmkv_node_compare(const struct swarmkv_node *node1, const struct swarmkv_node *node2)
-{
-	return memcmp(node1, node2, sizeof(struct swarmkv_node));
-}
-void swarmkv_node_copy(struct swarmkv_node *dst, const struct swarmkv_node *src)
-{
-	memcpy(dst, src, sizeof(struct swarmkv_node));
-	return;
-}
 int swarmkv_node_addr_compare(const struct swarmkv_node_addr *addr1, const struct swarmkv_node_addr *addr2)
 {
-	return memcmp(addr1, addr2, sizeof(struct swarmkv_node_addr));
+	int ret=0;
+	ret=strcmp(addr1->ip_addr, addr2->ip_addr);
+	if(ret==0)
+	{
+		ret=addr1->p2p_port - addr2->p2p_port;
+	}
+	return ret;
 }
 void swarmkv_node_addr_copy(struct swarmkv_node_addr *dst, const struct swarmkv_node_addr *src)
 {
 	memcpy(dst, src, sizeof(struct swarmkv_node_addr));
+	return;
+}
+int swarmkv_node_compare(const struct swarmkv_node *node1, const struct swarmkv_node *node2)
+{
+	int ret=0;
+	ret=swarmkv_node_addr_compare(&node1->addr, &node2->addr);
+	if(ret==0)
+	{
+		ret=uuid_compare(node1->bin_uuid, node2->bin_uuid);
+	}
+	return ret;
+}
+void swarmkv_node_copy(struct swarmkv_node *dst, const struct swarmkv_node *src)
+{
+	memcpy(dst, src, sizeof(struct swarmkv_node));
 	return;
 }
 
@@ -217,4 +231,200 @@ struct swarmkv_cmd* swarmkv_cmd_dup(const struct swarmkv_cmd* origin)
 	}
 	return copy;
 }
+sds keyslots_to_json(struct key_slot slots[], size_t n_slot)
+{
+	cJSON *slot_array=cJSON_CreateArray();
+	cJSON *slot=NULL, *node=NULL;
+	char range[256]="", uuid_str[38]="";
+	size_t i=0;
+	int start=0, end=0;
+	sds json_sds=NULL;
+	assert(SWARMKV_SLOT_NUM==n_slot);
+	start=end=slots[0].slot_id;
+	for(i=0; i<n_slot+1; i++)
+	{
+		if(i<n_slot
+			&& 0==swarmkv_node_compare(&(slots[i].owner), &(slots[end].owner)))
+		{
+			end=i;
+			continue;
+		}	
+		slot=cJSON_CreateObject();
+		if(start==end)
+		{
+			snprintf(range, sizeof(range), "%d", start);
+		}
+		else
+		{
+			snprintf(range, sizeof(range), "%d-%d", start, end);
+		}
+		cJSON_AddStringToObject(slot, "slot", range);		
+		node=cJSON_CreateObject();
+		cJSON_AddStringToObject(node, "ip", slots[end].owner.addr.ip_addr);
+		cJSON_AddNumberToObject(node, "p2p_port", slots[end].owner.addr.p2p_port);
+		uuid_unparse_lower(slots[end].owner.bin_uuid, uuid_str);
+		cJSON_AddStringToObject(node, "node_uuid", uuid_str);
+		cJSON_AddItemToObject(slot, "owner", node);
+		cJSON_AddItemToArray(slot_array, slot);
+		start=end=i;
+	}
+	char* payload=NULL;
+	payload=cJSON_Print(slot_array);
+	cJSON_Delete(slot_array);
+	json_sds=sdsnew(payload);
+	free(payload);
+	return json_sds;
+}
+void json_to_keyslots(const char* json_buffer, struct key_slot slots[], size_t n_slot)
+{
+	cJSON *slot_table=NULL, *range=NULL, *slot=NULL, *owner=NULL, *ip=NULL, *p2p_port=NULL, *node_uuid=NULL;
+	int	i=0, j=0, k=0, n_record=0;
+	int range_start=0, range_end=0;
+	slot_table=cJSON_Parse(json_buffer);
+	n_record=cJSON_GetArraySize(slot_table);
+	assert(n_slot==SWARMKV_SLOT_NUM);
+	for(i=0; i<n_record; i++)
+	{
+		slot=cJSON_GetArrayItem(slot_table, i);
+		range=cJSON_GetObjectItem(slot, "slot");
+		if(strstr(range->valuestring, "-"))
+		{
+			sscanf(range->valuestring, "%d-%d", &range_start, &range_end);
+		}
+		else
+		{
+			sscanf(range->valuestring, "%d", &range_start);
+			range_end=range_start;
+		}
+		owner=cJSON_GetObjectItem(slot, "owner");	
+		ip=cJSON_GetObjectItem(owner, "ip");	
+		p2p_port=cJSON_GetObjectItem(owner, "p2p_port");
+		node_uuid=cJSON_GetObjectItem(owner, "node_uuid");
+		for(j=range_start; j<range_end+1; j++)
+		{
+			slots[j].slot_id=j;
+			strncpy(slots[j].owner.addr.ip_addr, ip->valuestring, sizeof(slots[j].owner.addr.ip_addr));
+			slots[j].owner.addr.p2p_port=(unsigned int)p2p_port->valueint;
+			uuid_parse(node_uuid->valuestring, slots[j].owner.bin_uuid);
+			k++;
+		}
+	}
+	assert(k==SWARMKV_SLOT_NUM);
+	cJSON_free(slot_table);
+	return;
+}
+void json2nodes(const char* resp_buff, struct swarmkv_node *nodes, size_t *n_node)
+{
+	size_t n_record=0, i=0;
+	cJSON *health_reponse=NULL, *record=NULL, *item=NULL, *service=NULL, *meta=NULL, *meta_node_uuid=NULL;
+
+	health_reponse=cJSON_Parse(resp_buff);
+	n_record=cJSON_GetArraySize(health_reponse);
+	for(i=0; i<n_record && i<*n_node; i++)
+	{
+		record=cJSON_GetArrayItem(health_reponse, i);
+		service=cJSON_GetObjectItem(record, "Service");
+		item=cJSON_GetObjectItem(service, "Address");
+		strncpy(nodes[i].addr.ip_addr, item->valuestring, sizeof(nodes[i].addr.ip_addr));
+		item=cJSON_GetObjectItem(service, "Port");
+		nodes[i].addr.p2p_port=(unsigned int)item->valueint;
+		meta=cJSON_GetObjectItem(service, "Meta");
+		meta_node_uuid=cJSON_GetObjectItem(meta, "node_uuid");
+		uuid_parse(meta_node_uuid->valuestring, nodes[i].bin_uuid); 
+	}
+	cJSON_free(health_reponse);
+	*n_node=i;
+}
+void json2leader(const char *resp_body, struct swarmkv_node *leader)
+{
+	cJSON *leader_json=NULL, *item=NULL;
+	leader_json=cJSON_Parse(resp_body);
+	item=cJSON_GetObjectItem(leader_json, "ip");
+	strncpy(leader->addr.ip_addr, item->valuestring, sizeof(leader->addr.ip_addr));
+	item=cJSON_GetObjectItem(leader_json, "p2p_port");
+	leader->addr.p2p_port=(unsigned int)item->valueint;
+	item=cJSON_GetObjectItem(leader_json, "node_uuid");
+	uuid_parse(item->valuestring, leader->bin_uuid);
+}
+#define	KEYSPACE_XXHASH_SEED	5210
+int get_slot_id(const char* key, size_t keylen)
+{
+	XXH32_hash_t hash = XXH32(key, keylen, KEYSPACE_XXHASH_SEED);
+	int slot_id=hash%SWARMKV_SLOT_NUM;
+	return slot_id;
+}
+
+struct http_client
+{
+	int response_code;
+	struct event_base* evbase;
+	struct evhttp_connection* evhttpconn;
+	struct evhttp_request *req;	
+	int error_happens;
+	sds response_body;
+};
+void __http_blocking_request_cb(struct evhttp_request *req, void *arg)
+{	
+	struct http_client* client = (struct http_client*) arg;
+	if(!req || !evhttp_request_get_response_code(req))
+	{
+		client->error_happens=1;
+	}
+	else
+	{		
+		client->response_code=evhttp_request_get_response_code(req);
+		if(client->response_code==200)
+		{
+			struct evbuffer *buf=NULL;
+			buf=evhttp_request_get_input_buffer(client->req);
+			size_t len = evbuffer_get_length(buf);
+			client->response_body=sdsnewlen(SDS_NOINIT, len);
+			evbuffer_remove(buf, client->response_body, len);
+		}
+	}
+	event_base_loopbreak(client->evbase);
+}
+int http_blocking_request(enum evhttp_cmd_type type, const char* host, unsigned int port, const char* url, const sds req_body, sds *resp_body)
+{
+	struct http_client client_data;
+	struct http_client* client=&client_data;
+	memset(&client_data, 0, sizeof(client_data));
+	client->evbase=event_base_new();	//temporary evbase for blocking query
+    client->evhttpconn = evhttp_connection_base_new(client->evbase, NULL, host, port);
+    client->req = evhttp_request_new(__http_blocking_request_cb, client);
+
+	struct evkeyvalq *output_headers = evhttp_request_get_output_headers(client->req);
+	char hostname[256]="";
+	snprintf(hostname, sizeof(hostname), "%s:%d", host, port);
+	evhttp_add_header(output_headers, "Host", hostname);
+	evhttp_add_header(output_headers, "Connection", "close");
+	if(req_body)
+	{
+		struct evbuffer* output_buffer = evhttp_request_get_output_buffer(client->req);
+		evbuffer_add(output_buffer, req_body, sdslen(req_body));
+		char number[64];
+		snprintf(number, sizeof(number), "%zu", sdslen(req_body));
+		evhttp_add_header(output_headers, "Content-Type", "application/json");
+		evhttp_add_header(output_headers, "Content-Length", number);
+	}
+    evhttp_make_request(client->evhttpconn, client->req, type, url);
+    evhttp_connection_set_timeout(client->evhttpconn, 5);
+    event_base_dispatch(client->evbase);
+	if(client->response_code == 200)
+	{
+		if(resp_body)
+		{
+			*resp_body=client->response_body;
+		}
+		else
+		{
+			sdsfree(client->response_body);			
+		}	
+		client->response_body=NULL;
+	}
+//	evhttp_connection_free(client->evhttpconn);
+	event_base_free(client->evbase);
+	return client->response_code;	
+}
+
 
