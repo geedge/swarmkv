@@ -20,7 +20,7 @@ SwarmKV uses [HashiCorp Consul](https://www.consul.io/) for cluster management, 
 
 **Why not SQLite, or rqlite, dqlite?** Because Swarm KV is not a relational database and is extremely fast.
 
-![cluster](D:\Code\swarmkv\doc\imgs\cluster.png)
+<img src="./doc/imgs/cluster.png" alt="swamrkv-cluster" /> 
 
 Following are terminologies used in Swarm KV.
 
