@@ -8,6 +8,8 @@ SwarmKV uses [HashiCorp Consul](https://www.consul.io/) for cluster management, 
 
 **Main Features**
 
+- Cluster
+- Subscription-based cache syncronization
 - High availability (in the language of [CAP](https://en.wikipedia.org/wiki/CAP_theorem), this system prioritizes availability and partition tolerance).
 
 **Why not Redis?** Because Swarm KV is
@@ -18,16 +20,18 @@ SwarmKV uses [HashiCorp Consul](https://www.consul.io/) for cluster management, 
 
 **Why not SQLite, or rqlite, dqlite?** Because Swarm KV is not a relational database and is extremely fast.
 
+![cluster](D:\Code\swarmkv\doc\imgs\cluster.png)
+
 Following are terminologies used in Swarm KV.
 
 Vocabularies
 
-| Name        | Explaination                                                 |
-| ----------- | ------------------------------------------------------------ |
-| KV          | Key-value pair                                               |
-| Node        | Instances in a Swarm KV cluster. A swarmkv node is identified with its IP, P2P port and UUID. |
-| Slot        | KVs are partitioned in different slots, and keys of one table are scattered in many slots.  Each slot is maintained by one node. |
-| Transaction | A command and its reply.                                     |
+| Name | Explaination                                                 |
+| ---- | ------------------------------------------------------------ |
+| KV   | Key-value pair                                               |
+| Node | Instances in a Swarm KV cluster. A swarmkv node is identified with its IP, P2P port and UUID. |
+| Slot | KVs are partitioned in different slots, and keys of one table are scattered in many slots.  Each slot is maintained by one node. |
+| RR   | A request (command) and reply.                               |
 
 SwarmKV Data Types
 
@@ -41,19 +45,51 @@ SwarmKV operations
 - Get, Set, Delete
 - TTL
 
-| Command Operator    | Command Args                                                 | Response                                                     |
-| ------------------- | ------------------------------------------------------------ | ------------------------------------------------------------ |
-| GET                 | key                                                          |                                                              |
-| SET                 | key value                                                    |                                                              |
-| DEL                 | key                                                          |                                                              |
-| HGET                |                                                              |                                                              |
-| CLUSTER OBJ_OWNER   | key                                                          | 1) "192.168.1.200"<br/>2) (integer) 5211                     |
-| CLUSTER SETSLOT     | slot IMPORTING node-id<br/>slot MIGRATING node-id<br/>slot NODE node-id<br/>slot STABLE |                                                              |
-| MIGRATESLOT         | slot                                                         | 1) key1<br/>2) "192.168.1.200"<br/>3) (integer) 5211<br/>4) key2<br/>5) "192.168.1.200"<br/>6) (integer) 5211<br/>... ... |
-| CLUSTER MIGRATESLOT | slot source_node dest_nodes                                  | status reply,                                                |
-| SYNC                | key_version origin_cmd                                       | status reply, "OK" or "out of sync". The "out of sync" reply triggers a new sync cmd which wraps a set cmd. |
+# Command Specification
 
-Cluster commands are used for maintainance and debugg, which are only available in *swarmkv-cli*.
+## Quick List
+
+| Command                | Arguments         | Response                                                     |
+| ---------------------- | ----------------- | ------------------------------------------------------------ |
+| GET                    | key               | Bulk string reply: the value of key, or nil when key does not exist. |
+| SET                    | key value         | Simple string reply: OK if SET was executed correctly.       |
+| DEL                    | key               | Integer reply: The number of keys that were removed.         |
+| INCRYBY                | key increment     | Integer reply: the value of key after the increment          |
+| HGET                   |                   |                                                              |
+| KEYSPACE GET           | key               | 1) "192.168.1.200"<br/>2) (integer) 5211                     |
+| KEYSPACE SET           | key [IP port]     | 1) "192.168.1.200"<br/>2) (integer) 5211                     |
+| KEYSPACE DEL           | key               | 1) "192.168.1.200"<br/>2) (integer) 5211                     |
+| KEYSPACE SETNXGET      | key IP port       | 1) "192.168.1.200"<br/>2) (integer) 5211                     |
+| KEYSPACE SETSLOT       | see souce code    |                                                              |
+| KEYSPACE GETKEYSINSLOT | IP port slot      |                                                              |
+| KEYSPACE ADDKEYSTOSLOT | IP port slot blob |                                                              |
+| KEYSPACE DELSLOTKEYS   | IP port slot      |                                                              |
+| KEYSPACE KEYS          | IP port pattern   |                                                              |
+| CACHE SET              | key blob          | Simple string reply: OK if SET was executed correctly.       |
+| CACHE DEL              | key               | Integer reply: The number of cached keys that were removed.  |
+| CLUSTER KEYS           | pattern           | Array reply: list of keys matching pattern.                  |
+| CLUSTER KEYSLOT        | keyslot           | Returns an integer identifying the hash slot the specified key hashes to. |
+| CLUSTER NODES          |                   |                                                              |
+| CLUSTER SLOTS          |                   |                                                              |
+| CLUSTER ADDNODE        | IP port           |                                                              |
+
+NOTE: CLUSTER commands are used for maintainance and debugging purpose, and only available in *swarmkv-cli*.
+
+## CLUSTER KEYS
+
+Supported glob-style patterns:
+
+- `h?llo` matches `hello`, `hallo` and `hxllo`
+- `h*llo` matches `hllo` and `heeeello`
+- `h[ae]llo` matches `hello` and `hallo,` but not `hillo`
+- `h[^e]llo` matches `hallo`, `hbllo`, ... but not `hello`
+- `h[a-b]llo` matches `hallo` and `hbllo`
+
+Use `\` to escape special characters if you want to match them verbatim.
+
+The pattern is same as Redis https://redis.io/commands/keys/
+
+
 
 # SwarmKV Design
 
@@ -348,6 +384,8 @@ The source files are organized as follows:
 [Apache Ignite](https://ignite.apache.org/) is a distributed database for high-performance computing with in-memory speed.
 
 [Tarantool](https://www.tarantool.io/en/) is an in-memory computing platform consisting of a database and an application server.
+
+[eXtremeDB](https://www.mcobject.com/) is proven to be the fastest hybrid persistent and in-memory database management system for edge and cloud.
 
 ## References
 
