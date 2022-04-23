@@ -83,7 +83,7 @@ struct swarmkv_reply *cluster_addnode_command(struct swarmkv* db, char *argv[], 
 		goto error_out;
 	}
 	slots=ALLOC(struct key_slot, SWARMKV_SLOT_NUM);
-	json_to_keyslots(slots_reply->str, slots, SWARMKV_SLOT_NUM);
+	json2keyslots(slots_reply->str, slots, SWARMKV_SLOT_NUM);
 	for(i=0; i<SWARMKV_SLOT_NUM; i++)
 	{
 		if(0==swarmkv_node_addr_compare(&(slots[i].owner.addr), &(node.addr)))
@@ -236,7 +236,7 @@ struct swarmkv_reply *cluster_addnode_command(struct swarmkv* db, char *argv[], 
 	int resp_code_put=0;
 	qsort(slots, SWARMKV_SLOT_NUM, sizeof(struct key_slot), slot_cmp_by_id);
 	char *slot_json=NULL;
-	slot_json=keyslots_to_json(slots, SWARMKV_SLOT_NUM);
+	slot_json=keyslots2json(slots, SWARMKV_SLOT_NUM);
 
 	snprintf(url, sizeof(url), "/v1/kv/swarmkv/%s/slots", g_para.db_name);
 	

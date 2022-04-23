@@ -7,7 +7,7 @@ void cache_set_command_as_owner(struct swarmkv_module *mod_store, const struct s
 /* CACHE SET <key> <blob> */
 	sds key=cmd->argv[2];
 	sds blob=cmd->argv[3];
-	store_cache_refresh(mod_store, CACHE_SET, key, blob);
+	store_cache_flush(mod_store, CACHE_SET, key, blob);
 	*reply=swarmkv_reply_new_status("OK");
 	return;
 }
@@ -26,7 +26,7 @@ void cache_del_command_as_owner(struct swarmkv_module *mod_store, const struct s
 	{
 		*reply=swarmkv_reply_new_integer(0);
 	}	
-	store_cache_refresh(mod_store, CACHE_DEL, key, NULL);
+	store_cache_flush(mod_store, CACHE_DEL, key, NULL);
 	return;
 }
 

@@ -4,8 +4,8 @@ global:
 		*swarmkv_*;
 		*SWARMKV_VERSION_*;
 		*sds*;
-		json_to_keyslots;
-		keyslots_to_json;
+		json2keyslots;
+		keyslots2json;
 		http_blocking_request;
 		json2leader;
 		json2nodes;

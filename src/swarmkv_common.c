@@ -231,7 +231,7 @@ struct swarmkv_cmd* swarmkv_cmd_dup(const struct swarmkv_cmd* origin)
 	}
 	return copy;
 }
-sds keyslots_to_json(struct key_slot slots[], size_t n_slot)
+sds keyslots2json(struct key_slot slots[], size_t n_slot)
 {
 	cJSON *slot_array=cJSON_CreateArray();
 	cJSON *slot=NULL, *node=NULL;
@@ -275,7 +275,7 @@ sds keyslots_to_json(struct key_slot slots[], size_t n_slot)
 	free(payload);
 	return json_sds;
 }
-void json_to_keyslots(const char* json_buffer, struct key_slot slots[], size_t n_slot)
+void json2keyslots(const char* json_buffer, struct key_slot slots[], size_t n_slot)
 {
 	cJSON *slot_table=NULL, *range=NULL, *slot=NULL, *owner=NULL, *ip=NULL, *p2p_port=NULL, *node_uuid=NULL;
 	int	i=0, j=0, k=0, n_record=0;

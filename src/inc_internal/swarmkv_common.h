@@ -55,8 +55,8 @@ struct key_slot
 	int I_am_owner;
 	pthread_mutex_t mutex;
 };
-void json_to_keyslots(const char *json_buffer, struct key_slot slots[], size_t n_slot);
-sds keyslots_to_json(struct key_slot slots[], size_t n_slot);
+void json2keyslots(const char *json_buffer, struct key_slot slots[], size_t n_slot);
+sds keyslots2json(struct key_slot slots[], size_t n_slot);
 void json2nodes(const char* resp_buff, struct swarmkv_node *nodes, size_t *n_node);
 void json2leader(const char *resp_body, struct swarmkv_node *leader);
 int get_slot_id(const char* key, size_t keylen);

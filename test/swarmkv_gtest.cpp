@@ -280,7 +280,7 @@ TEST_F(SwarmkvBasicTest, SetGet)
 
 	cmd_exec_arg_expect_cstring(arg, val);
 	swarmkv_get_string(db, key, strlen(key), generic_callback, arg);
-	cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
+	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
 	EXPECT_EQ(exec_successful, 1);
 	cmd_exec_arg_free(arg);
 	arg=NULL;
@@ -301,9 +301,9 @@ TEST_F(SwarmkvBasicTest, Delete)
 	cmd_exec_arg_clear(arg);
 
 	
-	cmd_exec_arg_expect_NIL(arg);
+	cmd_exec_arg_expect_integer(arg, 1);
 	swarmkv_del(db, key, strlen(key), generic_callback, arg);
-	cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
+	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
 	EXPECT_EQ(exec_successful, 1);
 	cmd_exec_arg_free(arg);
 	arg=NULL;
@@ -368,29 +368,28 @@ TEST_F(SwarmkvTwoNodes, SetGet)
 	cmd_exec_arg_expect_OK(arg);
 	swarmkv_set_string(db1, key, strlen(key), val1, strlen(val1), generic_callback, arg);
 	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_EQ(exec_successful, 1);
+	EXPECT_TRUE(exec_successful);
 	cmd_exec_arg_clear(arg);
 
 	cmd_exec_arg_expect_cstring(arg, val1);
 	swarmkv_get_string(db2, key, strlen(key), generic_callback, arg);
-	cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_EQ(exec_successful, 1);
+	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
+	EXPECT_TRUE(exec_successful);
 	cmd_exec_arg_clear(arg);
 
 	cmd_exec_arg_expect_OK(arg);
-	swarmkv_set_string(db1, key, strlen(key), val2, strlen(val2), generic_callback, arg);
+	swarmkv_set_string(db2, key, strlen(key), val2, strlen(val2), generic_callback, arg);
 	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_EQ(exec_successful, 1);
+	EXPECT_TRUE(exec_successful);
 	cmd_exec_arg_clear(arg);
 
 
 	cmd_exec_arg_expect_cstring(arg, val2);
-	swarmkv_get_string(db2, key, strlen(key), generic_callback, arg);
-	cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_EQ(exec_successful, 1);
+	swarmkv_get_string(db1, key, strlen(key), generic_callback, arg);
+	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
+	EXPECT_TRUE(exec_successful);
 	cmd_exec_arg_clear(arg);
 
-	
 	cmd_exec_arg_free(arg);
 	arg=NULL;
 }
@@ -446,26 +445,26 @@ TEST_F(SwarmkvTwoNodes, DEL)
 	cmd_exec_arg_expect_OK(arg);
 	swarmkv_set_string(db1, key, strlen(key), val, strlen(val), generic_callback, arg);
 	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_EQ(exec_successful, 1);
+	EXPECT_TRUE(exec_successful);
 	cmd_exec_arg_clear(arg);
 
 	
 	cmd_exec_arg_expect_integer(arg, 1);
 	swarmkv_del(db2, key, strlen(key), generic_callback, arg);
 	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_EQ(exec_successful, 1);
+	EXPECT_TRUE(exec_successful);
 	cmd_exec_arg_clear(arg);
 
 	cmd_exec_arg_expect_NIL(arg);
 	swarmkv_get_string(db1, key, strlen(key), generic_callback, arg);
 	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_EQ(exec_successful, 1);
+	EXPECT_TRUE(exec_successful);
 	cmd_exec_arg_clear(arg);
 
 	cmd_exec_arg_expect_NIL(arg);
 	swarmkv_get_string(db2, key, strlen(key), generic_callback, arg);
 	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_EQ(exec_successful, 1);
+	EXPECT_TRUE(exec_successful);
 	cmd_exec_arg_clear(arg);
 
 	cmd_exec_arg_free(arg);
@@ -492,13 +491,13 @@ TEST_F(SwarmkvTwoNodes, INCRBY)
 	cmd_exec_arg_expect_integer(arg, 10000+100);
 	swarmkv_incrby(db2, key, strlen(key), 100, generic_callback, arg);
 	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_EQ(exec_successful, 1);
+	EXPECT_TRUE(exec_successful);
 	cmd_exec_arg_clear(arg);
 	
 	cmd_exec_arg_expect_integer(arg, 10000+100-200);
 	swarmkv_incrby(db1, key, strlen(key), -200, generic_callback, arg);
 	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_EQ(exec_successful, 1);
+	EXPECT_TRUE(exec_successful);
 	cmd_exec_arg_clear(arg);
 
 
@@ -507,7 +506,7 @@ TEST_F(SwarmkvTwoNodes, INCRBY)
 
 }
 
-TEST_F(SwarmkvTwoNodes, CacheSync)
+TEST_F(SwarmkvTwoNodes, CacheFlush)
 {
 	struct cmd_exec_arg *arg=NULL;
 	struct swarmkv* db1=SwarmkvTwoNodes::db1;
@@ -524,14 +523,14 @@ TEST_F(SwarmkvTwoNodes, CacheSync)
 	cmd_exec_arg_expect_OK(arg);
 	swarmkv_set_string(db1, key, strlen(key), val1, strlen(val1), generic_callback, arg);
 	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_EQ(exec_successful, 1);
+	EXPECT_TRUE(exec_successful);
 	cmd_exec_arg_clear(arg);
 
 	//db2: get id003
 	cmd_exec_arg_expect_cstring(arg, val1);
 	swarmkv_get_string(db2, key, strlen(key), generic_callback, arg);
 	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_EQ(exec_successful, 1);
+	EXPECT_TRUE(exec_successful);
 	EXPECT_EQ(arg->is_sync_callback, 0);
 	cmd_exec_arg_clear(arg);
 
@@ -541,7 +540,7 @@ TEST_F(SwarmkvTwoNodes, CacheSync)
 	cmd_exec_arg_expect_OK(arg);
 	swarmkv_set_string(db1, key, strlen(key), val2, strlen(val2), generic_callback, arg);
 	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_EQ(exec_successful, 1);
+	EXPECT_TRUE(exec_successful);
 	cmd_exec_arg_clear(arg);
 
 	//db2: get id003
@@ -549,7 +548,7 @@ TEST_F(SwarmkvTwoNodes, CacheSync)
 	cmd_exec_arg_expect_cstring(arg, val2);
 	swarmkv_get_string(db1, key, strlen(key), generic_callback, arg);
 	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_EQ(exec_successful, 1);
+	EXPECT_TRUE(exec_successful);
 	EXPECT_EQ(arg->is_sync_callback, 1);
 	cmd_exec_arg_clear(arg);
 

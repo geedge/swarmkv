@@ -410,7 +410,7 @@ struct swarmkv_obj *store_cache_lookup(struct swarmkv_module* mod_store, sds key
 		return NULL;
 	}
 }
-void store_cache_refresh(struct swarmkv_module *mod_store, enum cache_sync_op op, const sds key, const sds blob)
+void store_cache_flush(struct swarmkv_module *mod_store, enum cache_sync_op op, const sds key, const sds blob)
 {
 	struct swarmkv_store *store=module2store(mod_store);
 	struct obj_container *ctr=NULL;	

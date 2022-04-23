@@ -48,5 +48,5 @@ enum cache_sync_op
 	CACHE_DEL
 };
 void store_cache_notify_all(struct swarmkv_module *mod_store, enum cache_sync_op op, struct swarmkv_obj *obj);
-void store_cache_refresh(struct swarmkv_module *mod_store, enum cache_sync_op op, const sds key, const sds blob);
+void store_cache_flush(struct swarmkv_module *mod_store, enum cache_sync_op op, const sds key, const sds blob);
 

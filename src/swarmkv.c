@@ -360,11 +360,13 @@ void swarmkv_exec(struct swarmkv *db, const struct swarmkv_cmd *cmd, swarmkv_cmd
 {
 	struct swarmkv_cmd_spec *spec=NULL;
 	struct swarmkv_reply *reply=NULL, *keyspace_reply=NULL;
-	enum cmd_fastpath_result fastpath_ret, keyspace_next_step;
+	enum cmd_fastpath_result fastpath_ret, ks_fastpath_ret;
+	enum key_route_result route_ret=__INVALID;
 	struct promise *p=NULL;
 	struct cmd_exec_ctx *ctx=NULL;
 	struct swarmkv_node_addr peer;
-
+	memset(&peer, 0, sizeof(peer));
+	
 	spec=get_spec_by_argv(db, cmd->argc, cmd->argv);
 	if(!spec)
 	{		
@@ -409,24 +411,24 @@ void swarmkv_exec(struct swarmkv *db, const struct swarmkv_cmd *cmd, swarmkv_cmd
 	{
 		ctx->keyspace_cmd=make_keyroute_cmd(spec->flag, cmd->argv[spec->key_offset], db->opts->dryrun? NULL:(&db->self));
 		
-		const struct swarmkv_cmd_spec *keyspace_spec=NULL;
+		struct swarmkv_cmd_spec *keyspace_spec=NULL;
 		keyspace_spec=get_spec_by_argv(db, ctx->keyspace_cmd->argc, ctx->keyspace_cmd->argv);
 
-		spec_lock_module(spec);
-		keyspace_next_step=keyspace_spec->proc_fastpath(keyspace_spec->module, ctx->keyspace_cmd, &keyspace_reply);
-		spec_unlock_module(spec);
+		spec_lock_module(keyspace_spec);
+		ks_fastpath_ret=keyspace_spec->proc_fastpath(keyspace_spec->module, ctx->keyspace_cmd, &keyspace_reply);
+		spec_unlock_module(keyspace_spec);
 		
-		enum key_route_result ret;
-		ret=swarmkv_keyspace_reply2node(keyspace_reply, &peer);	
-		swarmkv_reply_free(keyspace_reply);
-		keyspace_reply=NULL;
 		
-		if(keyspace_next_step==REDIRECT)//reply is keyowner, do key route
+		route_ret=swarmkv_keyspace_reply2node(keyspace_reply, &peer);	
+//		swarmkv_reply_free(keyspace_reply);
+//		keyspace_reply=NULL;
+		
+		if(ks_fastpath_ret==REDIRECT)//reply is keyowner, do key route
 		{
 			ctx->f_key_route=future_create("key_route", generic_route_on_success, generic_route_on_fail, ctx);
 			exec_command_at_peer(db, ctx->keyspace_cmd, &peer, ctx->f_key_route);
 		}
-		else if(ret==NOT_FOUND)
+		else if(route_ret==NOT_FOUND)
 		{
 			reply=cmd_flag_to_keyspace_no_obj_owner_reply(spec->flag);
 			goto fastpath_out;

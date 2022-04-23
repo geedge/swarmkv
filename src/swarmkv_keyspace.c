@@ -612,7 +612,7 @@ void __watch_slots_changes_cb(struct evhttp_request *req, void *arg)
 	base64_decode(value->valuestring, strlen(value->valuestring), (unsigned char*)decode_buffer);
 
 	new_slots=ALLOC(struct key_slot, SWARMKV_SLOT_NUM);
-	json_to_keyslots(decode_buffer, new_slots, SWARMKV_SLOT_NUM);
+	json2keyslots(decode_buffer, new_slots, SWARMKV_SLOT_NUM);
 
 	sdsfree(decode_buffer);
 	sdsfree(resp_body_buff);
@@ -797,7 +797,7 @@ void handle_failed_nodes(struct swarmkv_keyspace* ks, struct swarmkv_node* healt
 	if(slots_number_effect_by_failed_node)
 	{		
 		sds new_slots_json=NULL;
-		new_slots_json=keyslots_to_json(slots_copy, SWARMKV_SLOT_NUM);
+		new_slots_json=keyslots2json(slots_copy, SWARMKV_SLOT_NUM);
 		char url[SWARMKV_URL_MAX]="";
 		snprintf(url, sizeof(url), "/v1/kv/swarmkv/%s/slots", ks->db_name);
 		struct evhttp_request* request=evhttp_request_new(__propagate_slot_table_cb, ks);
@@ -883,7 +883,7 @@ void consul_watch_nodes_changes_async(struct swarmkv_keyspace* ks)
 	
 }
 
-void keyslots_init(struct swarmkv_keyspace* ks)
+int keyslots_init(struct swarmkv_keyspace* ks)
 {
 	int i=0;
 	for(i=0; i<SWARMKV_SLOT_NUM; i++)
@@ -891,8 +891,21 @@ void keyslots_init(struct swarmkv_keyspace* ks)
 		ks->slots[i].slot_id=i;
 		swarmkv_node_copy(&(ks->slots[i].owner), &(ks->self));
 	}
-	return;
+
+	char url[SWARMKV_URL_MAX]="";
+	sds resp_body=NULL;
+	int resp_code=0;
+	snprintf(url, sizeof(url), "/v1/kv/swarmkv/%s/slots?raw=1", ks->db_name);
+	resp_code=http_blocking_request(EVHTTP_REQ_GET, CONSUL_HOST, ks->consul_agent_port, url, NULL, &resp_body);
+	if(resp_code!=200)
+	{
+		return -1;
+	}
+	json2keyslots(resp_body, ks->slots, SWARMKV_SLOT_NUM);
+
+	return 0;
 }
+/*
 static void consul_kv_init_if_nonexist(struct swarmkv_keyspace* ks)
 {
 	char url[SWARMKV_URL_MAX]="";
@@ -903,7 +916,7 @@ static void consul_kv_init_if_nonexist(struct swarmkv_keyspace* ks)
 	resp_code_get=http_blocking_request(EVHTTP_REQ_GET, CONSUL_HOST, ks->consul_agent_port, url, NULL, NULL);
 	if(resp_code_get==404)
 	{
-		slot_table=keyslots_to_json(ks->slots, SWARMKV_SLOT_NUM);
+		slot_table=keyslots2json(ks->slots, SWARMKV_SLOT_NUM);
 		resp_code_put=http_blocking_request(EVHTTP_REQ_PUT, CONSUL_HOST, ks->consul_agent_port, url, slot_table, NULL);	
 		sdsfree(slot_table);
 		if(resp_code_put==200)
@@ -936,6 +949,7 @@ static void consul_kv_init_if_nonexist(struct swarmkv_keyspace* ks)
 	}
 
 }
+*/
 static struct swarmkv_keyspace *module2keyspace(struct swarmkv_module *module)
 {
 	//type safety check
@@ -962,8 +976,14 @@ struct swarmkv_module* swarmkv_keyspace_new(const struct swarmkv_options *opts, 
 	uuid_copy(ks->self.bin_uuid, opts->bin_uuid);
 
 	int ret=-1;
-	keyslots_init(ks);
-	consul_kv_init_if_nonexist(ks);	
+	ret=keyslots_init(ks);
+	if(ret<0)
+	{
+		asprintf(err, "key slots init failed.");		
+		MESA_handle_runtime_log(ks->logger, RLOG_LV_FATAL, MODULE_SWARMKV_KEYSPACE, "key slots init failed.");
+		goto error_out;
+	}
+//	consul_kv_init_if_nonexist(ks);	
 	pthread_create(&(ks->thr), NULL, swarmkv_keyspace_thread, (void *) ks);
 	consul_watch_slots_changes_async(ks);
 	if(ks->dryrun)
