@@ -3,6 +3,8 @@
   <span>SwarmKV</span>
 </h1>
 
+
+
 **SwarmKV is a embedded and distributed key-value storage library with peer-to-peer networking.** 
 SwarmKV uses [HashiCorp Consul](https://www.consul.io/) for cluster management, which includes leader election, health checking, and slot table management.
 
@@ -18,7 +20,7 @@ SwarmKV uses [HashiCorp Consul](https://www.consul.io/) for cluster management, 
 - Cache optimized
 - Salable for trillions of operations per second, billions of keys, and thousands of parallel operators
 
-**Why not SQLite, or rqlite, dqlite?** Because Swarm KV is not a relational database and is extremely fast.
+**Why not SQLite, rqlite, or dqlite?** Because Swarm KV is not designed to be a relational database and extremely fast.
 
 <img src="./doc/imgs/cluster.png" alt="swamrkv-cluster" /> 
 
@@ -89,7 +91,26 @@ Use `\` to escape special characters if you want to match them verbatim.
 
 The pattern is same as Redis https://redis.io/commands/keys/
 
+# Testing
 
+Unzip swarmkv-xx.zip
+
+Prepare test enviroment
+
+- Install Hashicorp Consul
+- Run consul agent in debug mode
+  - `./consul agent -dev -config-dir=./swarmkv/test/consul.d/`
+  - Note that the consul configuration file path is pointed to the swarmkv source directory, chanage it if necessary.
+- Check consul UI via http://localhost:8500/ui
+
+Build SwarmKV
+
+-  `mkdir swarmkv-xxx/build`
+- `cd swarmkv-xxx/build`
+- `cmake .. -DCMAKE_BUILD_TYPE=Debug`
+- `make`
+- `cd test/`
+- `./swarmkv_gtest`
 
 # SwarmKV Design
 
@@ -191,9 +212,9 @@ Except for node in dry run mode, cluster nodes will watch leadership changes and
 
 ### Keyspace reorganization
 
-The keyspace is sharding to slots and each slot is owned by one node. This information is recorded in the global shared slot table. If any node's health check failed, the cluster leader will set its replica to own the slots.
+The keyspace is sharding to slots and each slot is owned by one node. This information is recorded in the global shared slot table. If any node's health check failed, the cluster leader will choose a randome health node as the new slot owner.
 
-You can use `CLUSTER ADDNODE`The swarmkv-cli is used for adding nodes.
+You can use  `CLUSTER ADDNODE` in swarmkv-cli for adding nodes.
 
 When adding a new node, the operation is **Move slot k from `source node`  to `destination node`**,  it has the following steps:
 
@@ -221,40 +242,34 @@ When a master node A fails, if slots owned by A has a replica which is node B, t
 
 ,  in which,  N is slot id, Y contains a 32-bit node ID, UUID format version, IP and port. 
 
-## Cache Model
+## Subscription-based Cache
 
-The swarmkv's cache model is inspired by [Redis server-assisted client side caching](https://redis.io/topics/client-side-caching). The object owner remembers what keys a given peer accessed, and sends update messages when the same keys are modified.  
-
-
+The swarmkv's cache model is inspired by [Redis server-assisted client side caching](https://redis.io/topics/client-side-caching). The object owner remembers what keys a given peer accessed, when the key is modified, object owner sends `CACHE SET` and `CACHE DEL` command to the peer node.
 
 ## KV Operation
 
 When a requester executes a command, it takes the following steps
 
-- for a read operation, lookup local cache, if a cache miss or a write operation
-- the requester lookup global keyspace to find out the key owner, and send the command message to the key owner
-- the key owner lookup key route table,
-  - if no key entry exists
-    - if it's a  read operation, return NULL
-    - if it's a write operation, register the requester as the object owner
-  - if the key entry exists, send the object owner node address to the requester
-- the requester receives the key owner's reply, send the command to the object owner
-- the object owner executes the command, registers the requester as one of the cache tracking nodes, and send a reply to the requester
-- the requester receives the reply and invokes  call back function
+- Cache lookup
+  - For read command, the requestor lookup local cache, if a cache miss or a write operation
+- Keyspace route
+  - The requester hash the key to slot to find out the key owner.
+  - The requester send  `KEYSPACE SETNXGET/GET/DEL` command to the key owner.
+- The Key owner processes the keyspace comm and return the object owner.
+- The requester receives the key owner's reply, send the command to the object owner
+- The object owner executes the command, registers the requester as one of the cache tracking nodes, and send a reply to the requester
+- The requester receives the reply and invokes  callback function.
 
 ## Fault Tolerance
 
 ### High Availability
 
-Each object has *N* replicas. Those replicas are managed by the key owner and key owner replica.
+Replication is not implemented yet.
 
 ### Health Check
 
-Nodes use a gossip protocol to send ping packets to make sure all the other nodes are working properly.  A node flags another node with the `PFAIL` flag when the node is not reachable for more than `NODE_TIMEOUT` time. Every node sends gossip messages to every other node including the state of a few random known nodes. Every node eventually receives a set of node flags for every other node. This way every node has a mechanism to signal other nodes about failure conditions they have detected.
-
-### Handle key owner fails
-
-If a node is failed, peers will detect it by not replying ping message
+Each node registers an HTTP service to the consul, and the consul agent is responsible for checking node health periodically via HTTP GET.
+If a node fails, the cluster leader will be notified and remove the failed node by reassigning its slots to other nodes.
 
 ## Wire Protocol
 
@@ -265,7 +280,6 @@ Command message
 ```json
 {
     "msg_type":"cmd",
-    "do_not_reply": false,
     "rr_seq": 7237914459,
     "requester": "ebe5a57c-cb33-4b2f-968f-44c4b87ea8d9",
     "cmd":{
@@ -303,25 +317,6 @@ Reply message
                 "string":"0c 74 65 78 74 20 20 20 20 43 6f 70 79 72 69 67 68 74 20 28 63 29 20 31 39 39 38 20 48 65 77 6c 65 74 74 2d 50 61 63 6b 61 72 64 20 43 6f 6d 70 61 6e 79 20 20 64 65 73 63 20 20 20 20 20 20 20 12 73 52 47 42 20 49 45 43 36 31 39 36 36 2d 32 2e 31 20 20 20 20 20 20 20 20 20 20 20 12 73 52 47 42 20 49 45 43 36 31 39 36 36 2d 32 2e 31 20 20 00"
             }
         ]
-    }
-}
-```
-
-Cache synchronization message
-
-```json
-{
-	"msg_type":"sync",
-	"txn_seq": 7237914460,
-    "txn_initiator": "ebe5a57c-cb33-4b2f-968f-44c4b87ea8d9",
-    "object_version":101,
-    "cmd":{
-        "op":"HMSET",
-        "args":[
-            "user1",
-            "phone_number",
-            "+86 186 0000 0000"
-        ]       
     }
 }
 ```
@@ -385,7 +380,7 @@ The source files are organized as follows:
 
 [Tarantool](https://www.tarantool.io/en/) is an in-memory computing platform consisting of a database and an application server.
 
-[eXtremeDB](https://www.mcobject.com/) is proven to be the fastest hybrid persistent and in-memory database management system for edge and cloud.
+[eXtremeDB](https://www.mcobject.com/) is a hybrid persistent and in-memory database management system for edge and cloud.
 
 ## References
 
