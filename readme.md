@@ -91,7 +91,7 @@ Use `\` to escape special characters if you want to match them verbatim.
 
 The pattern is same as Redis https://redis.io/commands/keys/
 
-# Testing
+# Getting start
 
 Unzip swarmkv-xx.zip
 
@@ -371,7 +371,7 @@ The source files are organized as follows:
 
 [Zeppelin](https://github.com/Qihoo360/zeppelin) is a Distributed Key-Value Platform that aims to provide excellent performance, reliability, and scalability.
 
-[Couchbase](https://www.couchbase.com/) Have a distributed, elastic, in-memory database on your cloud and at your edge.
+[Couchbase](https://www.couchbase.com/) is a distributed, elastic, in-memory database on your cloud and at your edge.
 
 [Apache Geode](http://geode.apache.org/) is a data management platform (JAVA) that provides real-time, consistent access to data-intensive applications throughout widely distributed cloud architectures. 
 
@@ -380,6 +380,8 @@ The source files are organized as follows:
 [Tarantool](https://www.tarantool.io/en/) is an in-memory computing platform consisting of a database and an application server.
 
 [eXtremeDB](https://www.mcobject.com/) is a hybrid persistent and in-memory database management system for edge and cloud.
+
+[vedis](https://vedis.symisc.net/)  is an embeddable datastore C library built with over 70 commands similar in concept to Redis but without the networking layer since Vedis run in the same process of the host application.
 
 ## References
 

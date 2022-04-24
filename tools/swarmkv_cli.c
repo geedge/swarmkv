@@ -360,7 +360,7 @@ struct swarmkv_reply *cluster_keyslot_command(struct swarmkv* db, char *argv[], 
 	struct swarmkv_reply *reply=NULL;
 
 	char* key=argv[2];
-	int slot_id=get_slot_id(key, sdslen(key));
+	int slot_id=get_slot_id(key, strlen(key));
 	reply=swarmkv_reply_new_integer(slot_id);
 	return reply;
 }
@@ -449,15 +449,22 @@ const char *get_cluster_command_hint(const char* cmd_name)
 cluster_command_func *get_cluster_func(const char* line)
 {
 	size_t n_cmd=sizeof(cluster_cmds)/sizeof(struct cluster_cmd_spec);
-	size_t i=0;
+	size_t i=0, max_match_len=0;
+	cluster_command_func *ret_func=NULL;
 	for(i=0; i<n_cmd; i++)
 	{
 		if(0==strncasecmp(line, cluster_cmds[i].name, strlen(cluster_cmds[i].name)))
 		{
-			return cluster_cmds[i].func;
+			//match the longgest command
+			//make sure that "CLUSTER KEYSLOT" will not match "CLUSTER KEYS"
+			if(max_match_len<strlen(cluster_cmds[i].name))
+			{
+				ret_func=cluster_cmds[i].func;
+				max_match_len=strlen(cluster_cmds[i].name);
+			}
 		}
 	}
-	return NULL;
+	return ret_func;
 }
 
 struct swarmkv_reply *cluster_command(struct swarmkv *db, const char *line)
