@@ -95,7 +95,7 @@ The pattern is same as Redis https://redis.io/commands/keys/
 
 Unzip swarmkv-xx.zip
 
-Prepare test enviroment
+Prepare Consul enviroment
 
 - Install Hashicorp Consul
 - Run consul agent in debug mode
@@ -136,7 +136,7 @@ As shown in the above picture, a KV operation is done by following steps:
 
 The keyspace consistency is based on [consul](https://www.consul.io/) and its [Raft](https://raft.github.io/) implementation. As [a typical raft cluster goes up to 7 nodes](https://stackoverflow.com/questions/42422111/raft-nodes-count), so only consul server nodes participate in Raft. The consul and its [Gossip protocol](https://en.wikipedia.org/wiki/Gossip_protocol) implementation are used  to track node health.
 
-### Global Slot Table
+### Global Key Slot Table
 
 The global slot table is stored in Consul KV, the key is swarmkv/<cluster_name>/slot_table:
 
@@ -242,7 +242,7 @@ When a master node A fails, if slots owned by A has a replica which is node B, t
 
 ,  in which,  N is slot id, Y contains a 32-bit node ID, UUID format version, IP and port. 
 
-## Subscription-based Cache
+## Subscription-based Caching
 
 The swarmkv's cache model is inspired by [Redis server-assisted client side caching](https://redis.io/topics/client-side-caching). The object owner remembers what keys a given peer accessed, when the key is modified, object owner sends `CACHE SET` and `CACHE DEL` command to the peer node.
 
@@ -255,7 +255,7 @@ When a requester executes a command, it takes the following steps
 - Keyspace route
   - The requester hash the key to slot to find out the key owner.
   - The requester send  `KEYSPACE SETNXGET/GET/DEL` command to the key owner.
-- The Key owner processes the keyspace comm and return the object owner.
+- The Key owner processes the keyspace command and return the address of object owner.
 - The requester receives the key owner's reply, send the command to the object owner
 - The object owner executes the command, registers the requester as one of the cache tracking nodes, and send a reply to the requester
 - The requester receives the reply and invokes  callback function.
@@ -323,7 +323,7 @@ Reply message
 
 
 
-## Node Design
+## Node Design (Obsolete)
 
 ### Thread Model
 
@@ -352,17 +352,16 @@ The source files are organized as follows:
 
 - src/swarmkv.c event loop, orchestration
 - src/swarmkv_store.c  kv operation, key hash table is implemented with [uthash](https://troydhanson.github.io/uthash/). Use [sds](https://github.com/antirez/sds) as a dynamic string library.
-- src/t_string.c string operation
-- src/t_cache.c cache operation
+- src/t_string.c string operations.
+- src/t_cache.c cache operations.
 - src/swarmkv_keyspace.c: The control plane of SwarmKV. Interact with [HashiCorp Consul](https://www.consul.io/) for node discovery, slot assignment, and leader election.
-  - The keyspace is partitioned by key slots among the participating nodes. 
 - src/swarmkv_rr.c: Request and response manager.
 - src/swarmkv_message.c: Message is encoded to [MessagePack](https://msgpack.org/index.html) format by [mpack](https://github.com/ludocode/mpack) library.
 - src/swarmkv_net.c: High performance P2P communication via [libevent](https://libevent.org/).
 - src/test/ Unit tests.
-- src/deps/ Dependencies in source codes format, such as [uthash](https://troydhanson.github.io/uthash/), [sds](https://github.com/antirez/sds), [mpack](https://github.com/ludocode/mpack) .
+- src/deps/ Dependencies in source codes format, such as [uthash](https://troydhanson.github.io/uthash/), [sds](https://github.com/antirez/sds), [mpack](https://github.com/ludocode/mpack), cJSON.
 - src/vendor/  Dependencies in archive format.
-- tools/swarmkv_cli: CLI implementation facilitated by [linenoise](https://github.com/antirez/linenoise).
+- tools/swarmkv_cli: CLI implementation which is facilitated by [linenoise](https://github.com/antirez/linenoise).
 
 ## Similar Projects
 

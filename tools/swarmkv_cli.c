@@ -22,6 +22,97 @@ struct runtime_para
 };
 struct runtime_para g_para;
 
+static int consul_get_cluster_leader_block(const char *db_name, unsigned int consul_agent_port, struct swarmkv_node *leader)
+{
+	sds resp_body=NULL;
+	int resp_code=0;
+	char url[SWARMKV_URL_MAX]="";
+	snprintf(url, sizeof(url),"/v1/kv/swarmkv/%s/lead?raw=1", db_name);
+	resp_code=http_blocking_request(EVHTTP_REQ_GET, g_para.consul_host, consul_agent_port, url, NULL, &resp_body);
+	if(resp_code!=200)
+	{
+		return -1;
+	}
+	json2leader(resp_body, leader);
+	sdsfree(resp_body);
+	return 0;
+}
+static int consul_list_health_nodes_block(const char *db_name, unsigned int consul_agent_port, struct swarmkv_node *nodes, size_t *n_nodes)
+{
+	char url[SWARMKV_URL_MAX]="";
+	sds resp_body=NULL;
+	int resp_code=0;
+
+	snprintf(url, sizeof(url), "/v1/health/service/%s?passing=1", db_name);
+	resp_code=http_blocking_request(EVHTTP_REQ_GET, g_para.consul_host, consul_agent_port, url, NULL, &resp_body);
+	if(resp_code!=200)
+	{
+		return -1;
+	}
+	json2nodes(resp_body, nodes, n_nodes);
+	sdsfree(resp_body);
+	return 0;
+}
+
+struct swarmkv_reply *cluster_nodes_command(struct swarmkv* db, char *argv[], size_t argc)
+{
+	struct swarmkv_reply *reply=NULL;
+	int ret=0;
+	struct swarmkv_node leader; 	
+	struct swarmkv_node nodes[SWARMKV_NODE_MAX];
+	size_t n_node=SWARMKV_NODE_MAX;
+	ret=consul_get_cluster_leader_block(g_para.db_name, g_para.consul_port, &leader);
+	if(ret<0)
+	{
+		reply=swarmkv_reply_new_error(error_cluster_leader_not_found);
+		return reply;
+	}
+	ret=consul_list_health_nodes_block(g_para.db_name, g_para.consul_port, nodes, &n_node);
+	if(ret<0)
+	{
+		reply=swarmkv_reply_new_error(error_cluster_leader_not_found);
+		return reply;
+	}
+	size_t i=0;
+	char uuid_str[37];
+	int is_leader;
+	reply=swarmkv_reply_new_array(n_node);
+	for(i=0; i<n_node; i++)
+	{
+		uuid_unparse_lower(nodes[i].bin_uuid, uuid_str);
+		if(0==swarmkv_node_compare(&leader, nodes+i))
+		{
+			is_leader=1;
+		}
+		else
+		{
+			is_leader=0;
+		}
+		reply->elements[i]=swarmkv_reply_new_string_fmt("%s %s %u %s", uuid_str,
+																nodes[i].addr.ip_addr,
+																nodes[i].addr.p2p_port,
+																is_leader?"leader":"follower");
+	}
+	return reply;
+}
+struct swarmkv_reply *cluster_slots_command(struct swarmkv* db, char *argv[], size_t argc)
+{
+	struct swarmkv_reply *reply=NULL;
+	char url[SWARMKV_URL_MAX]="";
+	sds resp_body=NULL;
+	int resp_code=0;
+	snprintf(url, sizeof(url), "/v1/kv/swarmkv/%s/slots?raw=1", g_para.db_name);
+	resp_code=http_blocking_request(EVHTTP_REQ_GET, g_para.consul_host, g_para.consul_port, url, NULL, &resp_body);
+	if(resp_code!=200)
+	{
+		reply=swarmkv_reply_new_error("read %s%s failed", g_para.consul_host, url);
+		return reply;
+	}
+	reply=swarmkv_reply_new_string(resp_body, sdslen(resp_body)+1);	
+	sdsfree(resp_body);
+	return reply;
+}
+
 
 int slot_cmp_by_owner(const void * a, const void *b)
 {
@@ -51,7 +142,7 @@ struct swarmkv_reply *cluster_addnode_command(struct swarmkv* db, char *argv[], 
 	struct swarmkv_node node;
 	struct swarmkv_reply *slots_reply=NULL, *nodes_reply=NULL, *reply=NULL;
 	size_t i=0, j=0, actual_rebalanced_slot_num=0;
-	nodes_reply=swarmkv_command(db, "keyspace nodes");
+	nodes_reply=cluster_nodes_command(db, NULL, 0);
 	struct key_slot *slots=NULL;
 	if(nodes_reply->type!=SWARMKV_REPLY_ARRAY)
 	{
@@ -75,7 +166,7 @@ struct swarmkv_reply *cluster_addnode_command(struct swarmkv* db, char *argv[], 
 		reply=swarmkv_reply_new_error(error_cluster_addnode_node_is_not_active);
 		goto error_out;
 	}
-	slots_reply=swarmkv_command(db, "keyspace slots");
+	slots_reply=cluster_slots_command(db, NULL, 0);
 	if(slots_reply->type!=SWARMKV_REPLY_STRING)
 	{
 		reply=slots_reply;
@@ -260,96 +351,8 @@ error_out:
 	return reply;
 }
 
-static int consul_get_cluster_leader_block(const char *db_name, unsigned int consul_agent_port, struct swarmkv_node *leader)
-{
-	sds resp_body=NULL;
-	int resp_code=0;
-	char url[SWARMKV_URL_MAX]="";
-	snprintf(url, sizeof(url),"/v1/kv/swarmkv/%s/lead?raw=1", db_name);
-	resp_code=http_blocking_request(EVHTTP_REQ_GET, g_para.consul_host, consul_agent_port, url, NULL, &resp_body);
-	if(resp_code!=200)
-	{
-		return -1;
-	}
-	json2leader(resp_body, leader);
-	sdsfree(resp_body);
-	return 0;
-}
-static int consul_list_health_nodes_block(const char *db_name, unsigned int consul_agent_port, struct swarmkv_node *nodes, size_t *n_nodes)
-{
-	char url[SWARMKV_URL_MAX]="";
-	sds resp_body=NULL;
-	int resp_code=0;
 
-	snprintf(url, sizeof(url), "/v1/health/service/%s?passing=1", db_name);
-	resp_code=http_blocking_request(EVHTTP_REQ_GET, g_para.consul_host, consul_agent_port, url, NULL, &resp_body);
-	if(resp_code!=200)
-	{
-		return -1;
-	}
-	json2nodes(resp_body, nodes, n_nodes);
-	sdsfree(resp_body);
-	return 0;
-}
 
-struct swarmkv_reply *cluster_nodes_command(struct swarmkv* db, char *argv[], size_t argc)
-{
-	struct swarmkv_reply *reply=NULL;
-	int ret=0;
-	struct swarmkv_node leader; 	
-	struct swarmkv_node nodes[SWARMKV_NODE_MAX];
-	size_t n_node=SWARMKV_NODE_MAX;
-	ret=consul_get_cluster_leader_block(g_para.db_name, g_para.consul_port, &leader);
-	if(ret<0)
-	{
-		reply=swarmkv_reply_new_error(error_cluster_leader_not_found);
-		return reply;
-	}
-	ret=consul_list_health_nodes_block(g_para.db_name, g_para.consul_port, nodes, &n_node);
-	if(ret<0)
-	{
-		reply=swarmkv_reply_new_error(error_cluster_leader_not_found);
-		return reply;
-	}
-	size_t i=0;
-	char uuid_str[37];
-	int is_leader;
-	reply=swarmkv_reply_new_array(n_node);
-	for(i=0; i<n_node; i++)
-	{
-		uuid_unparse_lower(nodes[i].bin_uuid, uuid_str);
-		if(0==swarmkv_node_compare(&leader, nodes+i))
-		{
-			is_leader=1;
-		}
-		else
-		{
-			is_leader=0;
-		}
-		reply->elements[i]=swarmkv_reply_new_string_fmt("%s %s %u %s", uuid_str,
-																nodes[i].addr.ip_addr,
-																nodes[i].addr.p2p_port,
-																is_leader?"leader":"follower");
-	}
-	return reply;
-}
-struct swarmkv_reply *cluster_slots_command(struct swarmkv* db, char *argv[], size_t argc)
-{
-	struct swarmkv_reply *reply=NULL;
-	char url[SWARMKV_URL_MAX]="";
-	sds resp_body=NULL;
-	int resp_code=0;
-	snprintf(url, sizeof(url), "/v1/kv/swarmkv/%s/slots?raw=1", g_para.db_name);
-	resp_code=http_blocking_request(EVHTTP_REQ_GET, g_para.consul_host, g_para.consul_port, url, NULL, &resp_body);
-	if(resp_code!=200)
-	{
-		reply=swarmkv_reply_new_error("read %s%s failed", g_para.consul_host, url);
-		return reply;
-	}
-	reply=swarmkv_reply_new_string(resp_body, sdslen(resp_body)+1);	
-	sdsfree(resp_body);
-	return reply;
-}
 
 struct swarmkv_reply *cluster_keyslot_command(struct swarmkv* db, char *argv[], size_t argc)
 {
