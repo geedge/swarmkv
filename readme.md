@@ -57,6 +57,9 @@ SwarmKV operations
 | SET                    | key value         | Simple string reply: OK if SET was executed correctly.       |
 | DEL                    | key               | Integer reply: The number of keys that were removed.         |
 | INCRYBY                | key increment     | Integer reply: the value of key after the increment          |
+| EXPIRE                 | key seconds       | Integer reply, specifically: 1 if the timeout was set. 0 if the timeout was not set. e.g. key doesn't exist, or operation skipped due to the provided arguments. |
+| TTL                    | key               | Integer reply: TTL in seconds, or -1 if the key exists but has no associated expire. NIL reply if key does not exist. |
+| TSET(?)                | key id bandwidth  | QoS cluster, qos job qos task?                               |
 | HGET                   |                   |                                                              |
 | KEYSPACE GET           | key               | 1) "192.168.1.200"<br/>2) (integer) 5211                     |
 | KEYSPACE SET           | key [IP port]     | 1) "192.168.1.200"<br/>2) (integer) 5211                     |
@@ -248,17 +251,17 @@ The swarmkv's cache model is inspired by [Redis server-assisted client side cach
 
 ## KV Operation
 
-When a requester executes a command, it takes the following steps
+When a requestor executes a command, it takes the following steps
 
 - Cache lookup
   - For read command, the requestor lookup local cache, if a cache miss or a write operation
 - Keyspace route
-  - The requester hash the key to slot to find out the key owner.
-  - The requester send  `KEYSPACE SETNXGET/GET/DEL` command to the key owner.
+  - The requestor hash the key to slot to find out the key owner.
+  - The requestor send  `KEYSPACE SETNXGET/GET/DEL` command to the key owner.
 - The Key owner processes the keyspace command and return the address of object owner.
-- The requester receives the key owner's reply, send the command to the object owner
-- The object owner executes the command, registers the requester as one of the cache tracking nodes, and send a reply to the requester
-- The requester receives the reply and invokes  callback function.
+- The requestor receives the key owner's reply, send the command to the object owner
+- The object owner executes the command, registers the requestor as one of the cache tracking nodes, and send a reply to the requestor
+- The requestor receives the reply and invokes  callback function.
 
 ## Fault Tolerance
 

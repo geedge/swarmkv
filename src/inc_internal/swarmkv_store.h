@@ -28,12 +28,17 @@ struct swarmkv_store;
 typedef void send_cmd_func(struct swarmkv *handle, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *peer, struct future *f);
 struct swarmkv_module *swarmkv_store_new(send_cmd_func *send_cmd, void *handle_send_cmd, int disable_cache);
 void swarmkv_store_free(struct swarmkv_module* mod_store);
+void swarmkv_store_periodic(struct swarmkv_module *module);
 
-void hash_obj_add_field(struct swarmkv_obj *obj, sds field, sds value);
-void hash_obj_del_field(struct swarmkv_obj *obj, sds field);
+
 
 struct swarmkv_obj *swarmkv_obj_new(enum swarmkv_obj_type type, const sds key);
 void swarmkv_obj_free(struct swarmkv_obj *obj);
+int swarmkv_obj_get_ttl(struct swarmkv_obj *obj);
+
+int store_ttl_key(struct swarmkv_module* mod_store, sds key);
+int store_expire_key(struct swarmkv_module* mod_store, sds key, int seconds);
+
 
 struct swarmkv_obj *store_lookup(struct swarmkv_module* mod_store, sds key);
 void store_add_obj(struct swarmkv_module *mod_store, struct swarmkv_obj *obj);

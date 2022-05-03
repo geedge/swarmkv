@@ -7,14 +7,15 @@ message(STATUS "SwarmKV, Version: ${SWARMKV_VERSION}")
 
 add_definitions(-D_GNU_SOURCE) 
 add_definitions(-fPIC)
-set(SWARMKV_SRC swarmkv.c swarmkv_store.c swarmkv_api.c t_string.c t_cache.c swarmkv_rr.c
+set(SWARMKV_SRC swarmkv.c swarmkv_store.c swarmkv_api.c t_string.c t_cache.c expire.c swarmkv_rr.c
 		swarmkv_common.c swarmkv_message.c swarmkv_net.c swarmkv_keyspace.c swarmkv_utils.c future_promise.cpp)
 set(LIB_SOURCE_FILES
 	${CMAKE_CURRENT_SOURCE_DIR}/../deps/mpack/mpack.c
 	${CMAKE_CURRENT_SOURCE_DIR}/../deps/sds/sds.c
 	${CMAKE_CURRENT_SOURCE_DIR}/../deps/cJSON/cJSON.c
 	${CMAKE_CURRENT_SOURCE_DIR}/../deps/base64/base64.c
-	${CMAKE_CURRENT_SOURCE_DIR}/../deps/xxhash/xxhash.c)
+	${CMAKE_CURRENT_SOURCE_DIR}/../deps/xxhash/xxhash.c
+	${CMAKE_CURRENT_SOURCE_DIR}/../deps/timeout/timeout.c)
 	
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../include/
 					${CMAKE_CURRENT_SOURCE_DIR}/../deps/
@@ -22,7 +23,8 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../include/
 					${CMAKE_CURRENT_SOURCE_DIR}/../deps/mpack/
 					${CMAKE_CURRENT_SOURCE_DIR}/../deps/sds/
 					${CMAKE_CURRENT_SOURCE_DIR}/../deps/uthash
-					${CMAKE_CURRENT_SOURCE_DIR}/../deps/xxhash)
+					${CMAKE_CURRENT_SOURCE_DIR}/../deps/xxhash
+					${CMAKE_CURRENT_SOURCE_DIR}/../deps/timeout)
 
 
 # Static Library Output

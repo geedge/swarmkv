@@ -12,6 +12,7 @@
 
 #include "t_string.h"
 #include "t_cache.h"
+#include "expire.h"
 
 #include "swarmkv_message.h"
 #include "swarmkv_net.h"
@@ -211,7 +212,7 @@ static struct swarmkv_reply *cmd_flag_to_keyspace_no_obj_owner_reply(unsigned lo
 			reply=swarmkv_reply_new_integer(0);
 			break;
 		case CMD_KEY_RW:
-			reply=swarmkv_reply_new_error(error_keyspace_obj_owner_not_found);
+			reply=swarmkv_reply_new_integer(0);
 			break;
 		default:
 			assert(0);
@@ -303,6 +304,7 @@ static struct swarmkv_cmd *make_keyroute_cmd(enum cmd_key_flag flag, const sds k
 	switch(flag)
 	{
 		case CMD_KEY_RO:
+		case CMD_KEY_RW:
 			keyroute_cmd=swarmkv_cmd_new(3);
 			keyroute_cmd->argv[0]=sdsnew("keyspace");
 			keyroute_cmd->argv[1]=sdsnew("get");
@@ -556,7 +558,7 @@ void command_register(struct swarmkv_cmd_spec **table, const char *name, const c
 	spec->proc_fastpath=proc_fastpath;
 	spec->proc_as_owner=proc_as_onwer;
 	spec->module=module;
-	HASH_ADD_KEYPTR(hh, *table, name, strlen(spec->name), spec);
+	HASH_ADD_KEYPTR(hh, *table, spec->name, strlen(spec->name), spec);
 	return;
 }
 void command_spec_init(struct swarmkv *db)
@@ -573,6 +575,15 @@ void command_spec_init(struct swarmkv *db)
 	command_register(&(db->command_table), "INCRBY", "key increment",
 					2, 1, CMD_KEY_OW,
 					incrby_command_fastpath, incrby_command_as_owner, db->mod_store);
+
+
+	command_register(&(db->command_table), "EXPIRE", "key seconds",
+					2, 1, CMD_KEY_RW,
+					expire_command_fastpath, expire_command_as_owner, db->mod_store);
+	command_register(&(db->command_table), "TTL", "key",
+					1, 1, CMD_KEY_RO,
+					ttl_command_fastpath, ttl_command_as_owner, db->mod_store);
+
 
 	command_register(&(db->command_table), "CACHE SET", "key blob",
 					2, 2, CMD_KEY_NA,
@@ -712,7 +723,8 @@ struct swarmkv *swarmkv_open(struct swarmkv_options* opts, const char * db_name,
 	{
 		goto error_out;
 	}
-	db->mod_store=swarmkv_store_new(exec_command_at_peer, db, opts->disable_cache);	
+	db->mod_store=swarmkv_store_new(exec_command_at_peer, db, opts->disable_cache);
+	swarmkv_net_timer_add(db->net, 0, 1, 1, (void (*)(void *))swarmkv_store_periodic, db->mod_store);
 	command_spec_init(db);
 	swarmkv_threads_run(db);
 	char str_uuid[37]="";

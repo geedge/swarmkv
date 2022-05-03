@@ -129,6 +129,7 @@ void del_command_as_owner(struct swarmkv_module *mod_store, const struct swarmkv
 
 enum cmd_fastpath_result del_command_fastpath(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
 {
+	//Fastpath is not available for delete command, we should delete key from keyspace first.
 	return NEED_KEY_ROUTE;
 }
 void incrby_command_as_owner(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)

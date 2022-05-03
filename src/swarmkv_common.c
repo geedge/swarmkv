@@ -305,7 +305,8 @@ void json2keyslots(const char* json_buffer, struct key_slot slots[], size_t n_sl
 			slots[j].slot_id=j;
 			strncpy(slots[j].owner.addr.ip_addr, ip->valuestring, sizeof(slots[j].owner.addr.ip_addr));
 			slots[j].owner.addr.p2p_port=(unsigned int)p2p_port->valueint;
-			uuid_parse(node_uuid->valuestring, slots[j].owner.bin_uuid);
+			if(node_uuid)
+				uuid_parse(node_uuid->valuestring, slots[j].owner.bin_uuid);
 			k++;
 		}
 	}

@@ -272,6 +272,7 @@ TEST_F(SwarmkvBasicTest, SetGet)
 	int exec_successful=0;
 
 	arg=cmd_exec_arg_new();
+	
 	cmd_exec_arg_expect_OK(arg);
 	swarmkv_set_string(db, key, strlen(key), val, strlen(val), generic_callback, arg);
 	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
@@ -305,6 +306,65 @@ TEST_F(SwarmkvBasicTest, Delete)
 	swarmkv_del(db, key, strlen(key), generic_callback, arg);
 	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
 	EXPECT_EQ(exec_successful, 1);
+	cmd_exec_arg_free(arg);
+	arg=NULL;
+}
+TEST_F(SwarmkvBasicTest, ExpireTTL)
+{
+	struct cmd_exec_arg *arg=NULL;
+	struct swarmkv* db=SwarmkvBasicTest::db;
+	const char* key="quarantine";
+	const char* val="wuhan-jiangxia-rujia";
+	int exec_successful=0;
+	int seconds=7;
+	
+	//SET key value
+	arg=cmd_exec_arg_new();
+	cmd_exec_arg_expect_OK(arg);
+	swarmkv_set_string(db, key, strlen(key), val, strlen(val), generic_callback, arg);
+	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
+	EXPECT_EQ(exec_successful, 1);
+	cmd_exec_arg_clear(arg);
+
+	//EXPIRE key seconds
+	cmd_exec_arg_expect_integer(arg, 1);
+	swarmkv_expire(db, key, strlen(key), seconds, generic_callback, arg);
+	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
+	EXPECT_EQ(exec_successful, 1);
+	cmd_exec_arg_clear(arg);
+
+	//TTL key
+	cmd_exec_arg_expect_integer(arg, seconds);
+	swarmkv_ttl(db, key, strlen(key), generic_callback, arg);
+	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
+	EXPECT_EQ(exec_successful, 1);
+	cmd_exec_arg_clear(arg);
+
+	sleep(seconds);
+
+	//GET key
+	cmd_exec_arg_expect_NIL(arg);
+	swarmkv_get_string(db, key, strlen(key), generic_callback, arg);
+	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
+	EXPECT_EQ(exec_successful, 1);
+	cmd_exec_arg_clear(arg);
+
+
+	//EXPIRE key seconds
+	cmd_exec_arg_expect_integer(arg, 0);
+	swarmkv_expire(db, key, strlen(key), seconds, generic_callback, arg);
+	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
+	EXPECT_EQ(exec_successful, 1);
+	cmd_exec_arg_clear(arg);
+
+	//TTL key
+	cmd_exec_arg_expect_NIL(arg);
+	swarmkv_ttl(db, key, strlen(key), generic_callback, arg);
+	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
+	EXPECT_EQ(exec_successful, 1);
+	cmd_exec_arg_clear(arg);
+	
+
 	cmd_exec_arg_free(arg);
 	arg=NULL;
 }

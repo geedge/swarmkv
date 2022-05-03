@@ -456,7 +456,7 @@ cluster_command_func *get_cluster_func(const char* line)
 		if(0==strncasecmp(line, cluster_cmds[i].name, strlen(cluster_cmds[i].name)))
 		{
 			//match the longgest command
-			//make sure that "CLUSTER KEYSLOT" will not match "CLUSTER KEYS"
+			//make sure that command "CLUSTER KEYSLOT" does not match "CLUSTER KEYS"
 			if(max_match_len<strlen(cluster_cmds[i].name))
 			{
 				ret_func=cluster_cmds[i].func;

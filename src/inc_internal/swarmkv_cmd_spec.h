@@ -22,12 +22,11 @@ enum cmd_key_flag
 {
 	CMD_KEY_NA,	/*Not Applicable - Irrelavant to any key operation*/
 		
-	CMD_KEY_RO,	/* Read-Only - Reads the value of the key, but
-                 * doesn't necessarily returns it. */
+	CMD_KEY_RO,	/* Read-Only - Reads the value of the key. */
 	CMD_KEY_RW,	/* Read-Write - Modifies the data stored in the
                  * value of the key or its metadata. */
-	CMD_KEY_OW,	/* Overwrite - Overwrites the data stored in
-                 * the value of the key. */
+	CMD_KEY_OW,	/* Overwrite - Overwrites the the key or its metadata, 
+				create the key if not-exisit. */
 	CMD_KEY_RM	/* Deletes the key. */
 };
 typedef enum cmd_fastpath_result command_proc_fastpath_func(struct swarmkv_module *module, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply);

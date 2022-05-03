@@ -57,6 +57,7 @@ struct swarmkv_connection
 struct swarmkv_net_thread_ctx
 {
 	int thread_id;
+	int is_dispatching;
 	struct event_base *evbase;
 	struct swarmkv_connection* conn_table;
 //	pthread_rwlock_t rwlock;
@@ -513,6 +514,38 @@ struct swarmkv_net* swarmkv_net_new(const struct swarmkv_options *opts, const st
 	
 	return net;
 }
+struct timeout_ctx
+{
+	timeout_cb *cb;
+	void *cb_arg;
+	int is_persist;
+	struct event *ev;
+};
+static void wrap_timeout_handler(evutil_socket_t fd, short what, void * arg)
+{
+	struct timeout_ctx *ctx=(struct timeout_ctx *)arg;
+	ctx->cb(ctx->cb_arg);
+	if(!ctx->is_persist)
+	{
+		event_del(ctx->ev);
+		event_free(ctx->ev);
+		free(ctx);
+	}
+	return;
+}
+
+void swarmkv_net_timer_add(struct swarmkv_net *net, int thread_id, int seconds, int is_persist, timeout_cb* cb, void *cb_arg)
+{
+	struct timeout_ctx *ctx=ALLOC(struct timeout_ctx, 1);
+	ctx->cb=cb;
+	ctx->is_persist=is_persist;
+	ctx->cb_arg=cb_arg;
+	ctx->ev=event_new(net->threads[thread_id]->evbase, -1, EV_PERSIST, wrap_timeout_handler, ctx);
+
+	struct timeval timer_delay = {seconds, 0};
+	evtimer_add(ctx->ev, &timer_delay);
+
+}
 void swarmkv_net_stop(struct swarmkv_net* net)
 {
 	int i=0;
@@ -532,10 +565,13 @@ void swarmkv_net_free(struct swarmkv_net* net)
 	for(i=0; i<net->n_thread; i++)
 	{	
 		thr=net->threads[i];
-		event_base_loopexit(thr->evbase, NULL);
-		while(!event_base_got_exit(thr->evbase))
+		if(thr->is_dispatching)
 		{
-			usleep(100);
+			event_base_loopexit(thr->evbase, NULL);
+			while(!event_base_got_exit(thr->evbase) )
+			{
+				usleep(100);
+			}
 		}
 		net->threads[i]=NULL;
 		HASH_ITER(hh, thr->conn_table, conn, tmp)
@@ -563,6 +599,7 @@ void swarmkv_net_dispath(struct swarmkv_net* net, int thread_id)
 {
 	struct event * ev = event_new(net->threads[thread_id]->evbase, -1, EV_PERSIST, __dummy_event_handler, net);
 	struct timeval timer_delay = {2, 0};
+	net->threads[thread_id]->is_dispatching=1;
 	evtimer_add(ev, &timer_delay);
 	event_base_dispatch(net->threads[thread_id]->evbase);
 	return;

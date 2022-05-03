@@ -99,6 +99,29 @@ void swarmkv_get_string(struct swarmkv * db,
 	swarmkv_cmd_free(cmd);
 	return;
 }
+void swarmkv_expire(struct swarmkv *db, const char *key, size_t keylen, int seconds, swarmkv_cmd_callback_func_t *cb, void *cb_arg)
+{
+	struct swarmkv_cmd *cmd=NULL;
+	cmd=swarmkv_cmd_new(3);
+	cmd->argv[0]=sdsnew("expire");
+	cmd->argv[1]=sdsnewlen(key, keylen);
+	cmd->argv[2]=sdsfromlonglong(seconds);
+	swarmkv_exec(db, cmd, cb, cb_arg);
+	swarmkv_cmd_free(cmd);
+	return;
+}
+void swarmkv_ttl(struct swarmkv *db, const char *key, size_t keylen, swarmkv_cmd_callback_func_t *cb, void *cb_arg)
+{
+	struct swarmkv_cmd *cmd=NULL;
+	cmd=swarmkv_cmd_new(2);
+	cmd->argv[0]=sdsnew("ttl");
+	cmd->argv[1]=sdsnewlen(key, keylen);
+	swarmkv_exec(db, cmd, cb, cb_arg);
+	swarmkv_cmd_free(cmd);
+	return;
+}
+
+
 int swarmkv_hset_string(struct swarmkv *db,
 				const char *key, size_t keylen, const char* member, size_t memberlen, const char *value, size_t vallen)
 {
