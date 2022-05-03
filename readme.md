@@ -57,7 +57,7 @@ SwarmKV operations
 | SET                    | key value         | Simple string reply: OK if SET was executed correctly.       |
 | DEL                    | key               | Integer reply: The number of keys that were removed.         |
 | INCRYBY                | key increment     | Integer reply: the value of key after the increment          |
-| EXPIRE                 | key seconds       | Integer reply, specifically: 1 if the timeout was set. 0 if the timeout was not set. e.g. key doesn't exist, or operation skipped due to the provided arguments. |
+| EXPIRE                 | key seconds       | Integer reply, specifically: 1 if the timeout was set. 0 if the timeout was not set. e.g. key doesn't exist |
 | TTL                    | key               | Integer reply: TTL in seconds, or -1 if the key exists but has no associated expire. NIL reply if key does not exist. |
 | TSET(?)                | key id bandwidth  | QoS cluster, qos job qos task?                               |
 | HGET                   |                   |                                                              |
@@ -73,7 +73,7 @@ SwarmKV operations
 | CACHE SET              | key blob          | Simple string reply: OK if SET was executed correctly.       |
 | CACHE DEL              | key               | Integer reply: The number of cached keys that were removed.  |
 | CLUSTER KEYS           | pattern           | Array reply: list of keys matching pattern.                  |
-| CLUSTER KEYSLOT        | keyslot           | Returns an integer identifying the hash slot the specified key hashes to. |
+| CLUSTER KEYSLOT        | keyslot           | Integer reply: The hash slot the specified key hashes to.    |
 | CLUSTER NODES          |                   |                                                              |
 | CLUSTER SLOTS          |                   |                                                              |
 | CLUSTER ADDNODE        | IP port           |                                                              |
@@ -96,7 +96,7 @@ The pattern is same as Redis https://redis.io/commands/keys/
 
 # Getting start
 
-Unzip swarmkv-xx.zip
+Download and unzip swarmkv-xx.zip
 
 Prepare Consul enviroment
 
@@ -105,6 +105,16 @@ Prepare Consul enviroment
   - `./consul agent -dev -config-dir=./swarmkv/test/consul.d/`
   - Note that the consul configuration file path is pointed to the swarmkv source directory, chanage it if necessary.
 - Check consul UI via http://localhost:8500/ui
+- Add slot table to consul KV, for example, slot table of cluster `swarmkv-basic-test` is at `http://192.168.232.172:8500/ui/dc1/kv/swarmkv/swarmkv-basic-test/slots/edit`.
+
+```json
+[{
+    "slot":"0-16383",
+    "owner":{
+      "ip":"127.0.0.1",
+      "p2p_port":5210}
+  }]
+```
 
 Build SwarmKV
 

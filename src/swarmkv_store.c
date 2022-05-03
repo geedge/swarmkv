@@ -429,11 +429,10 @@ int store_expire_key(struct swarmkv_module* mod_store, sds key, int seconds)
 	{
 		timeouts_del(store->expires, &ctr->timeout_handle);
 	}
-	else
-	{
-		timeout_init(&ctr->timeout_handle, 0);
-		ctr->is_expiring=1;
-	}	
+	
+	timeout_init(&ctr->timeout_handle, TIMEOUT_ABS);
+	ctr->is_expiring=1;
+		
 	struct timespec now;
 	clock_gettime(CLOCK_REALTIME, &now);
 	ctr->abs_timeout=now.tv_sec+seconds;

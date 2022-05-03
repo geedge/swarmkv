@@ -57,9 +57,9 @@ void swarmkv_close(struct swarmkv * db);
 
 struct swarmkv_reply* swarmkv_command(struct swarmkv *db, const char *format, ...);
 
-void swarmkv_get_string(struct swarmkv * db, 
+void swarmkv_get(struct swarmkv * db, 
 	const char * key, size_t keylen, swarmkv_cmd_callback_func_t * cb, void * arg);
-void swarmkv_set_string(struct swarmkv * db, 
+void swarmkv_set(struct swarmkv * db, 
 	const char * key, size_t keylen, const char * value, size_t vallen, swarmkv_cmd_callback_func_t * cb, void * arg);
 
 void swarmkv_del(struct swarmkv * db, const char * key, size_t keylen, swarmkv_cmd_callback_func_t *cb, void *cb_arg);

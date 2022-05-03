@@ -54,6 +54,14 @@ struct swarmkv_connection
 	struct swarmkv_net_thread_ctx* ref_thr_ctx;
 	UT_hash_handle hh;
 };
+struct timeout_ctx
+{
+	timeout_cb *cb;
+	void *cb_arg;
+	int is_persist;
+	struct event *ev;
+};
+
 struct swarmkv_net_thread_ctx
 {
 	int thread_id;
@@ -63,6 +71,7 @@ struct swarmkv_net_thread_ctx
 //	pthread_rwlock_t rwlock;
 	pthread_mutex_t mutex;
 	void* ref_logger;
+	struct timeout_ctx *to_ctx;
 	struct swarmkv_net* ref_net;
 };
 struct swarmkv_net
@@ -514,22 +523,22 @@ struct swarmkv_net* swarmkv_net_new(const struct swarmkv_options *opts, const st
 	
 	return net;
 }
-struct timeout_ctx
+
+
+static void timeout_ctx_free(struct timeout_ctx *ctx)
 {
-	timeout_cb *cb;
-	void *cb_arg;
-	int is_persist;
-	struct event *ev;
-};
+	event_del(ctx->ev);
+	event_free(ctx->ev);
+	free(ctx);
+	return;
+}
 static void wrap_timeout_handler(evutil_socket_t fd, short what, void * arg)
 {
 	struct timeout_ctx *ctx=(struct timeout_ctx *)arg;
 	ctx->cb(ctx->cb_arg);
 	if(!ctx->is_persist)
 	{
-		event_del(ctx->ev);
-		event_free(ctx->ev);
-		free(ctx);
+		timeout_ctx_free(ctx);
 	}
 	return;
 }
@@ -544,14 +553,25 @@ void swarmkv_net_timer_add(struct swarmkv_net *net, int thread_id, int seconds, 
 
 	struct timeval timer_delay = {seconds, 0};
 	evtimer_add(ctx->ev, &timer_delay);
-
+	assert(net->threads[thread_id]->to_ctx==NULL);
+	net->threads[thread_id]->to_ctx=ctx;
 }
 void swarmkv_net_stop(struct swarmkv_net* net)
 {
+	struct swarmkv_net_thread_ctx *thr=NULL;
 	int i=0;
+	
 	for(i=0; i<net->n_thread; i++)
-	{	
-		event_base_loopexit(net->threads[i]->evbase, NULL);
+	{
+		thr=net->threads[i];
+		if(thr->is_dispatching)
+		{
+			event_base_loopexit(thr->evbase, NULL);
+			while(!event_base_got_exit(thr->evbase) )
+			{
+				usleep(100);
+			}
+		}
 	}
 	return;
 }
@@ -565,13 +585,10 @@ void swarmkv_net_free(struct swarmkv_net* net)
 	for(i=0; i<net->n_thread; i++)
 	{	
 		thr=net->threads[i];
-		if(thr->is_dispatching)
+		if(thr->to_ctx)
 		{
-			event_base_loopexit(thr->evbase, NULL);
-			while(!event_base_got_exit(thr->evbase) )
-			{
-				usleep(100);
-			}
+			timeout_ctx_free(thr->to_ctx);
+			thr->to_ctx=NULL;
 		}
 		net->threads[i]=NULL;
 		HASH_ITER(hh, thr->conn_table, conn, tmp)
