@@ -301,7 +301,7 @@ static void cache_notify_on_fail(enum e_future_error err, const char * what, voi
 void store_cache_notify_one(struct swarmkv_store *store, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *peer)
 {
 	struct cache_notify_ctx* ctx=NULL;
-	ctx=ALLOC(struct cache_notify_ctx, 1);	
+	ctx=ALLOC(struct cache_notify_ctx, 1);
 	ctx->store=store;
 	swarmkv_node_addr_copy(&(ctx->peer), peer);
 	ctx->key=sdsdup(cmd->argv[1]);
@@ -525,6 +525,9 @@ void swarmkv_store_free(struct swarmkv_module *module)
 	struct swarmkv_store *store=module2store(module);
 	struct obj_container *ctr=NULL, *tmp=NULL;
 	pthread_rwlock_destroy(&(store->module.rwlock));
+	timeouts_close(store->expires);
+	store->expires=NULL;
+	
 	HASH_ITER(hh, store->owned_obj_table, ctr, tmp)
 	{
 		obj_container_remove(&(store->owned_obj_table), ctr);
@@ -536,8 +539,7 @@ void swarmkv_store_free(struct swarmkv_module *module)
 		obj_container_remove(&(store->cached_obj_table), ctr);
 		obj_container_free(ctr);
 	}
-	timeouts_close(store->expires);
-	store->expires=NULL;
+
 	free(store);
 	return;
 }

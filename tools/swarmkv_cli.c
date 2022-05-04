@@ -116,8 +116,8 @@ struct swarmkv_reply *cluster_slots_command(struct swarmkv* db, char *argv[], si
 
 int slot_cmp_by_owner(const void * a, const void *b)
 {
-	const struct key_slot *sa=(const struct key_slot*)a;
-	const struct key_slot *sb=(const struct key_slot*)b;
+	const struct slot_runtime *sa=(const struct slot_runtime*)a;
+	const struct slot_runtime *sb=(const struct slot_runtime*)b;
 	int ret=0;
 	ret=swarmkv_node_addr_compare(&(sa->owner.addr), &(sb->owner.addr));
 	if(ret==0)
@@ -128,8 +128,8 @@ int slot_cmp_by_owner(const void * a, const void *b)
 }
 int slot_cmp_by_id(const void * a, const void *b)
 {
-	const struct key_slot *sa=(const struct key_slot*)a;
-	const struct key_slot *sb=(const struct key_slot*)b;
+	const struct slot_runtime *sa=(const struct slot_runtime*)a;
+	const struct slot_runtime *sb=(const struct slot_runtime*)b;
 	
 	return sa->slot_id-sb->slot_id;
 }
@@ -143,7 +143,7 @@ struct swarmkv_reply *cluster_addnode_command(struct swarmkv* db, char *argv[], 
 	struct swarmkv_reply *slots_reply=NULL, *nodes_reply=NULL, *reply=NULL;
 	size_t i=0, j=0, actual_rebalanced_slot_num=0;
 	nodes_reply=cluster_nodes_command(db, NULL, 0);
-	struct key_slot *slots=NULL;
+	struct slot_runtime *slots=NULL;
 	if(nodes_reply->type!=SWARMKV_REPLY_ARRAY)
 	{
 		return nodes_reply;
@@ -173,8 +173,8 @@ struct swarmkv_reply *cluster_addnode_command(struct swarmkv* db, char *argv[], 
 		slots_reply=NULL;
 		goto error_out;
 	}
-	slots=ALLOC(struct key_slot, SWARMKV_SLOT_NUM);
-	json2keyslots(slots_reply->str, slots, SWARMKV_SLOT_NUM);
+	slots=ALLOC(struct slot_runtime, SWARMKV_SLOT_NUM);
+	json2keyslots(slots_reply->str, slots, sizeof(struct slot_runtime), 0, SWARMKV_SLOT_NUM);
 	for(i=0; i<SWARMKV_SLOT_NUM; i++)
 	{
 		if(0==swarmkv_node_addr_compare(&(slots[i].owner.addr), &(node.addr)))
@@ -192,8 +192,8 @@ struct swarmkv_reply *cluster_addnode_command(struct swarmkv* db, char *argv[], 
 	/* STEP 1 Calculate rebalanced slots. */
 
 	
-	qsort(slots, SWARMKV_SLOT_NUM, sizeof(struct key_slot), slot_cmp_by_owner);
-	struct key_slot *tmp=slots;
+	qsort(slots, SWARMKV_SLOT_NUM, sizeof(struct slot_runtime), slot_cmp_by_owner);
+	struct slot_runtime *tmp=slots;
 	size_t n_active_node=1;
 	for(i=0; i<SWARMKV_SLOT_NUM; i++)
 	{
@@ -325,9 +325,9 @@ struct swarmkv_reply *cluster_addnode_command(struct swarmkv* db, char *argv[], 
 
 	char url[SWARMKV_URL_MAX]="";
 	int resp_code_put=0;
-	qsort(slots, SWARMKV_SLOT_NUM, sizeof(struct key_slot), slot_cmp_by_id);
+	qsort(slots, SWARMKV_SLOT_NUM, sizeof(struct slot_runtime), slot_cmp_by_id);
 	char *slot_json=NULL;
-	slot_json=keyslots2json(slots, SWARMKV_SLOT_NUM);
+	slot_json=keyslots2json(slots, sizeof(struct slot_runtime), 0, SWARMKV_SLOT_NUM);
 
 	snprintf(url, sizeof(url), "/v1/kv/swarmkv/%s/slots", g_para.db_name);
 	

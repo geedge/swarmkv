@@ -231,42 +231,45 @@ struct swarmkv_cmd* swarmkv_cmd_dup(const struct swarmkv_cmd* origin)
 	}
 	return copy;
 }
-sds keyslots2json(struct key_slot slots[], size_t n_slot)
+sds keyslots2json(void *slot_container_base, size_t sz_slot_container, size_t offset_slot, size_t n_slot_container)
 {
 	cJSON *slot_array=cJSON_CreateArray();
 	cJSON *slot=NULL, *node=NULL;
 	char range[256]="", uuid_str[38]="";
 	size_t i=0;
-	int start=0, end=0;
 	sds json_sds=NULL;
-	assert(SWARMKV_SLOT_NUM==n_slot);
-	start=end=slots[0].slot_id;
-	for(i=0; i<n_slot+1; i++)
+	assert(SWARMKV_SLOT_NUM==n_slot_container);
+	assert(sz_slot_container>=sizeof(struct key_slot));
+	struct key_slot *iterator=(struct key_slot *)(slot_container_base+offset_slot);
+	struct key_slot *start_slot=NULL, *end_slot=NULL;
+	start_slot=end_slot=iterator;
+	for(i=0; i<n_slot_container+1; i++)
 	{
-		if(i<n_slot
-			&& 0==swarmkv_node_compare(&(slots[i].owner), &(slots[end].owner)))
+		iterator=(struct key_slot *)(slot_container_base+sz_slot_container*i+offset_slot);
+		if(i<n_slot_container
+			&& 0==swarmkv_node_compare(&(iterator->owner), &(end_slot->owner)))
 		{
-			end=i;
+			end_slot=iterator;
 			continue;
 		}	
 		slot=cJSON_CreateObject();
-		if(start==end)
+		if(start_slot==end_slot)
 		{
-			snprintf(range, sizeof(range), "%d", start);
+			snprintf(range, sizeof(range), "%d", start_slot->slot_id);
 		}
 		else
 		{
-			snprintf(range, sizeof(range), "%d-%d", start, end);
+			snprintf(range, sizeof(range), "%d-%d", start_slot->slot_id, end_slot->slot_id);
 		}
 		cJSON_AddStringToObject(slot, "slot", range);		
 		node=cJSON_CreateObject();
-		cJSON_AddStringToObject(node, "ip", slots[end].owner.addr.ip_addr);
-		cJSON_AddNumberToObject(node, "p2p_port", slots[end].owner.addr.p2p_port);
-		uuid_unparse_lower(slots[end].owner.bin_uuid, uuid_str);
+		cJSON_AddStringToObject(node, "ip", end_slot->owner.addr.ip_addr);
+		cJSON_AddNumberToObject(node, "p2p_port", end_slot->owner.addr.p2p_port);
+		uuid_unparse_lower(end_slot->owner.bin_uuid, uuid_str);
 		cJSON_AddStringToObject(node, "node_uuid", uuid_str);
 		cJSON_AddItemToObject(slot, "owner", node);
 		cJSON_AddItemToArray(slot_array, slot);
-		start=end=i;
+		start_slot=end_slot=iterator;
 	}
 	char* payload=NULL;
 	payload=cJSON_Print(slot_array);
@@ -275,14 +278,15 @@ sds keyslots2json(struct key_slot slots[], size_t n_slot)
 	free(payload);
 	return json_sds;
 }
-void json2keyslots(const char* json_buffer, struct key_slot slots[], size_t n_slot)
+void json2keyslots(const char* json_buffer, void *slot_container_base, size_t sz_slot_container, size_t offset_slot, size_t n_slot_container)
 {
 	cJSON *slot_table=NULL, *range=NULL, *slot=NULL, *owner=NULL, *ip=NULL, *p2p_port=NULL, *node_uuid=NULL;
 	int	i=0, j=0, k=0, n_record=0;
 	int range_start=0, range_end=0;
 	slot_table=cJSON_Parse(json_buffer);
 	n_record=cJSON_GetArraySize(slot_table);
-	assert(n_slot==SWARMKV_SLOT_NUM);
+	assert(n_slot_container==SWARMKV_SLOT_NUM);
+	struct key_slot *iterator=NULL;
 	for(i=0; i<n_record; i++)
 	{
 		slot=cJSON_GetArrayItem(slot_table, i);
@@ -302,11 +306,12 @@ void json2keyslots(const char* json_buffer, struct key_slot slots[], size_t n_sl
 		node_uuid=cJSON_GetObjectItem(owner, "node_uuid");
 		for(j=range_start; j<range_end+1; j++)
 		{
-			slots[j].slot_id=j;
-			strncpy(slots[j].owner.addr.ip_addr, ip->valuestring, sizeof(slots[j].owner.addr.ip_addr));
-			slots[j].owner.addr.p2p_port=(unsigned int)p2p_port->valueint;
+			iterator=(struct key_slot*)(slot_container_base+sz_slot_container*j+offset_slot);
+			iterator->slot_id=j;
+			strncpy(iterator->owner.addr.ip_addr, ip->valuestring, sizeof(iterator->owner.addr.ip_addr));
+			iterator->owner.addr.p2p_port=(unsigned int)p2p_port->valueint;
 			if(node_uuid)
-				uuid_parse(node_uuid->valuestring, slots[j].owner.bin_uuid);
+				uuid_parse(node_uuid->valuestring, iterator->owner.bin_uuid);
 			k++;
 		}
 	}

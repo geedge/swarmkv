@@ -435,8 +435,9 @@ void swarmkv_exec(struct swarmkv *db, const struct swarmkv_cmd *cmd, swarmkv_cmd
 			reply=cmd_flag_to_keyspace_no_obj_owner_reply(spec->flag);
 			goto fastpath_out;
 		}
-		else if(0==swarmkv_node_addr_compare(&(db->self), &peer))	//reply is object owner, execute command at there
+		else if(0==swarmkv_node_addr_compare(&(db->self), &peer))
 		{
+			//reply indicates that self is object owner, executes the command as owner
 			spec_lock_module(spec);
 			spec->proc_as_owner(spec->module, cmd, NULL, &reply);
 			spec_unlock_module(spec);

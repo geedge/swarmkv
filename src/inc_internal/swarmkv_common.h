@@ -47,16 +47,10 @@ enum slot_state
 struct key_slot
 {
 	int slot_id;
-	enum slot_state state;
 	struct swarmkv_node owner;
-	struct swarmkv_node peer;//peer is used for state MIGRATING and IMPORTING
-//	struct swarmkv_node_addr replica[MAX_REPLICA_NUM];
-	struct key_route_entry* keyroute_table;
-	int I_am_owner;
-	pthread_mutex_t mutex;
 };
-void json2keyslots(const char *json_buffer, struct key_slot slots[], size_t n_slot);
-sds keyslots2json(struct key_slot slots[], size_t n_slot);
+void json2keyslots(const char* json_buffer, void *slot_container_base, size_t sz_slot_container, size_t offset_slot, size_t n_slot_container);
+sds keyslots2json(void *slot_container_base, size_t sz_slot_container, size_t offset_slot, size_t n_slot_container);
 void json2nodes(const char* resp_buff, struct swarmkv_node *nodes, size_t *n_node);
 void json2leader(const char *resp_body, struct swarmkv_node *leader);
 int get_slot_id(const char* key, size_t keylen);
