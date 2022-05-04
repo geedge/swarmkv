@@ -326,7 +326,7 @@ struct swarmkv_reply *cluster_addnode_command(struct swarmkv* db, char *argv[], 
 	char url[SWARMKV_URL_MAX]="";
 	int resp_code_put=0;
 	qsort(slots, SWARMKV_SLOT_NUM, sizeof(struct key_slot), slot_cmp_by_id);
-	char *slot_json=NULL;
+	sds slot_json=NULL;
 	slot_json=keyslots2json(slots, sizeof(struct key_slot), 0, SWARMKV_SLOT_NUM);
 
 	snprintf(url, sizeof(url), "/v1/kv/swarmkv/%s/slots", g_para.db_name);

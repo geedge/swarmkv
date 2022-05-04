@@ -340,7 +340,7 @@ TEST_F(SwarmkvBasicTest, ExpireTTL)
 	EXPECT_EQ(exec_successful, 1);
 	cmd_exec_arg_clear(arg);
 
-	sleep(seconds);
+	sleep(seconds+1);
 
 	//GET key
 	cmd_exec_arg_expect_NIL(arg);
@@ -489,6 +489,7 @@ TEST_F(SwarmkvTwoNodes, Set1K)
 		cmd_exec_arg_clear(arg);
 	}
 	EXPECT_EQ(round, n_success);
+	cmd_exec_arg_free(arg);
 }
 
 TEST_F(SwarmkvTwoNodes, DEL)
@@ -614,7 +615,7 @@ TEST_F(SwarmkvTwoNodes, Expire)
 	}
 	EXPECT_EQ(round, n_success);
 
-	sleep(max_timeout_seconds);
+	sleep(max_timeout_seconds+1);
 
 	/*
 	 * GET expiring-key-%d
@@ -706,12 +707,14 @@ TEST_F(SwarmkvTwoNodes, CacheFlush)
 	EXPECT_TRUE(exec_successful);
 	EXPECT_EQ(arg->is_sync_callback, 1);
 	cmd_exec_arg_clear(arg);
+	
+	cmd_exec_arg_free(arg);
 
 }
 
 TEST_F(SwarmkvTwoNodes, Wait)
 {
-	sleep(3600*2);
+	sleep(1*2);
 }
 
 int main(int argc, char ** argv)

@@ -477,7 +477,6 @@ void store_cache_flush(struct swarmkv_module *mod_store, enum cache_sync_op op, 
 	struct swarmkv_store *store=module2store(mod_store);
 	struct obj_container *ctr=NULL;	
 	ctr=obj_container_find(&(store->cached_obj_table), key);
-	HASH_FIND(hh, store->cached_obj_table, key, sdslen(key), ctr);
 	switch (op)
 	{
 		case CACHE_SET:

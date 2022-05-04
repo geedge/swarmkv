@@ -36,6 +36,7 @@ void swarmkv_rr_mgr_free(struct swarmkv_rr_mgr *mgr)
 		HASH_DELETE(hh, mgr->table, rr);
 		free(rr);
 	}
+	free(mgr);
 	return;
 }
 unsigned long long swarmkv_rr_add(struct swarmkv_rr_mgr *mgr, swarmkv_rr_callback_func_t * cb, void * cb_arg)

@@ -278,7 +278,7 @@ sds keyslots2json(void *slot_container_base, size_t sz_slot_container, size_t of
 	free(payload);
 	return json_sds;
 }
-void json2keyslots(const char* json_buffer, void *slot_container_base, size_t sz_slot_container, size_t offset_slot, size_t n_slot_container)
+void json2keyslots(sds json_buffer, void *slot_container_base, size_t sz_slot_container, size_t offset_slot, size_t n_slot_container)
 {
 	cJSON *slot_table=NULL, *range=NULL, *slot=NULL, *owner=NULL, *ip=NULL, *p2p_port=NULL, *node_uuid=NULL;
 	int	i=0, j=0, k=0, n_record=0;
@@ -316,7 +316,7 @@ void json2keyslots(const char* json_buffer, void *slot_container_base, size_t sz
 		}
 	}
 	assert(k==SWARMKV_SLOT_NUM);
-	cJSON_free(slot_table);
+	cJSON_Delete(slot_table);
 	return;
 }
 void json2nodes(const char* resp_buff, struct swarmkv_node *nodes, size_t *n_node)
@@ -338,7 +338,7 @@ void json2nodes(const char* resp_buff, struct swarmkv_node *nodes, size_t *n_nod
 		meta_node_uuid=cJSON_GetObjectItem(meta, "node_uuid");
 		uuid_parse(meta_node_uuid->valuestring, nodes[i].bin_uuid); 
 	}
-	cJSON_free(health_reponse);
+	cJSON_Delete(health_reponse);
 	*n_node=i;
 }
 void json2leader(const char *resp_body, struct swarmkv_node *leader)
@@ -428,7 +428,8 @@ int http_blocking_request(enum evhttp_cmd_type type, const char* host, unsigned 
 		}	
 		client->response_body=NULL;
 	}
-//	evhttp_connection_free(client->evhttpconn);
+//	evhttp_request_free(client->req);
+	evhttp_connection_free(client->evhttpconn);
 	event_base_free(client->evbase);
 	return client->response_code;	
 }

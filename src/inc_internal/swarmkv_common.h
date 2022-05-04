@@ -49,7 +49,7 @@ struct key_slot
 	int slot_id;
 	struct swarmkv_node owner;
 };
-void json2keyslots(const char* json_buffer, void *slot_container_base, size_t sz_slot_container, size_t offset_slot, size_t n_slot_container);
+void json2keyslots(sds json_buffer, void *slot_container_base, size_t sz_slot_container, size_t offset_slot, size_t n_slot_container);
 sds keyslots2json(void *slot_container_base, size_t sz_slot_container, size_t offset_slot, size_t n_slot_container);
 void json2nodes(const char* resp_buff, struct swarmkv_node *nodes, size_t *n_node);
 void json2leader(const char *resp_body, struct swarmkv_node *leader);

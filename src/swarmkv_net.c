@@ -619,6 +619,9 @@ void swarmkv_net_dispath(struct swarmkv_net* net, int thread_id)
 	net->threads[thread_id]->is_dispatching=1;
 	evtimer_add(ev, &timer_delay);
 	event_base_dispatch(net->threads[thread_id]->evbase);
+	
+	event_del(ev);
+	event_free(ev);
 	return;
 }
 

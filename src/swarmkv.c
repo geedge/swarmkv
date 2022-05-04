@@ -253,7 +253,6 @@ static void generic_route_on_success(void* result, void* user)
 			spec_unlock_module(ctx->spec);
 			goto fastpath;
 		}
-		ctx->f_caller=future_create("exec_cmd", generic_exec_on_success, generic_exec_on_fail, ctx);
 		exec_command_at_peer(ctx->db, ctx->cmd, &obj_owner, ctx->f_caller);
 	}
 	return;
@@ -422,8 +421,8 @@ void swarmkv_exec(struct swarmkv *db, const struct swarmkv_cmd *cmd, swarmkv_cmd
 		
 		
 		route_ret=swarmkv_keyspace_reply2node(keyspace_reply, &peer);	
-//		swarmkv_reply_free(keyspace_reply);
-//		keyspace_reply=NULL;
+		swarmkv_reply_free(keyspace_reply);
+		keyspace_reply=NULL;
 		
 		if(ks_fastpath_ret==REDIRECT)//reply is keyowner, do key route
 		{
