@@ -25,7 +25,6 @@ struct swarmkv_obj
 
 
 struct swarmkv_store;
-typedef void send_cmd_func(struct swarmkv *handle, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *peer, struct future *f);
 struct swarmkv_module *swarmkv_store_new(send_cmd_func *send_cmd, void *handle_send_cmd, int disable_cache);
 void swarmkv_store_free(struct swarmkv_module* mod_store);
 void swarmkv_store_periodic(struct swarmkv_module *module);

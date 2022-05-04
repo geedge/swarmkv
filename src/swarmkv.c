@@ -12,7 +12,6 @@
 
 #include "t_string.h"
 #include "t_cache.h"
-#include "expire.h"
 
 #include "swarmkv_message.h"
 #include "swarmkv_net.h"
@@ -113,7 +112,7 @@ void exec_command_at_peer(struct swarmkv *db, const struct swarmkv_cmd *cmd, con
 {
 	struct promise *p=future_to_promise(f);
 
-	assert(0!=swarmkv_node_addr_compare(&db->self, peer_addr));
+//	assert(0!=swarmkv_node_addr_compare(&db->self, peer_addr));
 
 	unsigned long long rr_seq=swarmkv_rr_add(db->rr_mgr, cmd_exec_cb, p);
 	struct swarmkv_msg *msg=swarmkv_msg_new(db->bin_uuid, rr_seq);
@@ -579,10 +578,10 @@ void command_spec_init(struct swarmkv *db)
 
 	command_register(&(db->command_table), "EXPIRE", "key seconds",
 					2, 1, CMD_KEY_RW,
-					expire_command_fastpath, expire_command_as_owner, db->mod_store);
+					expire_command_fastpath, expire_command_as_owner, db->mod_keyspace);
 	command_register(&(db->command_table), "TTL", "key",
 					1, 1, CMD_KEY_RO,
-					ttl_command_fastpath, ttl_command_as_owner, db->mod_store);
+					ttl_command_fastpath, ttl_command_as_owner, db->mod_keyspace);
 
 
 	command_register(&(db->command_table), "CACHE SET", "key blob",
@@ -723,8 +722,10 @@ struct swarmkv *swarmkv_open(struct swarmkv_options* opts, const char * db_name,
 	{
 		goto error_out;
 	}
+	swarmkv_keyspace_set_send_cmd_func(db->mod_keyspace, exec_command_at_peer, db);
+
 	db->mod_store=swarmkv_store_new(exec_command_at_peer, db, opts->disable_cache);
-	swarmkv_net_timer_add(db->net, 0, 1, 1, (void (*)(void *))swarmkv_store_periodic, db->mod_store);
+
 	command_spec_init(db);
 	swarmkv_threads_run(db);
 	char str_uuid[37]="";

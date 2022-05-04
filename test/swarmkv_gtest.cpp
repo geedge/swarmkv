@@ -358,7 +358,7 @@ TEST_F(SwarmkvBasicTest, ExpireTTL)
 	cmd_exec_arg_clear(arg);
 
 	//TTL key
-	cmd_exec_arg_expect_NIL(arg);
+	cmd_exec_arg_expect_integer(arg, -2);
 	swarmkv_ttl(db, key, strlen(key), generic_callback, arg);
 	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
 	EXPECT_EQ(exec_successful, 1);

@@ -1,6 +1,8 @@
 #pragma once
 #include "sds.h"
 #include "swarmkv_limits.h"
+#include "swarmkv/swarmkv.h"
+#include "future_promise.h"
 
 #include <netinet/ip.h>
 #include <uuid/uuid.h>
@@ -80,6 +82,7 @@ struct swarmkv_cmd
 struct swarmkv_cmd* swarmkv_cmd_new(size_t argc);
 void swarmkv_cmd_free(struct swarmkv_cmd* p);
 struct swarmkv_cmd* swarmkv_cmd_dup(const struct swarmkv_cmd* origin);
+typedef void send_cmd_func(struct swarmkv *handle, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *peer, struct future *f);
 
 struct swarmkv_reply *swarmkv_reply_new_string(const char* str, size_t sz);
 struct swarmkv_reply *swarmkv_reply_new_string_fmt(const char *format, ...);

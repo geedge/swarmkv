@@ -58,7 +58,7 @@ SwarmKV operations
 | DEL                    | key               | Integer reply: The number of keys that were removed.         |
 | INCRYBY                | key increment     | Integer reply: the value of key after the increment          |
 | EXPIRE                 | key seconds       | Integer reply, specifically: 1 if the timeout was set. 0 if the timeout was not set. e.g. key doesn't exist |
-| TTL                    | key               | Integer reply: TTL in seconds, or -1 if the key exists but has no associated expire. NIL reply if key does not exist. |
+| TTL                    | key               | Integer reply: TTL in seconds, in case of error:   -2 if the key does not exist;  -1 if the key exists but has no associated expire. |
 | TSET(?)                | key id bandwidth  | QoS cluster, qos job qos task?                               |
 | HGET                   |                   |                                                              |
 | KEYSPACE GET           | key               | 1) "192.168.1.200"<br/>2) (integer) 5211                     |

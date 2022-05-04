@@ -5,7 +5,6 @@
 #include "mpack.h"
 #include "uthash.h"
 #include "utarray.h"
-#include "timeout.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,7 +24,6 @@ struct swarmkv_store
 	send_cmd_func *send_cmd;
 	struct swarmkv *handle_send_cmd;
 	int disable_cache;
-	struct timeouts *expires;
 };
 
 
@@ -42,11 +40,8 @@ struct obj_container
 {
 	struct swarmkv_obj obj;
 	char is_in_table;
-	char is_expiring;
-	uint64_t abs_timeout;
 	UT_array *accessed_node_list; //used by value owner for cache synchronization
 	UT_hash_handle hh;
-	struct timeout timeout_handle;
 };
 static struct obj_container *obj_container_new(enum swarmkv_obj_type type, const sds key)
 {
@@ -122,9 +117,6 @@ static sds obj_container_serialize(const struct obj_container *ctr)
 	mpack_write_cstr(&snapshot_mpack, "t");
 	mpack_write_int(&snapshot_mpack, obj->type);
 
-	mpack_write_cstr(&snapshot_mpack, "to");
-	mpack_write_u64(&snapshot_mpack, ctr->abs_timeout);
-
 	mpack_write_cstr(&snapshot_mpack, "k");
 	mpack_write_str(&snapshot_mpack, obj->key, sdslen(obj->key));
 
@@ -165,10 +157,6 @@ static struct obj_container *obj_container_deserialize(const sds blob)
 	ctr->obj.type=mpack_node_int(mpack_node_map_cstr(root, "t"));
 	item=mpack_node_map_cstr(root, "k");
 	ctr->obj.key=sdsnewlen(mpack_node_str(item), mpack_node_strlen(item));
-	item=mpack_node_map_cstr(root, "to");
-	ctr->abs_timeout=mpack_node_u64(item);
-
-
 	
 	v_node=mpack_node_map_cstr(root, "v");
 	switch(ctr->obj.type)
@@ -257,17 +245,11 @@ static int obj_container_remove_accessed_node(struct obj_container *ctr, const s
 
 struct cache_notify_ctx
 {
-	sds key;
-	struct swarmkv_node_addr peer;
 	struct future *f_cache_notify;
-	struct swarmkv_store *store;
 };
 void cache_sync_ctx_free(struct cache_notify_ctx* ctx)
 {
 	future_destroy(ctx->f_cache_notify);
-	ctx->f_cache_notify=NULL;
-	sdsfree(ctx->key);
-	ctx->key=NULL;
 	free(ctx);
 	return;
 }
@@ -302,9 +284,6 @@ void store_cache_notify_one(struct swarmkv_store *store, const struct swarmkv_cm
 {
 	struct cache_notify_ctx* ctx=NULL;
 	ctx=ALLOC(struct cache_notify_ctx, 1);
-	ctx->store=store;
-	swarmkv_node_addr_copy(&(ctx->peer), peer);
-	ctx->key=sdsdup(cmd->argv[1]);
 	ctx->f_cache_notify=future_create("cache_sync", cache_notify_on_succ, cache_notify_on_fail, ctx);
 	store->send_cmd(store->handle_send_cmd, cmd, peer, ctx->f_cache_notify);
 	return;
@@ -370,19 +349,7 @@ void swarmkv_obj_free(struct swarmkv_obj *obj)
 	obj_container_free(ctr);
 	return;
 }
-int swarmkv_obj_get_ttl(struct swarmkv_obj *obj)
-{
-	struct obj_container *ctr=container_of(obj, struct obj_container, obj);
-	if(!ctr->abs_timeout)
-	{
-		return -1;
-	}
-	struct timespec now;
-	clock_gettime(CLOCK_REALTIME, &now);
-	int ttl=ctr->abs_timeout - now.tv_sec;
 
-	return ttl;
-}
 
 
 void store_add_obj(struct swarmkv_module *mod_store, struct swarmkv_obj *obj)
@@ -416,44 +383,7 @@ struct swarmkv_obj *store_lookup(struct swarmkv_module* mod_store, sds key)
 		return NULL;
 	}
 }
-int store_expire_key(struct swarmkv_module* mod_store, sds key, int seconds)
-{
-	struct swarmkv_store *store=module2store(mod_store);
-	struct obj_container *ctr=NULL;
-	ctr=obj_container_find(&(store->owned_obj_table), key);
-	if(!ctr)
-	{
-		return 0;
-	}
-	if(ctr->is_expiring)
-	{
-		timeouts_del(store->expires, &ctr->timeout_handle);
-	}
-	
-	timeout_init(&ctr->timeout_handle, TIMEOUT_ABS);
-	ctr->is_expiring=1;
-		
-	struct timespec now;
-	clock_gettime(CLOCK_REALTIME, &now);
-	ctr->abs_timeout=now.tv_sec+seconds;
-	timeouts_add(store->expires, &ctr->timeout_handle, ctr->abs_timeout);
-	store_cache_notify_all(mod_store, CACHE_SET, &ctr->obj);
-	return 1;
-}
 
-int store_ttl_key(struct swarmkv_module* mod_store, sds key)
-{
-	struct swarmkv_store *store=module2store(mod_store);
-	struct obj_container *ctr=NULL;
-	int ttl=0;
-	ctr=obj_container_find(&(store->owned_obj_table), key);
-	if(!ctr)
-	{
-		return -2;
-	}
-	ttl=swarmkv_obj_get_ttl(&ctr->obj);
-	return ttl;
-}
 struct swarmkv_obj *store_cache_lookup(struct swarmkv_module* mod_store, sds key)
 {
 	struct swarmkv_store *store=module2store(mod_store);
@@ -510,8 +440,6 @@ struct swarmkv_module *swarmkv_store_new(send_cmd_func *send_cmd, void *handle_s
 	struct swarmkv_store* store=ALLOC(struct swarmkv_store, 1);
 	strncpy(store->module.name, "store", sizeof(store->module.name));
 	store->module.mod_ctx=store;
-	int error=0;
-	store->expires=timeouts_open(0, &error);
 	pthread_rwlock_init(&(store->module.rwlock), NULL);
 	store->send_cmd=send_cmd;
 	store->handle_send_cmd=handle_send_cmd;
@@ -524,8 +452,6 @@ void swarmkv_store_free(struct swarmkv_module *module)
 	struct swarmkv_store *store=module2store(module);
 	struct obj_container *ctr=NULL, *tmp=NULL;
 	pthread_rwlock_destroy(&(store->module.rwlock));
-	timeouts_close(store->expires);
-	store->expires=NULL;
 	
 	HASH_ITER(hh, store->owned_obj_table, ctr, tmp)
 	{
@@ -543,28 +469,4 @@ void swarmkv_store_free(struct swarmkv_module *module)
 	return;
 }
 
-void swarmkv_store_periodic(struct swarmkv_module *module)
-{	
-	struct swarmkv_store *store=module2store(module);
-	struct timespec now;
-	clock_gettime(CLOCK_REALTIME, &now);
-	pthread_rwlock_wrlock(&(store->module.rwlock));
-	timeouts_update(store->expires, now.tv_sec);
-	struct timeout *t=NULL;
-	struct obj_container *ctr=NULL;
-	t=timeouts_get(store->expires);
-	int i=0;
-	while(t && i<100*1000)
-	{
-		ctr=container_of(t, struct obj_container, timeout_handle);
-		assert(ctr->is_expiring);
-		assert(ctr->is_in_table);
-		obj_container_remove(&(store->owned_obj_table), ctr);
-		store_cache_notify_all(module, CACHE_DEL, &ctr->obj);
-		obj_container_free(ctr);
-		t=timeouts_get(store->expires);
-		i++;
-	}
-	pthread_rwlock_unlock(&(store->module.rwlock));
-}
 
