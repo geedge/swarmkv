@@ -135,8 +135,8 @@ struct swarmkv_keyspace
 	struct consul_task *consul_task_hash;
 
 	//reference, no need free	
-	send_cmd_func *send_cmd;
-	struct swarmkv *handle_send_cmd;
+	del_key_func *del_key_func;
+	struct swarmkv *del_key_handle;
 	void *logger;
 };
 struct consul_task *consul_task_getnxset(struct swarmkv_keyspace* ks, const char* task_name)
@@ -1040,11 +1040,11 @@ static struct swarmkv_keyspace *module2keyspace(struct swarmkv_module *module)
 	assert(ks==module->mod_ctx);
 	return ks;
 }
-void swarmkv_keyspace_set_send_cmd_func(struct swarmkv_module *mod_keyspace, send_cmd_func *send_cmd, void *handle_send_cmd)
+void swarmkv_keyspace_set_del_key_func(struct swarmkv_module *mod_keyspace, del_key_func *func, void *func_handle)
 {	
 	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
-	ks->send_cmd=send_cmd;
-	ks->handle_send_cmd=handle_send_cmd;
+	ks->del_key_func=func;
+	ks->del_key_handle=func_handle;
 	return;
 }
 
@@ -1992,32 +1992,7 @@ enum cmd_fastpath_result ttl_command_fastpath(struct swarmkv_module *mod_keyspac
 	}
 }
 
-static void del_expire_key_on_succ(void* result, void* user)
-{
-	const struct swarmkv_reply* reply=(const struct swarmkv_reply*) result;
-	assert(reply->type==SWARMKV_REPLY_INTEGER);
-	assert(reply->integer==1);
-	return;
 
-}
-static void del_expire_key_on_fail(enum e_future_error err, const char * what, void * user)
-{
-	return;
-}
-
-static void del_key_at_object_owner(struct swarmkv_keyspace *ks, sds key, const struct swarmkv_node_addr *obj_owner)
-{
-	struct swarmkv_cmd *del_cmd=NULL;
-
-	del_cmd=swarmkv_cmd_new(2);
-	del_cmd->argv[0]=sdsnew("del");
-	del_cmd->argv[1]=sdsdup(key);
-	struct future *f=future_create("del_expire", del_expire_key_on_succ, del_expire_key_on_fail, NULL);
-	ks->send_cmd(ks->handle_send_cmd, del_cmd, obj_owner, f);
-	swarmkv_cmd_free(del_cmd);
-	future_destroy(f);
-	return;
-}
 
 #define ACTIVE_EXPIRE_CYCLE_KEYS_PER_LOOP 1000
 void keyspace_active_expire_cycle(struct swarmkv_keyspace *ks)
@@ -2041,7 +2016,7 @@ void keyspace_active_expire_cycle(struct swarmkv_keyspace *ks)
 			key_entry=container_of(t, struct key_route_entry, timeout_handle);
 			assert(key_entry->is_expiring);
 			HASH_DELETE(hh, slot_rt->keyroute_table, key_entry);
-			del_key_at_object_owner(ks, key_entry->key, &key_entry->owner);
+			ks->del_key_func(ks->del_key_handle, key_entry->key, &key_entry->owner);
 			key_entry_free(key_entry);
 			t=timeouts_get(slot_rt->expires);
 			j++;

@@ -40,9 +40,8 @@ enum receive_state
 };
 struct swarmkv_connection
 {
-	struct swarmkv_node_addr peer;
-	char peer_ip[INET6_ADDRSTRLEN];
-	unsigned int peer_port;
+	struct swarmkv_node_addr peer_listen_addr;
+	struct swarmkv_node_addr peer_connected_from_addr;
 	int thread_id;
 	int need_to_be_kill;
 	enum receive_state recv_state;
@@ -157,7 +156,7 @@ static void swarmkv_connection_kill(struct swarmkv_connection* conn)
 }
 static void swarmkv_connection_set_peer(struct swarmkv_connection* conn, struct swarmkv_node_addr *peer)
 {
-	memcpy(&conn->peer, peer, sizeof(conn->peer));
+	memcpy(&conn->peer_listen_addr, peer, sizeof(conn->peer_listen_addr));
 	return;
 }
 
@@ -165,17 +164,18 @@ static void swarmkv_net_conn_table_overwrite(struct swarmkv_net_thread_ctx* thr,
 {
 	struct swarmkv_connection* tmp_conn=NULL;
 	assert(conn->is_in_conn_table==0);
-	HASH_FIND(hh, thr->conn_table, &(conn->peer), sizeof(struct swarmkv_node_addr), tmp_conn);
+	HASH_FIND(hh, thr->conn_table, &(conn->peer_listen_addr), sizeof(struct swarmkv_node_addr), tmp_conn);
 	if(tmp_conn)
 	{
 		MESA_handle_runtime_log(thr->ref_logger, RLOG_LV_FATAL, MODULE_SWAMRKV_NET, 
 			"accept duplicated connection form peer %s:%u, previous connection is %s:%u.",
-							tmp_conn->peer_ip, tmp_conn->peer_port);
+							conn->peer_connected_from_addr.ip_addr, conn->peer_connected_from_addr.p2p_port,
+							tmp_conn->peer_connected_from_addr.ip_addr, tmp_conn->peer_connected_from_addr.p2p_port);
 		swarmkv_net_conn_table_remove(tmp_conn);
 		swarmkv_connection_kill(tmp_conn);
 		//The old connection (tmp_conn) will be freed in its peer_conn_read_cb 		
 	}
-	HASH_ADD(hh, thr->conn_table, peer, sizeof(conn->peer), conn);
+	HASH_ADD(hh, thr->conn_table, peer_listen_addr, sizeof(conn->peer_listen_addr), conn);
 	conn->is_in_conn_table=1;
 
 	return;
@@ -200,7 +200,7 @@ static void peer_conn_read_cb(struct bufferevent *bev, void *arg)
 	if(conn->need_to_be_kill)
 	{
 		MESA_handle_runtime_log(thr->ref_logger, RLOG_LV_FATAL, MODULE_SWAMRKV_NET, "connection %s:%u is killed",
-									conn->peer_ip, conn->peer_port);
+									conn->peer_connected_from_addr.ip_addr, conn->peer_connected_from_addr.p2p_port);
 		assert(conn->is_in_conn_table==0);		
 		swarmkv_connection_free(conn);
 		return;
@@ -223,7 +223,7 @@ static void peer_conn_read_cb(struct bufferevent *bev, void *arg)
 			if(hdr->magic!=MSG_HDR_MAGIC)
 			{
 				MESA_handle_runtime_log(thr->ref_logger, RLOG_LV_FATAL, MODULE_SWAMRKV_NET, "invalid message header magic from %s:%u",
-										conn->peer_ip, conn->peer_port);									
+										conn->peer_connected_from_addr.ip_addr, conn->peer_connected_from_addr.p2p_port);									
 				pthread_mutex_lock(&thr->mutex);
 				swarmkv_net_conn_table_remove(conn);
 				pthread_mutex_unlock(&thr->mutex);
@@ -239,9 +239,9 @@ static void peer_conn_read_cb(struct bufferevent *bev, void *arg)
 				pthread_mutex_unlock(&thr->mutex);
 
 				MESA_handle_runtime_log(thr->ref_logger, RLOG_LV_INFO, MODULE_SWAMRKV_NET, 
-							"new peer connection from %s:%d has been set, source address is %s:%u.",
-											conn->peer.ip_addr, conn->peer.p2p_port,
-											conn->peer_ip, conn->peer_port);
+							"new peer connection from %s:%d has been set, which is connected from %s:%u.",
+											conn->peer_listen_addr.ip_addr, conn->peer_listen_addr.p2p_port,
+											conn->peer_connected_from_addr.ip_addr, conn->peer_connected_from_addr.p2p_port);
 			}
 			conn->recv_state=RECEIVING_PAYLOAD;
 			conn->expect_payload_len=hdr->payload_len;
@@ -257,7 +257,7 @@ static void peer_conn_read_cb(struct bufferevent *bev, void *arg)
 				conn->recv_state=RECEIVING_PAYLOAD;
 				break;
 			}
-			thr->ref_net->callback_func(&(conn->peer), recv_buff, conn->expect_payload_len, thr->ref_net->callback_arg);
+			thr->ref_net->callback_func(&(conn->peer_listen_addr), recv_buff, conn->expect_payload_len, thr->ref_net->callback_arg);
 			evbuffer_drain(input, conn->expect_payload_len);
 			conn->expect_payload_len=0;
 			conn->recv_state=RECEIVING_HDR;
@@ -276,7 +276,7 @@ static void peer_conn_event_cb(struct bufferevent *bev, short events, void *arg)
 	if (events & BEV_EVENT_ERROR || events & BEV_EVENT_EOF)
 	{
 		MESA_handle_runtime_log(thr->ref_logger, RLOG_LV_DEBUG, MODULE_SWAMRKV_NET, "%s:%u connection error, %d (%s).",
-								conn->peer_ip, conn->peer_port,
+								conn->peer_connected_from_addr.ip_addr, conn->peer_connected_from_addr.p2p_port,
 								err, evutil_socket_error_to_string(err));
 	}
 	pthread_mutex_lock(&thr->mutex);
@@ -303,13 +303,13 @@ void connect_peer_eventcb(struct bufferevent *bev, short events, void *arg)
 		bufferevent_setcb(conn->bev, peer_conn_read_cb, NULL, peer_conn_event_cb, conn);
 		bufferevent_enable(conn->bev, EV_READ | EV_WRITE);
 		MESA_handle_runtime_log(thr->ref_logger, RLOG_LV_DEBUG, MODULE_SWAMRKV_NET, "peer %s:%u is connected.",
-								conn->peer.ip_addr, conn->peer.p2p_port);
+								conn->peer_listen_addr.ip_addr, conn->peer_listen_addr.p2p_port);
     }
 	else if (events & BEV_EVENT_ERROR)
     {
 		int err = EVUTIL_SOCKET_ERROR();
 		MESA_handle_runtime_log(thr->ref_logger, RLOG_LV_FATAL, MODULE_SWAMRKV_NET, "connect to %s:%u failed %d (%s).",
-								conn->peer.ip_addr, conn->peer.p2p_port,
+								conn->peer_listen_addr.ip_addr, conn->peer_listen_addr.p2p_port,
 								err, evutil_socket_error_to_string(err));
 		pthread_mutex_lock(&thr->mutex);
 		swarmkv_net_conn_table_remove(conn);
@@ -328,11 +328,10 @@ struct swarmkv_connection* swarmkv_connection_new_by_connect(struct swarmkv_net_
 	//http://www.wangafu.net/~nickm/libevent-book/Ref6_bufferevent.html
 	conn->bev=bufferevent_socket_new(base, -1, BEV_OPT_DEFER_CALLBACKS|BEV_OPT_THREADSAFE);//BEV_OPT_UNLOCK_CALLBACKS|
 	bufferevent_setcb(conn->bev, NULL, NULL, connect_peer_eventcb, conn);
-	memcpy(&conn->peer, dest, sizeof(struct swarmkv_node_addr));
+	memcpy(&conn->peer_listen_addr, dest, sizeof(struct swarmkv_node_addr));
 	conn->thread_id=thr->thread_id;
 	conn->ref_thr_ctx=thr;
-	conn->peer_port=dest->p2p_port;
-	strcpy(conn->peer_ip, dest->ip_addr);
+	swarmkv_node_addr_copy(&conn->peer_connected_from_addr, dest);
 	
 	struct sockaddr_in sa4;
 	struct sockaddr_in6 sa6;
@@ -376,7 +375,7 @@ struct swarmkv_connection* swarmkv_connection_new_by_fd(struct swarmkv_net_threa
 	conn->buff_for_sending=evbuffer_new();
 	evbuffer_enable_locking(conn->buff_for_sending, NULL);
 	evutil_make_socket_nonblocking(fd);
-	sockaddr2string(addr, conn->peer_ip, sizeof(conn->peer_ip), &(conn->peer_port));
+	sockaddr2string(addr, conn->peer_connected_from_addr.ip_addr, sizeof(conn->peer_connected_from_addr.ip_addr), &(conn->peer_connected_from_addr.p2p_port));
 	conn->bev=bufferevent_socket_new(thr->evbase, fd, BEV_OPT_DEFER_CALLBACKS|BEV_OPT_THREADSAFE);//BEV_OPT_UNLOCK_CALLBACKS|
 	//use BEV_OPT_THREADSAFE option for safely access from threads that calling swarmkv_net_send.
 	//? use BEV_OPT_UNLOCK_CALLBACKS option because swarmkv_net_send write buffer to output_buffer, and peer_conn_read_cb read input_buffer.
@@ -436,7 +435,7 @@ int swarmkv_net_send(struct swarmkv_net* net, const struct swarmkv_node_addr* de
 		conn=swarmkv_connection_new_by_connect(thr, dest);
 		if(conn)
 		{
-			HASH_ADD(hh, thr->conn_table, peer, sizeof(struct swarmkv_node_addr), conn);
+			HASH_ADD(hh, thr->conn_table, peer_listen_addr, sizeof(struct swarmkv_node_addr), conn);
 			conn->is_in_conn_table=1;
 		}
 		else
@@ -465,13 +464,13 @@ static void accept_peer_connection_cb(struct evconnlistener *listener, evutil_so
 	struct swarmkv_net_thread_ctx *thr=NULL;
 	struct swarmkv_connection* conn=NULL;
 	char peer_ip_str[MAX_IPv6_ADDR_STR_LEN]="";		
-	sockaddr2string(addr, peer_ip_str, sizeof(conn->peer_ip), NULL);
+	sockaddr2string(addr, peer_ip_str, sizeof(peer_ip_str), NULL);
 	int thread_id=get_net_thread_id(peer_ip_str, net->n_thread);
 	thr=net->threads[thread_id];
 	conn=swarmkv_connection_new_by_fd(thr, fd, addr);
 
 	MESA_handle_runtime_log(net->logger, RLOG_LV_DEBUG, MODULE_SWAMRKV_NET, "accept connection form peer %s:%u.",
-							conn->peer_ip, conn->peer_port);
+							conn->peer_connected_from_addr.ip_addr, conn->peer_connected_from_addr.p2p_port);
 
 	return;
 }

@@ -2,9 +2,6 @@
   <img src="./doc/imgs/swarmkv_logo.svg" align="left" height="40px" alt="swarmkv logo"/>
   <span>SwarmKV</span>
 </h1>
-
-
-
 **SwarmKV is a embedded and distributed key-value storage library with peer-to-peer networking.** 
 SwarmKV uses [HashiCorp Consul](https://www.consul.io/) for cluster management, which includes leader election, health checking, and slot table management.
 
@@ -41,11 +38,6 @@ SwarmKV Data Types
 - Integer
 - Hash Table
 - Rate limiter
-
-SwarmKV operations
-
-- Get, Set, Delete
-- TTL
 
 # Command Specification
 
@@ -92,7 +84,7 @@ Supported glob-style patterns:
 
 Use `\` to escape special characters if you want to match them verbatim.
 
-The pattern is same as Redis https://redis.io/commands/keys/
+The pattern is exactly same as Redis https://redis.io/commands/keys/ .
 
 # Getting start
 
@@ -372,7 +364,7 @@ The source files are organized as follows:
 - src/swarmkv_message.c: Message is encoded to [MessagePack](https://msgpack.org/index.html) format by [mpack](https://github.com/ludocode/mpack) library.
 - src/swarmkv_net.c: High performance P2P communication via [libevent](https://libevent.org/).
 - src/test/ Unit tests.
-- src/deps/ Dependencies in source codes format, such as [uthash](https://troydhanson.github.io/uthash/), [sds](https://github.com/antirez/sds), [mpack](https://github.com/ludocode/mpack), cJSON.
+- src/deps/ Dependencies in source codes format, such as [uthash](https://troydhanson.github.io/uthash/), [sds](https://github.com/antirez/sds), [mpack](https://github.com/ludocode/mpack), [timeout](https://25thandclement.com/~william/projects/timeout.c.html), [cJSON](https://github.com/DaveGamble/cJSON).
 - src/vendor/  Dependencies in archive format.
 - tools/swarmkv_cli: CLI implementation which is facilitated by [linenoise](https://github.com/antirez/linenoise).
 

@@ -60,7 +60,47 @@ struct swarmkv
 	struct swarmkv_cmd_spec *command_table;
 };
 
+static void spec_lock_module(struct swarmkv_cmd_spec *spec)
+{
+	if(spec->flag==CMD_KEY_RO||spec->flag==CMD_KEY_NA)
+	{
+		pthread_rwlock_rdlock(&(spec->module->rwlock));
+	}
+	else
+	{
+		pthread_rwlock_wrlock(&(spec->module->rwlock));
+	}
 
+}
+static void spec_unlock_module(struct swarmkv_cmd_spec *spec)
+{
+	pthread_rwlock_unlock(&(spec->module->rwlock));
+}
+
+struct swarmkv_cmd_spec *get_spec_by_argv(struct swarmkv *db, size_t argc, char* const argv[])
+{
+	struct swarmkv_cmd_spec *spec=NULL;
+	char name[256]="";
+	strncpy(name, argv[0], sizeof(name));
+	toUpper(name);
+	HASH_FIND(hh, db->command_table, name, strlen(name), spec);
+	if(spec)
+	{
+		return spec;
+	}
+	if(argc<2)
+	{
+		return NULL;
+	}
+	snprintf(name, sizeof(name), "%s %s", argv[0], argv[1]);
+	toUpper(name);
+	HASH_FIND(hh, db->command_table, name, strlen(name), spec);
+	if(spec)
+	{
+		return spec;
+	}
+	return NULL;
+}
 
 
 void swarmkv_create_thread_ctx(struct swarmkv *db)
@@ -112,7 +152,7 @@ void exec_command_at_peer(struct swarmkv *db, const struct swarmkv_cmd *cmd, con
 {
 	struct promise *p=future_to_promise(f);
 
-//	assert(0!=swarmkv_node_addr_compare(&db->self, peer_addr));
+	assert(0!=swarmkv_node_addr_compare(&db->self, peer_addr));
 
 	unsigned long long rr_seq=swarmkv_rr_add(db->rr_mgr, cmd_exec_cb, p);
 	struct swarmkv_msg *msg=swarmkv_msg_new(db->bin_uuid, rr_seq);
@@ -126,6 +166,50 @@ void exec_command_at_peer(struct swarmkv *db, const struct swarmkv_cmd *cmd, con
 	msg=NULL;
 	sdsfree(buff);
 	buff=NULL;	
+	return;
+}
+static void del_expire_key_on_succ(void* result, void* user)
+{
+	const struct swarmkv_reply* reply=(const struct swarmkv_reply*) result;
+	assert(reply->type==SWARMKV_REPLY_INTEGER);
+	assert(reply->integer==1);
+	return;
+
+}
+static void del_expire_key_on_fail(enum e_future_error err, const char * what, void * user)
+{
+	return;
+}
+
+void del_key_at_object_owner(struct swarmkv *db, const sds key, const struct swarmkv_node_addr *obj_owner)
+{
+	struct swarmkv_cmd *cmd=NULL;
+	struct swarmkv_reply *reply=NULL;
+	struct swarmkv_cmd_spec *spec=NULL;
+	cmd=swarmkv_cmd_new(2);
+	cmd->argv[0]=sdsnew("del");
+	cmd->argv[1]=sdsdup(key);
+	if(0==swarmkv_node_addr_compare(&db->self, obj_owner))
+	{	
+		spec=get_spec_by_argv(db, cmd->argc, cmd->argv);	
+		spec_lock_module(spec);
+		assert(spec->proc_as_owner==del_command_as_owner);
+		spec->proc_as_owner(spec->module, cmd, NULL, &reply);
+		spec_unlock_module(spec);
+		
+		assert(reply->type==SWARMKV_REPLY_INTEGER);
+		assert(reply->integer==1);
+		swarmkv_reply_free(reply);
+		reply=NULL;
+	}
+	else
+	{
+		struct future *f=future_create("del_expire", del_expire_key_on_succ, del_expire_key_on_fail, NULL);
+		exec_command_at_peer(db, cmd, obj_owner, f);		
+		future_destroy(f);
+	}
+	swarmkv_cmd_free(cmd);
+	
 	return;
 }
 
@@ -164,22 +248,7 @@ void exec_cmd_ctx_free(struct cmd_exec_ctx *ctx)
 	free(ctx);
 }
 
-static void spec_lock_module(struct swarmkv_cmd_spec *spec)
-{
-	if(spec->flag==CMD_KEY_RO||spec->flag==CMD_KEY_NA)
-	{
-		pthread_rwlock_rdlock(&(spec->module->rwlock));
-	}
-	else
-	{
-		pthread_rwlock_wrlock(&(spec->module->rwlock));
-	}
 
-}
-static void spec_unlock_module(struct swarmkv_cmd_spec *spec)
-{
-	pthread_rwlock_unlock(&(spec->module->rwlock));
-}
 
 static void generic_exec_on_success(void* result, void* user)
 {	
@@ -272,30 +341,7 @@ static void generic_route_on_fail(enum e_future_error err, const char * what, vo
 	exec_cmd_ctx_free(ctx);
 }
 
-struct swarmkv_cmd_spec *get_spec_by_argv(struct swarmkv *db, size_t argc, char* const argv[])
-{
-	struct swarmkv_cmd_spec *spec=NULL;
-	char name[256]="";
-	strncpy(name, argv[0], sizeof(name));
-	toUpper(name);
-	HASH_FIND(hh, db->command_table, name, strlen(name), spec);
-	if(spec)
-	{
-		return spec;
-	}
-	if(argc<2)
-	{
-		return NULL;
-	}
-	snprintf(name, sizeof(name), "%s %s", argv[0], argv[1]);
-	toUpper(name);
-	HASH_FIND(hh, db->command_table, name, strlen(name), spec);
-	if(spec)
-	{
-		return spec;
-	}
-	return NULL;
-}
+
 static struct swarmkv_cmd *make_keyroute_cmd(enum cmd_key_flag flag, const sds key, const struct swarmkv_node_addr *obj_owner)
 {
 	struct swarmkv_cmd *keyroute_cmd=NULL;
@@ -722,7 +768,7 @@ struct swarmkv *swarmkv_open(struct swarmkv_options* opts, const char * db_name,
 	{
 		goto error_out;
 	}
-	swarmkv_keyspace_set_send_cmd_func(db->mod_keyspace, exec_command_at_peer, db);
+	swarmkv_keyspace_set_del_key_func(db->mod_keyspace, del_key_at_object_owner, db);
 
 	db->mod_store=swarmkv_store_new(exec_command_at_peer, db, opts->disable_cache);
 
