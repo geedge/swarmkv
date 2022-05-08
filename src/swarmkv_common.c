@@ -235,7 +235,7 @@ sds keyslots2json(void *slot_container_base, size_t sz_slot_container, size_t of
 {
 	cJSON *slot_array=cJSON_CreateArray();
 	cJSON *slot=NULL, *node=NULL;
-	char range[256]="", uuid_str[38]="";
+	char range[256]="";
 	size_t i=0;
 	sds json_sds=NULL;
 	assert(SWARMKV_SLOT_NUM==n_slot_container);
@@ -265,8 +265,6 @@ sds keyslots2json(void *slot_container_base, size_t sz_slot_container, size_t of
 		node=cJSON_CreateObject();
 		cJSON_AddStringToObject(node, "ip", end_slot->owner.addr.ip_addr);
 		cJSON_AddNumberToObject(node, "p2p_port", end_slot->owner.addr.p2p_port);
-		uuid_unparse_lower(end_slot->owner.bin_uuid, uuid_str);
-		cJSON_AddStringToObject(node, "node_uuid", uuid_str);
 		cJSON_AddItemToObject(slot, "owner", node);
 		cJSON_AddItemToArray(slot_array, slot);
 		start_slot=end_slot=iterator;

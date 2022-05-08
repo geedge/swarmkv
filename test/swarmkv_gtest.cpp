@@ -714,7 +714,7 @@ TEST_F(SwarmkvTwoNodes, CacheFlush)
 
 TEST_F(SwarmkvTwoNodes, Wait)
 {
-	sleep(1*2);
+	sleep(3600*2);
 }
 
 int main(int argc, char ** argv)

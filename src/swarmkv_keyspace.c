@@ -987,51 +987,7 @@ int keyslots_init(struct swarmkv_keyspace* ks)
 	sdsfree(resp_body);
 	return 0;
 }
-/*
-static void consul_kv_init_if_nonexist(struct swarmkv_keyspace* ks)
-{
-	char url[SWARMKV_URL_MAX]="";
-	int resp_code_get=0, resp_code_put=0;
-	sds self_info=NULL;
-	char *slot_table=NULL;
-	snprintf(url, sizeof(url), "/v1/kv/swarmkv/%s/slots", ks->db_name);
-	resp_code_get=http_blocking_request(EVHTTP_REQ_GET, CONSUL_HOST, ks->consul_agent_port, url, NULL, NULL);
-	if(resp_code_get==404)
-	{
-		slot_table=keyslots2json(ks->slots, SWARMKV_SLOT_NUM);
-		resp_code_put=http_blocking_request(EVHTTP_REQ_PUT, CONSUL_HOST, ks->consul_agent_port, url, slot_table, NULL);	
-		sdsfree(slot_table);
-		if(resp_code_put==200)
-		{
-			MESA_handle_runtime_log(ks->logger, RLOG_LV_INFO, MODULE_SWARMKV_KEYSPACE, "consul KV init slot table %s.", url); 	
-		}
-		else
-		{
-			MESA_handle_runtime_log(ks->logger, RLOG_LV_FATAL, MODULE_SWARMKV_KEYSPACE, "consul KV init slot table %s failed.", url);	
 
-		}
-	}	
-	snprintf(url, sizeof(url), "/v1/kv/swarmkv/%s/lead", ks->db_name);
-
-	resp_code_get=http_blocking_request(EVHTTP_REQ_GET, CONSUL_HOST, ks->consul_agent_port, url, NULL, NULL);
-	if(resp_code_get==404)
-	{
-		self_info=node_print_json(&(ks->self));
-		resp_code_put=http_blocking_request(EVHTTP_REQ_PUT, CONSUL_HOST, ks->consul_agent_port, url, self_info, NULL);	
-		sdsfree(self_info);
-		if(resp_code_put==200)
-		{
-			MESA_handle_runtime_log(ks->logger, RLOG_LV_INFO, MODULE_SWARMKV_KEYSPACE, "consul KV init lead %s.", url); 	
-		}
-		else
-		{
-			MESA_handle_runtime_log(ks->logger, RLOG_LV_FATAL, MODULE_SWARMKV_KEYSPACE, "consul KV init lead %s failed.", url);	
-
-		}
-	}
-
-}
-*/
 static struct swarmkv_keyspace *module2keyspace(struct swarmkv_module *module)
 {
 	//type safety check

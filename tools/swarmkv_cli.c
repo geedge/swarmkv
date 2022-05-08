@@ -12,15 +12,38 @@
 #include "swarmkv/swarmkv.h"
 
 extern struct swarmkv_reply *swarmkv_cmd_argv(struct swarmkv *db, size_t argc, sds *argv);
-
-struct runtime_para
+struct cluster_manager_command
 {
+	char* cluster_name;
+	int argc;
+	char ** argv;
+};
+struct config
+{	
 	char db_name[256];
 	int consul_port;
 	char consul_host[64];
 	struct swarmkv *db;
+	struct cluster_manager_command cluster_mgr_cmd;
 };
-struct runtime_para g_para;
+
+struct config g_config;
+#define	CLUSTER_MANAGER_MODE() (g_config.cluster_mgr_cmd.cluster_name != NULL)
+#define SWARMKV_CLI_VERSION	"2.0.0 Islamabad F7"
+
+static void usage(void)
+{
+	fprintf(stderr,
+	"swarmkv-cli %s\n"
+	"\n"
+	"Usage: swarmkv-cli [OPTIONS] [cmd [arg [arg ...]]]\n"
+	"  -n <cluster-name>  Cluster name used for orchestration.\n"
+	"  -p <consul-port>   Consul Agent port (default: 8500).\n"
+	"  --cluster-create	<cluster-name> IP port [IP port]  Create orchestration information in Consul KV.\n",
+	SWARMKV_CLI_VERSION);
+	
+    exit(1);
+}
 
 static int consul_get_cluster_leader_block(const char *db_name, unsigned int consul_agent_port, struct swarmkv_node *leader)
 {
@@ -28,7 +51,7 @@ static int consul_get_cluster_leader_block(const char *db_name, unsigned int con
 	int resp_code=0;
 	char url[SWARMKV_URL_MAX]="";
 	snprintf(url, sizeof(url),"/v1/kv/swarmkv/%s/lead?raw=1", db_name);
-	resp_code=http_blocking_request(EVHTTP_REQ_GET, g_para.consul_host, consul_agent_port, url, NULL, &resp_body);
+	resp_code=http_blocking_request(EVHTTP_REQ_GET, g_config.consul_host, consul_agent_port, url, NULL, &resp_body);
 	if(resp_code!=200)
 	{
 		return -1;
@@ -44,7 +67,7 @@ static int consul_list_health_nodes_block(const char *db_name, unsigned int cons
 	int resp_code=0;
 
 	snprintf(url, sizeof(url), "/v1/health/service/%s?passing=1", db_name);
-	resp_code=http_blocking_request(EVHTTP_REQ_GET, g_para.consul_host, consul_agent_port, url, NULL, &resp_body);
+	resp_code=http_blocking_request(EVHTTP_REQ_GET, g_config.consul_host, consul_agent_port, url, NULL, &resp_body);
 	if(resp_code!=200)
 	{
 		return -1;
@@ -54,6 +77,63 @@ static int consul_list_health_nodes_block(const char *db_name, unsigned int cons
 	return 0;
 }
 
+static int consul_kv_init_block(char *cluster_name, char *argv[], size_t argc)
+{
+	char url[SWARMKV_URL_MAX]="";
+	int resp_code_put=0;
+	const char *ip=NULL, *port=NULL;
+	size_t slots_per_node=SWARMKV_SLOT_NUM/(argc/2);
+	struct key_slot slots[SWARMKV_SLOT_NUM];
+	size_t i=0, nth_node=0;
+	int ret=0;
+	memset(slots, 0, sizeof(slots));
+	for(i=0; i<SWARMKV_SLOT_NUM; i++)
+	{
+		nth_node=i/slots_per_node;
+		ip=argv[nth_node*2];
+		port=argv[nth_node*2+1];
+		slots[i].slot_id=i;
+		strncpy(slots[i].owner.addr.ip_addr, ip, sizeof(slots[i].owner.addr));
+		slots[i].owner.addr.p2p_port=atoi(port);
+	}
+	sds slot_json=NULL;
+	slot_json=keyslots2json(slots, sizeof(struct key_slot), 0, SWARMKV_SLOT_NUM);
+	snprintf(url, sizeof(url), "/v1/kv/swarmkv/%s/slots", cluster_name);
+	resp_code_put=http_blocking_request(EVHTTP_REQ_PUT, g_config.consul_host, g_config.consul_port, url, slot_json, NULL);
+	if(resp_code_put==200)
+	{
+		fprintf(stderr, "consul KV init slot table %s.\n", url);
+		ret=0;
+	}
+	else
+	{		
+		fprintf(stderr, "consul KV init slot table %s failed.\n", url);	
+		ret=-1;
+	}
+	sdsfree(slot_json);
+	return ret;
+}
+struct swarmkv_reply *cluster_create_command(struct swarmkv* db, char *argv[], size_t argc)
+{
+	int ret=0;
+	struct swarmkv_reply *reply=NULL;
+	if(argc<3 || (argc-1)%2!=0)
+	{
+		reply=swarmkv_reply_new_error("invalid arguments number");
+		return reply;
+	}
+	ret=consul_kv_init_block(argv[0], argv+1, argc-1);
+	if(ret<0)
+	{
+		reply=swarmkv_reply_new_error("cluster %s  create failed.", argv[0]);
+	}
+	else
+	{
+		reply=swarmkv_reply_new_status("OK");
+	}
+	return reply;
+}
+
 struct swarmkv_reply *cluster_nodes_command(struct swarmkv* db, char *argv[], size_t argc)
 {
 	struct swarmkv_reply *reply=NULL;
@@ -61,13 +141,13 @@ struct swarmkv_reply *cluster_nodes_command(struct swarmkv* db, char *argv[], si
 	struct swarmkv_node leader; 	
 	struct swarmkv_node nodes[SWARMKV_NODE_MAX];
 	size_t n_node=SWARMKV_NODE_MAX;
-	ret=consul_get_cluster_leader_block(g_para.db_name, g_para.consul_port, &leader);
+	ret=consul_get_cluster_leader_block(g_config.db_name, g_config.consul_port, &leader);
 	if(ret<0)
 	{
 		reply=swarmkv_reply_new_error(error_cluster_leader_not_found);
 		return reply;
 	}
-	ret=consul_list_health_nodes_block(g_para.db_name, g_para.consul_port, nodes, &n_node);
+	ret=consul_list_health_nodes_block(g_config.db_name, g_config.consul_port, nodes, &n_node);
 	if(ret<0)
 	{
 		reply=swarmkv_reply_new_error(error_cluster_leader_not_found);
@@ -101,11 +181,11 @@ struct swarmkv_reply *cluster_slots_command(struct swarmkv* db, char *argv[], si
 	char url[SWARMKV_URL_MAX]="";
 	sds resp_body=NULL;
 	int resp_code=0;
-	snprintf(url, sizeof(url), "/v1/kv/swarmkv/%s/slots?raw=1", g_para.db_name);
-	resp_code=http_blocking_request(EVHTTP_REQ_GET, g_para.consul_host, g_para.consul_port, url, NULL, &resp_body);
+	snprintf(url, sizeof(url), "/v1/kv/swarmkv/%s/slots?raw=1", g_config.db_name);
+	resp_code=http_blocking_request(EVHTTP_REQ_GET, g_config.consul_host, g_config.consul_port, url, NULL, &resp_body);
 	if(resp_code!=200)
 	{
-		reply=swarmkv_reply_new_error("read %s%s failed", g_para.consul_host, url);
+		reply=swarmkv_reply_new_error("read %s%s failed", g_config.consul_host, url);
 		return reply;
 	}
 	reply=swarmkv_reply_new_string(resp_body, sdslen(resp_body)+1);	
@@ -329,9 +409,9 @@ struct swarmkv_reply *cluster_addnode_command(struct swarmkv* db, char *argv[], 
 	sds slot_json=NULL;
 	slot_json=keyslots2json(slots, sizeof(struct key_slot), 0, SWARMKV_SLOT_NUM);
 
-	snprintf(url, sizeof(url), "/v1/kv/swarmkv/%s/slots", g_para.db_name);
+	snprintf(url, sizeof(url), "/v1/kv/swarmkv/%s/slots", g_config.db_name);
 	
-	resp_code_put=http_blocking_request(EVHTTP_REQ_PUT, g_para.consul_host, g_para.consul_port, url, slot_json, NULL);
+	resp_code_put=http_blocking_request(EVHTTP_REQ_PUT, g_config.consul_host, g_config.consul_port, url, slot_json, NULL);
 	if(resp_code_put!=200)
 	{
 		reply=swarmkv_reply_new_error("update slot table failed: %s (%d)", url, resp_code_put);
@@ -389,6 +469,7 @@ struct swarmkv_reply *cluster_keys_command(struct swarmkv* db, char *argv[], siz
 	return reply;
 }
 
+
 typedef struct swarmkv_reply *cluster_command_func(struct swarmkv* db, char *argv[], size_t argc);
 
 struct cluster_cmd_spec
@@ -402,7 +483,8 @@ struct cluster_cmd_spec cluster_cmds[]={
 	{"CLUSTER KEYSLOT", "key", cluster_keyslot_command},
 	{"CLUSTER NODES", "", cluster_nodes_command},
 	{"CLUSTER SLOTS", "", cluster_slots_command},
-	{"CLUSTER ADDNODE", "IP port", cluster_addnode_command}
+	{"CLUSTER ADDNODE", "IP port", cluster_addnode_command},
+	{"CLUSTER CREATE", "cluster-name IP port [IP port]", cluster_create_command}
 };
 int is_cluster_command(const char *line)
 {
@@ -486,7 +568,7 @@ void completion(const char *buff, linenoiseCompletions *lc)
 {
 	size_t n_matched=0, i=0;
 	const char *possible_cmd[32];
-	n_matched=swarmkv_get_possible_command_name(g_para.db, buff, possible_cmd, 32);
+	n_matched=swarmkv_get_possible_command_name(g_config.db, buff, possible_cmd, 32);
 	n_matched+=get_possible_cluster_command_name(buff, possible_cmd+n_matched, 32-n_matched);
 	for(i=0; i<n_matched; i++)
 	{
@@ -498,7 +580,7 @@ char *hints(const char *cmd, int *color, int *bold)
 {
 	const char *p=NULL;
 	static char buff[512];
-	p=swarmkv_get_command_hint(g_para.db, cmd);
+	p=swarmkv_get_command_hint(g_config.db, cmd);
 	if(!p)
 		p=get_cluster_command_hint(cmd);
 
@@ -548,40 +630,57 @@ void print_reply(const struct swarmkv_reply *reply)
 int main(int argc, char * argv[])
 {
 	const char *history_file="swarmkv-cli-history.txt";
-	char *line;
-	char *prgname = argv[0];
-	int oc;
-	memset(&g_para, 0, sizeof(g_para));
-	g_para.consul_port=8500;
-	strcpy(g_para.consul_host, "127.0.0.1");
-	while((oc=getopt(argc, argv, "n:p:"))!=-1)
+	char *line;	
+	struct swarmkv_reply *reply=NULL;
+	memset(&g_config, 0, sizeof(g_config));
+	g_config.consul_port=8500;
+	strcpy(g_config.consul_host, "127.0.0.1");
+    int i;
+
+    for (i = 1; i < argc; i++)
 	{
-		switch(oc)
+        int lastarg = i==argc-1;
+		if (!strcmp(argv[i], "-n") && !lastarg)
 		{
-			case 'n':
-				strncpy(g_para.db_name, optarg, sizeof(g_para.db_name));
-				break;
-			case 'p':
-				sscanf(optarg, "%u", &g_para.consul_port);
-				break;
-			default:	
-				fprintf(stderr, "Usage: %s [-n db-name] [-p consul-port]\n", prgname);
-				break;
+			strncpy(g_config.db_name, argv[++i], sizeof(g_config.db_name));
 		}
+		else if(!strcmp(argv[i], "-p") && !lastarg)
+		{
+			sscanf(argv[++i], "%u", &g_config.consul_port);
+		}
+		else if(!strcmp(argv[i], "--cluster-create") && !lastarg)
+		{
+			g_config.cluster_mgr_cmd.cluster_name=argv[++i];
+			int j = i;
+			while (j < argc && argv[j][0] != '-') j++;
+			if (j > i) j--;
+			reply=cluster_create_command(NULL, argv+i, j-i+1);
+			i = j;
+		}
+		else
+		{
+			usage();
+		}
+    }
+	if(CLUSTER_MANAGER_MODE())
+	{	
+		print_reply(reply);
+		swarmkv_reply_free(reply);
+		return 1;
 	}
-	if(!strlen(g_para.db_name))
+	if(!strlen(g_config.db_name))
 	{
-		fprintf(stderr, "need [-n db-name]\n");
+		usage();
 		return 0;
 	}
 	struct swarmkv_options *opts=swarmkv_options_new();
 	swarmkv_options_set_dryrun(opts);
 	swarmkv_options_set_worker_thread_number(opts, 2);
 	char *err=NULL;
-	g_para.db=swarmkv_open(opts, g_para.db_name, &err);
+	g_config.db=swarmkv_open(opts, g_config.db_name, &err);
 	if(err)
 	{
-		fprintf(stderr, "Open DB %s error: %s", g_para.db_name, err);
+		fprintf(stderr, "Open DB %s error: %s", g_config.db_name, err);
 		free(err);
 		err=NULL;
 		return 0;
@@ -593,9 +692,8 @@ int main(int argc, char * argv[])
 
 	linenoiseHistoryLoad(history_file); /* Load the history at startup */
 
-	struct swarmkv_reply *reply=NULL;
 	char prompt[256];
-	snprintf(prompt, sizeof(prompt), "%s> ", g_para.db_name);
+	snprintf(prompt, sizeof(prompt), "%s> ", g_config.db_name);
 	while((line = linenoise(prompt)) != NULL)
 	{
 		if(0==strlen(line))
@@ -604,11 +702,11 @@ int main(int argc, char * argv[])
 		}
 		if(is_cluster_command(line))
 		{
-			reply=cluster_command(g_para.db, line);
+			reply=cluster_command(g_config.db, line);
 		}
 		else
 		{
-			reply=swarmkv_command(g_para.db, line);		
+			reply=swarmkv_command(g_config.db, line);		
 		}
 		print_reply(reply);
 		swarmkv_reply_free(reply);
