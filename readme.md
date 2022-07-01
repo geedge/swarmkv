@@ -38,6 +38,7 @@ SwarmKV Data Types
 
 - String
 - Integer
+- Set
 - Hash Table
 - Bitmap
 - Rate limiter
@@ -56,13 +57,10 @@ SwarmKV Data Types
 | TTL                    | key               | Integer reply: TTL in seconds, in case of error:   -2 if the key does not exist;  -1 if the key exists but has no associated expire. |
 | TSET(?)                | key id bandwidth  | QoS cluster, qos job qos task?                               |
 | HGET                   |                   |                                                              |
-| KEYSPACE GET           | key               | 1) "192.168.1.200"<br/>2) (integer) 5211                     |
-| KEYSPACE SET           | key [IP port]     | 1) "192.168.1.200"<br/>2) (integer) 5211                     |
-| KEYSPACE DEL           | key               | 1) "192.168.1.200"<br/>2) (integer) 5211                     |
-| KEYSPACE SETNXGET      | key [IP port]     | 1) "192.168.1.200"<br/>2) (integer) 5211                     |
-| KEYSPACE RADD          | key IP port       |                                                              |
+| KEYSPACE RADD          | key IP port       | Add replica to the key, create the key if key does not exist. |
+| KEYSPACE XRADD         | key IP Port       | Add replica to the key, return NULL if the key does not exist. |
 | KEYSPACE RLIST         | key               | Node Array reply:<br/>1) "192.168.1.200:5211"<br/>2) "192.168.1.201:5211"<br/>3) "[2001:db8::1]:5211"<br/> |
-|                        |                   |                                                              |
+| KEYSPACE DEL           | key               |                                                              |
 | KEYSPACE SETSLOT       | see source code   |                                                              |
 | KEYSPACE GETKEYSINSLOT | IP port slot      |                                                              |
 | KEYSPACE ADDKEYSTOSLOT | IP port slot blob |                                                              |

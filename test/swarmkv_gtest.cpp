@@ -13,6 +13,10 @@ int swarmkv_cli_create_cluster(const char* cluster_name, const char *node_string
 	snprintf(cmd_string, sizeof(cmd_string), "../tools/swarmkv-cli --cluster-create %s %s", cluster_name, node_string);
 	return system(cmd_string);
 }
+void wait_for_sync()
+{
+	usleep(100*1000);
+}
 struct cmd_exec_arg
 {
 	pthread_cond_t cond;
@@ -272,7 +276,7 @@ protected:
 	static struct swarmkv* db;
 };
 struct swarmkv* SwarmkvBasicTest::db;
-TEST_F(SwarmkvBasicTest, SetGet)
+TEST_F(SwarmkvBasicTest, SET_GET)
 {
 	struct cmd_exec_arg *arg=NULL;
 	struct swarmkv* db=SwarmkvBasicTest::db;
@@ -297,7 +301,7 @@ TEST_F(SwarmkvBasicTest, SetGet)
 	cmd_exec_arg_free(arg);
 	arg=NULL;
 }
-TEST_F(SwarmkvBasicTest, Delete)
+TEST_F(SwarmkvBasicTest, DEL)
 {
 	struct cmd_exec_arg *arg=NULL;
 	struct swarmkv* db=SwarmkvBasicTest::db;
@@ -320,7 +324,7 @@ TEST_F(SwarmkvBasicTest, Delete)
 	cmd_exec_arg_free(arg);
 	arg=NULL;
 }
-TEST_F(SwarmkvBasicTest, ExpireTTL)
+TEST_F(SwarmkvBasicTest, EXPIRE_TTL)
 {
 	struct cmd_exec_arg *arg=NULL;
 	struct swarmkv* db=SwarmkvBasicTest::db;
@@ -429,7 +433,7 @@ protected:
 };
 struct swarmkv* SwarmkvTwoNodes::db1;
 struct swarmkv* SwarmkvTwoNodes::db2;
-TEST_F(SwarmkvTwoNodes, SetGet)
+TEST_F(SwarmkvTwoNodes, SET_GET)
 {
 	struct cmd_exec_arg *arg=NULL;
 	struct swarmkv* db1=SwarmkvTwoNodes::db1;
@@ -458,6 +462,8 @@ TEST_F(SwarmkvTwoNodes, SetGet)
 	EXPECT_TRUE(exec_successful);
 	cmd_exec_arg_clear(arg);
 
+	wait_for_sync();
+	
 	cmd_exec_arg_expect_cstring(arg, val2);
 	swarmkv_get(db1, key, strlen(key), generic_callback, arg);
 	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
@@ -530,6 +536,8 @@ TEST_F(SwarmkvTwoNodes, DEL)
 	EXPECT_TRUE(exec_successful);
 	cmd_exec_arg_clear(arg);
 
+	wait_for_sync();
+
 	cmd_exec_arg_expect_NIL(arg);
 	swarmkv_get(db1, key, strlen(key), generic_callback, arg);
 	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
@@ -580,7 +588,7 @@ TEST_F(SwarmkvTwoNodes, INCRBY)
 	arg=NULL;
 
 }
-TEST_F(SwarmkvTwoNodes, Expire)
+TEST_F(SwarmkvTwoNodes, EXPIRE)
 {
 	struct cmd_exec_arg *arg=NULL;
 	struct swarmkv* db1=SwarmkvTwoNodes::db1;
@@ -795,7 +803,7 @@ TEST_F(SwarmkvTwoNodes, FromLocalReplica)
 
 
 
-	//db1: set id003 lisi	
+	//db1: SET id003 lisi	
 	const char* val1="lisi";
 
 	cmd_exec_arg_expect_OK(arg);
@@ -804,7 +812,7 @@ TEST_F(SwarmkvTwoNodes, FromLocalReplica)
 	EXPECT_TRUE(exec_successful);
 	cmd_exec_arg_clear(arg);
 
-	//db2: get id003
+	//db2: GET id003
 	cmd_exec_arg_expect_cstring(arg, val1);
 	swarmkv_get(db2, key, strlen(key), generic_callback, arg);
 	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
@@ -812,17 +820,21 @@ TEST_F(SwarmkvTwoNodes, FromLocalReplica)
 	EXPECT_EQ(arg->is_sync_callback, 0);
 	cmd_exec_arg_clear(arg);
 
-	//db1: set id003 wang2mazi	
+	wait_for_sync();
+
+	//db2: SET id003 wang2mazi	
 	const char* val2="wang2mazi";
 
 	cmd_exec_arg_expect_OK(arg);
-	swarmkv_set(db1, key, strlen(key), val2, strlen(val2), generic_callback, arg);
+	swarmkv_set(db2, key, strlen(key), val2, strlen(val2), generic_callback, arg);
 	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
 	EXPECT_TRUE(exec_successful);
+	EXPECT_EQ(arg->is_sync_callback, 1);
 	cmd_exec_arg_clear(arg);
 
-	//db2: get id003
-	
+	wait_for_sync();
+
+	//db1: GET id003	
 	cmd_exec_arg_expect_cstring(arg, val2);
 	swarmkv_get(db1, key, strlen(key), generic_callback, arg);
 	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);

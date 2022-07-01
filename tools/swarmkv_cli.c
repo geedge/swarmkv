@@ -29,7 +29,7 @@ struct config
 
 struct config g_config;
 #define	CLUSTER_MANAGER_MODE() (g_config.cluster_mgr_cmd.cluster_name != NULL)
-#define SWARMKV_CLI_VERSION	"2.0.0 Islamabad F7"
+#define SWARMKV_CLI_VERSION	"3.0.0 Islamabad F7"
 
 static void usage(void)
 {

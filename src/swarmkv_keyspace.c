@@ -1515,6 +1515,7 @@ enum KEYSPACE_OP
 {
 	KEYSPACE_RLIST,
 	KEYSPACE_RADD,
+	KEYSPACE_XRADD,
 	KEYSPACE_DEL
 };
 
@@ -1562,6 +1563,17 @@ enum cmd_exec_result key_route_generic(struct swarmkv_keyspace *ks, enum KEYSPAC
 			}
 			key_entry_add_replica_node(key_entry, new_replica);
 			*reply=key_entry_list_replica_nodes(key_entry);
+			break;
+		case KEYSPACE_XRADD:
+			if(key_entry)
+			{
+				key_entry_add_replica_node(key_entry, new_replica);
+				*reply=key_entry_list_replica_nodes(key_entry);
+			}
+			else
+			{
+				*reply=swarmkv_reply_new_nil();
+			}
 			break;
 		case KEYSPACE_DEL:
 			if(key_entry)
@@ -1655,11 +1667,31 @@ enum cmd_exec_result keyspace_radd_command(struct swarmkv_module *mod_keyspace, 
 	sds key=cmd->argv[2];
 	
 	struct swarmkv_node_addr new_replica;
-	sds2node_addr(cmd->argv+3, &new_replica);
-
+	if(cmd->argc==5)
+	{
+		sds2node_addr(cmd->argv+3, &new_replica);
+	}
+	else
+	{
+		swarmkv_node_addr_copy(&new_replica, &ks->self.addr);
+	}
 	ret=key_route_generic(ks, KEYSPACE_RADD, key, &new_replica, reply);
 	return ret;
 }
+enum cmd_exec_result keyspace_xradd_command(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)
+{
+/*KEYSPACE XRADD <key> IP Port*/
+	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
+	enum cmd_exec_result ret=FINISHED;
+	sds key=cmd->argv[2];
+	
+	struct swarmkv_node_addr new_replica;
+	sds2node_addr(cmd->argv+3, &new_replica);
+
+	ret=key_route_generic(ks, KEYSPACE_XRADD, key, &new_replica, reply);
+	return ret;
+}
+
 enum cmd_exec_result del_command(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)
 {
 /*DEL <key> */

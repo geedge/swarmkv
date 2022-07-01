@@ -198,10 +198,21 @@ static struct swarmkv_cmd *make_keyroute_cmd(enum cmd_key_flag flag, const sds k
 	{
 		case CMD_KEY_RO:
 		case CMD_KEY_RW:
-			keyroute_cmd=swarmkv_cmd_new(3);
-			keyroute_cmd->argv[0]=sdsnew("keyspace");
-			keyroute_cmd->argv[1]=sdsnew("rlist");
-			keyroute_cmd->argv[2]=sdsdup(key);
+			if(obj_owner)
+			{
+				keyroute_cmd=swarmkv_cmd_new(5);
+				keyroute_cmd->argv[0]=sdsnew("keyspace");
+				keyroute_cmd->argv[1]=sdsnew("xradd");
+				keyroute_cmd->argv[2]=sdsdup(key);
+				node_addr2sds(obj_owner, keyroute_cmd->argv+3);
+			}
+			else
+			{
+				keyroute_cmd=swarmkv_cmd_new(3);
+				keyroute_cmd->argv[0]=sdsnew("keyspace");
+				keyroute_cmd->argv[1]=sdsnew("rlist");
+				keyroute_cmd->argv[2]=sdsdup(key);
+			}
 			break;
 		case CMD_KEY_OW:
 			if(obj_owner)
@@ -597,7 +608,9 @@ void command_spec_init(struct swarmkv *db)
 	command_register(&(db->command_table), "KEYSPACE RADD", "key IP port",
 					3, 2, CMD_KEY_OW,
 					keyspace_radd_command, db->mod_keyspace);
-	
+	command_register(&(db->command_table), "KEYSPACE XRADD", "key IP port",
+					3, 2, CMD_KEY_OW,
+					keyspace_xradd_command, db->mod_keyspace);
 	command_register(&(db->command_table), "KEYSPACE KEYS", "IP port pattern",
 					3, -1, CMD_KEY_RO,
 					keyspace_keys_command, db->mod_keyspace);
