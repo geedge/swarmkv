@@ -15,7 +15,7 @@
 #include <event2/thread.h>
 #include <event2/http.h>
 
-enum cmd_fastpath_result
+enum cmd_exec_result
 {
 	NEED_KEY_ROUTE,
 	REDIRECT,
@@ -70,6 +70,7 @@ struct swarmkv_options
 	char bind_address[SWARMKV_SYMBOL_MAX];
 	uuid_t bin_uuid;
 	size_t nr_worker_threads;
+	int is_assigned_to_db;
 };
 
 struct swarmkv_cmd
@@ -88,11 +89,18 @@ struct swarmkv_reply *swarmkv_reply_new_string_fmt(const char *format, ...);
 
 struct swarmkv_reply *swarmkv_reply_new_integer(long long integer);
 struct swarmkv_reply *swarmkv_reply_new_array(size_t n_element);
+struct swarmkv_reply *swarmkv_reply_new_node(struct swarmkv_node_addr *addr, int is_ask);
 struct swarmkv_reply *swarmkv_reply_new_nil(void);
 struct swarmkv_reply *swarmkv_reply_new_status(const char *format, ...);
 struct swarmkv_reply *swarmkv_reply_new_error(const char *format, ...);
 struct swarmkv_reply *swarmkv_reply_dup(const struct swarmkv_reply *origin);
 void swarmkv_reply_merge_array(struct swarmkv_reply **dst, struct swarmkv_reply *src);
+
+int swarmkv_reply2node_addr(const struct swarmkv_reply *reply, struct swarmkv_node_addr *node);
+int swarmkv_reply2nodelist(const struct swarmkv_reply *reply, struct swarmkv_node_addr **node_list, size_t *n_node);
+
+int swarmkv_node_addr_list_exists(const struct swarmkv_node_addr *list, size_t n_list, const struct swarmkv_node_addr *addr);
+int swarmkv_node_addr_list_remove(struct swarmkv_node_addr *list, size_t n_list, const struct swarmkv_node_addr *addr);
 
 void node_addr2reply(const struct swarmkv_node_addr *node, struct swarmkv_reply* reply[2]);
 void sds2node_addr(const sds args[2], struct swarmkv_node_addr *node);
@@ -104,6 +112,8 @@ int swarmkv_node_addr_compare(const struct swarmkv_node_addr *addr1, const struc
 void swarmkv_node_addr_copy(struct swarmkv_node_addr *dst, const struct swarmkv_node_addr *src);
 
 int http_blocking_request(enum evhttp_cmd_type type, const char* host, unsigned int port, const char* url, sds req_body, sds *resp_body);
+
+typedef void exec_cmd_func(struct swarmkv *handle, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *peer, struct future *f);
 
 
 

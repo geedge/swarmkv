@@ -29,8 +29,8 @@ enum cmd_key_flag
 				create the key if not-exisit. */
 	CMD_KEY_RM	/* Deletes the key. */
 };
-typedef enum cmd_fastpath_result command_proc_fastpath_func(struct swarmkv_module *module, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply);
-typedef void command_proc_as_owner_func (struct swarmkv_module *module, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply);
+typedef enum cmd_exec_result command_proc_func(struct swarmkv_module *module, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply);
+
 struct swarmkv_cmd_spec
 {
 	const char *name;
@@ -38,8 +38,8 @@ struct swarmkv_cmd_spec
 	int arity; /* Number of arguments, it is possible to use -N to say >= N */
     int key_offset; /* The argument that's a key (-1 = no keys) */
 	enum cmd_key_flag flag; /* Command flag, see CMD_*. */	
-	command_proc_fastpath_func *proc_fastpath;
-	command_proc_as_owner_func *proc_as_owner;
+
+	command_proc_func *proc;
 	struct swarmkv_module *module;
 	UT_hash_handle hh;
 };

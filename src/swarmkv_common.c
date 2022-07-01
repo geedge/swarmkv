@@ -74,6 +74,60 @@ struct swarmkv_reply* swarmkv_reply_new_error(const char *format, ...)
 	
 	return reply;
 }
+struct swarmkv_reply *swarmkv_reply_new_node(struct swarmkv_node_addr *addr, int is_ask)
+{
+	struct swarmkv_reply *reply=ALLOC(struct swarmkv_reply, 1);
+	reply->type=SWARMKV_REPLY_NODE;
+	if(is_ask)
+	{
+		reply->len=asprintf(&(reply->str), "-ASK %s:%u", addr->ip_addr, addr->p2p_port);
+	}
+	else
+	{
+		reply->len=asprintf(&(reply->str), "%s:%u", addr->ip_addr, addr->p2p_port);
+	}
+	return reply;
+}
+int swarmkv_reply2node_addr(const struct swarmkv_reply *reply, struct swarmkv_node_addr *node)
+{
+	if(reply->type!=SWARMKV_REPLY_NODE)
+	{
+		return -1;
+	}
+	memset(node, 0, sizeof(struct swarmkv_node_addr));
+	const char *p=reply->str;
+	if(0==strncasecmp(reply->str, "-ASK ", 5))
+	{
+		p+=5;
+	}
+	int n_read=0;
+	n_read=sscanf(p, "%[^:]:%u", node->ip_addr, &node->p2p_port);
+	if(n_read!=2)
+	{
+		return -1;
+	}
+	return 0;
+}
+int swarmkv_reply2nodelist(const struct swarmkv_reply *reply, struct swarmkv_node_addr **node_list, size_t *n_node)
+{
+	if(reply->type==SWARMKV_REPLY_NIL)
+	{
+		*n_node=0;
+		return 0;
+	}
+	if(reply->type!=SWARMKV_REPLY_ARRAY)
+	{
+		return -1;
+	}
+	*n_node=reply->n_element;
+	*node_list=ALLOC(struct swarmkv_node_addr, *n_node);
+	for(size_t i=0; i<*n_node; i++)
+	{
+		swarmkv_reply2node_addr(reply->elements[i], *node_list+i);
+	}
+	return 0;
+}
+
 void node_addr2reply(const struct swarmkv_node_addr *node, struct swarmkv_reply* reply[2])
 {
 	reply[0]=swarmkv_reply_new_string(node->ip_addr, strlen(node->ip_addr)+1);
@@ -102,6 +156,34 @@ int swarmkv_node_addr_compare(const struct swarmkv_node_addr *addr1, const struc
 		ret=addr1->p2p_port - addr2->p2p_port;
 	}
 	return ret;
+}
+int swarmkv_node_addr_list_exists(const struct swarmkv_node_addr *list, size_t n_list, const struct swarmkv_node_addr *addr)
+{
+	for(size_t i=0; i<n_list; i++)
+	{
+		if(0==swarmkv_node_addr_compare(list+i, addr))
+		{
+			return 1;
+		}
+	}
+	return 0;
+}
+int swarmkv_node_addr_list_remove(struct swarmkv_node_addr *list, size_t n_list, const struct swarmkv_node_addr *addr)
+{
+	int removed=0;
+	for(size_t i=0; i<n_list; i++)
+	{
+		if(0==swarmkv_node_addr_compare(list+i, addr))
+		{
+			if(i<n_list-1)
+			{
+				memmove(list+i, list+i+1, sizeof(struct swarmkv_node_addr)*(n_list-i-1));
+				i--;
+			}			
+			removed++;
+		}
+	}
+	return removed;
 }
 void swarmkv_node_addr_copy(struct swarmkv_node_addr *dst, const struct swarmkv_node_addr *src)
 {

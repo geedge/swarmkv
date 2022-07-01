@@ -6,7 +6,13 @@
 #include <asm/errno.h>
 #include <sys/syscall.h>
 #include <unistd.h>
-#define	CMD_EXEC_TIMEOUT_MS	1000*1800
+#define	CMD_EXEC_TIMEOUT_MS	1000*2
+int swarmkv_cli_create_cluster(const char* cluster_name, const char *node_string)
+{
+	char cmd_string[1024];
+	snprintf(cmd_string, sizeof(cmd_string), "../tools/swarmkv-cli --cluster-create %s %s", cluster_name, node_string);
+	return system(cmd_string);
+}
 struct cmd_exec_arg
 {
 	pthread_cond_t cond;
@@ -122,7 +128,7 @@ int cmd_exec_arg_wait(struct cmd_exec_arg* arg, long timeout_ms)
 	}
 	else
 	{
-		return arg->success;;
+		return arg->success;
 	}
 }
 
@@ -189,6 +195,7 @@ int reply_compare(const struct swarmkv_reply *r1, const swarmkv_reply *r2)
 		case SWARMKV_REPLY_ERROR:
 		case SWARMKV_REPLY_STATUS:
 		case SWARMKV_REPLY_STRING:
+		case SWARMKV_REPLY_NODE:
 			if(r1->len!=r2->len)
 			{
 				return r1->len - r2->len;
@@ -243,12 +250,14 @@ protected:
 		void* logger=NULL;
 		const char* log_path="./basic-test.log";
 		char *err=NULL;
+		const char *cluster_name="swarmkv-basic-test";
+		swarmkv_cli_create_cluster(cluster_name, "127.0.0.1 5210");
 		logger=MESA_create_runtime_log_handle(log_path, 0);
 		struct swarmkv_options* opts=swarmkv_options_new();
 		swarmkv_options_set_p2p_port(opts, 5210);
 		swarmkv_options_set_health_check_port(opts, 5211);
 		swarmkv_options_set_logger(opts, logger);
-		db=swarmkv_open(opts, "swarmkv-basic-test", &err);
+		db=swarmkv_open(opts, cluster_name, &err);
 		if(err)
 		{
 			printf("swarmkv_open failed: %s.\n", err);
@@ -316,7 +325,7 @@ TEST_F(SwarmkvBasicTest, ExpireTTL)
 	const char* key="quarantine";
 	const char* val="wuhan-jiangxia-rujia";
 	int exec_successful=0;
-	int seconds=7;
+	int seconds=3;
 	
 	//SET key value
 	arg=cmd_exec_arg_new();
@@ -377,13 +386,17 @@ protected:
 	{
 		void* logger=NULL;
 		char *err=NULL;
-		const char *log_path="./basic-test.log";
+		const char *log_path="./swarmkv-2-nodes.log";
+		
+		const char *cluster_name="swarmkv-2-nodes";
+		swarmkv_cli_create_cluster(cluster_name, "127.0.0.1 5210 127.0.0.1 5220");
+		
 		logger=MESA_create_runtime_log_handle(log_path, 0);
 		struct swarmkv_options* opts1=swarmkv_options_new();
 		swarmkv_options_set_p2p_port(opts1, 5210);
 		swarmkv_options_set_health_check_port(opts1, 5211);
 		swarmkv_options_set_logger(opts1, logger);
-		db1=swarmkv_open(opts1, "swarmkv-2-nodes", &err);
+		db1=swarmkv_open(opts1, cluster_name, &err);
 		if(err)
 		{
 			printf("swarmkv_open failed: %s\n", err);
@@ -395,7 +408,7 @@ protected:
 		swarmkv_options_set_p2p_port(opts2, 5220);
 		swarmkv_options_set_health_check_port(opts2, 5221);
 		swarmkv_options_set_logger(opts2, logger);
-		db2=swarmkv_open(opts2, "swarmkv-2-nodes", &err);
+		db2=swarmkv_open(opts2, cluster_name, &err);
 		if(err)
 		{
 			printf("swarmkv_open failed: %s\n", err);
@@ -443,7 +456,6 @@ TEST_F(SwarmkvTwoNodes, SetGet)
 	EXPECT_TRUE(exec_successful);
 	cmd_exec_arg_clear(arg);
 
-
 	cmd_exec_arg_expect_cstring(arg, val2);
 	swarmkv_get(db1, key, strlen(key), generic_callback, arg);
 	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
@@ -460,7 +472,7 @@ TEST_F(SwarmkvTwoNodes, Set1K)
 	struct swarmkv* db2=SwarmkvTwoNodes::db2;
 	struct swarmkv* tmp_db=NULL;
 	char key[128]="", val[128]="";
-	int exec_successful=0, i=0, round=1000, n_success=0;
+	int exec_successful=0, i=0, round=100, n_success=0;
 
 	arg=cmd_exec_arg_new();	
 	cmd_exec_arg_expect_OK(arg);
@@ -539,23 +551,23 @@ TEST_F(SwarmkvTwoNodes, INCRBY)
 	struct swarmkv* db1=SwarmkvTwoNodes::db1;
 	struct swarmkv* db2=SwarmkvTwoNodes::db2;
 	const char* key="id003";
-	const char* val="10000";	
+	long long val=10000;	
 	int exec_successful=0;
 	arg=cmd_exec_arg_new();
 
-	cmd_exec_arg_expect_OK(arg);
-	swarmkv_set(db1, key, strlen(key), val, strlen(val), generic_callback, arg);
+	cmd_exec_arg_expect_integer(arg, val);
+	swarmkv_incrby(db1, key, strlen(key), val, generic_callback, arg);
 	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
 	EXPECT_EQ(exec_successful, 1);
 	cmd_exec_arg_clear(arg);
 
-	cmd_exec_arg_expect_integer(arg, 10000+100);
+	cmd_exec_arg_expect_integer(arg, val+100);
 	swarmkv_incrby(db2, key, strlen(key), 100, generic_callback, arg);
 	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
 	EXPECT_TRUE(exec_successful);
 	cmd_exec_arg_clear(arg);
 	
-	cmd_exec_arg_expect_integer(arg, 10000+100-200);
+	cmd_exec_arg_expect_integer(arg, val+100-200);
 	swarmkv_incrby(db1, key, strlen(key), -200, generic_callback, arg);
 	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
 	EXPECT_TRUE(exec_successful);
@@ -637,7 +649,7 @@ TEST_F(SwarmkvTwoNodes, Expire)
 
 
 	/*
-	 * KEYSPACE GET expiring-key-%d
+	 * KEYSPACE RLIST expiring-key-%d
 	 * Expect NIL reply, make sure that expired keys are removed from keyspace.
 	*/
 
@@ -648,7 +660,7 @@ TEST_F(SwarmkvTwoNodes, Expire)
 		snprintf(key, sizeof(key), "expiring-key-%d", i);
 		tmp_db=i%2?db2:db1;
 		seconds=min_timeout_seconds+i%(max_timeout_seconds-min_timeout_seconds);
-		reply=swarmkv_command(tmp_db, "KEYSPACE GET %s", key);
+		reply=swarmkv_command(tmp_db, "KEYSPACE RLIST %s", key);
 		if(reply->type==SWARMKV_REPLY_NIL)
 		{
 			n_success++;
@@ -662,7 +674,7 @@ TEST_F(SwarmkvTwoNodes, Expire)
 
 
 }
-TEST_F(SwarmkvTwoNodes, CacheFlush)
+TEST_F(SwarmkvTwoNodes, FromLocalReplica)
 {
 	struct cmd_exec_arg *arg=NULL;
 	struct swarmkv* db1=SwarmkvTwoNodes::db1;

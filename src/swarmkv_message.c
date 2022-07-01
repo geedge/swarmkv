@@ -98,6 +98,7 @@ struct swarmkv_reply* deserialize_reply(mpack_node_t reply_node)
 		case SWARMKV_REPLY_STRING:
 		case SWARMKV_REPLY_ERROR:
 		case SWARMKV_REPLY_STATUS:
+		case SWARMKV_REPLY_NODE:
 			item=mpack_node_map_cstr(reply_node, "string");
 			reply->len=mpack_node_strlen(item);
 			reply->str=ALLOC(char, reply->len);
@@ -181,7 +182,8 @@ sds serialize_reply(const struct swarmkv_reply* reply)
 			break;
 		case SWARMKV_REPLY_STRING:
 		case SWARMKV_REPLY_STATUS:
-		case SWARMKV_REPLY_ERROR:			
+		case SWARMKV_REPLY_ERROR:
+		case SWARMKV_REPLY_NODE:
 			mpack_write_cstr(&reply_mpack, "string");
 			mpack_write_str(&reply_mpack, reply->str, reply->len);
 			break;

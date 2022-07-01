@@ -1,0 +1,10 @@
+add_definitions(-D_GNU_SOURCE) 
+add_definitions(-fPIC)
+
+add_library(CRDT lww_register.c pn_counter.c)
+
+include_directories(${PROJECT_SOURCE_DIR}/deps/mpack
+					${PROJECT_SOURCE_DIR}/deps/uthash)
+
+add_executable(TestCRDT crdt_gtest.cpp ${PROJECT_SOURCE_DIR}/deps/mpack/mpack.c)
+target_link_libraries(TestCRDT CRDT gtest-static uuid)

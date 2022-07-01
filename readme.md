@@ -2,19 +2,19 @@
   <img src="./doc/imgs/swarmkv_logo.svg" align="left" height="40px" alt="swarmkv logo"/>
   <span>SwarmKV</span>
 </h1>
-**SwarmKV is a embedded and distributed key-value storage library with peer-to-peer networking.** 
-SwarmKV uses [HashiCorp Consul](https://www.consul.io/) for cluster management, which includes leader election, health checking, and slot table management.
 
+
+**SwarmKV is a embedded and distributed key-value storage library with peer-to-peer networking.** 
 **Main Features**
 
 - Cluster
 - Subscription-based cache syncronization
-- High availability (in the language of [CAP](https://en.wikipedia.org/wiki/CAP_theorem), this system prioritizes availability and partition tolerance).
+- Strong Eventual Consistency (in the language of [CAP](https://en.wikipedia.org/wiki/CAP_theorem), this system prioritizes availability and partition tolerance).
 
-**Why not Redis?** Because Swarm KV is
+**Why not Redis?** Because SwarmKV is
 
 - Embedded, **no** additional servers.
-- Cache optimized
+- [CRDT](https://en.wikipedia.org/wiki/Conflict-free_replicated_data_type) native
 - Salable for trillions of operations per second, billions of keys, and thousands of parallel operators
 
 **Why not SQLite, rqlite, or dqlite?** Because Swarm KV is not designed to be a relational database and extremely fast.
@@ -25,18 +25,21 @@ Following are terminologies used in Swarm KV.
 
 Vocabularies
 
-| Name | Explaination                                                 |
-| ---- | ------------------------------------------------------------ |
-| KV   | Key-value pair                                               |
-| Node | Instances in a Swarm KV cluster. A swarmkv node is identified with its IP, P2P port and UUID. |
-| Slot | KVs are partitioned in different slots, and keys of one table are scattered in many slots.  Each slot is maintained by one node. |
-| RR   | A request (command) and reply.                               |
+| Name      | Explanation                                                  |
+| --------- | ------------------------------------------------------------ |
+| KV        | Key-value pair                                               |
+| Node      | Instances in a Swarm KV cluster. A swarmkv node is identified with its IP, P2P port and UUID. |
+| Slot      | KVs are partitioned in different slots, and keys of one table are scattered in many slots.  Each slot is maintained by one node. |
+| Key Owner | A key ONLY has one owner.                                    |
+| Replica   | A CRDT object is replicated in many nodes, which are replicas. |
+| RR        | A request (command) and reply.                               |
 
 SwarmKV Data Types
 
 - String
 - Integer
 - Hash Table
+- Bitmap
 - Rate limiter
 
 # Command Specification
@@ -56,14 +59,18 @@ SwarmKV Data Types
 | KEYSPACE GET           | key               | 1) "192.168.1.200"<br/>2) (integer) 5211                     |
 | KEYSPACE SET           | key [IP port]     | 1) "192.168.1.200"<br/>2) (integer) 5211                     |
 | KEYSPACE DEL           | key               | 1) "192.168.1.200"<br/>2) (integer) 5211                     |
-| KEYSPACE SETNXGET      | key IP port       | 1) "192.168.1.200"<br/>2) (integer) 5211                     |
-| KEYSPACE SETSLOT       | see souce code    |                                                              |
+| KEYSPACE SETNXGET      | key [IP port]     | 1) "192.168.1.200"<br/>2) (integer) 5211                     |
+| KEYSPACE RADD          | key IP port       |                                                              |
+| KEYSPACE RLIST         | key               | Node Array reply:<br/>1) "192.168.1.200:5211"<br/>2) "192.168.1.201:5211"<br/>3) "[2001:db8::1]:5211"<br/> |
+|                        |                   |                                                              |
+| KEYSPACE SETSLOT       | see source code   |                                                              |
 | KEYSPACE GETKEYSINSLOT | IP port slot      |                                                              |
 | KEYSPACE ADDKEYSTOSLOT | IP port slot blob |                                                              |
 | KEYSPACE DELSLOTKEYS   | IP port slot      |                                                              |
 | KEYSPACE KEYS          | IP port pattern   |                                                              |
-| CACHE SET              | key blob          | Simple string reply: OK if SET was executed correctly.       |
-| CACHE DEL              | key               | Integer reply: The number of cached keys that were removed.  |
+| CRDT DEL               | key               | Integer reply: The number of cached keys that were removed.  |
+| CRDT PUSH              | key blob          | Simple string reply: OK if PUSH was executed correctly.      |
+| CRDT PULL              | key               | Blog reply: a blob of state-based CRDT                       |
 | CLUSTER KEYS           | pattern           | Array reply: list of keys matching pattern.                  |
 | CLUSTER KEYSLOT        | keyslot           | Integer reply: The hash slot the specified key hashes to.    |
 | CLUSTER NODES          |                   |                                                              |
@@ -90,32 +97,49 @@ The pattern is exactly same as Redis https://redis.io/commands/keys/ .
 
 Download and unzip swarmkv-xx.zip
 
-Prepare Consul enviroment
+- Install Hashicorp Consul，and run consul agent in debug mode
+  
+  - There is a consul configuration file in swarmkv source directory, copy it to a somewhere you desire.
+    - Edit `./swarmkv/test/consul.d/server.hcl` and set the `bind_addr ` as you need
 
-- Install Hashicorp Consul
-- Run consul agent in debug mode
   - `./consul agent -dev -config-dir=./swarmkv/test/consul.d/`
-  - Note that the consul configuration file path is pointed to the swarmkv source directory, chanage it if necessary.
-- Check consul UI via http://localhost:8500/ui
-- Add slot table to consul KV, for example, slot table of cluster `swarmkv-basic-test` is at `http://192.168.232.172:8500/ui/dc1/kv/swarmkv/swarmkv-basic-test/slots/edit`.
+  - Check consul UI via http://localhost:8500/ui
+  
+- Build swarmkv from source code (requires cmake version > 3.5)
 
-```json
-[{
-    "slot":"0-16383",
-    "owner":{
-      "ip":"127.0.0.1",
-      "p2p_port":5210}
-  }]
-```
+  - `mkdir swarmkv-xxx/build`
+  - `cd swarmkv-xxx/build`
+  - `cmake .. -DCMAKE_BUILD_TYPE=Debug`
+  - `make`
 
-Build SwarmKV
+- Create swarmkv cluster with `swarmkv-xxx/build/tools/swarmkv-cli`
 
--  `mkdir swarmkv-xxx/build`
-- `cd swarmkv-xxx/build`
-- `cmake .. -DCMAKE_BUILD_TYPE=Debug`
-- `make`
-- `cd test/`
-- `./swarmkv_gtest`
+  ```
+  [zhengchao@centos7-vm-dev tools]$ ./swarmkv-cli --cluster-create swarmkv-basic-test 127.0.0.1 5210
+  consul KV init slot table /v1/kv/swarmkv/swarmkv-basic-test/slots.
+  OK
+  [zhengchao@centos7-vm-dev tools]$ ./swarmkv-cli --cluster-create swarmkv-2-nodes 127.0.0.1 5210 127.0.0.1 5220
+  consul KV init slot table /v1/kv/swarmkv/swarmkv-2-nodes/slots.
+  OK
+  ```
+
+- Run test cases
+
+   -  `cd test/`
+   -  `./swarmkv_gtest`
+
+- Play around with `swarmkv-cli`
+
+   ```
+   [zhengchao@centos7-vm-dev tools]$ ./swarmkv-cli -n swarmkv-2-nodes
+   swarmkv-2-nodes> get id001
+   "lisi"
+   swarmkv-2-nodes> ttl set1k-56
+   (integer) -1
+   swarmkv-2-nodes>
+   ```
+
+   
 
 # SwarmKV Design
 
@@ -125,6 +149,8 @@ Todo:
 
 - Object migration
 - Nodes failover by object replication
+
+SwarmKV uses [HashiCorp Consul](https://www.consul.io/) for cluster management, which includes leader election, health checking, and slot table management.
 
 ## DHT-based KV spaces
 
@@ -388,6 +414,20 @@ The source files are organized as follows:
 
 [vedis](https://vedis.symisc.net/)  is an embeddable datastore C library built with over 70 commands similar in concept to Redis but without the networking layer since Vedis run in the same process of the host application.
 
+[UnQLite](https://github.com/symisc/unqlite) is a in-process software library which implements a self-contained, serverless, zero-configuration, transactional NoSQL database engine. 
+
+[OrbitDB](https://github.com/orbitdb/orbit-db) is a serverless, distributed, peer-to-peer database. OrbitDB uses [IPFS](https://ipfs.io/) as its data storage and [IPFS Pubsub](https://github.com/ipfs/go-ipfs/blob/master/core/commands/pubsub.go#L23) to automatically sync databases with peers. It's implemented in JavaScript.
+
+[Dynomite](https://github.com/Netflix/dynomite), inspired by Dynamo whitepaper, is a thin, distributed dynamo layer for different storage engines and protocols. Currently these include Redis and Memcached. Dynomite supports multi-datacenter replication and is designed for high availability.
+
+[AntidoteDB](https://www.antidotedb.eu/) is a planet scale, highly available, transactional database. It's implemented in Erlang.
+
+[EdgeDB](https://github.com/edgedb/edgedb) is a new kind of database that takes the best parts of relational databases, graph databases, and ORMs. We call it a graph-relational database.
+
+[SwarmDB](https://github.com/gritzko/swarm) is a proof-of-concept key-value RON store.
+
+[Voldemort](https://github.com/voldemort/voldemort) is a distributed key-value storage system.
+
 ## References
 
 Woo, Shinae, et al. "Elastic scaling of stateful network functions." *15th {USENIX} Symposium on Networked Systems Design and Implementation ({NSDI} 18)*. 2018.
@@ -396,5 +436,12 @@ Woo, Shinae, et al. "Elastic scaling of stateful network functions." *15th {USEN
 
 [Redis Cluster Specification](https://redis.io/topics/cluster-spec)
 
+[Conflict-free Replicated Data Type (CRDT)](https://en.wikipedia.org/wiki/Conflict-free_replicated_data_type) 
 
+https://crdt.tech/
 
+https://hermes-protocol.com/
+
+[Redis Active-Active Architecture](https://redis.com/redis-enterprise/technology/active-active-geo-distribution/)
+
+[A fast, fault-tolerant & linearizable replication protocol](https://hermes-protocol.com/)

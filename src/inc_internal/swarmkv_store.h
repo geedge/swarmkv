@@ -4,55 +4,48 @@
 #include "swarmkv_common.h"
 #include "future_promise.h"
 
-enum swarmkv_obj_type
+#include "lww_register.h"
+#include "pn_counter.h"
+
+enum sobj_type
 {
 	OBJ_TYPE_STRING,
+	OBJ_TYPE_COUNTER,
 	OBJ_TYPE_HASH,
 	OBJ_TYPE_THROTTLE,
+	OBJ_TYPE_UNDEFINED,
 	__SWARMKV_OBJ_TYPE_MAX
 };
-struct obj_container;
-struct swarmkv_obj
+struct scontainer;
+struct sobj
 {
-	enum swarmkv_obj_type type;
+	enum sobj_type type;
 	sds key;
 	union
 	{
-		sds val_string;
-		struct obj_container* hash;		
+		struct lww_register *reg;
+		struct PN_counter *counter;
 	};
 };
 
-
-struct swarmkv_store;
-typedef void send_cmd_func(struct swarmkv *handle, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *peer, struct future *f);
-
-struct swarmkv_module *swarmkv_store_new(send_cmd_func *send_cmd, void *handle_send_cmd, int disable_cache);
+struct swarmkv_module *swarmkv_store_new(exec_cmd_func *send_cmd, void *handle_send_cmd, uuid_t node_uuid);
 void swarmkv_store_free(struct swarmkv_module* mod_store);
 void swarmkv_store_periodic(struct swarmkv_module *module);
+void swarmkv_store_add_key(struct swarmkv_module *mod_store, const sds key, struct swarmkv_node_addr *replica_nodes, size_t n_replica_node);
 
 
 
-struct swarmkv_obj *swarmkv_obj_new(enum swarmkv_obj_type type, const sds key);
-void swarmkv_obj_free(struct swarmkv_obj *obj);
-int swarmkv_obj_get_ttl(struct swarmkv_obj *obj);
+struct sobj *sobj_new(enum sobj_type type, const sds key);
+void sobj_free(struct sobj *obj);
+void sobj_need_sync(struct swarmkv_module *mod_store, struct sobj *obj);
+void sobj_serialize(struct sobj *obj, char **blob, size_t *blob_sz);
+void sobj_merge_blob(struct swarmkv_module *mod_store, struct sobj *obj, const char *blob, size_t blob_sz);
+int sobj_add_replica_node(struct sobj *obj, const struct swarmkv_node_addr *node);
 
-int store_ttl_key(struct swarmkv_module* mod_store, sds key);
-int store_expire_key(struct swarmkv_module* mod_store, sds key, int seconds);
+void store_get_uuid(struct swarmkv_module* mod_store, uuid_t uuid);
+struct sobj *store_lookup(struct swarmkv_module* mod_store, sds key);
+void store_add_obj(struct swarmkv_module *mod_store, struct sobj *obj);
+void store_remove_obj(struct swarmkv_module *mod_store, struct sobj *obj);
 
 
-struct swarmkv_obj *store_lookup(struct swarmkv_module* mod_store, sds key);
-void store_add_obj(struct swarmkv_module *mod_store, struct swarmkv_obj *obj);
-void store_remove_obj(struct swarmkv_module *mod_store, struct swarmkv_obj *obj);
-int store_obj_setnx_accessed_node(struct swarmkv_module* mod_store, struct swarmkv_obj *obj, const struct swarmkv_node_addr *node);
-
-struct swarmkv_obj *store_cache_lookup(struct swarmkv_module* mod_store, sds key);
-
-enum cache_sync_op
-{
-	CACHE_SET,
-	CACHE_DEL
-};
-void store_cache_notify_all(struct swarmkv_module *mod_store, enum cache_sync_op op, struct swarmkv_obj *obj);
-void store_cache_flush(struct swarmkv_module *mod_store, enum cache_sync_op op, const sds key, const sds blob);
 

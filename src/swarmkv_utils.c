@@ -45,6 +45,15 @@ char* toUpper(char* s)
   for(char *p=s; *p; p++) *p=toupper(*p);
   return s;
 }
+char* replace_char(char* str, char find, char replace){
+    char *current_pos = strchr(str,find);
+    while (current_pos) {
+        *current_pos = replace;
+        current_pos = strchr(current_pos,find);
+    }
+    return str;
+}
+
 /* Glob-style pattern matching. */
 //source https://github.com/redis/redis/blob/7.0/src/util.c
 int stringmatchlen(const char *pattern, int patternLen,

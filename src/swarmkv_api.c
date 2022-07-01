@@ -30,7 +30,20 @@ struct swarmkv_options* swarmkv_options_new(void)
 	strcpy(opts->bind_address, "127.0.0.1");
 	uuid_generate(opts->bin_uuid);
 	opts->nr_worker_threads=1;
+	opts->is_assigned_to_db=0;
 	return opts;
+}
+void swarmkv_options_free(struct swarmkv_options *opt)
+{
+	if(opt->is_assigned_to_db)
+	{
+		assert(0);
+	}
+	else
+	{
+		free(opt);
+	}
+	return;
 }
 int swarmkv_options_set_p2p_port(struct swarmkv_options *opts, unsigned int p2p_port)
 {

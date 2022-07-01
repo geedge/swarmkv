@@ -3,191 +3,107 @@
 #include "swarmkv_error.h"
 
 #include <stdlib.h>
+#include <assert.h>
 
-void get_command_as_owner(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result get_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)
 {
-	struct swarmkv_obj *obj=NULL;
+	struct sobj *obj=NULL;
 	const sds key=cmd->argv[1];
 	obj=store_lookup(mod_store, key);
-	if(obj)
+	const char *string_val=NULL;
+	size_t string_sz=0;
+	if(!obj)
 	{
-		if(obj->type!=OBJ_TYPE_STRING)
+		if(accessing_node)
 		{
-			*reply=swarmkv_reply_new_error(error_wrong_type);
+			*reply=swarmkv_reply_new_nil();
+			return FINISHED;
 		}
 		else
 		{
-			*reply=swarmkv_reply_new_string(obj->val_string, sdslen(obj->val_string));
+			return NEED_KEY_ROUTE;
 		}
+	}
+	
+	if(obj->type==OBJ_TYPE_STRING)
+	{
+		lww_register_get0(obj->reg, &string_val, &string_sz);
+		*reply=swarmkv_reply_new_string(string_val, string_sz);
+	}
+	else if(obj->type==OBJ_TYPE_COUNTER)
+	{
+		long long counter=PN_counter_get(obj->counter);
+		*reply=swarmkv_reply_new_string_fmt("%lld", counter);
 	}
 	else
 	{
-		*reply=swarmkv_reply_new_nil();
+		*reply=swarmkv_reply_new_error(error_wrong_type);
 	}
-
-	if(accessing_node && obj)
-		store_obj_setnx_accessed_node(mod_store, obj, accessing_node);
-	
-	return;
+	return FINISHED;
 }
-
-enum cmd_fastpath_result get_command_fastpath(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
+enum cmd_exec_result set_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)
 {
-	struct swarmkv_obj *obj=NULL;
-	const sds key=cmd->argv[1];
-	obj=store_lookup(mod_store, key);
-	if(obj)
-	{
-		get_command_as_owner(mod_store, cmd, NULL, reply);
-		return FINISHED;
-	}
-	obj=store_cache_lookup(mod_store, key);
-	if(obj)
-	{
-		*reply=swarmkv_reply_new_string(obj->val_string, sdslen(obj->val_string));
-		return FINISHED;
-	}
-	return NEED_KEY_ROUTE;
-}
-
-
-void set_command_as_owner(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)
-{
-	struct swarmkv_obj *obj=NULL;
+	struct sobj *obj=NULL;
 	const sds key=cmd->argv[1];
 	const sds value=cmd->argv[2];
-
 	obj=store_lookup(mod_store, key);
-
-	if(obj && obj->type!=OBJ_TYPE_STRING)
+	if(!obj)
 	{
-		*reply=swarmkv_reply_new_error(error_wrong_type);
-		return;
+		return NEED_KEY_ROUTE;
 	}
-	if(obj)
+	if(obj->type==OBJ_TYPE_UNDEFINED||obj->type==OBJ_TYPE_STRING)
 	{
-		sdsfree(obj->val_string);
-		obj->val_string=sdsdup(value);
-	}
-	else
-	{
-		obj=swarmkv_obj_new(OBJ_TYPE_STRING, key);
-		obj->val_string=sdsdup(value);
-		store_add_obj(mod_store, obj);
-	}
-	*reply=swarmkv_reply_new_status("OK");
-
-	if(accessing_node)
-		store_obj_setnx_accessed_node(mod_store, obj, accessing_node);
-
-	store_cache_notify_all(mod_store, CACHE_SET, obj);
-	return;
-}
-enum cmd_fastpath_result set_command_fastpath(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
-{
-	const sds key=cmd->argv[1];
-	struct swarmkv_obj *obj=NULL;
-	obj=store_lookup(mod_store, key);
-	if(obj)
-	{
-		set_command_as_owner(mod_store, cmd, NULL, reply);
-		return FINISHED;
-	}
-	return NEED_KEY_ROUTE;
-}
-
-void del_command_as_owner(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)
-{
-	const sds key=cmd->argv[1];
-	struct swarmkv_obj *obj=NULL;
-	obj=store_lookup(mod_store, key);
-
-	if(obj)
-	{
-		store_remove_obj(mod_store, obj);
-		*reply=swarmkv_reply_new_integer(1);
-	}
-	else
-	{
-		*reply=swarmkv_reply_new_integer(0);
-	}
-
-	// I DON'T call store_obj_setnx_accessed_node() here, because
-	// - If current node has accessed the key, it is already in the accessed list, 
-	//   and will be notified by store_cache_notify_all() later.
-	// - If not, the key is deleted, cache notification is unnecessary.
-	
-	if(obj)
-	{
-		store_cache_notify_all(mod_store, CACHE_DEL, obj);
-		swarmkv_obj_free(obj);
-	}
-	
-	return;
-}
-
-
-enum cmd_fastpath_result del_command_fastpath(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
-{
-	//Fastpath is not available for delete command, we should delete key from keyspace first.
-	return NEED_KEY_ROUTE;
-}
-void incrby_command_as_owner(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)
-{
-	struct swarmkv_obj *obj=NULL;
-	const sds key=cmd->argv[1];
-
-	obj=store_lookup(mod_store, key);
-	if(obj && obj->type!=OBJ_TYPE_STRING)
-	{
-		*reply=swarmkv_reply_new_error(error_wrong_type);
-		return;
-	}
-	if(obj)
-	{
-		long long value=0, delta=0;
-		char *endptr=NULL;
-		value=strtol(obj->val_string, &endptr, 10);
-		if(*endptr!='\0')
+		if(!obj->reg)
 		{
-			*reply=swarmkv_reply_new_error(error_value_not_integer);
-			return;
-		}	
-		delta=strtol(cmd->argv[2], &endptr, 10);
-		if(*endptr!='\0')
-		{
-			*reply=swarmkv_reply_new_error(error_value_not_integer);
-			return;			
+			assert(obj->type==OBJ_TYPE_UNDEFINED);
+			obj->type=OBJ_TYPE_STRING;
+			obj->reg=lww_register_new(value, sdslen(value));
 		}
-		value+=delta;
-		sdsfree(obj->val_string);
-		obj->val_string=sdsfromlonglong(value);
+		lww_register_set(obj->reg, value, sdslen(value));
+		*reply=swarmkv_reply_new_status("OK");
+		sobj_need_sync(mod_store, obj);
 	}
 	else
 	{
-		obj=swarmkv_obj_new(OBJ_TYPE_STRING, key);
-		obj->val_string=sdsdup(cmd->argv[2]);
-		store_add_obj(mod_store, obj);
-	}
-	*reply=swarmkv_reply_new_integer(atoll(obj->val_string));
-
-	if(accessing_node)
-		store_obj_setnx_accessed_node(mod_store, obj, accessing_node);
-
-	store_cache_notify_all(mod_store, CACHE_SET, obj);
-	return;
+		*reply=swarmkv_reply_new_error(error_wrong_type);		
+	}	
+	return FINISHED;
 }
-
-enum cmd_fastpath_result incrby_command_fastpath(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
+enum cmd_exec_result incrby_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)
 {
-	struct swarmkv_obj *obj=NULL;	
+/* INCRBY key increment*/
+	struct sobj *obj=NULL;
 	const sds key=cmd->argv[1];
-	obj=store_lookup(mod_store, key);
-	if(obj)
+	long long increment=0, value=0;
+	char *endptr=NULL;
+	uuid_t uuid;
+	increment=strtol(cmd->argv[2], &endptr, 10);
+	if(*endptr!='\0')
 	{
-		incrby_command_as_owner(mod_store, cmd, NULL, reply);
-		return FINISHED;
+		*reply=swarmkv_reply_new_error(error_value_not_integer);
+		return FINISHED; 		
 	}
-	return NEED_KEY_ROUTE;
+	obj=store_lookup(mod_store, key);
+	if(!obj)
+	{
+		return NEED_KEY_ROUTE;
+	}
+	if(obj->type==OBJ_TYPE_UNDEFINED||obj->type==OBJ_TYPE_COUNTER)
+	{
+		if(!obj->counter)
+		{
+			store_get_uuid(mod_store, uuid);
+			obj->counter=PN_counter_new((const char*)uuid, sizeof(uuid));
+			obj->type=OBJ_TYPE_COUNTER;
+		}
+		value=PN_counter_incrby(obj->counter, increment);
+		*reply=swarmkv_reply_new_integer(value);		
+		sobj_need_sync(mod_store, obj);
+	}
+	else
+	{
+		*reply=swarmkv_reply_new_error(error_wrong_type);		
+	}	
+	return FINISHED;
 }
 

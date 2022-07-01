@@ -328,7 +328,7 @@ struct swarmkv_connection* swarmkv_connection_new_by_connect(struct swarmkv_net_
 	//http://www.wangafu.net/~nickm/libevent-book/Ref6_bufferevent.html
 	conn->bev=bufferevent_socket_new(base, -1, BEV_OPT_DEFER_CALLBACKS|BEV_OPT_THREADSAFE);//BEV_OPT_UNLOCK_CALLBACKS|
 	bufferevent_setcb(conn->bev, NULL, NULL, connect_peer_eventcb, conn);
-	memcpy(&conn->peer_listen_addr, dest, sizeof(struct swarmkv_node_addr));
+	swarmkv_node_addr_copy(&conn->peer_listen_addr, dest);
 	conn->thread_id=thr->thread_id;
 	conn->ref_thr_ctx=thr;
 	swarmkv_node_addr_copy(&conn->peer_connected_from_addr, dest);
@@ -542,7 +542,7 @@ static void wrap_timeout_handler(evutil_socket_t fd, short what, void * arg)
 	return;
 }
 
-void swarmkv_net_timer_add(struct swarmkv_net *net, int thread_id, int seconds, int is_persist, timeout_cb* cb, void *cb_arg)
+void swarmkv_net_timer_add(struct swarmkv_net *net, int thread_id, int msec, int is_persist, timeout_cb *cb, void *cb_arg)
 {
 	struct timeout_ctx *ctx=ALLOC(struct timeout_ctx, 1);
 	ctx->cb=cb;
@@ -550,7 +550,7 @@ void swarmkv_net_timer_add(struct swarmkv_net *net, int thread_id, int seconds, 
 	ctx->cb_arg=cb_arg;
 	ctx->ev=event_new(net->threads[thread_id]->evbase, -1, EV_PERSIST, wrap_timeout_handler, ctx);
 
-	struct timeval timer_delay = {seconds, 0};
+	struct timeval timer_delay = {msec/1000, (msec%1000)*1000};
 	evtimer_add(ctx->ev, &timer_delay);
 	assert(net->threads[thread_id]->to_ctx==NULL);
 	net->threads[thread_id]->to_ctx=ctx;
