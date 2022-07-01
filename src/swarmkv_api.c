@@ -134,6 +134,16 @@ void swarmkv_ttl(struct swarmkv *db, const char *key, size_t keylen, swarmkv_cmd
 	return;
 }
 
+void swarmkv_persist(struct swarmkv *db, const char *key, size_t keylen, swarmkv_cmd_callback_func_t *cb, void *cb_arg)
+{
+	struct swarmkv_cmd *cmd=NULL;
+	cmd=swarmkv_cmd_new(2);
+	cmd->argv[0]=sdsnew("persist");
+	cmd->argv[1]=sdsnewlen(key, keylen);
+	swarmkv_exec(db, cmd, cb, cb_arg);
+	swarmkv_cmd_free(cmd);
+	return;
+}
 
 int swarmkv_hset_string(struct swarmkv *db,
 				const char *key, size_t keylen, const char* member, size_t memberlen, const char *value, size_t vallen)
@@ -150,13 +160,13 @@ void swarmkv_del(struct swarmkv * db, const char * key, size_t keylen, swarmkv_c
 	swarmkv_cmd_free(cmd);
 	return;
 }
-void swarmkv_incrby(struct swarmkv * db, const char * key, size_t keylen, long long delta, swarmkv_cmd_callback_func_t *cb, void *cb_arg)
+void swarmkv_incrby(struct swarmkv * db, const char * key, size_t keylen, long long increment, swarmkv_cmd_callback_func_t *cb, void *cb_arg)
 {	
 	struct swarmkv_cmd *cmd=NULL;
 	cmd=swarmkv_cmd_new(3);	
 	cmd->argv[0]=sdsnew("incrby");
 	cmd->argv[1]=sdsnewlen(key, keylen);
-	cmd->argv[2]=sdsfromlonglong(delta);
+	cmd->argv[2]=sdsfromlonglong(increment);
 	swarmkv_exec(db, cmd, cb, cb_arg);
 	swarmkv_cmd_free(cmd);
 	return;

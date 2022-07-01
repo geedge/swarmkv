@@ -68,6 +68,7 @@ void swarmkv_incrby(struct swarmkv * db, const char * key, size_t keylen, long l
 
 void swarmkv_expire(struct swarmkv *db, const char *key, size_t keylen, int seconds, swarmkv_cmd_callback_func_t *cb, void *cb_arg);
 void swarmkv_ttl(struct swarmkv *db, const char *key, size_t keylen, swarmkv_cmd_callback_func_t *cb, void *cb_arg);
+void swarmkv_persist(struct swarmkv *db, const char *key, size_t keylen, swarmkv_cmd_callback_func_t *cb, void *cb_arg);
 
 
 

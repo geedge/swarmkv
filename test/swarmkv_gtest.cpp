@@ -292,6 +292,8 @@ TEST_F(SwarmkvBasicTest, SetGet)
 	swarmkv_get(db, key, strlen(key), generic_callback, arg);
 	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
 	EXPECT_EQ(exec_successful, 1);
+	cmd_exec_arg_clear(arg);
+	
 	cmd_exec_arg_free(arg);
 	arg=NULL;
 }
@@ -671,9 +673,117 @@ TEST_F(SwarmkvTwoNodes, Expire)
 
 	cmd_exec_arg_free(arg);
 	arg=NULL;
+}
+TEST_F(SwarmkvTwoNodes, TTL)
+{
+	struct cmd_exec_arg *arg=NULL;
+	struct swarmkv* db1=SwarmkvTwoNodes::db1;
+	struct swarmkv* db2=SwarmkvTwoNodes::db2;
 
+	const char *key="ttl-key-001";
+	const char *value="hello-world";
+	int exec_successful=0;
+	int seconds=3;
+
+	arg=cmd_exec_arg_new();
+
+	// db1: SET key value
+	
+	cmd_exec_arg_expect_OK(arg);
+	swarmkv_set(db1, key, strlen(key), value, strlen(value), generic_callback, arg);
+	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
+	EXPECT_TRUE(exec_successful);
+	cmd_exec_arg_clear(arg);
+
+	// db2: EXPIRE key seconds
+	cmd_exec_arg_expect_integer(arg, 1);
+	swarmkv_expire(db2, key, strlen(key), seconds, generic_callback, arg);
+	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
+	EXPECT_EQ(exec_successful, 1);
+	cmd_exec_arg_clear(arg);
+
+	//db1: TTL key
+	cmd_exec_arg_expect_integer(arg, seconds);
+	swarmkv_ttl(db1, key, strlen(key), generic_callback, arg);
+	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
+	EXPECT_EQ(exec_successful, 1);
+	cmd_exec_arg_clear(arg);
+
+
+	//db2: TTL key
+	cmd_exec_arg_expect_integer(arg, seconds);
+	swarmkv_ttl(db2, key, strlen(key), generic_callback, arg);
+	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
+	EXPECT_EQ(exec_successful, 1);
+	cmd_exec_arg_clear(arg);
+
+	cmd_exec_arg_free(arg);
 
 }
+TEST_F(SwarmkvTwoNodes, PERSIST)
+{
+	struct cmd_exec_arg *arg=NULL;
+	struct swarmkv* db1=SwarmkvTwoNodes::db1;
+	struct swarmkv* db2=SwarmkvTwoNodes::db2;
+
+	const char *key="persit-key-001";
+	const char *value="hello-world";
+	int exec_successful=0;
+	int seconds=3;
+
+	arg=cmd_exec_arg_new();
+
+	// db1: SET key value
+	
+	cmd_exec_arg_expect_OK(arg);
+	swarmkv_set(db1, key, strlen(key), value, strlen(value), generic_callback, arg);
+	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
+	EXPECT_TRUE(exec_successful);
+	cmd_exec_arg_clear(arg);
+
+	// db1: EXPIRE key seconds
+	cmd_exec_arg_expect_integer(arg, 1);
+	swarmkv_expire(db1, key, strlen(key), seconds, generic_callback, arg);
+	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
+	EXPECT_EQ(exec_successful, 1);
+	cmd_exec_arg_clear(arg);
+
+	//db2: TTL key
+	cmd_exec_arg_expect_integer(arg, seconds);
+	swarmkv_ttl(db2, key, strlen(key), generic_callback, arg);
+	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
+	EXPECT_EQ(exec_successful, 1);
+	cmd_exec_arg_clear(arg);
+
+
+	//db1: PERSIT key
+	cmd_exec_arg_expect_integer(arg, 1);
+	swarmkv_persist(db1, key, strlen(key), generic_callback, arg);
+	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
+	EXPECT_EQ(exec_successful, 1);
+	cmd_exec_arg_clear(arg);
+
+
+	//db2: TTL key
+	cmd_exec_arg_expect_integer(arg, -1);
+	swarmkv_ttl(db2, key, strlen(key), generic_callback, arg);
+	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
+	EXPECT_EQ(exec_successful, 1);
+	cmd_exec_arg_clear(arg);
+
+	sleep(seconds+1);
+
+	//db1: GET key
+	cmd_exec_arg_expect_cstring(arg, value);
+	swarmkv_get(db1, key, strlen(key), generic_callback, arg);
+	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
+	EXPECT_EQ(exec_successful, 1);
+	cmd_exec_arg_clear(arg);
+
+	cmd_exec_arg_free(arg);
+
+}
+
 TEST_F(SwarmkvTwoNodes, FromLocalReplica)
 {
 	struct cmd_exec_arg *arg=NULL;
