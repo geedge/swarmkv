@@ -22,6 +22,7 @@
 #include <errno.h>
 #include <pthread.h>
 #include <unistd.h> //usleep
+#include <netinet/tcp.h>//setsockopt TCP_NODELAY
 
 
 #define	MODULE_SWAMRKV_NET	module_name_str("swarmkv.net")
@@ -298,7 +299,9 @@ void connect_peer_eventcb(struct bufferevent *bev, short events, void *arg)
 	assert(bev==conn->bev);
 	if (events & BEV_EVENT_CONNECTED)
 	{
-		//conn->fd=bufferevent_getfd(conn->bev);
+		int yes=1;
+		evutil_socket_t fd=bufferevent_getfd(conn->bev);
+		setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, (char*)&yes, sizeof(yes));
 		bufferevent_write_buffer(conn->bev, conn->buff_for_sending);
 		bufferevent_setcb(conn->bev, peer_conn_read_cb, NULL, peer_conn_event_cb, conn);
 		bufferevent_enable(conn->bev, EV_READ | EV_WRITE);
@@ -373,6 +376,8 @@ struct swarmkv_connection* swarmkv_connection_new_by_fd(struct swarmkv_net_threa
 	struct swarmkv_connection* conn=NULL;
 	conn=ALLOC(struct swarmkv_connection, 1);
 	conn->buff_for_sending=evbuffer_new();
+	int yes=1;
+	setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, (char*)&yes, sizeof(yes));
 	evbuffer_enable_locking(conn->buff_for_sending, NULL);
 	evutil_make_socket_nonblocking(fd);
 	sockaddr2string(addr, conn->peer_connected_from_addr.ip_addr, sizeof(conn->peer_connected_from_addr.ip_addr), &(conn->peer_connected_from_addr.p2p_port));
