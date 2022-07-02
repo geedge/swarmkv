@@ -1599,16 +1599,29 @@ enum cmd_exec_result key_route_generic(struct swarmkv_keyspace *ks, enum KEYSPAC
 UT_icd ut_swarmkv_reply_pointer_icd = {sizeof(struct swarmkv_reply *), NULL, NULL, NULL};
 enum cmd_exec_result keyspace_keys_command(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)
 {
-/* KEYSPACE KEYS key-pattern */
+/* KEYSPACE KEYS IP port key-pattern */
 
 	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
 	size_t i=0, n_matched=0;
 	struct slot_runtime *slot_rt=NULL;
 	struct key_route_entry *key_entry=NULL, *tmp=NULL;
-	const sds pattern=cmd->argv[2];
 	int is_matched=0;
 	UT_array* matched_replies=NULL;
 	struct swarmkv_reply *r=NULL;
+
+	
+	struct swarmkv_node_addr target_node;
+
+	assert(cmd->argc==5);
+	
+	sds2node_addr(cmd->argv+2, &target_node);
+	if(0!=swarmkv_node_addr_compare(&(ks->self.addr), &target_node))
+	{
+		*reply=swarmkv_reply_new_node(&target_node, 1);
+		return REDIRECT;
+	}
+	
+	const sds pattern=cmd->argv[4];
 	utarray_new(matched_replies, &ut_swarmkv_reply_pointer_icd);
 	for(i=0; i<SWARMKV_SLOT_NUM; i++)
 	{
