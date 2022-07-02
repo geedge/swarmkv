@@ -606,10 +606,10 @@ void command_spec_init(struct swarmkv *db)
 					1, 2, CMD_KEY_RO,
 					keyspace_rlist_command, db->mod_keyspace);
 	command_register(&(db->command_table), "KEYSPACE RADD", "key IP port",
-					3, 2, CMD_KEY_OW,
+					1, 2, CMD_KEY_OW,
 					keyspace_radd_command, db->mod_keyspace);
 	command_register(&(db->command_table), "KEYSPACE XRADD", "key IP port",
-					3, 2, CMD_KEY_OW,
+					1, 2, CMD_KEY_OW,
 					keyspace_xradd_command, db->mod_keyspace);
 	command_register(&(db->command_table), "KEYSPACE KEYS", "IP port pattern",
 					3, -1, CMD_KEY_RO,

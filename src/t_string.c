@@ -49,7 +49,14 @@ enum cmd_exec_result set_command(struct swarmkv_module *mod_store, const struct 
 	obj=store_lookup(mod_store, key);
 	if(!obj)
 	{
-		return NEED_KEY_ROUTE;
+		if(accessing_node)
+		{
+			obj=swarmkv_store_add_key(mod_store, key, NULL, 0);
+		}
+		else
+		{
+			return NEED_KEY_ROUTE;
+		}
 	}
 	if(obj->type==OBJ_TYPE_UNDEFINED||obj->type==OBJ_TYPE_STRING)
 	{
@@ -86,7 +93,14 @@ enum cmd_exec_result incrby_command(struct swarmkv_module *mod_store, const stru
 	obj=store_lookup(mod_store, key);
 	if(!obj)
 	{
-		return NEED_KEY_ROUTE;
+		if(accessing_node)
+		{
+			obj=swarmkv_store_add_key(mod_store, key, NULL, 0);
+		}
+		else
+		{
+			return NEED_KEY_ROUTE;
+		}
 	}
 	if(obj->type==OBJ_TYPE_UNDEFINED||obj->type==OBJ_TYPE_COUNTER)
 	{

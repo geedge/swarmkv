@@ -31,7 +31,7 @@ struct sobj
 struct swarmkv_module *swarmkv_store_new(exec_cmd_func *send_cmd, void *handle_send_cmd, uuid_t node_uuid);
 void swarmkv_store_free(struct swarmkv_module* mod_store);
 void swarmkv_store_periodic(struct swarmkv_module *module);
-void swarmkv_store_add_key(struct swarmkv_module *mod_store, const sds key, struct swarmkv_node_addr *replica_nodes, size_t n_replica_node);
+struct sobj * swarmkv_store_add_key(struct swarmkv_module *mod_store, const sds key, struct swarmkv_node_addr *replica_nodes, size_t n_replica_node);
 
 
 

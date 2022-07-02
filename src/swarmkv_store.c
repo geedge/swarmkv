@@ -435,6 +435,7 @@ void swarmkv_store_periodic(struct swarmkv_module * module)
 	{
 		scontainer_sync(store, ctr);
 		DL_DELETE(store->sync_queue, ctr);
+		ctr->is_in_sync_q=0;
 	}
 	pthread_rwlock_unlock(&module->rwlock);
 }
@@ -511,7 +512,7 @@ void crdt_pull(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, 
 	return;
 }
 
-void swarmkv_store_add_key(struct swarmkv_module *mod_store, const sds key, struct swarmkv_node_addr *replica_nodes, size_t n_replica_node)
+struct sobj * swarmkv_store_add_key(struct swarmkv_module *mod_store, const sds key, struct swarmkv_node_addr *replica_nodes, size_t n_replica_node)
 {
 	struct sobj *obj=sobj_new(OBJ_TYPE_UNDEFINED, key);
 
@@ -534,6 +535,6 @@ void swarmkv_store_add_key(struct swarmkv_module *mod_store, const sds key, stru
 	}
 	swarmkv_cmd_free(crdt_pull_cmd);
 	crdt_pull_cmd=NULL;
-	return;
+	return obj;
 }
 
