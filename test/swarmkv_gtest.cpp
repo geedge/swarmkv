@@ -480,7 +480,7 @@ TEST_F(SwarmkvTwoNodes, Set1K)
 	struct swarmkv* db2=SwarmkvTwoNodes::db2;
 	struct swarmkv* tmp_db=NULL;
 	char key[128]="", val[128]="";
-	int exec_successful=0, i=0, round=1000, n_success=0;
+	int exec_successful=0, i=0, round=100000, n_success=0;
 
 	arg=cmd_exec_arg_new();	
 	cmd_exec_arg_expect_OK(arg);

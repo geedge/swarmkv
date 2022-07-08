@@ -1,5 +1,7 @@
 #include "lww_register.h"
 #include "pn_counter.h"
+#include "or_set.h"
+
 #include <gtest/gtest.h>
 #include <unistd.h> //usleep
 #include <uuid/uuid.h>
@@ -9,7 +11,9 @@
 TEST(LastWriteWinRegister, Basic)
 {
 	struct lww_register *reg=NULL;
-	reg=lww_register_new(NULL, 0);
+	uuid_t uuid;
+	uuid_generate(uuid);
+	reg=lww_register_new((const char*) uuid, sizeof(uuid));
 	
 	const char *value0=NULL;
 	size_t val_sz=0;
@@ -35,10 +39,13 @@ TEST(LastWriteWinRegister, Basic)
 }
 TEST(LastWriteWinRegister, Merge)
 {
-	struct lww_register *reg[2];
+	struct lww_register *reg[2];	
+	uuid_t uuid;
+
 	for(size_t i=0; i<2; i++)
 	{
-		reg[i]=lww_register_new(NULL, 0);
+		uuid_generate(uuid);
+		reg[i]=lww_register_new((const char*)uuid, sizeof(uuid));
 	}
 	const char *value0=NULL;
 	size_t val_sz=0;
@@ -68,9 +75,11 @@ TEST(LastWriteWinRegister, Merge)
 TEST(LastWriteWinRegister, Sequential)
 {
 	struct lww_register *reg[2];
+	uuid_t uuid;
 	for(size_t i=0; i<2; i++)
 	{
-		reg[i]=lww_register_new(NULL, 0);
+		uuid_generate(uuid);
+		reg[i]=lww_register_new((const char*)uuid, sizeof(uuid));
 	}
 	char tmp[32];
 	snprintf(tmp, sizeof(tmp), "reg1:abc123");
@@ -161,13 +170,13 @@ TEST(PNCounter, Merge)
 	}
 
 }
-TEST(PNCounter, Nodes300)
+TEST(PNCounter, Replica100)
 {
-	size_t test_node_num=300, i=0, j=0;	
+	size_t test_replica_num=100, i=0, j=0;	
 	uuid_t uuid;
 
-	struct PN_counter *pnc[test_node_num];
-	for(i=0; i<test_node_num; i++)
+	struct PN_counter *pnc[test_replica_num];
+	for(i=0; i<test_replica_num; i++)
 	{
 		uuid_generate(uuid);
 		pnc[i]=PN_counter_new((const char*)uuid, sizeof(uuid));
@@ -177,7 +186,7 @@ TEST(PNCounter, Nodes300)
 	size_t node_idx=0, loop=100000;
 	for(i=0; i<loop; i++)
 	{
-		node_idx=rand()%test_node_num;
+		node_idx=rand()%test_replica_num;
 		increment=2*rand();//to generate negtive expect_value
 		PN_counter_incrby(pnc[node_idx], increment);
 		expect_value+=increment;
@@ -187,10 +196,10 @@ TEST(PNCounter, Nodes300)
 	char *blob=NULL;
 	size_t blob_sz=0;
 	
-	for(i=0; i<test_node_num; i++)
+	for(i=0; i<test_replica_num; i++)
 	{
 		PN_counter_serialize(pnc[i], &blob, &blob_sz);
-		for(j=0; j<test_node_num; j++)
+		for(j=0; j<test_replica_num; j++)
 		{
 			PN_counter_merge(pnc[j], blob, blob_sz);
 		}
@@ -198,7 +207,7 @@ TEST(PNCounter, Nodes300)
 		blob=NULL;
 	}	
 	size_t success=0;
-	for(i=0; i<test_node_num; i++)
+	for(i=0; i<test_replica_num; i++)
 	{
 		actual_value=PN_counter_get(pnc[i]);
 		if(expect_value==actual_value)
@@ -206,14 +215,272 @@ TEST(PNCounter, Nodes300)
 			success++;
 		}
 	}
-	EXPECT_EQ(success, test_node_num);
+	EXPECT_EQ(success, test_replica_num);
 	
-	for(i=0; i<test_node_num; i++)
+	for(i=0; i<test_replica_num; i++)
 	{
 		PN_counter_free(pnc[i]);
 	}	
 }
+TEST(ORSet, Basic)
+{
+	int ret=0;
+	uuid_t uuid;
+	uuid_generate(uuid);
 
+	const char *members[]={"zhangsan", "lisi", "Jack"};
+	struct OR_set *set=OR_set_new((const char*)uuid, sizeof(uuid));
+	for(size_t i=0; i<3; i++)
+	{
+		ret=OR_set_add(set, members[i], strlen(members[i]));
+		EXPECT_EQ(ret, 1);
+	}
+	ret=OR_set_is_member(set, members[0], strlen(members[0]));
+	EXPECT_EQ(ret, 1);
+
+	ret=OR_set_remove(set, members[0], strlen(members[0]));
+	EXPECT_EQ(ret, 1);
+	ret=OR_set_is_member(set, members[0], strlen(members[0]));
+	EXPECT_EQ(ret, 0);
+
+	ret=OR_set_is_member(set, members[1], strlen(members[1]));
+	EXPECT_EQ(ret, 1);
+
+	size_t n_member=0;
+	n_member=OR_set_cardinality(set);
+	EXPECT_EQ(n_member, 2);
+	struct OR_set_member_list *list=NULL;
+	list=OR_set_members(set);
+	EXPECT_EQ(list->n_member, 2);
+	OR_set_member_list_free(list);
+	OR_set_free(set);	
+}
+TEST(ORSet,   Merge01)
+{
+	struct OR_set *set[2];
+	uuid_t uuid;
+	size_t i=0;
+	for(i=0; i<2; i++)
+	{
+		uuid_generate(uuid);
+		set[i]=OR_set_new((const char*)uuid, sizeof(uuid));
+	}
+	char buffer[256];
+	size_t n_test_member=100;
+	for(i=0; i<n_test_member; i++)
+	{
+		snprintf(buffer, sizeof(buffer), "ORSet-Member-%zu", i);
+		OR_set_add(set[0], buffer, strlen(buffer)+1);
+	}
+	char *blob=NULL;
+	size_t blob_sz=0;
+	OR_set_serialize(set[0], &blob, &blob_sz);
+	OR_set_merge(set[1], blob, blob_sz);
+	size_t success_cnt=0;
+	for(i=0; i<n_test_member; i++)
+	{
+		snprintf(buffer, sizeof(buffer), "ORSet-Member-%zu", i);
+		success_cnt+=OR_set_is_member(set[1], buffer, strlen(buffer)+1);
+	}
+	EXPECT_EQ(success_cnt, n_test_member);
+
+	for(i=0; i<2; i++)
+	{
+		OR_set_free(set[i]);
+		set[i]=NULL;
+	}
+	free(blob);
+}
+TEST(ORSet,   Merge11)
+{
+	struct OR_set *set[2];
+	uuid_t uuid;
+	size_t i=0;
+
+	for(i=0; i<2; i++)
+	{
+		uuid_generate(uuid);
+		set[i]=OR_set_new((const char*)uuid, sizeof(uuid));
+	}
+	size_t n_test_member=100;
+	for(i=0; i<n_test_member; i++)
+	{
+		OR_set_add(set[i%2], (const char*)&i, sizeof(i));
+	}
+
+	char *blob=NULL;
+	size_t blob_sz=0;
+
+	OR_set_serialize(set[0], &blob, &blob_sz);
+	OR_set_merge(set[1], blob, blob_sz);
+	free(blob);
+
+	OR_set_serialize(set[1], &blob, &blob_sz);
+	OR_set_merge(set[0], blob, blob_sz);
+	free(blob);
+
+	size_t success_cnt=0;
+	for(i=0; i<n_test_member; i++)
+	{
+		success_cnt+=OR_set_is_member(set[0], (const char*)&i, sizeof(i));
+		success_cnt+=OR_set_is_member(set[1], (const char*)&i, sizeof(i));
+	}
+	
+	EXPECT_EQ(success_cnt, n_test_member*2);
+	
+	for(i=0; i<2; i++)
+	{
+		OR_set_free(set[i]);
+		set[i]=NULL;
+	}
+
+}
+TEST(ORSet,   Remove)
+{
+	struct OR_set *set[2];
+	uuid_t uuid;
+	size_t i=0;
+	for(i=0; i<2; i++)
+	{
+		uuid_generate(uuid);
+		set[i]=OR_set_new((const char*)uuid, sizeof(uuid));
+	}
+	char buffer[256];
+	size_t n_test_member=100;
+	for(i=0; i<n_test_member; i++)
+	{
+		snprintf(buffer, sizeof(buffer), "ORSet-Member-%zu", i);
+		OR_set_add(set[0], buffer, strlen(buffer)+1);
+	}
+
+	char *blob=NULL;
+	size_t blob_sz=0;
+	OR_set_serialize(set[0], &blob, &blob_sz);
+	OR_set_merge(set[1], blob, blob_sz);
+	free(blob);
+	
+	int is_member=0;
+	snprintf(buffer, sizeof(buffer), "ORSet-Member-0");
+	is_member=OR_set_is_member(set[1], buffer, strlen(buffer)+1);
+	EXPECT_EQ(is_member, 1);
+	
+	OR_set_remove(set[0], buffer, strlen(buffer)+1);
+	OR_set_serialize(set[0], &blob, &blob_sz);
+	OR_set_merge(set[1], blob, blob_sz);
+	free(blob);
+
+	is_member=OR_set_is_member(set[1], buffer, strlen(buffer)+1);
+	EXPECT_EQ(is_member, 0);
+
+	for(i=0; i<2; i++)
+	{
+		OR_set_free(set[i]);
+		set[i]=NULL;
+	}
+}
+
+TEST(ORSet,   ObservedRemove)
+{
+	struct OR_set *set[2];
+	uuid_t uuid;
+	size_t i=0;
+	for(i=0; i<2; i++)
+	{
+		uuid_generate(uuid);
+		set[i]=OR_set_new((const char*)uuid, sizeof(uuid));
+	}
+	
+	char buffer[256];
+	size_t n_test_member=100;
+	for(i=0; i<n_test_member; i++)
+	{
+		snprintf(buffer, sizeof(buffer), "ORSet-Member-%zu", i);
+		OR_set_add(set[0], buffer, strlen(buffer)+1);
+		OR_set_add(set[1], buffer, strlen(buffer)+1);
+	}
+	int is_member=0;
+	snprintf(buffer, sizeof(buffer), "ORSet-Member-0");
+	OR_set_remove(set[0], buffer, strlen(buffer)+1);
+	is_member=OR_set_is_member(set[0], buffer, strlen(buffer)+1);
+	EXPECT_EQ(is_member, 0);
+
+	char *blob=NULL;
+	size_t blob_sz=0;
+	OR_set_serialize(set[0], &blob, &blob_sz);
+	OR_set_merge(set[1], blob, blob_sz);
+	free(blob);
+
+	is_member=OR_set_is_member(set[1], buffer, strlen(buffer)+1);
+	EXPECT_EQ(is_member, 1);
+
+	
+	OR_set_serialize(set[1], &blob, &blob_sz);
+	OR_set_merge(set[0], blob, blob_sz);
+	free(blob);
+
+	is_member=OR_set_is_member(set[0], buffer, strlen(buffer)+1);
+	EXPECT_EQ(is_member, 1);
+	
+	for(i=0; i<2; i++)
+	{
+		OR_set_free(set[i]);
+		set[i]=NULL;
+	}	
+}
+TEST(ORSet, Replica32)
+{
+	size_t test_replica_num=4, test_member_num=4096;
+	struct OR_set *set[test_replica_num];
+	uuid_t uuid;
+	size_t i=0, j=0;
+	for(i=0; i<test_replica_num; i++)
+	{
+		uuid_generate(uuid);
+		set[i]=OR_set_new((const char*)uuid, sizeof(uuid));
+	}
+	char buffer[256];
+	for(i=0; i<test_member_num; i++)
+	{
+		snprintf(buffer, sizeof(buffer), "ORSet-Member-%zu", i);
+		OR_set_add(set[i%test_replica_num], buffer, strlen(buffer)+1);
+	}
+	
+	char *blob=NULL;
+	size_t blob_sz=0;
+	for(i=0; i<test_replica_num; i++)
+	{
+		OR_set_serialize(set[i], &blob, &blob_sz);
+		for(j=0; j<test_replica_num; j++)
+		{
+			OR_set_merge(set[j], blob, blob_sz);
+		}
+		free(blob);
+		blob_sz=0;
+	}
+	size_t success_cnt=0;
+	for(i=0; i<test_member_num; i++)
+	{
+		snprintf(buffer, sizeof(buffer), "ORSet-Member-%zu", i);
+		for(j=0; j<test_replica_num; j++)
+		{
+			success_cnt+=OR_set_is_member(set[j], buffer, strlen(buffer)+1);
+		}
+	}
+	EXPECT_EQ(success_cnt, test_member_num*test_replica_num);
+	size_t n_replica=0;
+	success_cnt=0;
+	for(i=0; i<test_replica_num; i++)
+	{
+		n_replica=OR_set_replica_number(set[i]);
+		if(n_replica==test_replica_num)
+		{
+			success_cnt++;
+		}
+		OR_set_free(set[i]);
+		set[i]=NULL;
+	}
+	EXPECT_EQ(success_cnt, test_replica_num);
+}
 int main(int argc, char ** argv)
 {
 	int ret=0;

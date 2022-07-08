@@ -2,7 +2,6 @@
 #include "mpack.h"
 #include <assert.h>
 #include <string.h>
-#include <uuid/uuid.h>
 
 #ifndef MAX
 #define MAX(a, b)  	(((a) > (b)) ? (a) : (b))
@@ -22,11 +21,17 @@ struct counter_item
 };
 struct counter_item *counter_item_new(const char *node_id, size_t node_id_sz)
 {
-	struct counter_item *c=ALLOC(struct counter_item, 1);
-	c->node_id_sz=node_id_sz;
-	c->node_id=ALLOC(char, c->node_id_sz);
-	memcpy(c->node_id, node_id, c->node_id_sz);
-	return c;
+	struct counter_item *item=ALLOC(struct counter_item, 1);
+	item->node_id_sz=node_id_sz;
+	item->node_id=ALLOC(char, item->node_id_sz);
+	memcpy(item->node_id, node_id, item->node_id_sz);
+	return item;
+}
+void counter_item_free(struct counter_item *item)
+{
+	free(item->node_id);
+	item->node_id=NULL;
+	free(item);
 }
 struct PN_counter
 {
@@ -48,7 +53,7 @@ void PN_counter_free(struct PN_counter *pnc)
 	HASH_ITER(hh, pnc->hash_item, item, tmp)
 	{
 		HASH_DELETE(hh, pnc->hash_item, item);
-		free(item);
+		counter_item_free(item);
 	}
 	free(pnc->my_id);
 	free(pnc);
@@ -122,7 +127,6 @@ void PN_counter_merge(struct PN_counter *pnc, const char *blob, size_t blob_sz)
 	for(size_t i=0; i<array_sz; i+=3)
 	{
 		mpnode_node_id=mpack_node_array_at(root, i);
-		assert(mpack_node_strlen(mpnode_node_id)==sizeof(uuid_t));
 		mpnode_P=mpack_node_array_at(root, i+1);
 		mpnode_N=mpack_node_array_at(root, i+2);
 		
@@ -135,6 +139,11 @@ void PN_counter_merge(struct PN_counter *pnc, const char *blob, size_t blob_sz)
 		c->P=MAX(c->P, mpack_node_i64(mpnode_P));
 		c->N=MAX(c->N, mpack_node_i64(mpnode_N));
 	}
+	if (mpack_tree_destroy(&tree) != mpack_ok) 
+	{
+		fprintf(stderr, "An error occurred decoding the PN_counter!\n");
+	}
+
 	return;
 }
 

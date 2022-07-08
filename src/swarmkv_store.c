@@ -326,7 +326,7 @@ void sobj_merge_blob(struct swarmkv_module *mod_store, struct sobj *obj, const c
 			if(!obj->reg)
 			{				
 				store_get_uuid(mod_store, uuid);
-				obj->reg=lww_register_new(NULL, 0);
+				obj->reg=lww_register_new((const char*)uuid, sizeof(uuid));
 			}
 			lww_register_merge(obj->reg, mpack_node_str(v_node), mpack_node_strlen(v_node));
 			break;

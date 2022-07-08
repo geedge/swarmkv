@@ -3,7 +3,6 @@
 #include "swarmkv_common.h"
 #include "uthash.h"
 
-
 enum cmd_group
 {
 	GROUP_KEYSPACE,

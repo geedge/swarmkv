@@ -609,6 +609,7 @@ void print_reply(const struct swarmkv_reply *reply)
 		case SWARMKV_REPLY_ERROR:
 			printf("(error) %s\n", reply->str);
 			break;
+		case SWARMKV_REPLY_NODE:
 		case SWARMKV_REPLY_STATUS:
 			printf("%s\n", reply->str);
 			break;

@@ -58,13 +58,9 @@ void lww_register_serialize(struct lww_register *reg, char **blob, size_t *blob_
 	memcpy(*blob+*blob_sz-reg->size, reg->value, reg->size);
 	return;
 }
-struct lww_register *lww_register_new(const char *value, size_t size)
+struct lww_register *lww_register_new(const char* id, size_t id_sz)
 {
 	struct lww_register *reg=ALLOC(struct lww_register, 1);
-	if(value)
-	{
-		lww_register_set(reg, value, size);
-	}
 	return reg;
 }
 void lww_register_free(struct lww_register *reg)

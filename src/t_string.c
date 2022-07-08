@@ -62,9 +62,12 @@ enum cmd_exec_result set_command(struct swarmkv_module *mod_store, const struct 
 	{
 		if(!obj->reg)
 		{
+			uuid_t uuid;
 			assert(obj->type==OBJ_TYPE_UNDEFINED);
 			obj->type=OBJ_TYPE_STRING;
-			obj->reg=lww_register_new(value, sdslen(value));
+			store_get_uuid(mod_store, uuid);
+			obj->reg=lww_register_new((const char*)uuid, sizeof(uuid));
+			lww_register_set(obj->reg, value, sdslen(value));
 		}
 		lww_register_set(obj->reg, value, sdslen(value));
 		*reply=swarmkv_reply_new_status("OK");

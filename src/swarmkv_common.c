@@ -219,6 +219,7 @@ struct swarmkv_reply *swarmkv_reply_dup(const struct swarmkv_reply *origin)
 		case SWARMKV_REPLY_STRING:
 		case SWARMKV_REPLY_STATUS:
 		case SWARMKV_REPLY_ERROR:
+		case SWARMKV_REPLY_NODE:
 			copy->len=origin->len;
 			copy->str=ALLOC(char, origin->len);
 			memcpy(copy->str, origin->str, origin->len);
