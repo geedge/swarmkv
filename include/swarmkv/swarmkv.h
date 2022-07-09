@@ -3,7 +3,7 @@
 *	SwarmKV is a embedded and distributed key-CRDT store with p2p networking
 *	Authors:	Zheng Chao contact@zhengchao.io
 *				Jiang Ping
-*	Version 2022-01-24 version 2.0.0
+*	Version 2022-01-24 version 3.0.0
 *******************************************************************************
 */
 
@@ -31,7 +31,7 @@ struct swarmkv_reply
 	enum swarmkv_reply_type type;
 	long long integer;	/* The integer when type is SWARMKV_REPLY_INTEGER */
 	int len; /* Length of string */
-	char *str; /* Used for SWARMKV_REPLY_ERROR, SWARMKV_REPLY_STATUS and SWARMKV_REPLY_STRING */
+	char *str; /* Used for SWARMKV_REPLY_ERROR, SWARMKV_REPLY_STATUS, SWARMKV_NODE and SWARMKV_REPLY_STRING */
 	size_t n_element;	 /* number of elements, for SWARMKV_REPLY_ARRAY */
 	struct swarmkv_reply **elements;/* elements vector for SWARMKV_REPLY_ARRAY */
 };

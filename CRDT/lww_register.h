@@ -1,3 +1,10 @@
+/*
+* A naive Last-Write-Wins Register
+* Simply reply on global clock synchronization
+* Author: contact@zhengchao.io
+*/
+
+
 #pragma once
 #include <stddef.h>
 

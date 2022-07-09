@@ -46,6 +46,10 @@ enum cmd_exec_result set_command(struct swarmkv_module *mod_store, const struct 
 	struct sobj *obj=NULL;
 	const sds key=cmd->argv[1];
 	const sds value=cmd->argv[2];
+	
+	char *endptr=NULL;
+
+
 	obj=store_lookup(mod_store, key);
 	if(!obj)
 	{
@@ -58,18 +62,33 @@ enum cmd_exec_result set_command(struct swarmkv_module *mod_store, const struct 
 			return NEED_KEY_ROUTE;
 		}
 	}
-	if(obj->type==OBJ_TYPE_UNDEFINED||obj->type==OBJ_TYPE_STRING)
+	long long int_value=0;
+	if(obj->type==OBJ_TYPE_UNDEFINED)
 	{
-		if(!obj->reg)
+		uuid_t uuid;
+		assert(obj->raw==NULL);
+		store_get_uuid(mod_store, uuid);
+		int_value=strtol(cmd->argv[2], &endptr, 10);
+		if(*endptr!='\0')
 		{
-			uuid_t uuid;
-			assert(obj->type==OBJ_TYPE_UNDEFINED);
-			obj->type=OBJ_TYPE_STRING;
-			store_get_uuid(mod_store, uuid);
+			obj->type=OBJ_TYPE_STRING;			
 			obj->reg=lww_register_new((const char*)uuid, sizeof(uuid));
-			lww_register_set(obj->reg, value, sdslen(value));
 		}
+		else
+		{
+			obj->type=OBJ_TYPE_COUNTER;
+			obj->counter=PN_counter_new((const char*)uuid, sizeof(uuid));
+		}
+	}
+	if(obj->type==OBJ_TYPE_STRING)
+	{
 		lww_register_set(obj->reg, value, sdslen(value));
+		*reply=swarmkv_reply_new_status("OK");
+		sobj_need_sync(mod_store, obj);
+	}
+	else if(obj->type==OBJ_TYPE_COUNTER)
+	{
+		PN_counter_set(obj->counter, int_value);		
 		*reply=swarmkv_reply_new_status("OK");
 		sobj_need_sync(mod_store, obj);
 	}

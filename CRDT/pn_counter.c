@@ -62,14 +62,15 @@ void PN_counter_free(struct PN_counter *pnc)
 long long PN_counter_get(struct PN_counter *pnc)
 {
 	long long abs_positive_counter=0, abs_negtive_counter=0;
-	struct counter_item *c=NULL, *tmp=NULL;
-	HASH_ITER(hh, pnc->hash_item, c, tmp)
+	struct counter_item *item=NULL, *tmp=NULL;
+	HASH_ITER(hh, pnc->hash_item, item, tmp)
 	{
-		abs_positive_counter+=c->P;
-		abs_negtive_counter+=c->N;
+		abs_positive_counter+=item->P;
+		abs_negtive_counter+=item->N;
 	}
 	return abs_positive_counter-abs_negtive_counter;
 }
+
 
 long long PN_counter_incrby(struct PN_counter *pnc, long long increment)
 {
@@ -90,6 +91,19 @@ long long PN_counter_incrby(struct PN_counter *pnc, long long increment)
 	}
 	return PN_counter_get(pnc);
 }
+long long PN_counter_set(struct PN_counter *pnc, long long value)
+{
+	struct counter_item *item=NULL, *tmp=NULL;
+	HASH_ITER(hh, pnc->hash_item, item, tmp)
+	{
+		item->P=MAX(item->P, item->N);
+		item->N=MAX(item->P, item->N);
+	}
+	long long result=PN_counter_incrby(pnc, value);
+	assert(result==value);
+	return result;
+}
+
 void PN_counter_serialize(struct PN_counter *pnc, char **blob, size_t *blob_sz)
 {
 	mpack_writer_t writer;

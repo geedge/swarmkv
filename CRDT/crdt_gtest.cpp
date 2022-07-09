@@ -132,6 +132,13 @@ TEST(PNCounter, Basic)
 	value=PN_counter_incrby(pnc, -20);
 	EXPECT_EQ(value, 80);
 
+	value=PN_counter_set(pnc, 0);
+	EXPECT_EQ(value, 0);
+
+
+	value=PN_counter_set(pnc, 1024);
+	EXPECT_EQ(value, 1024);
+
 	PN_counter_free(pnc);
 }
 TEST(PNCounter, Merge)
@@ -163,6 +170,13 @@ TEST(PNCounter, Merge)
 	
 	value=PN_counter_get(pnc[1]);
 	EXPECT_EQ(value, 100);
+
+	PN_counter_set(pnc[0], 1024);
+	PN_counter_serialize(pnc[0], &blob, &blob_sz);
+	PN_counter_merge(pnc[1], blob, blob_sz);
+	value=PN_counter_get(pnc[1]);
+	EXPECT_EQ(value, 1024);
+	free(blob);
 	
 	for(size_t i=0; i<2; i++)
 	{
@@ -429,7 +443,7 @@ TEST(ORSet,   ObservedRemove)
 }
 TEST(ORSet, Replica32)
 {
-	size_t test_replica_num=4, test_member_num=4096;
+	size_t test_replica_num=32, test_member_num=4096;
 	struct OR_set *set[test_replica_num];
 	uuid_t uuid;
 	size_t i=0, j=0;
@@ -467,6 +481,7 @@ TEST(ORSet, Replica32)
 		}
 	}
 	EXPECT_EQ(success_cnt, test_member_num*test_replica_num);
+
 	size_t n_replica=0;
 	success_cnt=0;
 	for(i=0; i<test_replica_num; i++)

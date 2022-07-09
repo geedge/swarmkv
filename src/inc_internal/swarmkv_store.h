@@ -25,6 +25,7 @@ struct sobj
 	{
 		struct lww_register *reg;
 		struct PN_counter *counter;
+		void *raw;
 	};
 };
 

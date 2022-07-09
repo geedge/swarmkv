@@ -4,7 +4,7 @@
 </h1>
 
 
-**SwarmKV is a embedded and distributed key-value storage library with peer-to-peer networking.** 
+**SwarmKV is a embedded and distributed key-CRDT store with peer-to-peer networking .** 
 **Main Features**
 
 - Cluster
@@ -429,6 +429,8 @@ The source files are organized as follows:
 ## References
 
 Woo, Shinae, et al. "Elastic scaling of stateful network functions." *15th {USENIX} Symposium on Networked Systems Design and Implementation ({NSDI} 18)*. 2018.
+
+Bieniusa, Annette, et al. "[An optimized conflict-free replicated set](https://arxiv.org/pdf/1210.3368.pdf)." *arXiv preprint arXiv:1210.3368* (2012).
 
 [C implementation of the Raft consensus protocol](https://github.com/willemt/raft) by Willem-Hendrik Thiart.
 
