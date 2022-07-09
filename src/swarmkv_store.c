@@ -62,7 +62,7 @@ static void obj_container_free(struct scontainer *ctr)
 	switch(ctr->obj.type)
 	{
 		case OBJ_TYPE_STRING:
-			lww_register_free(ctr->obj.reg);
+			LWW_register_free(ctr->obj.reg);
 			ctr->obj.reg=NULL;
 			break;
 		case OBJ_TYPE_COUNTER:
@@ -170,7 +170,7 @@ void sobj_free(struct sobj *obj)
 	switch(ctr->obj.type)
 	{
 		case OBJ_TYPE_STRING:
-			lww_register_free(ctr->obj.reg);
+			LWW_register_free(ctr->obj.reg);
 			ctr->obj.reg=NULL;
 			break;
 		case OBJ_TYPE_COUNTER:
@@ -272,7 +272,7 @@ void sobj_serialize(struct sobj *obj, char **blob, size_t *blob_sz)
 	switch(obj->type)
 	{
 		case OBJ_TYPE_STRING:
-			lww_register_serialize(obj->reg, &value_blob, &value_blob_sz);
+			LWW_register_serialize(obj->reg, &value_blob, &value_blob_sz);
 			mpack_write_str(&snapshot_mpack, value_blob, value_blob_sz);
 			free(value_blob);
 			value_blob=NULL;
@@ -326,9 +326,9 @@ void sobj_merge_blob(struct swarmkv_module *mod_store, struct sobj *obj, const c
 			if(!obj->reg)
 			{				
 				store_get_uuid(mod_store, uuid);
-				obj->reg=lww_register_new((const char*)uuid, sizeof(uuid));
+				obj->reg=LWW_register_new((const char*)uuid, sizeof(uuid));
 			}
-			lww_register_merge(obj->reg, mpack_node_str(v_node), mpack_node_strlen(v_node));
+			LWW_register_merge(obj->reg, mpack_node_str(v_node), mpack_node_strlen(v_node));
 			break;
 		case OBJ_TYPE_COUNTER:
 			if(!obj->counter)

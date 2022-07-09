@@ -10,109 +10,109 @@
 
 TEST(LastWriteWinRegister, Basic)
 {
-	struct lww_register *reg=NULL;
+	struct LWW_register *reg=NULL;
 	uuid_t uuid;
 	uuid_generate(uuid);
-	reg=lww_register_new((const char*) uuid, sizeof(uuid));
+	reg=LWW_register_new((const char*) uuid, sizeof(uuid));
 	
 	const char *value0=NULL;
 	size_t val_sz=0;
-	lww_register_get0(reg, &value0, &val_sz);
+	LWW_register_get0(reg, &value0, &val_sz);
 	EXPECT_TRUE(value0==NULL);
 	char tmp[32];
 	snprintf(tmp, sizeof(tmp), "abc123");
-	lww_register_set(reg, tmp, strlen(tmp)+1);
-	lww_register_get0(reg, &value0, &val_sz);
+	LWW_register_set(reg, tmp, strlen(tmp)+1);
+	LWW_register_get0(reg, &value0, &val_sz);
 	EXPECT_STREQ(tmp, value0);
 	value0=NULL;
 
 	char *value1=NULL;
 	snprintf(tmp, sizeof(tmp), "abcdefg");
-	lww_register_set(reg, tmp, strlen(tmp)+1);
-	lww_register_get1(reg, &value1, &val_sz);
+	LWW_register_set(reg, tmp, strlen(tmp)+1);
+	LWW_register_get1(reg, &value1, &val_sz);
 	EXPECT_STREQ(tmp, value1);
 	free(value1);
 
-	lww_register_free(reg);
+	LWW_register_free(reg);
 		
 	return;
 }
 TEST(LastWriteWinRegister, Merge)
 {
-	struct lww_register *reg[2];	
+	struct LWW_register *reg[2];	
 	uuid_t uuid;
 
 	for(size_t i=0; i<2; i++)
 	{
 		uuid_generate(uuid);
-		reg[i]=lww_register_new((const char*)uuid, sizeof(uuid));
+		reg[i]=LWW_register_new((const char*)uuid, sizeof(uuid));
 	}
 	const char *value0=NULL;
 	size_t val_sz=0;
-	lww_register_get0(reg[0], &value0, &val_sz);
+	LWW_register_get0(reg[0], &value0, &val_sz);
 	char tmp[32];
 	snprintf(tmp, sizeof(tmp), "abc123");
-	lww_register_set(reg[0], tmp, strlen(tmp)+1);
+	LWW_register_set(reg[0], tmp, strlen(tmp)+1);
 	EXPECT_TRUE(value0==NULL);
 
 	char *blob=NULL;
 	size_t blob_sz=0;
-	lww_register_serialize(reg[0], &blob, &blob_sz);
-	lww_register_merge(reg[1], blob, blob_sz);
+	LWW_register_serialize(reg[0], &blob, &blob_sz);
+	LWW_register_merge(reg[1], blob, blob_sz);
 	free(blob);
 	
 	char *value1=NULL;	
-	lww_register_get1(reg[1], &value1, &val_sz);
+	LWW_register_get1(reg[1], &value1, &val_sz);
 	EXPECT_STREQ(tmp, value1);
 	free(value1);
 
 	for(size_t i=0; i<2; i++)
 	{
-		lww_register_free(reg[i]);
+		LWW_register_free(reg[i]);
 	}	
 	return;
 }
 TEST(LastWriteWinRegister, Sequential)
 {
-	struct lww_register *reg[2];
+	struct LWW_register *reg[2];
 	uuid_t uuid;
 	for(size_t i=0; i<2; i++)
 	{
 		uuid_generate(uuid);
-		reg[i]=lww_register_new((const char*)uuid, sizeof(uuid));
+		reg[i]=LWW_register_new((const char*)uuid, sizeof(uuid));
 	}
 	char tmp[32];
 	snprintf(tmp, sizeof(tmp), "reg1:abc123");
-	lww_register_set(reg[0], tmp, strlen(tmp)+1);
+	LWW_register_set(reg[0], tmp, strlen(tmp)+1);
 	usleep(10);
 	
 	snprintf(tmp, sizeof(tmp), "reg2:abcdefg");
-	lww_register_set(reg[1], tmp, strlen(tmp)+1);
+	LWW_register_set(reg[1], tmp, strlen(tmp)+1);
 
 
 	char *blob=NULL;
 	size_t blob_sz=0;
-	lww_register_serialize(reg[0], &blob, &blob_sz);
-	lww_register_merge(reg[1], blob, blob_sz);
+	LWW_register_serialize(reg[0], &blob, &blob_sz);
+	LWW_register_merge(reg[1], blob, blob_sz);
 	free(blob);
 
-	lww_register_serialize(reg[1], &blob, &blob_sz);
-	lww_register_merge(reg[0], blob, blob_sz);
+	LWW_register_serialize(reg[1], &blob, &blob_sz);
+	LWW_register_merge(reg[0], blob, blob_sz);
 	free(blob);
 
 	char *value=NULL;
 	size_t val_sz=0;
-	lww_register_get1(reg[0], &value, &val_sz);
+	LWW_register_get1(reg[0], &value, &val_sz);
 	EXPECT_STREQ(tmp, value);
 	free(value);
 	
-	lww_register_get1(reg[1], &value, &val_sz);
+	LWW_register_get1(reg[1], &value, &val_sz);
 	EXPECT_STREQ(tmp, value);
 	free(value);
 
 	for(size_t i=0; i<2; i++)
 	{
-		lww_register_free(reg[i]);
+		LWW_register_free(reg[i]);
 	}	
 	return;
 }
@@ -132,12 +132,8 @@ TEST(PNCounter, Basic)
 	value=PN_counter_incrby(pnc, -20);
 	EXPECT_EQ(value, 80);
 
-	value=PN_counter_set(pnc, 0);
+	value=PN_counter_reset(pnc);
 	EXPECT_EQ(value, 0);
-
-
-	value=PN_counter_set(pnc, 1024);
-	EXPECT_EQ(value, 1024);
 
 	PN_counter_free(pnc);
 }
@@ -171,11 +167,11 @@ TEST(PNCounter, Merge)
 	value=PN_counter_get(pnc[1]);
 	EXPECT_EQ(value, 100);
 
-	PN_counter_set(pnc[0], 1024);
+	PN_counter_reset(pnc[0]);
 	PN_counter_serialize(pnc[0], &blob, &blob_sz);
 	PN_counter_merge(pnc[1], blob, blob_sz);
 	value=PN_counter_get(pnc[1]);
-	EXPECT_EQ(value, 1024);
+	EXPECT_EQ(value, 0);
 	free(blob);
 	
 	for(size_t i=0; i<2; i++)
@@ -184,6 +180,54 @@ TEST(PNCounter, Merge)
 	}
 
 }
+TEST(PNCounter, ObservedReset)
+{
+	struct PN_counter *pnc[2];
+	uuid_t uuid;
+	for(size_t i=0; i<2; i++)
+	{
+		uuid_generate(uuid);
+		pnc[i]=PN_counter_new((const char*)uuid, sizeof(uuid));
+	}
+	PN_counter_incrby(pnc[0], 200);
+	PN_counter_reset(pnc[0]);
+	PN_counter_incrby(pnc[1], -100);
+	
+
+	char *blob=NULL;
+	size_t blob_sz=0;
+	long long value=0;
+
+	PN_counter_serialize(pnc[0], &blob, &blob_sz);
+	PN_counter_merge(pnc[1], blob, blob_sz);
+	free(blob);
+	
+	PN_counter_serialize(pnc[1], &blob, &blob_sz);
+	PN_counter_merge(pnc[0], blob, blob_sz);
+	free(blob);
+	
+	value=PN_counter_get(pnc[0]);
+	EXPECT_EQ(value, -100);
+	value=PN_counter_get(pnc[1]);
+	EXPECT_EQ(value, -100);
+
+	PN_counter_reset(pnc[0]);
+
+	PN_counter_serialize(pnc[0], &blob, &blob_sz);
+	PN_counter_merge(pnc[1], blob, blob_sz);
+	free(blob);
+
+	value=PN_counter_get(pnc[0]);
+	EXPECT_EQ(value, 0);
+	value=PN_counter_get(pnc[1]);
+	EXPECT_EQ(value, 0);
+
+	for(size_t i=0; i<2; i++)
+	{
+		PN_counter_free(pnc[i]);
+	}
+}
+
 TEST(PNCounter, Replica100)
 {
 	size_t test_replica_num=100, i=0, j=0;	

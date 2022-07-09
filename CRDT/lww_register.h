@@ -12,17 +12,17 @@
 extern "C"
 {
 #endif
-struct lww_register;
-struct lww_register *lww_register_new(const char *value, size_t size);
-void lww_register_free(struct lww_register *reg);
+struct LWW_register;
+struct LWW_register *LWW_register_new(const char *value, size_t size);
+void LWW_register_free(struct LWW_register *reg);
 
-void lww_register_set(struct lww_register *reg, const char *value, size_t size);
-void lww_register_get1(struct lww_register *reg, char **value, size_t *size);
-void lww_register_get0(struct lww_register *reg, const char **value, size_t *size);
+void LWW_register_set(struct LWW_register *reg, const char *value, size_t size);
+void LWW_register_get1(struct LWW_register *reg, char **value, size_t *size);
+void LWW_register_get0(struct LWW_register *reg, const char **value, size_t *size);
 
 
-void lww_register_serialize(struct lww_register *reg, char **blob, size_t *blob_sz);
-void lww_register_merge(struct lww_register *reg, const char *blob, size_t blob_sz);
+void LWW_register_serialize(struct LWW_register *reg, char **blob, size_t *blob_sz);
+void LWW_register_merge(struct LWW_register *reg, const char *blob, size_t blob_sz);
 
 
 #ifdef __cplusplus

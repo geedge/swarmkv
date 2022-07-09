@@ -1,12 +1,12 @@
 /*
-* State-based Observed-Remove Set with no tombstones. 
+* Add-Wins Observed-Remove Set that is state-based and has no tombstones. 
+* A C language implementation of Bieniusa, Annette, et al. "An optimized conflict-free replicated set." arXiv preprint arXiv:1210.3368 (2012).
 * Author: contact@zhengchao.io
 * Space complexity: The payload size of OptORSet set is bounded by O(|elements|n+n) at any moment, where n is the number
 * of processes in the systems and |elements| is the number of elements present in the set. 
 * The first component corresponds to the maximum number of timestamps in set E and the second captures the size of the vector v. 
 * In the common case, where the number of processes repeatedly invoking adds can be considered a constant, the payload size
 * is O(|elements| + n).
-* Bieniusa, Annette, et al. "An optimized conflict-free replicated set." arXiv preprint arXiv:1210.3368 (2012).
 */
 
 #pragma once

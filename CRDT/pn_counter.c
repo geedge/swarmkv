@@ -91,7 +91,7 @@ long long PN_counter_incrby(struct PN_counter *pnc, long long increment)
 	}
 	return PN_counter_get(pnc);
 }
-long long PN_counter_set(struct PN_counter *pnc, long long value)
+void PN_counter_reset(struct PN_counter *pnc)
 {
 	struct counter_item *item=NULL, *tmp=NULL;
 	HASH_ITER(hh, pnc->hash_item, item, tmp)
@@ -99,9 +99,7 @@ long long PN_counter_set(struct PN_counter *pnc, long long value)
 		item->P=MAX(item->P, item->N);
 		item->N=MAX(item->P, item->N);
 	}
-	long long result=PN_counter_incrby(pnc, value);
-	assert(result==value);
-	return result;
+	return;
 }
 
 void PN_counter_serialize(struct PN_counter *pnc, char **blob, size_t *blob_sz)

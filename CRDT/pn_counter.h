@@ -17,7 +17,7 @@ struct PN_counter *PN_counter_new(const char* id, size_t id_sz);
 void PN_counter_free(struct PN_counter *pnc);
 
 long long PN_counter_get(struct PN_counter *pnc);
-long long PN_counter_set(struct PN_counter *pnc, long long value);
+long long PN_counter_reset(struct PN_counter *pnc);
 
 long long PN_counter_incrby(struct PN_counter *pnc, long long increment);
 

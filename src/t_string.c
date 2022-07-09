@@ -27,13 +27,13 @@ enum cmd_exec_result get_command(struct swarmkv_module *mod_store, const struct 
 	
 	if(obj->type==OBJ_TYPE_STRING)
 	{
-		lww_register_get0(obj->reg, &string_val, &string_sz);
+		LWW_register_get0(obj->reg, &string_val, &string_sz);
 		*reply=swarmkv_reply_new_string(string_val, string_sz);
 	}
 	else if(obj->type==OBJ_TYPE_COUNTER)
 	{
-		long long counter=PN_counter_get(obj->counter);
-		*reply=swarmkv_reply_new_string_fmt("%lld", counter);
+		long long integer_val=PN_counter_get(obj->counter);
+		*reply=swarmkv_reply_new_string_fmt("%lld", integer_val);
 	}
 	else
 	{
@@ -62,19 +62,20 @@ enum cmd_exec_result set_command(struct swarmkv_module *mod_store, const struct 
 			return NEED_KEY_ROUTE;
 		}
 	}
-	long long int_value=0;
+	long long int_value=-1;	
+	int_value=strtol(cmd->argv[2], &endptr, 10);
+	
 	if(obj->type==OBJ_TYPE_UNDEFINED)
 	{
 		uuid_t uuid;
 		assert(obj->raw==NULL);
 		store_get_uuid(mod_store, uuid);
-		int_value=strtol(cmd->argv[2], &endptr, 10);
 		if(*endptr!='\0')
 		{
 			obj->type=OBJ_TYPE_STRING;			
-			obj->reg=lww_register_new((const char*)uuid, sizeof(uuid));
+			obj->reg=LWW_register_new((const char*)uuid, sizeof(uuid));
 		}
-		else
+		else if(int_value==0)
 		{
 			obj->type=OBJ_TYPE_COUNTER;
 			obj->counter=PN_counter_new((const char*)uuid, sizeof(uuid));
@@ -82,13 +83,13 @@ enum cmd_exec_result set_command(struct swarmkv_module *mod_store, const struct 
 	}
 	if(obj->type==OBJ_TYPE_STRING)
 	{
-		lww_register_set(obj->reg, value, sdslen(value));
+		LWW_register_set(obj->reg, value, sdslen(value));
 		*reply=swarmkv_reply_new_status("OK");
 		sobj_need_sync(mod_store, obj);
 	}
-	else if(obj->type==OBJ_TYPE_COUNTER)
+	else if(obj->type==OBJ_TYPE_COUNTER && int_value==0)
 	{
-		PN_counter_set(obj->counter, int_value);		
+		PN_counter_reset(obj->counter);		
 		*reply=swarmkv_reply_new_status("OK");
 		sobj_need_sync(mod_store, obj);
 	}

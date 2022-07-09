@@ -23,7 +23,7 @@ struct sobj
 	sds key;
 	union
 	{
-		struct lww_register *reg;
+		struct LWW_register *reg;
 		struct PN_counter *counter;
 		void *raw;
 	};
