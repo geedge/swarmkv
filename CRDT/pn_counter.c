@@ -1,36 +1,32 @@
+#include "crdt_utils.h"
 #include "uthash.h"
 #include "mpack.h"
+
 #include <assert.h>
 #include <string.h>
 
-#ifndef MAX
-#define MAX(a, b)  	(((a) > (b)) ? (a) : (b))
-#endif
 
-#ifndef ALLOC
-#define ALLOC(type, number) ((type *)calloc(sizeof(type), number))
-#endif
 
 struct counter_item
 {
-	char* node_id;
-	size_t node_id_sz;
+	char* replica_id;
+	size_t replica_id_sz;
 	long long P;
 	long long N;
 	UT_hash_handle hh;
 };
-struct counter_item *counter_item_new(const char *node_id, size_t node_id_sz)
+struct counter_item *counter_item_new(const char *replica_id, size_t replica_id_sz)
 {
 	struct counter_item *item=ALLOC(struct counter_item, 1);
-	item->node_id_sz=node_id_sz;
-	item->node_id=ALLOC(char, item->node_id_sz);
-	memcpy(item->node_id, node_id, item->node_id_sz);
+	item->replica_id_sz=replica_id_sz;
+	item->replica_id=ALLOC(char, item->replica_id_sz);
+	memcpy(item->replica_id, replica_id, item->replica_id_sz);
 	return item;
 }
 void counter_item_free(struct counter_item *item)
 {
-	free(item->node_id);
-	item->node_id=NULL;
+	free(item->replica_id);
+	item->replica_id=NULL;
 	free(item);
 }
 struct PN_counter
@@ -79,7 +75,7 @@ long long PN_counter_incrby(struct PN_counter *pnc, long long increment)
 	if(!c)
 	{
 		c=counter_item_new(pnc->my_id, pnc->my_id_sz);
-		HASH_ADD_KEYPTR(hh, pnc->hash_item, c->node_id, c->node_id_sz, c);
+		HASH_ADD_KEYPTR(hh, pnc->hash_item, c->replica_id, c->replica_id_sz, c);
 	}
 	if(increment>0)
 	{
@@ -113,7 +109,7 @@ void PN_counter_serialize(struct PN_counter *pnc, char **blob, size_t *blob_sz)
 	mpack_build_array(&writer);	
 	HASH_ITER(hh, pnc->hash_item, c, tmp)
 	{
-		mpack_write_str(&writer, c->node_id, c->node_id_sz);
+		mpack_write_str(&writer, c->replica_id, c->replica_id_sz);
 		mpack_write_i64(&writer, c->P);
 		mpack_write_i64(&writer, c->N);
 	}
@@ -124,8 +120,9 @@ void PN_counter_serialize(struct PN_counter *pnc, char **blob, size_t *blob_sz)
 	*blob_sz=mpack_sz;
 	return;
 }
-void PN_counter_merge(struct PN_counter *pnc, const char *blob, size_t blob_sz)
+struct PN_counter *PN_counter_deserialize(const char *blob, size_t blob_sz)
 {
+	struct PN_counter *pnc=ALLOC(struct PN_counter, 1);
 	mpack_tree_t tree;
 	mpack_tree_init_data(&tree, blob, blob_sz);
 	mpack_tree_parse(&tree);
@@ -135,27 +132,48 @@ void PN_counter_merge(struct PN_counter *pnc, const char *blob, size_t blob_sz)
 	size_t array_sz=mpack_node_array_length(root);
 	assert(array_sz%3==0);
 	
-	struct counter_item *c=NULL;	
+	struct counter_item *item=NULL;	
 	for(size_t i=0; i<array_sz; i+=3)
 	{
 		mpnode_node_id=mpack_node_array_at(root, i);
+		HASH_FIND(hh, pnc->hash_item, mpack_node_str(mpnode_node_id), mpack_node_strlen(mpnode_node_id), item);
+		assert(item==NULL);
+
+		item=counter_item_new( mpack_node_str(mpnode_node_id), mpack_node_strlen(mpnode_node_id));
 		mpnode_P=mpack_node_array_at(root, i+1);
 		mpnode_N=mpack_node_array_at(root, i+2);
-		
-		HASH_FIND(hh, pnc->hash_item, mpack_node_str(mpnode_node_id), mpack_node_strlen(mpnode_node_id), c);
-		if(!c)
-		{			
-			c=counter_item_new( mpack_node_str(mpnode_node_id), mpack_node_strlen(mpnode_node_id));
-			HASH_ADD_KEYPTR(hh, pnc->hash_item, c->node_id, c->node_id_sz, c);
-		}
-		c->P=MAX(c->P, mpack_node_i64(mpnode_P));
-		c->N=MAX(c->N, mpack_node_i64(mpnode_N));
+		item->P=mpack_node_i64(mpnode_P);
+		item->N=mpack_node_i64(mpnode_N);
+		HASH_ADD_KEYPTR(hh, pnc->hash_item, item->replica_id, item->replica_id_sz, item);
 	}
 	if (mpack_tree_destroy(&tree) != mpack_ok) 
 	{
 		fprintf(stderr, "An error occurred decoding the PN_counter!\n");
 	}
+	return pnc;
+}
+void PN_counter_merge(struct PN_counter *dst, struct PN_counter *src)
+{
+	struct counter_item *src_item=NULL, *dst_item=NULL, *tmp=NULL;	
 
+	HASH_ITER(hh, src->hash_item, src_item, tmp)
+	{
+		HASH_FIND(hh, dst->hash_item, src_item->replica_id,  src_item->replica_id_sz, dst_item);
+		if(!dst_item)
+		{
+			dst_item=counter_item_new(src_item->replica_id, src_item->replica_id_sz);
+			HASH_ADD_KEYPTR(hh, dst->hash_item, dst_item->replica_id, dst_item->replica_id_sz, dst_item);
+		}
+		dst_item->P=MAX(dst_item->P, src_item->P);
+		dst_item->N=MAX(dst_item->N, src_item->N);
+	}
+	return;
+}
+void PN_counter_merge_blob(struct PN_counter *pnc, const char *blob, size_t blob_sz)
+{
+	struct PN_counter *to_merge=PN_counter_deserialize(blob, blob_sz);
+	PN_counter_merge(pnc, to_merge);
+	PN_counter_free(to_merge);
 	return;
 }
 

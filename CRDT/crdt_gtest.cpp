@@ -1,6 +1,7 @@
 #include "lww_register.h"
 #include "pn_counter.h"
 #include "or_set.h"
+#include "or_map.h"
 
 #include <gtest/gtest.h>
 #include <unistd.h> //usleep
@@ -58,7 +59,7 @@ TEST(LastWriteWinRegister, Merge)
 	char *blob=NULL;
 	size_t blob_sz=0;
 	LWW_register_serialize(reg[0], &blob, &blob_sz);
-	LWW_register_merge(reg[1], blob, blob_sz);
+	LWW_register_merge_blob(reg[1], blob, blob_sz);
 	free(blob);
 	
 	char *value1=NULL;	
@@ -93,11 +94,11 @@ TEST(LastWriteWinRegister, Sequential)
 	char *blob=NULL;
 	size_t blob_sz=0;
 	LWW_register_serialize(reg[0], &blob, &blob_sz);
-	LWW_register_merge(reg[1], blob, blob_sz);
+	LWW_register_merge_blob(reg[1], blob, blob_sz);
 	free(blob);
 
 	LWW_register_serialize(reg[1], &blob, &blob_sz);
-	LWW_register_merge(reg[0], blob, blob_sz);
+	LWW_register_merge_blob(reg[0], blob, blob_sz);
 	free(blob);
 
 	char *value=NULL;
@@ -154,11 +155,11 @@ TEST(PNCounter, Merge)
 	size_t blob_sz=0;
 
 	PN_counter_serialize(pnc[0], &blob, &blob_sz);
-	PN_counter_merge(pnc[1], blob, blob_sz);
+	PN_counter_merge_blob(pnc[1], blob, blob_sz);
 	free(blob);
 	
 	PN_counter_serialize(pnc[1], &blob, &blob_sz);
-	PN_counter_merge(pnc[0], blob, blob_sz);
+	PN_counter_merge_blob(pnc[0], blob, blob_sz);
 	free(blob);
 
 	value=PN_counter_get(pnc[0]);
@@ -169,7 +170,7 @@ TEST(PNCounter, Merge)
 
 	PN_counter_reset(pnc[0]);
 	PN_counter_serialize(pnc[0], &blob, &blob_sz);
-	PN_counter_merge(pnc[1], blob, blob_sz);
+	PN_counter_merge_blob(pnc[1], blob, blob_sz);
 	value=PN_counter_get(pnc[1]);
 	EXPECT_EQ(value, 0);
 	free(blob);
@@ -199,11 +200,11 @@ TEST(PNCounter, ObservedReset)
 	long long value=0;
 
 	PN_counter_serialize(pnc[0], &blob, &blob_sz);
-	PN_counter_merge(pnc[1], blob, blob_sz);
+	PN_counter_merge_blob(pnc[1], blob, blob_sz);
 	free(blob);
 	
 	PN_counter_serialize(pnc[1], &blob, &blob_sz);
-	PN_counter_merge(pnc[0], blob, blob_sz);
+	PN_counter_merge_blob(pnc[0], blob, blob_sz);
 	free(blob);
 	
 	value=PN_counter_get(pnc[0]);
@@ -214,7 +215,7 @@ TEST(PNCounter, ObservedReset)
 	PN_counter_reset(pnc[0]);
 
 	PN_counter_serialize(pnc[0], &blob, &blob_sz);
-	PN_counter_merge(pnc[1], blob, blob_sz);
+	PN_counter_merge_blob(pnc[1], blob, blob_sz);
 	free(blob);
 
 	value=PN_counter_get(pnc[0]);
@@ -259,7 +260,7 @@ TEST(PNCounter, Replica100)
 		PN_counter_serialize(pnc[i], &blob, &blob_sz);
 		for(j=0; j<test_replica_num; j++)
 		{
-			PN_counter_merge(pnc[j], blob, blob_sz);
+			PN_counter_merge_blob(pnc[j], blob, blob_sz);
 		}
 		free(blob);
 		blob=NULL;
@@ -333,7 +334,7 @@ TEST(ORSet,   Merge01)
 	char *blob=NULL;
 	size_t blob_sz=0;
 	OR_set_serialize(set[0], &blob, &blob_sz);
-	OR_set_merge(set[1], blob, blob_sz);
+	OR_set_merge_blob(set[1], blob, blob_sz);
 	size_t success_cnt=0;
 	for(i=0; i<n_test_member; i++)
 	{
@@ -370,11 +371,11 @@ TEST(ORSet,   Merge11)
 	size_t blob_sz=0;
 
 	OR_set_serialize(set[0], &blob, &blob_sz);
-	OR_set_merge(set[1], blob, blob_sz);
+	OR_set_merge_blob(set[1], blob, blob_sz);
 	free(blob);
 
 	OR_set_serialize(set[1], &blob, &blob_sz);
-	OR_set_merge(set[0], blob, blob_sz);
+	OR_set_merge_blob(set[0], blob, blob_sz);
 	free(blob);
 
 	size_t success_cnt=0;
@@ -414,7 +415,7 @@ TEST(ORSet,   Remove)
 	char *blob=NULL;
 	size_t blob_sz=0;
 	OR_set_serialize(set[0], &blob, &blob_sz);
-	OR_set_merge(set[1], blob, blob_sz);
+	OR_set_merge_blob(set[1], blob, blob_sz);
 	free(blob);
 	
 	int is_member=0;
@@ -424,7 +425,7 @@ TEST(ORSet,   Remove)
 	
 	OR_set_remove(set[0], buffer, strlen(buffer)+1);
 	OR_set_serialize(set[0], &blob, &blob_sz);
-	OR_set_merge(set[1], blob, blob_sz);
+	OR_set_merge_blob(set[1], blob, blob_sz);
 	free(blob);
 
 	is_member=OR_set_is_member(set[1], buffer, strlen(buffer)+1);
@@ -465,7 +466,7 @@ TEST(ORSet,   ObservedRemove)
 	char *blob=NULL;
 	size_t blob_sz=0;
 	OR_set_serialize(set[0], &blob, &blob_sz);
-	OR_set_merge(set[1], blob, blob_sz);
+	OR_set_merge_blob(set[1], blob, blob_sz);
 	free(blob);
 
 	is_member=OR_set_is_member(set[1], buffer, strlen(buffer)+1);
@@ -473,7 +474,7 @@ TEST(ORSet,   ObservedRemove)
 
 	
 	OR_set_serialize(set[1], &blob, &blob_sz);
-	OR_set_merge(set[0], blob, blob_sz);
+	OR_set_merge_blob(set[0], blob, blob_sz);
 	free(blob);
 
 	is_member=OR_set_is_member(set[0], buffer, strlen(buffer)+1);
@@ -510,7 +511,7 @@ TEST(ORSet, Replica32)
 		OR_set_serialize(set[i], &blob, &blob_sz);
 		for(j=0; j<test_replica_num; j++)
 		{
-			OR_set_merge(set[j], blob, blob_sz);
+			OR_set_merge_blob(set[j], blob, blob_sz);
 		}
 		free(blob);
 		blob_sz=0;
@@ -540,6 +541,154 @@ TEST(ORSet, Replica32)
 	}
 	EXPECT_EQ(success_cnt, test_replica_num);
 }
+TEST(ORMap, Basic)
+{
+	uuid_t uuid;
+	uuid_generate(uuid);
+
+	struct OR_map *map=OR_map_new((const char *)uuid, sizeof(uuid));
+
+	const char *key1="zhangsan";
+	int ret=0;
+	ret=OR_map_add(map, key1, strlen(key1)+1);
+	EXPECT_EQ(ret, 1);
+	ret=OR_map_exisits(map, key1, strlen(key1)+1);
+	EXPECT_EQ(ret, 1);
+
+	const char *key2="lisi";
+	const char *val1="rich", *val2="poor";
+	ret=OR_map_set(map, key2, strlen(key2)+1, val1, strlen(val1)+1);
+	EXPECT_EQ(ret, 1);
+	struct OR_map_kv *result=NULL;
+	result=OR_map_get(map,  key2, strlen(key2)+1);
+	EXPECT_STREQ(val1, result->string);
+	OR_map_kv_free(result);
+	result=NULL;
+	
+	ret=OR_map_set(map, key2, strlen(key2)+1, val2, strlen(val2)+1);
+	EXPECT_EQ(ret, 0);
+	result=OR_map_get(map,  key2, strlen(key2)+1);
+	EXPECT_STREQ(val2, result->string);
+	OR_map_kv_free(result);
+	result=NULL;
+
+	long long integer_result=0;
+	ret=OR_map_incrby(map, key1, strlen(key1)+1, 0, &integer_result);
+	EXPECT_EQ(ret, -1);
+
+	const char *key3="Jack";
+	ret=OR_map_incrby(map, key3, strlen(key3)+1, 0, &integer_result);
+	EXPECT_EQ(ret, 1);
+	EXPECT_EQ(integer_result, 0);
+	ret=OR_map_incrby(map, key3, strlen(key3)+1, -100, &integer_result);
+	EXPECT_EQ(ret, 0);
+	EXPECT_EQ(integer_result, -100);
+	ret=OR_map_incrby(map, key3, strlen(key3)+1, 200, &integer_result);
+	EXPECT_EQ(ret, 0);
+	EXPECT_EQ(integer_result, 100);
+
+	ret=OR_map_remove(map, key1, strlen(key1)+1);
+	EXPECT_EQ(ret, 1);
+	ret=OR_map_exisits(map, key1, strlen(key1)+1);
+	EXPECT_EQ(ret, 0);
+	OR_map_free(map);
+	
+}
+TEST(ORMap, SetGet)
+{
+	uuid_t uuid;
+	size_t i=0;
+	const char *key_prefix="OR-map-key";
+	const char *val_prefix="OR-map-val";
+	struct OR_map *map[2];
+	for(i=0; i<2; i++)
+	{
+		uuid_generate(uuid);
+		map[i]=OR_map_new((const char *)uuid, sizeof(uuid));
+	}
+	size_t round=100;
+	char key_buffer[256], val_buffer[256];
+	for(i=0; i<round; i++)
+	{
+		snprintf(key_buffer, sizeof(key_buffer), "%s-%zu", key_prefix, i);
+		snprintf(val_buffer, sizeof(val_buffer), "%s-%zu", val_prefix, i);
+		OR_map_set(map[0], key_buffer, strlen(key_buffer)+1, val_buffer, strlen(val_buffer)+1);
+	}
+	char *blob=NULL;
+	size_t blob_sz=0;
+	OR_map_serialize(map[0], &blob, &blob_sz);
+	OR_map_merge_blob(map[1], blob, blob_sz);
+	free(blob);
+	struct OR_map_kv *kv_result;
+	size_t success_cnt=0;
+	for(i=0; i<round; i++)
+	{		
+		snprintf(key_buffer, sizeof(key_buffer), "%s-%zu", key_prefix, i);
+		snprintf(val_buffer, sizeof(val_buffer), "%s-%zu", val_prefix, i);
+		kv_result=OR_map_get(map[1], key_buffer, strlen(key_buffer)+1);
+		if(kv_result &&
+			kv_result->type==TYPE_STRING && kv_result->str_len==strlen(val_buffer)+1 &&
+			0==memcmp(kv_result->string, val_buffer, kv_result->str_len) )
+		{
+			success_cnt++;
+		}
+		OR_map_kv_free(kv_result);
+	}
+	EXPECT_EQ(success_cnt, round);
+	for(i=0; i<2; i++)
+	{
+		OR_map_free(map[i]);
+	}
+}
+TEST(ORMap, Incrby)
+{
+	uuid_t uuid;
+	size_t i=0;
+	long long result_integer=0;
+	const char *key_prefix="OR-map-key";
+	struct OR_map *map[2];
+	for(i=0; i<2; i++)
+	{
+		uuid_generate(uuid);
+		map[i]=OR_map_new((const char *)uuid, sizeof(uuid));
+	}
+	size_t round=100;
+	char key_buffer[256];
+	for(i=0; i<round; i++)
+	{
+		snprintf(key_buffer, sizeof(key_buffer), "%s-%zu", key_prefix, i);
+		OR_map_incrby(map[i%2], key_buffer, strlen(key_buffer)+1, i, &result_integer);
+	}
+	char *blob=NULL;
+	size_t blob_sz=0;
+	OR_map_serialize(map[0], &blob, &blob_sz);
+	OR_map_merge_blob(map[1], blob, blob_sz);
+	free(blob);
+	OR_map_serialize(map[1], &blob, &blob_sz);
+	OR_map_merge_blob(map[0], blob, blob_sz);
+	free(blob);
+
+	struct OR_map_kv *result;
+	size_t success_cnt=0;
+	for(i=0; i<round; i++)
+	{		
+		snprintf(key_buffer, sizeof(key_buffer), "%s-%zu", key_prefix, i);
+		result=OR_map_get(map[i%2], key_buffer, strlen(key_buffer)+1);
+		if(result &&
+			result->type==TYPE_COUNTER && 
+			result->counter==(long long)i)
+		{
+			success_cnt++;
+		}
+		OR_map_kv_free(result);
+	}
+	EXPECT_EQ(success_cnt, round);
+	for(i=0; i<2; i++)
+	{
+		OR_map_free(map[i]);
+	}
+}
+
 int main(int argc, char ** argv)
 {
 	int ret=0;

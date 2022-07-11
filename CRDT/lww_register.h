@@ -22,7 +22,10 @@ void LWW_register_get0(struct LWW_register *reg, const char **value, size_t *siz
 
 
 void LWW_register_serialize(struct LWW_register *reg, char **blob, size_t *blob_sz);
-void LWW_register_merge(struct LWW_register *reg, const char *blob, size_t blob_sz);
+struct LWW_register *LWW_register_deserialize(const char *blob, size_t blob_sz);
+void LWW_register_merge(struct LWW_register *dst, struct LWW_register *src);
+
+void LWW_register_merge_blob(struct LWW_register *reg, const char *blob, size_t blob_sz);
 
 
 #ifdef __cplusplus

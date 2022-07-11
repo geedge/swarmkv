@@ -1,12 +1,9 @@
+#include "crdt_utils.h"
+
 #include <sys/time.h>
 #include <stddef.h>	//size_t
-#include <stdlib.h>	//calloc
 #include <string.h>
-
-
-#ifndef ALLOC
-#define ALLOC(type, number) ((type *)calloc(sizeof(type), number))
-#endif
+#include <assert.h>
 
 struct LWW_register
 {
@@ -14,6 +11,17 @@ struct LWW_register
 	size_t size;
 	char *value;
 };
+struct LWW_register *LWW_register_new(const char* id, size_t id_sz)
+{
+	struct LWW_register *reg=ALLOC(struct LWW_register, 1);
+	return reg;
+}
+void LWW_register_free(struct LWW_register *reg)
+{
+	free(reg->value);
+	reg->value=NULL;
+	free(reg);
+}
 
 void LWW_register_set(struct LWW_register *reg, const char *value, size_t size)
 {
@@ -36,19 +44,27 @@ void LWW_register_get0(struct LWW_register *reg, const char **value, size_t *siz
 	*size=reg->size;
 	return;
 }
-
-void LWW_register_merge(struct LWW_register *reg, const char *blob, size_t blob_sz)
+void LWW_register_merge(struct LWW_register *dst, struct LWW_register *src)
 {
-	const struct LWW_register *to_merge=(struct LWW_register *)blob;
-	const char *value = blob + sizeof(struct LWW_register)- sizeof(char*);	
-	if(timercmp(&reg->timestamp, &to_merge->timestamp, <))//Last-Write-Wins
+	if(timercmp(&dst->timestamp, &src->timestamp, <))//Last-Write-Wins
 	{
-		reg->value=realloc(reg->value, to_merge->size);
-		reg->size=to_merge->size;
-		memcpy(reg->value, value, to_merge->size);
-		memcpy(&reg->timestamp, &to_merge->timestamp, sizeof(reg->timestamp));
-	}
+		dst->value=realloc(dst->value, src->size);
+		dst->size=src->size;
+		memcpy(dst->value, src->value, src->size);
+		memcpy(&dst->timestamp, &src->timestamp, sizeof(dst->timestamp));
+	}	
 	return;
+}
+
+struct LWW_register *LWW_register_deserialize(const char *blob, size_t blob_sz)
+{
+	struct LWW_register *to_merge=ALLOC(struct LWW_register, 1);
+	size_t header_size= sizeof(struct LWW_register)- sizeof(char*);
+	memcpy(to_merge, blob, sizeof(struct LWW_register)- sizeof(char*));
+	assert(to_merge->size+header_size == blob_sz);
+	to_merge->value=ALLOC(char, to_merge->size);
+	memcpy(to_merge->value, blob + header_size, to_merge->size);
+	return to_merge;
 }
 void LWW_register_serialize(struct LWW_register *reg, char **blob, size_t *blob_sz)
 {
@@ -58,15 +74,13 @@ void LWW_register_serialize(struct LWW_register *reg, char **blob, size_t *blob_
 	memcpy(*blob+*blob_sz-reg->size, reg->value, reg->size);
 	return;
 }
-struct LWW_register *LWW_register_new(const char* id, size_t id_sz)
+void LWW_register_merge_blob(struct LWW_register *reg, const char *blob, size_t blob_sz)
 {
-	struct LWW_register *reg=ALLOC(struct LWW_register, 1);
-	return reg;
+	struct LWW_register *to_merge=LWW_register_deserialize(blob, blob_sz);
+	LWW_register_merge(reg, to_merge);
+	LWW_register_free(to_merge);
+	return;
 }
-void LWW_register_free(struct LWW_register *reg)
-{
-	free(reg->value);
-	reg->value=NULL;
-	free(reg);
-}
+
+
 

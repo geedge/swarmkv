@@ -328,14 +328,14 @@ void sobj_merge_blob(struct swarmkv_module *mod_store, struct sobj *obj, const c
 				store_get_uuid(mod_store, uuid);
 				obj->reg=LWW_register_new((const char*)uuid, sizeof(uuid));
 			}
-			LWW_register_merge(obj->reg, mpack_node_str(v_node), mpack_node_strlen(v_node));
+			LWW_register_merge_blob(obj->reg, mpack_node_str(v_node), mpack_node_strlen(v_node));
 			break;
 		case OBJ_TYPE_COUNTER:
 			if(!obj->counter)
 			{
 				obj->counter=PN_counter_new((const char*)uuid, sizeof(uuid));
 			}
-			PN_counter_merge(obj->counter, mpack_node_str(v_node), mpack_node_strlen(v_node));
+			PN_counter_merge_blob(obj->counter, mpack_node_str(v_node), mpack_node_strlen(v_node));
 			break;
 		default:
 			assert(0);
