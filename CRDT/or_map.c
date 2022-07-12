@@ -273,6 +273,7 @@ struct OR_map_kv *OR_map_kv_new(struct OR_record *record, enum record_copy_type 
 }
 void OR_map_kv_free(struct OR_map_kv *kv)
 {
+	if(!kv)	return;
 	free(kv->key);
 	free(kv->string);
 	kv->string=NULL;
@@ -475,7 +476,7 @@ static void OR_record_merge(struct OR_record *dst, const struct OR_record *src)
 			LWW_register_merge(dst->string, src->string);
 			break;
 		case TYPE_COUNTER:
-			PN_counter_merge(dst->counter, dst->counter);
+			PN_counter_merge(dst->counter, src->counter);
 			break;
 		default:
 			break;

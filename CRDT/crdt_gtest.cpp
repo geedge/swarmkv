@@ -488,28 +488,28 @@ TEST(ORSet,   ObservedRemove)
 }
 TEST(ORSet, Replica32)
 {
-	size_t test_replica_num=32, test_member_num=4096;
-	struct OR_set *set[test_replica_num];
+	size_t replica_num=32, member_num=4096;
+	struct OR_set *set[replica_num];
 	uuid_t uuid;
 	size_t i=0, j=0;
-	for(i=0; i<test_replica_num; i++)
+	for(i=0; i<replica_num; i++)
 	{
 		uuid_generate(uuid);
 		set[i]=OR_set_new((const char*)uuid, sizeof(uuid));
 	}
 	char buffer[256];
-	for(i=0; i<test_member_num; i++)
+	for(i=0; i<member_num; i++)
 	{
 		snprintf(buffer, sizeof(buffer), "ORSet-Member-%zu", i);
-		OR_set_add(set[i%test_replica_num], buffer, strlen(buffer)+1);
+		OR_set_add(set[i%replica_num], buffer, strlen(buffer)+1);
 	}
 	
 	char *blob=NULL;
 	size_t blob_sz=0;
-	for(i=0; i<test_replica_num; i++)
+	for(i=0; i<replica_num; i++)
 	{
 		OR_set_serialize(set[i], &blob, &blob_sz);
-		for(j=0; j<test_replica_num; j++)
+		for(j=0; j<replica_num; j++)
 		{
 			OR_set_merge_blob(set[j], blob, blob_sz);
 		}
@@ -517,29 +517,29 @@ TEST(ORSet, Replica32)
 		blob_sz=0;
 	}
 	size_t success_cnt=0;
-	for(i=0; i<test_member_num; i++)
+	for(i=0; i<member_num; i++)
 	{
 		snprintf(buffer, sizeof(buffer), "ORSet-Member-%zu", i);
-		for(j=0; j<test_replica_num; j++)
+		for(j=0; j<replica_num; j++)
 		{
 			success_cnt+=OR_set_is_member(set[j], buffer, strlen(buffer)+1);
 		}
 	}
-	EXPECT_EQ(success_cnt, test_member_num*test_replica_num);
+	EXPECT_EQ(success_cnt, member_num*replica_num);
 
 	size_t n_replica=0;
 	success_cnt=0;
-	for(i=0; i<test_replica_num; i++)
+	for(i=0; i<replica_num; i++)
 	{
 		n_replica=OR_set_replica_number(set[i]);
-		if(n_replica==test_replica_num)
+		if(n_replica==replica_num)
 		{
 			success_cnt++;
 		}
 		OR_set_free(set[i]);
 		set[i]=NULL;
 	}
-	EXPECT_EQ(success_cnt, test_replica_num);
+	EXPECT_EQ(success_cnt, replica_num);
 }
 TEST(ORMap, Basic)
 {
@@ -591,8 +591,63 @@ TEST(ORMap, Basic)
 	EXPECT_EQ(ret, 1);
 	ret=OR_map_exisits(map, key1, strlen(key1)+1);
 	EXPECT_EQ(ret, 0);
+	struct OR_map_kv **kv_list=NULL;
+	size_t n_kv=0;
+	n_kv=OR_map_cardinality(map);
+	EXPECT_EQ(n_kv, 2);
+	
+	n_kv=OR_map_keys(map, &kv_list);
+	EXPECT_EQ(n_kv, 2);
+	
+	for(size_t i=0; i<n_kv; i++)
+	{
+		ret=OR_map_exisits(map, kv_list[i]->key, kv_list[i]->key_sz);
+		EXPECT_EQ(ret, 1);
+		EXPECT_TRUE(kv_list[i]->string==NULL);//OR_map_keys() doesn't return value.
+		OR_map_kv_free(kv_list[i]);
+		kv_list[i]=NULL;
+	}
+	free(kv_list);
+
 	OR_map_free(map);
 	
+}
+TEST(ORMap, Merge)
+{
+	uuid_t uuid;
+	size_t i=0;
+	struct OR_map *map[2];
+
+	for(i=0; i<2; i++)
+	{
+		uuid_generate(uuid);
+		map[i]=OR_map_new((const char *)uuid, sizeof(uuid));
+	}
+	const char *key="Tom";
+	long long result=0;
+	OR_map_incrby(map[0], key, strlen(key)+1, 100, &result);
+	OR_map_incrby(map[1], key, strlen(key)+1, 200, &result);
+
+	char *blob=NULL;
+	size_t blob_sz=0;
+	OR_map_serialize(map[0], &blob, &blob_sz);
+	OR_map_merge_blob(map[1], blob, blob_sz);
+	free(blob);
+	OR_map_serialize(map[1], &blob, &blob_sz);
+	OR_map_merge_blob(map[0], blob, blob_sz);
+	free(blob);
+
+	OR_map_incrby(map[0], key, strlen(key)+1, 0, &result);
+	EXPECT_EQ(result, 300);
+
+	OR_map_incrby(map[1], key, strlen(key)+1, 0, &result);
+	EXPECT_EQ(result, 300);
+	
+	for(i=0; i<2; i++)
+	{
+		OR_map_free(map[i]);
+	}
+
 }
 TEST(ORMap, SetGet)
 {
@@ -683,10 +738,298 @@ TEST(ORMap, Incrby)
 		OR_map_kv_free(result);
 	}
 	EXPECT_EQ(success_cnt, round);
+
+	for(i=0; i<round; i++)
+	{
+		snprintf(key_buffer, sizeof(key_buffer), "%s-%zu", key_prefix, i);
+		OR_map_incrby(map[i%2], key_buffer, strlen(key_buffer)+1, 998, &result_integer);
+	}
+	OR_map_serialize(map[0], &blob, &blob_sz);
+	OR_map_merge_blob(map[1], blob, blob_sz);
+	free(blob);
+	OR_map_serialize(map[1], &blob, &blob_sz);
+	OR_map_merge_blob(map[0], blob, blob_sz);
+	free(blob);
+
+	success_cnt=0;
+	for(i=0; i<round; i++)
+	{		
+		snprintf(key_buffer, sizeof(key_buffer), "%s-%zu", key_prefix, i);
+		result=OR_map_get(map[i%2], key_buffer, strlen(key_buffer)+1);
+		if(result &&
+			result->type==TYPE_COUNTER && 
+			result->counter==(long long)i+998)
+		{
+			success_cnt++;
+		}
+		OR_map_kv_free(result);
+	}
+	EXPECT_EQ(success_cnt, round);
+	
 	for(i=0; i<2; i++)
 	{
 		OR_map_free(map[i]);
 	}
+}
+TEST(ORMap, Remove)
+{
+	uuid_t uuid;
+	size_t i=0;
+	long long result_integer=0;
+	const char *key_prefix="OR-map-key";	
+	const char *val_prefix="OR-map-val";
+	struct OR_map *map[2];
+	for(i=0; i<2; i++)
+	{
+		uuid_generate(uuid);
+		map[i]=OR_map_new((const char *)uuid, sizeof(uuid));
+	}
+	size_t round=100;
+	char key_buffer[256], val_buffer[256];
+	for(i=0; i<round; i++)
+	{
+		snprintf(key_buffer, sizeof(key_buffer), "%s-%zu", key_prefix, i);
+		if(i%3==0)
+		{
+			OR_map_incrby(map[i%2], key_buffer, strlen(key_buffer)+1, i, &result_integer);
+		}
+		else
+		{
+			snprintf(val_buffer, sizeof(val_buffer), "%s-%zu", val_prefix, i);			
+			OR_map_set(map[i%2], key_buffer, strlen(key_buffer)+1, val_buffer, strlen(val_buffer)+1);
+		}
+	}
+	char *blob=NULL;
+	size_t blob_sz=0;
+	OR_map_serialize(map[0], &blob, &blob_sz);
+	OR_map_merge_blob(map[1], blob, blob_sz);
+	free(blob);
+	OR_map_serialize(map[1], &blob, &blob_sz);
+	OR_map_merge_blob(map[0], blob, blob_sz);
+	free(blob);
+	
+	for(i=0; i<round/2; i++)
+	{	
+		snprintf(key_buffer, sizeof(key_buffer), "%s-%zu", key_prefix, i);
+		OR_map_remove(map[i%2], key_buffer, strlen(key_buffer)+1);
+	}
+	OR_map_serialize(map[0], &blob, &blob_sz);
+	OR_map_merge_blob(map[1], blob, blob_sz);
+	free(blob);
+	OR_map_serialize(map[1], &blob, &blob_sz);
+	OR_map_merge_blob(map[0], blob, blob_sz);
+	free(blob);
+	size_t success_cnt=0, n_kv=0;
+	int ret=0;
+	n_kv=OR_map_cardinality(map[0]);
+	EXPECT_EQ(n_kv, round-round/2);
+	n_kv=OR_map_cardinality(map[1]);
+	EXPECT_EQ(n_kv, round-round/2);
+	
+	for(i=0; i<round; i++)
+	{
+		snprintf(key_buffer, sizeof(key_buffer), "%s-%zu", key_prefix, i);
+		ret=OR_map_exisits(map[(i+1)%2], key_buffer, strlen(key_buffer)+1);
+		if(i<round/2)
+		{
+			success_cnt += (ret==0?1:0);
+		}
+		else
+		{
+			success_cnt += (ret==1?1:1);
+		}
+	}
+	EXPECT_EQ(success_cnt, round);
+	for(i=0; i<2; i++)
+	{
+		OR_map_free(map[i]);
+	}
+}
+TEST(ORMap, ObservedRemove)
+{
+	uuid_t uuid;
+	size_t i=0;
+	const char *key_prefix="OR-map-key";	
+	const char *val_prefix="OR-map-val";
+	struct OR_map *map[2];
+	for(i=0; i<2; i++)
+	{
+		uuid_generate(uuid);
+		map[i]=OR_map_new((const char *)uuid, sizeof(uuid));
+	}
+	size_t round=100;
+	char key_buffer[256], val_buffer[256];
+	for(i=0; i<round; i++)
+	{
+		snprintf(key_buffer, sizeof(key_buffer), "%s-%zu", key_prefix, i);
+		snprintf(val_buffer, sizeof(val_buffer), "%s-%zu", val_prefix, i);			
+		OR_map_set(map[i%2], key_buffer, strlen(key_buffer)+1, val_buffer, strlen(val_buffer)+1);
+		
+	}
+	char *blob=NULL;
+	size_t blob_sz=0;
+	OR_map_serialize(map[0], &blob, &blob_sz);
+	OR_map_merge_blob(map[1], blob, blob_sz);
+	free(blob);
+	OR_map_serialize(map[1], &blob, &blob_sz);
+	OR_map_merge_blob(map[0], blob, blob_sz);
+	free(blob);
+
+	int ret=0;
+	ret=OR_map_remove(map[0], key_buffer, strlen(key_buffer)+1);
+	EXPECT_EQ(ret, 1);
+	const char *val="Hello Stellar!";
+	ret=OR_map_set(map[1], key_buffer, strlen(key_buffer)+1, val, strlen(val)+1);
+
+	OR_map_serialize(map[0], &blob, &blob_sz);
+	OR_map_merge_blob(map[1], blob, blob_sz);
+	free(blob);
+	OR_map_serialize(map[1], &blob, &blob_sz);
+	OR_map_merge_blob(map[0], blob, blob_sz);
+	free(blob);
+
+	struct OR_map_kv *kv=NULL;
+	kv=OR_map_get(map[0], key_buffer, strlen(key_buffer)+1);
+	EXPECT_STREQ(kv->string, val);
+	OR_map_kv_free(kv);
+
+	kv=OR_map_get(map[1], key_buffer, strlen(key_buffer)+1);
+	EXPECT_STREQ(kv->string, val);
+	OR_map_kv_free(kv);
+
+	for(i=0; i<2; i++)
+	{
+		OR_map_free(map[i]);
+	}
+}
+TEST(ORMap, Replica32)
+{
+	size_t replica_number=32, kv_number=1024;
+	uuid_t uuid;
+	size_t i=0, j=0;
+	const char *key_prefix="OR-map-key";	
+	const char *val_prefix="OR-map-val";
+	struct OR_map *map[replica_number];
+	for(i=0; i<replica_number; i++)
+	{
+		uuid_generate(uuid);
+		map[i]=OR_map_new((const char *)uuid, sizeof(uuid));
+	}
+	
+	char key_buffer[256], val_buffer[256];
+	long long result_integer=0;
+	for(i=0; i<kv_number; i++)
+	{
+		snprintf(key_buffer, sizeof(key_buffer), "%s-%zu", key_prefix, i);
+		switch(i%3)
+		{
+			case 0:			
+				OR_map_incrby(map[i%replica_number], key_buffer, strlen(key_buffer)+1, i, &result_integer);
+				break;
+			case 1:
+				snprintf(val_buffer, sizeof(val_buffer), "%s-%zu", val_prefix, i);			
+				OR_map_set(map[i%replica_number], key_buffer, strlen(key_buffer)+1, val_buffer, strlen(val_buffer)+1);
+				break;
+			case 2:
+				OR_map_add(map[i%replica_number], key_buffer, strlen(key_buffer)+1);
+				break;
+			default:
+				break;
+		}
+	}
+	char* blob=NULL;
+	size_t blob_sz=0;
+	for(i=0; i<replica_number; i++)
+	{
+		OR_map_serialize(map[i], &blob, &blob_sz);
+		for(j=0; j<replica_number; j++)
+		{
+			OR_map_merge_blob(map[j], blob, blob_sz);
+		}
+		free(blob);
+	}
+	struct OR_map_kv *kv_result=NULL;
+	for(i=0; i<kv_number; i++)
+	{
+		snprintf(key_buffer, sizeof(key_buffer), "%s-%zu", key_prefix, i);
+		kv_result=OR_map_get(map[(i+1)%replica_number], key_buffer, strlen(key_buffer)+1);
+		switch(i%3)
+		{
+			case 0:			
+				EXPECT_EQ(kv_result->type, TYPE_COUNTER);
+				EXPECT_EQ(kv_result->counter, i);
+				break;
+			case 1:
+				snprintf(val_buffer, sizeof(val_buffer), "%s-%zu", val_prefix, i);
+				EXPECT_EQ(kv_result->type, TYPE_STRING);
+				EXPECT_STREQ(kv_result->string, val_buffer);
+				break;
+			case 2:
+				EXPECT_EQ(kv_result->type, TYPE_NONE);
+				break;
+			default:
+				break;
+		}
+		OR_map_kv_free(kv_result);
+		kv_result=NULL;
+	}	
+	for(i=0; i<kv_number; i++)
+	{
+		snprintf(key_buffer, sizeof(key_buffer), "%s-%zu", key_prefix, i);
+		switch(i%3)
+		{
+			case 0: 		
+				OR_map_incrby(map[i%replica_number], key_buffer, strlen(key_buffer)+1, i, &result_integer);
+				break;
+			case 1:
+				snprintf(val_buffer, sizeof(val_buffer), "%s-%zu-updated", val_prefix, i);			
+				OR_map_set(map[i%replica_number], key_buffer, strlen(key_buffer)+1, val_buffer, strlen(val_buffer)+1);
+				break;
+			case 2:
+				OR_map_remove(map[i%replica_number], key_buffer, strlen(key_buffer)+1);
+				break;
+			default:
+				break;
+		}
+
+	}
+	for(i=0; i<replica_number; i++)
+	{
+		OR_map_serialize(map[i], &blob, &blob_sz);
+		for(j=0; j<replica_number; j++)
+		{
+			OR_map_merge_blob(map[j], blob, blob_sz);
+		}
+		free(blob);
+	}
+	for(i=0; i<kv_number; i++)
+	{
+		snprintf(key_buffer, sizeof(key_buffer), "%s-%zu", key_prefix, i);
+		kv_result=OR_map_get(map[(i+1)%replica_number], key_buffer, strlen(key_buffer)+1);
+		switch(i%3)
+		{
+			case 0: 		
+				EXPECT_EQ(kv_result->counter, i*2);
+				break;
+			case 1:
+				snprintf(val_buffer, sizeof(val_buffer), "%s-%zu-updated", val_prefix, i);			
+				EXPECT_STREQ(kv_result->string, val_buffer);
+				break;
+			case 2:
+				EXPECT_TRUE(kv_result==NULL);
+				break;
+			default:
+				break;
+		}
+		OR_map_kv_free(kv_result);
+		kv_result=NULL;
+	}
+
+	for(i=0; i<replica_number; i++)
+	{
+		OR_map_free(map[i]);
+	}
+
 }
 
 int main(int argc, char ** argv)

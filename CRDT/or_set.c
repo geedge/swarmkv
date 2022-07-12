@@ -59,6 +59,7 @@ void OR_set_member_list_free(struct OR_set_member_list *list)
 	{
 		OR_map_kv_free(list_container->kv_list[i]);
 	}	
+	free(list_container->kv_list);
 	list->n_member=0;
 	free(list_container);
 	return;
