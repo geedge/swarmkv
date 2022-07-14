@@ -62,12 +62,23 @@ static void obj_container_free(struct scontainer *ctr)
 	switch(ctr->obj.type)
 	{
 		case OBJ_TYPE_STRING:
-			LWW_register_free(ctr->obj.reg);
-			ctr->obj.reg=NULL;
+			LWW_register_free(ctr->obj.string);
+			ctr->obj.string=NULL;
 			break;
 		case OBJ_TYPE_COUNTER:
 			PN_counter_free(ctr->obj.counter);
 			ctr->obj.counter=NULL;
+			break;
+		case OBJ_TYPE_SET:
+			OR_set_free(ctr->obj.set);
+			ctr->obj.set=NULL;
+			break;
+		case OBJ_TYPE_HASH:
+			OR_map_free(ctr->obj.hash);
+			ctr->obj.hash=NULL;
+			break;
+		case OBJ_TYPE_UNDEFINED:
+			assert(ctr->obj.raw==NULL);
 			break;
 		default:
 			assert(0);
@@ -162,30 +173,7 @@ void sobj_free(struct sobj *obj)
 	struct scontainer *ctr=container_of(obj, struct scontainer, obj);
 
 	assert(!ctr->is_in_table && !ctr->is_in_sync_q);
-	if(ctr->replica_node_list)
-	{
-		utarray_free(ctr->replica_node_list);
-		ctr->replica_node_list=NULL;
-	}
-	switch(ctr->obj.type)
-	{
-		case OBJ_TYPE_STRING:
-			LWW_register_free(ctr->obj.reg);
-			ctr->obj.reg=NULL;
-			break;
-		case OBJ_TYPE_COUNTER:
-			PN_counter_free(ctr->obj.counter);
-			ctr->obj.counter=NULL;
-			break;
-		default:
-			assert(0);
-			break;
-	}
-	sdsfree(ctr->obj.key);
-	free(ctr);
-	return;
-
-
+	obj_container_free(ctr);
 	return;
 }
 
@@ -272,20 +260,24 @@ void sobj_serialize(struct sobj *obj, char **blob, size_t *blob_sz)
 	switch(obj->type)
 	{
 		case OBJ_TYPE_STRING:
-			LWW_register_serialize(obj->reg, &value_blob, &value_blob_sz);
-			mpack_write_str(&snapshot_mpack, value_blob, value_blob_sz);
-			free(value_blob);
-			value_blob=NULL;
+			LWW_register_serialize(obj->string, &value_blob, &value_blob_sz);
 			break;
 		case OBJ_TYPE_COUNTER:
 			PN_counter_serialize(obj->counter, &value_blob, &value_blob_sz);
-			mpack_write_str(&snapshot_mpack, value_blob, value_blob_sz);
-			free(value_blob);
-			value_blob=NULL;
+			break;
+		case OBJ_TYPE_SET:
+			OR_set_serialize(obj->set, &value_blob, &value_blob_sz);
+			break;
+		case OBJ_TYPE_HASH:
+			OR_map_serialize(obj->hash, &value_blob, &value_blob_sz);
 			break;
 		default:
+			assert(0);
 			break;
 	}
+	mpack_write_str(&snapshot_mpack, value_blob, value_blob_sz);
+	free(value_blob);
+	value_blob=NULL;
 
 	mpack_complete_map(&snapshot_mpack);
 	mpack_writer_destroy(&snapshot_mpack);
@@ -323,12 +315,12 @@ void sobj_merge_blob(struct swarmkv_module *mod_store, struct sobj *obj, const c
 	switch(ctr->obj.type)
 	{
 		case OBJ_TYPE_STRING:
-			if(!obj->reg)
+			if(!obj->string)
 			{				
 				store_get_uuid(mod_store, uuid);
-				obj->reg=LWW_register_new((const char*)uuid, sizeof(uuid));
+				obj->string=LWW_register_new((const char*)uuid, sizeof(uuid));
 			}
-			LWW_register_merge_blob(obj->reg, mpack_node_str(v_node), mpack_node_strlen(v_node));
+			LWW_register_merge_blob(obj->string, mpack_node_str(v_node), mpack_node_strlen(v_node));
 			break;
 		case OBJ_TYPE_COUNTER:
 			if(!obj->counter)
@@ -336,6 +328,20 @@ void sobj_merge_blob(struct swarmkv_module *mod_store, struct sobj *obj, const c
 				obj->counter=PN_counter_new((const char*)uuid, sizeof(uuid));
 			}
 			PN_counter_merge_blob(obj->counter, mpack_node_str(v_node), mpack_node_strlen(v_node));
+			break;
+		case OBJ_TYPE_SET:
+			if(!obj->set)
+			{
+				obj->set=OR_set_new((const char*)uuid, sizeof(uuid));
+			}
+			OR_set_merge_blob(obj->set, mpack_node_str(v_node), mpack_node_strlen(v_node));
+			break;
+		case OBJ_TYPE_HASH:
+			if(!obj->hash)
+			{
+				obj->hash=OR_map_new(mpack_node_str(v_node), mpack_node_strlen(v_node));
+			}
+			OR_map_merge_blob(obj->hash, mpack_node_str(v_node), mpack_node_strlen(v_node));
 			break;
 		default:
 			assert(0);

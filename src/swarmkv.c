@@ -11,6 +11,7 @@
 #include "swarmkv_keyspace.h"
 
 #include "t_string.h"
+#include "t_set.h"
 #include "t_crdt.h"
 
 #include "swarmkv_message.h"
@@ -577,6 +578,9 @@ void command_spec_init(struct swarmkv *db)
 	command_register(&(db->command_table), "INCRBY", "key increment",
 					2, 1, CMD_KEY_OW,
 					incrby_command, db->mod_store);
+
+	/* Generic command*/
+					
 	command_register(&(db->command_table), "DEL", "key",
 					1, 1, CMD_KEY_RM,
 					del_command, db->mod_keyspace);
@@ -590,6 +594,23 @@ void command_spec_init(struct swarmkv *db)
 					1, 1, CMD_KEY_RW,
 					persist_command, db->mod_keyspace);
 
+	/* Set Command */
+	command_register(&(db->command_table), "SADD", "key member [member ...]",
+					2, 1, CMD_KEY_OW,
+					sadd_command, db->mod_store);
+	command_register(&(db->command_table), "SREM", "key member [member ...]",
+					2, 1, CMD_KEY_RW,
+					srem_command, db->mod_store);
+	command_register(&(db->command_table), "SMEMBERS", "key",
+					1, 1, CMD_KEY_RO,
+					smembers_command, db->mod_store);
+	command_register(&(db->command_table), "SISMEMBER", "key member",
+					2, 1, CMD_KEY_RO,
+					sismember_command, db->mod_store);
+	command_register(&(db->command_table), "SCARD", "key",
+					2, 1, CMD_KEY_RO,
+					scard_command, db->mod_store);
+	
 	/* low-level state-based CRDT synchronization command*/
 	command_register(&(db->command_table), "CRDT PULL", "key",
 					1, 2, CMD_KEY_NA,

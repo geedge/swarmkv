@@ -144,6 +144,62 @@ void swarmkv_persist(struct swarmkv *db, const char *key, size_t keylen, swarmkv
 	swarmkv_cmd_free(cmd);
 	return;
 }
+void swarmkv_sadd(struct swarmkv *db, const char* key, size_t keylen, const char *member[], const size_t member_len[], size_t n_member, swarmkv_cmd_callback_func_t *cb, void *cb_arg)
+{
+	struct swarmkv_cmd *cmd=NULL;
+	cmd=swarmkv_cmd_new(2+n_member);	
+	cmd->argv[0]=sdsnew("sadd");
+	cmd->argv[1]=sdsnewlen(key, keylen);
+	for(size_t i=0; i<n_member; i++)
+	{
+		cmd->argv[2+i]=sdsnewlen(member[i], member_len[i]);
+	}
+	swarmkv_exec(db, cmd, cb, cb_arg);
+	swarmkv_cmd_free(cmd);
+
+}
+void swarmkv_srem(struct swarmkv *db, const char* key, size_t keylen, const char *member[], const size_t member_len[], size_t n_member, swarmkv_cmd_callback_func_t *cb, void *cb_arg)
+{
+	struct swarmkv_cmd *cmd=NULL;
+	cmd=swarmkv_cmd_new(2+n_member);	
+	cmd->argv[0]=sdsnew("srem");
+	cmd->argv[1]=sdsnewlen(key, keylen);
+	for(size_t i=0; i<n_member; i++)
+	{
+		cmd->argv[2+i]=sdsnewlen(member[i], member_len[i]);
+	}
+	swarmkv_exec(db, cmd, cb, cb_arg);
+	swarmkv_cmd_free(cmd);
+
+}
+void swarmkv_sismember(struct swarmkv *db, const char* key, size_t keylen, const char *member, size_t member_len, swarmkv_cmd_callback_func_t *cb, void *cb_arg)
+{
+	struct swarmkv_cmd *cmd=NULL;
+	cmd=swarmkv_cmd_new(3);	
+	cmd->argv[0]=sdsnew("sismember");
+	cmd->argv[1]=sdsnewlen(key, keylen);
+	cmd->argv[2]=sdsnewlen(member, member_len);
+	swarmkv_exec(db, cmd, cb, cb_arg);
+	swarmkv_cmd_free(cmd);
+}
+void swarmkv_smembers(struct swarmkv *db, const char* key, size_t keylen, swarmkv_cmd_callback_func_t *cb, void *cb_arg)
+{
+	struct swarmkv_cmd *cmd=NULL;
+	cmd=swarmkv_cmd_new(2);	
+	cmd->argv[0]=sdsnew("smembers");
+	cmd->argv[1]=sdsnewlen(key, keylen);
+	swarmkv_exec(db, cmd, cb, cb_arg);
+	swarmkv_cmd_free(cmd);
+}
+void swarmkv_scard(struct swarmkv *db, const char* key, size_t keylen, swarmkv_cmd_callback_func_t *cb, void *cb_arg)
+{
+	struct swarmkv_cmd *cmd=NULL;
+	cmd=swarmkv_cmd_new(2);	
+	cmd->argv[0]=sdsnew("scard");
+	cmd->argv[1]=sdsnewlen(key, keylen);
+	swarmkv_exec(db, cmd, cb, cb_arg);
+	swarmkv_cmd_free(cmd);
+}
 
 int swarmkv_hset_string(struct swarmkv *db,
 				const char *key, size_t keylen, const char* member, size_t memberlen, const char *value, size_t vallen)

@@ -9,11 +9,11 @@ extern "C"
 struct OR_map;
 struct OR_map *OR_map_new(const char* id, size_t id_sz);
 void OR_map_free(struct OR_map *map);
-int OR_map_add(struct OR_map *map, const char *key, size_t key_sz);
-int OR_map_set(struct OR_map *map, const char *key, size_t key_sz, const char *value, size_t value_sz);
-int OR_map_incrby(struct OR_map *map, const char *key, size_t key_sz, long long increment, long long *result);
-int OR_map_remove(struct OR_map *map, const char *key, size_t key_sz);
-int OR_map_exisits(struct OR_map *map, const char* key, size_t key_sz);
+int OR_map_add(struct OR_map *map, const char *key, size_t key_len);
+int OR_map_set(struct OR_map *map, const char *key, size_t key_len, const char *value, size_t value_len);
+int OR_map_incrby(struct OR_map *map, const char *key, size_t key_len, long long increment, long long *result);
+int OR_map_remove(struct OR_map *map, const char *key, size_t key_len);
+int OR_map_exisits(struct OR_map *map, const char* key, size_t key_len);
 size_t OR_map_cardinality(struct OR_map *map);
 size_t OR_map_replica_number(struct OR_map *map);
 
@@ -26,14 +26,14 @@ enum value_type
 struct OR_map_kv
 {
 	char *key;
-	size_t key_sz;
+	size_t key_len;
 	enum value_type type;
 	char *string;
 	size_t str_len;
 	long long counter;
 };
 void OR_map_kv_free(struct OR_map_kv *kv);
-struct OR_map_kv *OR_map_get(struct OR_map *map, const char *key, size_t key_sz);
+struct OR_map_kv *OR_map_get(struct OR_map *map, const char *key, size_t key_len);
 size_t OR_map_get_all(struct OR_map *map, struct OR_map_kv ***kv_list);
 size_t OR_map_keys(struct OR_map *map, struct OR_map_kv ***kv_list);
 

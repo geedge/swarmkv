@@ -21,19 +21,19 @@ void OR_set_free(struct OR_set *set)
 	free(set);
 	return;
 }
-int OR_set_add(struct OR_set *set, const char *member, size_t member_sz)
+int OR_set_add(struct OR_set *set, const char *member, size_t member_len)
 {
 	int ret=0;
-	ret=OR_map_add(set->map, member, member_sz);
+	ret=OR_map_add(set->map, member, member_len);
 	return ret;
 }
-int OR_set_remove(struct OR_set *set, const char *member, size_t member_sz)
+int OR_set_remove(struct OR_set *set, const char *member, size_t member_len)
 {
-	return OR_map_remove(set->map, member, member_sz);
+	return OR_map_remove(set->map, member, member_len);
 }
-int OR_set_is_member(struct OR_set *set, const char* member, size_t member_sz)
+int OR_set_is_member(struct OR_set *set, const char* member, size_t member_len)
 {
-	return OR_map_exisits(set->map, member, member_sz);
+	return OR_map_exisits(set->map, member, member_len);
 }
 size_t OR_set_cardinality(struct OR_set *set)
 {
@@ -54,7 +54,7 @@ void OR_set_member_list_free(struct OR_set_member_list *list)
 	struct OR_set_member_list_container *list_container=container_of(list, struct OR_set_member_list_container, mlist);
 	
 	free(list->members);
-	free(list->member_sz);
+	free(list->member_len);
 	for(size_t i=0; i<list->n_member; i++)
 	{
 		OR_map_kv_free(list_container->kv_list[i]);
@@ -79,11 +79,11 @@ struct OR_set_member_list* OR_set_members(struct OR_set *set)
 
 	mlist->n_member=n_kv;
 	mlist->members=ALLOC(char*, n_kv);
-	mlist->member_sz=ALLOC(size_t, n_kv);
+	mlist->member_len=ALLOC(size_t, n_kv);
 	for(size_t i=0; i<n_kv; i++)
 	{
 		mlist->members[i]=kv_list[i]->key;
-		mlist->member_sz[i]=kv_list[i]->key_sz;
+		mlist->member_len[i]=kv_list[i]->key_len;
 	}
 	return mlist;
 }

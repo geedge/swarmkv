@@ -6,11 +6,13 @@
 
 #include "lww_register.h"
 #include "pn_counter.h"
-
+#include "or_set.h"
+#include "or_map.h"
 enum sobj_type
 {
 	OBJ_TYPE_STRING,
 	OBJ_TYPE_COUNTER,
+	OBJ_TYPE_SET,
 	OBJ_TYPE_HASH,
 	OBJ_TYPE_THROTTLE,
 	OBJ_TYPE_UNDEFINED,
@@ -23,8 +25,10 @@ struct sobj
 	sds key;
 	union
 	{
-		struct LWW_register *reg;
+		struct LWW_register *string;
 		struct PN_counter *counter;
+		struct OR_set *set;
+		struct OR_map *hash;
 		void *raw;
 	};
 };

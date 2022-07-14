@@ -601,7 +601,7 @@ TEST(ORMap, Basic)
 	
 	for(size_t i=0; i<n_kv; i++)
 	{
-		ret=OR_map_exisits(map, kv_list[i]->key, kv_list[i]->key_sz);
+		ret=OR_map_exisits(map, kv_list[i]->key, kv_list[i]->key_len);
 		EXPECT_EQ(ret, 1);
 		EXPECT_TRUE(kv_list[i]->string==NULL);//OR_map_keys() doesn't return value.
 		OR_map_kv_free(kv_list[i]);

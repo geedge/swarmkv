@@ -30,7 +30,7 @@ struct OR_set_member_list
 {
 	size_t n_member;
 	char **members;
-	size_t *member_sz;
+	size_t *member_len;
 };
 void OR_set_member_list_free(struct OR_set_member_list *list);
 struct OR_set_member_list* OR_set_members(struct OR_set *set);

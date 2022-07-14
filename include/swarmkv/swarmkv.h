@@ -71,6 +71,11 @@ void swarmkv_ttl(struct swarmkv *db, const char *key, size_t keylen, swarmkv_cmd
 void swarmkv_persist(struct swarmkv *db, const char *key, size_t keylen, swarmkv_cmd_callback_func_t *cb, void *cb_arg);
 
 
+void swarmkv_sadd(struct swarmkv *db, const char* key, size_t keylen, const char *member[], const size_t member_len[], size_t n_member, swarmkv_cmd_callback_func_t *cb, void *cb_arg);
+void swarmkv_srem(struct swarmkv *db, const char* key, size_t keylen, const char *member[], const size_t member_len[], size_t n_member, swarmkv_cmd_callback_func_t *cb, void *cb_arg);
+void swarmkv_sismember(struct swarmkv *db, const char* key, size_t keylen, const char *member, size_t member_len, swarmkv_cmd_callback_func_t *cb, void *cb_arg);
+void swarmkv_smembers(struct swarmkv *db, const char* key, size_t keylen, swarmkv_cmd_callback_func_t *cb, void *cb_arg);
+void swarmkv_scard(struct swarmkv *db, const char* key, size_t keylen, swarmkv_cmd_callback_func_t *cb, void *cb_arg);
 
 
 //Used by swarmkv-cli

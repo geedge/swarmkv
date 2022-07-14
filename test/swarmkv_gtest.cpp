@@ -7,6 +7,9 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #define	CMD_EXEC_TIMEOUT_MS	1000*2
+
+#define ALLOC(type, number) ((type *)calloc(sizeof(type), number))
+
 int swarmkv_cli_create_cluster(const char* cluster_name, const char *node_string)
 {
 	char cmd_string[1024];
@@ -76,6 +79,12 @@ void cmd_exec_arg_expect_integer(struct cmd_exec_arg* arg, long long integer)
 	arg->expected_reply.type=SWARMKV_REPLY_INTEGER;
 	arg->expected_reply.integer=integer;
 }
+void cmd_exec_arg_expect_array(struct cmd_exec_arg* arg, size_t n_element)
+{
+	arg->expected_reply.type=SWARMKV_REPLY_ARRAY;
+	arg->expected_reply.n_element=n_element;
+}
+
 void cmd_exec_arg_expect_OK(struct cmd_exec_arg* arg)
 {
 	arg->expected_reply.type=SWARMKV_REPLY_STATUS;
@@ -213,6 +222,8 @@ int reply_compare(const struct swarmkv_reply *r1, const swarmkv_reply *r2)
 			return 0;
 			break;
 		case SWARMKV_REPLY_ARRAY:
+			return (r1->n_element - r2->n_element);
+			
 			if(r1->n_element != r2->n_element)
 			{
 				return r1->n_element - r2->n_element;
@@ -276,7 +287,7 @@ protected:
 	static struct swarmkv* db;
 };
 struct swarmkv* SwarmkvBasicTest::db;
-TEST_F(SwarmkvBasicTest, SET_GET)
+TEST_F(SwarmkvBasicTest, TypeString)
 {
 	struct cmd_exec_arg *arg=NULL;
 	struct swarmkv* db=SwarmkvBasicTest::db;
@@ -301,7 +312,7 @@ TEST_F(SwarmkvBasicTest, SET_GET)
 	cmd_exec_arg_free(arg);
 	arg=NULL;
 }
-TEST_F(SwarmkvBasicTest, DEL)
+TEST_F(SwarmkvBasicTest, Del)
 {
 	struct cmd_exec_arg *arg=NULL;
 	struct swarmkv* db=SwarmkvBasicTest::db;
@@ -324,12 +335,93 @@ TEST_F(SwarmkvBasicTest, DEL)
 	cmd_exec_arg_free(arg);
 	arg=NULL;
 }
+TEST_F(SwarmkvBasicTest, TypeSet)
+{
+	struct cmd_exec_arg *arg=NULL;
+	struct swarmkv* db=SwarmkvBasicTest::db;
+	const char* key="Jack's friends";
+	const char* member[]={"zhangsan", "lisi", "王二麻子", "Tom", "مرحبا"};
+	size_t member_len[32];
+	size_t n_member=0, i=0;
+	n_member=sizeof(member)/sizeof(const char*);
+	for(i=0; i<n_member; i++)
+	{
+		member_len[i]=strlen(member[i])+1;
+	}
+
+	int exec_successful=0;
+
+	arg=cmd_exec_arg_new();
+
+	//SADD key m0 m2 ... m4
+	cmd_exec_arg_expect_integer(arg, n_member);
+	swarmkv_sadd(db, key, strlen(key)+1, member, member_len, n_member, generic_callback, arg);	
+	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
+	EXPECT_EQ(exec_successful, 1);
+	cmd_exec_arg_clear(arg);
+
+	//SMEMEBERS key
+	cmd_exec_arg_expect_array(arg, n_member);
+	swarmkv_smembers(db, key, strlen(key)+1, generic_callback, arg);
+	EXPECT_EQ(exec_successful, 1);
+	cmd_exec_arg_clear(arg);
+
+
+	//SREM key m0 m1
+	cmd_exec_arg_expect_integer(arg, 2);
+	swarmkv_srem(db, key, strlen(key)+1, member, member_len, 2, generic_callback, arg);
+	EXPECT_EQ(exec_successful, 1);
+	cmd_exec_arg_clear(arg);
+
+	//SISMEMBER key m0
+	cmd_exec_arg_expect_integer(arg, 0);
+	swarmkv_sismember(db, key, strlen(key)+1, member[0], member_len[0], generic_callback, arg);
+	EXPECT_EQ(exec_successful, 1);
+	cmd_exec_arg_clear(arg);
+
+	//SISMEMBER key m2
+	cmd_exec_arg_expect_integer(arg, 1);
+	swarmkv_sismember(db, key, strlen(key)+1, member[2], member_len[2], generic_callback, arg);
+	EXPECT_EQ(exec_successful, 1);
+	cmd_exec_arg_clear(arg);
+
+
+	//SCARD key
+	cmd_exec_arg_expect_integer(arg, 3);
+	swarmkv_scard(db, key, strlen(key)+1, generic_callback, arg);
+	EXPECT_EQ(exec_successful, 1);
+	cmd_exec_arg_clear(arg);
+
+	//DEL key
+	cmd_exec_arg_expect_integer(arg, 1);
+	swarmkv_del(db, key, strlen(key)+1, generic_callback, arg);
+	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
+	EXPECT_EQ(exec_successful, 1);
+	cmd_exec_arg_clear(arg);
+
+	//SISMEMBER key m2
+	cmd_exec_arg_expect_integer(arg, 0);
+	swarmkv_sismember(db, key, strlen(key)+1, member[2], member_len[2], generic_callback, arg);
+	EXPECT_EQ(exec_successful, 1);
+	cmd_exec_arg_clear(arg);
+
+	//SCARD key
+	cmd_exec_arg_expect_integer(arg, 0);
+	swarmkv_scard(db, key, strlen(key)+1, generic_callback, arg);
+	EXPECT_EQ(exec_successful, 1);
+	cmd_exec_arg_clear(arg);
+
+	
+	cmd_exec_arg_free(arg);
+	arg=NULL;
+}
+
 TEST_F(SwarmkvBasicTest, EXPIRE_TTL)
 {
 	struct cmd_exec_arg *arg=NULL;
 	struct swarmkv* db=SwarmkvBasicTest::db;
 	const char* key="quarantine";
-	const char* val="wuhan-jiangxia-rujia";
+	const char* val="wuhan-江夏-如家";
 	int exec_successful=0;
 	int seconds=3;
 	
@@ -909,6 +1001,84 @@ TEST_F(SwarmkvTwoNodes, FromLocalReplica)
 	
 	cmd_exec_arg_free(arg);
 
+}
+TEST_F(SwarmkvTwoNodes, TypeSet)
+{
+	struct cmd_exec_arg *arg=NULL;
+	struct swarmkv* db[2];
+	db[0]=SwarmkvTwoNodes::db1;
+	db[1]=SwarmkvTwoNodes::db2;
+	const char *key="set-key001";
+	char **members=NULL;
+	size_t *member_len=NULL;
+	size_t n_member=128;
+	int exec_successful=0;
+	arg=cmd_exec_arg_new();
+
+	members=ALLOC(char*, n_member);
+	member_len=ALLOC(size_t, n_member);
+	for(size_t i=0; i<n_member; i++)
+	{
+		members[i]=ALLOC(char, 1024);
+		member_len[i]=snprintf(members[i], 1024, "set-member-%zu", i);
+	}
+	
+	cmd_exec_arg_expect_integer(arg, n_member/2);
+	swarmkv_sadd(db[0], key, strlen(key)+1, (const char**) members, member_len, n_member/2, generic_callback, arg);	
+	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
+	EXPECT_EQ(exec_successful, 1);
+	cmd_exec_arg_clear(arg);
+
+	cmd_exec_arg_expect_integer(arg, n_member-n_member/2);
+	swarmkv_sadd(db[1], key, strlen(key)+1, (const char**)  members+n_member/2, member_len+n_member/2, n_member-n_member/2, generic_callback, arg);	
+	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
+	EXPECT_EQ(exec_successful, 1);
+	cmd_exec_arg_clear(arg);
+	
+	wait_for_sync();
+
+	cmd_exec_arg_expect_array(arg, n_member);
+	swarmkv_smembers(db[1], key, strlen(key)+1, generic_callback, arg);	
+	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
+	EXPECT_EQ(exec_successful, 1);
+	cmd_exec_arg_clear(arg);
+
+	for(size_t i=0; i<n_member; i++)
+	{
+		if(i%3==0)
+		{
+			cmd_exec_arg_expect_integer(arg, 1);
+			swarmkv_srem(db[i%2], key, strlen(key)+1, (const char**) members+i, member_len+i, 1, generic_callback, arg);	
+			exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
+			cmd_exec_arg_clear(arg);
+			EXPECT_EQ(exec_successful, 1);
+		}
+	}
+
+	wait_for_sync();
+
+
+	for(size_t i=0; i<n_member; i++)
+	{
+		if(i%3==0)
+		{
+			cmd_exec_arg_expect_integer(arg, 0);
+			swarmkv_sismember(db[(i+1)%2], key, strlen(key)+1, members[i], member_len[i], generic_callback, arg);	
+			exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
+			cmd_exec_arg_clear(arg);
+			EXPECT_EQ(exec_successful, 1);
+		}
+	}
+
+	//Cleanup
+	cmd_exec_arg_free(arg);
+	for(size_t i=0; i<n_member; i++)
+	{
+		free(members[i]);
+		members[i]=NULL;
+	}
+	free(members);
+	free(member_len);
 }
 
 TEST_F(SwarmkvTwoNodes, Wait)

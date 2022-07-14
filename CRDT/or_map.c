@@ -33,7 +33,7 @@ void OR_timestamp_free(struct OR_timestamp *ts)
 struct OR_record
 {
 	char *key;
-	size_t key_sz;
+	size_t key_len;
 	enum value_type type;
 	union
 	{	
@@ -50,7 +50,7 @@ struct OR_record * OR_record_new(const char *replica_id, size_t replica_id_sz, c
 	struct OR_record *record=NULL;
 	record=ALLOC(struct OR_record, 1);
 	record->key=ALLOC(char, member_sz);
-	record->key_sz=member_sz;		
+	record->key_len=member_sz;		
 	memcpy(record->key, member, member_sz);		
 	record->type=type;
 	switch(record->type)
@@ -177,15 +177,15 @@ static unsigned long long OR_map_step(struct OR_map *set)
 	}
 	return new_sequence;
 }
-int OR_map_add(struct OR_map *map, const char *key, size_t key_sz)
+int OR_map_add(struct OR_map *map, const char *key, size_t key_len)
 {
 	struct OR_record *record=NULL;
 	int ret=0;
-	HASH_FIND(hh, map->hash_record, key, key_sz, record);
+	HASH_FIND(hh, map->hash_record, key, key_len, record);
 	if(!record)
 	{
-		record=OR_record_new(map->my_id, map->id_sz, key, key_sz, TYPE_NONE);
-		HASH_ADD_KEYPTR(hh, map->hash_record, record->key, record->key_sz, record);
+		record=OR_record_new(map->my_id, map->id_sz, key, key_len, TYPE_NONE);
+		HASH_ADD_KEYPTR(hh, map->hash_record, record->key, record->key_len, record);
 		ret=1;
 	}
 	unsigned long long new_sequence=OR_map_step(map);
@@ -193,15 +193,15 @@ int OR_map_add(struct OR_map *map, const char *key, size_t key_sz)
 	
 	return ret;
 }
-int OR_map_set(struct OR_map *map, const char *key, size_t key_sz, const char *value, size_t value_sz)
+int OR_map_set(struct OR_map *map, const char *key, size_t key_len, const char *value, size_t value_sz)
 {
 	struct OR_record *record=NULL;
 	int ret=0;
-	HASH_FIND(hh, map->hash_record, key, key_sz, record);
+	HASH_FIND(hh, map->hash_record, key, key_len, record);
 	if(!record)
 	{
-		record=OR_record_new(map->my_id, map->id_sz, key, key_sz, TYPE_STRING);
-		HASH_ADD_KEYPTR(hh, map->hash_record, record->key, record->key_sz, record);
+		record=OR_record_new(map->my_id, map->id_sz, key, key_len, TYPE_STRING);
+		HASH_ADD_KEYPTR(hh, map->hash_record, record->key, record->key_len, record);
 		ret=1;
 	}
 	if(record->type!=TYPE_STRING)
@@ -216,15 +216,15 @@ int OR_map_set(struct OR_map *map, const char *key, size_t key_sz, const char *v
 	return ret;
 }
 
-int OR_map_incrby(struct OR_map *map, const char *key, size_t key_sz, long long increment, long long *result)
+int OR_map_incrby(struct OR_map *map, const char *key, size_t key_len, long long increment, long long *result)
 {
 	struct OR_record *record=NULL;
 	int ret=0;
-	HASH_FIND(hh, map->hash_record, key, key_sz, record);
+	HASH_FIND(hh, map->hash_record, key, key_len, record);
 	if(!record)
 	{		
-		record=OR_record_new(map->my_id, map->id_sz, key, key_sz, TYPE_COUNTER);
-		HASH_ADD_KEYPTR(hh, map->hash_record, record->key, record->key_sz, record);
+		record=OR_record_new(map->my_id, map->id_sz, key, key_len, TYPE_COUNTER);
+		HASH_ADD_KEYPTR(hh, map->hash_record, record->key, record->key_len, record);
 		ret=1;
 	}
 	if(record->type!=TYPE_COUNTER)
@@ -251,9 +251,9 @@ struct OR_map_kv *OR_map_kv_new(struct OR_record *record, enum record_copy_type 
 	kv->type=record->type;
 	if(type==copy_all || type==copy_key)
 	{
-		kv->key_sz=record->key_sz;
-		kv->key=ALLOC(char, kv->key_sz);
-		memcpy(kv->key, record->key, kv->key_sz);
+		kv->key_len=record->key_len;
+		kv->key=ALLOC(char, kv->key_len);
+		memcpy(kv->key, record->key, kv->key_len);
 	}
 	if(type==copy_all || type==copy_value)
 	{
@@ -281,10 +281,10 @@ void OR_map_kv_free(struct OR_map_kv *kv)
 	free(kv);
 	return;
 }
-struct OR_map_kv *OR_map_get(struct OR_map *map, const char *key, size_t key_sz)
+struct OR_map_kv *OR_map_get(struct OR_map *map, const char *key, size_t key_len)
 {	
 	struct OR_record *record=NULL;
-	HASH_FIND(hh, map->hash_record, key, key_sz, record);
+	HASH_FIND(hh, map->hash_record, key, key_len, record);
 	if(!record)
 	{
 		return NULL;
@@ -325,10 +325,10 @@ size_t OR_map_values(struct OR_map *map, struct OR_map_kv ***kv_list)
 	return OR_map_generic_traverse(map, kv_list, copy_value);
 }
 
-int OR_map_remove(struct OR_map *map, const char *key, size_t key_sz)
+int OR_map_remove(struct OR_map *map, const char *key, size_t key_len)
 {
 	struct OR_record *record=NULL;	
-	HASH_FIND(hh, map->hash_record, key, key_sz, record);
+	HASH_FIND(hh, map->hash_record, key, key_len, record);
 	if(!record)
 	{
 		return 0;
@@ -337,10 +337,10 @@ int OR_map_remove(struct OR_map *map, const char *key, size_t key_sz)
 	OR_record_free(record);
 	return 1;
 }
-int OR_map_exisits(struct OR_map *map, const char* key, size_t key_sz)
+int OR_map_exisits(struct OR_map *map, const char* key, size_t key_len)
 {	
 	struct OR_record *record=NULL;
-	HASH_FIND(hh, map->hash_record, key, key_sz, record);
+	HASH_FIND(hh, map->hash_record, key, key_len, record);
 	if(record)
 	{
 		return 1;
@@ -379,7 +379,7 @@ void OR_record_serialize(struct OR_record *record, mpack_writer_t *writer)
 
 	mpack_start_map(writer, 4);//Start a member
 	mpack_write_cstr(writer, "k");
-	mpack_write_str(writer, record->key, record->key_sz);
+	mpack_write_str(writer, record->key, record->key_len);
 	mpack_write_cstr(writer, "t");
 	mpack_write_i32(writer, record->type);
 	
@@ -420,9 +420,9 @@ struct OR_record* OR_record_deserialize(mpack_node_t mpnode_record)
 	record=ALLOC(struct OR_record, 1);
 	
 	mpnode_k=mpack_node_map_cstr(mpnode_record, "k");
-	record->key_sz=mpack_node_strlen(mpnode_k);		
-	record->key=ALLOC(char, record->key_sz);
-	memcpy(record->key, mpack_node_str(mpnode_k), record->key_sz);		
+	record->key_len=mpack_node_strlen(mpnode_k);		
+	record->key=ALLOC(char, record->key_len);
+	memcpy(record->key, mpack_node_str(mpnode_k), record->key_len);		
 	record->type=mpack_node_int(mpack_node_map_cstr(mpnode_record, "t"));
 	mpnode_v=mpack_node_map_cstr(mpnode_record, "v");
 	switch(record->type)
@@ -540,7 +540,7 @@ struct OR_map *OR_map_deserialize(const char *blob, size_t blob_sz)
 	for(size_t i=0; i<n_member; i++)
 	{
 		record=OR_record_deserialize(mpack_node_array_at(mpnode_kv_array, i));		
-		HASH_ADD_KEYPTR(hh, map->hash_record, record->key, record->key_sz, record);		
+		HASH_ADD_KEYPTR(hh, map->hash_record, record->key, record->key_len, record);		
 	}
 
 	mpnode_ts_array=mpack_node_map_cstr(root, "rv");
@@ -564,7 +564,7 @@ void OR_map_merge(struct OR_map *dst, struct OR_map *src)
 	struct OR_record *dst_record=NULL, *src_record=NULL, *tmp=NULL, *tmp_to_merge=NULL;
 	HASH_ITER(hh, dst->hash_record, dst_record, tmp)
 	{
-		HASH_FIND(hh, src->hash_record, dst_record->key, dst_record->key_sz, src_record);
+		HASH_FIND(hh, src->hash_record, dst_record->key, dst_record->key_len, src_record);
 		if(src_record)
 		{
 			OR_record_merge(dst_record, src_record);
@@ -577,7 +577,7 @@ void OR_map_merge(struct OR_map *dst, struct OR_map *src)
 	}
 	HASH_ITER(hh, src->hash_record, src_record, tmp_to_merge)
 	{
-		HASH_FIND(hh, dst->hash_record, src_record->key, src_record->key_sz, dst_record);
+		HASH_FIND(hh, dst->hash_record, src_record->key, src_record->key_len, dst_record);
 		if(dst_record)
 		{
 			assert(dst_record->should_merge_flag==1);
@@ -587,7 +587,7 @@ void OR_map_merge(struct OR_map *dst, struct OR_map *src)
 		if(src_record->should_merge_flag)
 		{
 			HASH_DEL(src->hash_record, src_record);
-			HASH_ADD_KEYPTR(hh, dst->hash_record, src_record->key, src_record->key_sz, src_record);
+			HASH_ADD_KEYPTR(hh, dst->hash_record, src_record->key, src_record->key_len, src_record);
 		}
 	}
 	HASH_ITER(hh, dst->hash_record, dst_record, tmp)
