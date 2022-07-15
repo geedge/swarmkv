@@ -608,7 +608,7 @@ void command_spec_init(struct swarmkv *db)
 					2, 1, CMD_KEY_RO,
 					sismember_command, db->mod_store);
 	command_register(&(db->command_table), "SCARD", "key",
-					2, 1, CMD_KEY_RO,
+					1, 1, CMD_KEY_RO,
 					scard_command, db->mod_store);
 	
 	/* low-level state-based CRDT synchronization command*/

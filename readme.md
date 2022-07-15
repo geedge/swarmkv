@@ -32,7 +32,7 @@ Vocabularies
 | Slot      | KVs are partitioned in different slots, and keys of one table are scattered in many slots.  Each slot is maintained by one node. |
 | Key Owner | A key ONLY has one owner.                                    |
 | Replica   | A CRDT object is replicated in many nodes, which are replicas. |
-| RR        | A request (command) and reply.                               |
+| RPC       | Remote Procedure Call, used for sending command and receiving reply. |
 
 SwarmKV Data Types
 
@@ -277,23 +277,23 @@ When a master node A fails, if slots owned by A has a replica which is node B, t
 
 ,  in which,  N is slot id, Y contains a 32-bit node ID, UUID format version, IP and port. 
 
-## Subscription-based Caching
-
-The swarmkv's cache model is inspired by [Redis server-assisted client side caching](https://redis.io/topics/client-side-caching). The object owner remembers what keys a given peer accessed, when the key is modified, object owner sends `CACHE SET` and `CACHE DEL` command to the peer node.
-
 ## KV Operation
 
 When a requestor executes a command, it takes the following steps
 
-- Cache lookup
-  - For read command, the requestor lookup local cache, if a cache miss or a write operation
-- Keyspace route
+- Local Execute
+  - For key exists in local store, commands are executed in local node, except DEL command.
+- Key space route
   - The requestor hash the key to slot to find out the key owner.
-  - The requestor send  `KEYSPACE SETNXGET/GET/DEL` command to the key owner.
-- The Key owner processes the keyspace command and return the address of object owner.
-- The requestor receives the key owner's reply, send the command to the object owner
-- The object owner executes the command, registers the requestor as one of the cache tracking nodes, and send a reply to the requestor
-- The requestor receives the reply and invokes  callback function.
+  - The requestor send  `KEYSPACE RADD/RLIST/DEL` command to the key owner.
+- The Key owner processes the keyspace command and return the addresses of all replica.
+- The requestor receives the key owner's reply, it will
+  - Create local replica
+  - Send the command to the one of the replica
+  - Send `CRDT PULL key` command to some of the replicas
+
+- Other replica executes the command, registers the requestor as one of the replica nodes, and send a reply to the requestor
+- The requestor receives the reply and invokes user callback function.
 
 ## Fault Tolerance
 
