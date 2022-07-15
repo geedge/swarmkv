@@ -420,6 +420,8 @@ void __exec_cmd(struct swarmkv *db, const struct swarmkv_cmd *cmd, const struct 
 			keyspace_cmd=make_keyroute_cmd(spec->flag, cmd->argv[spec->key_offset], db->opts->dryrun? NULL:(&db->self));
 			ctx->future_of_mine=future_create("key_route", key_route_on_success, generic_on_fail, ctx);
 			__exec_cmd(db, keyspace_cmd, NULL, ctx->future_of_mine);
+			swarmkv_cmd_free(keyspace_cmd);
+			keyspace_cmd=NULL;
 			break;
 		default:
 			assert(0);
@@ -527,26 +529,32 @@ void msg_read_callback(const struct swarmkv_node_addr * peer, const char* data, 
 	uuid_t msg_requester_uuid;
 	struct swarmkv_msg *msg_received=NULL;
 
-	unsigned long long rr_seq=0;
+	unsigned long long rpc_seq=0;
 	msg_received=swarmkv_msg_deserialize(data, len);
+	if(!msg_received)
+	{
+		MESA_handle_runtime_log(db->logger, RLOG_LV_FATAL, MODULE_SWAMRKV_CORE, "Message from %s:%d deserialization failed (size=%zu).", peer->ip_addr, peer->p2p_port, len);
+		return;
+	}
 	msg_type=swarmkv_msg_get_type(msg_received);
-	rr_seq=swarmkv_msg_read_rr_sequence(msg_received);
-	swarmkv_msg_read_rr_requester_uuid(msg_received, msg_requester_uuid);
+	rpc_seq=swarmkv_msg_read_rr_sequence(msg_received);
+	swarmkv_msg_read_requester_uuid(msg_received, msg_requester_uuid);
 	if(msg_type==SWARMKV_MSG_TYPE_CMD)
 	{
 		struct swarmkv_cmd *cmd=swarmkv_msg_get_cmd(msg_received);
-		cmd_msg_processing(db, msg_requester_uuid, rr_seq, peer, cmd);
+		cmd_msg_processing(db, msg_requester_uuid, rpc_seq, peer, cmd);
 		swarmkv_cmd_free(cmd);
 		cmd=NULL;
 	}
 	else//SWARMKV_MSG_TYPE_REPLY
 	{
 		struct swarmkv_reply* reply=swarmkv_msg_get_reply(msg_received);
-		reply_msg_processing(db, msg_requester_uuid, rr_seq, peer, reply);
+		reply_msg_processing(db, msg_requester_uuid, rpc_seq, peer, reply);
 		swarmkv_reply_free(reply);
 		reply=NULL;
 	}
 	swarmkv_msg_free(msg_received);
+	return;
 }
 
 void command_register(struct swarmkv_cmd_spec **table, const char *name, const char *hint,

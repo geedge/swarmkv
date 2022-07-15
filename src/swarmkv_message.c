@@ -77,7 +77,7 @@ unsigned long long swarmkv_msg_read_rr_sequence(struct swarmkv_msg* msg)
 {
 	return msg->rr_seq;
 }
-void swarmkv_msg_read_rr_requester_uuid(struct swarmkv_msg* msg, uuid_t out)
+void swarmkv_msg_read_requester_uuid(struct swarmkv_msg* msg, uuid_t out)
 {
 	uuid_copy(out, msg->requester_uuid);
 	return;

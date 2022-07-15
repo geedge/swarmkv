@@ -82,14 +82,15 @@ static int consul_kv_init_block(char *cluster_name, char *argv[], size_t argc)
 	char url[SWARMKV_URL_MAX]="";
 	int resp_code_put=0;
 	const char *ip=NULL, *port=NULL;
-	size_t slots_per_node=SWARMKV_SLOT_NUM/(argc/2);
+	size_t node_number=argc/2;
+	size_t slots_per_node=SWARMKV_SLOT_NUM/node_number;
 	struct key_slot slots[SWARMKV_SLOT_NUM];
 	size_t i=0, nth_node=0;
 	int ret=0;
 	memset(slots, 0, sizeof(slots));
 	for(i=0; i<SWARMKV_SLOT_NUM; i++)
 	{
-		nth_node=i/slots_per_node;
+		nth_node=MIN(i/slots_per_node, node_number-1);
 		ip=argv[nth_node*2];
 		port=argv[nth_node*2+1];
 		slots[i].slot_id=i;

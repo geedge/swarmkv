@@ -262,7 +262,6 @@ class SwarmkvBasicTest : public testing::Test
 protected:	
 	static void SetUpTestCase()
 	{
-		void* logger=NULL;
 		const char* log_path="./basic-test.log";
 		char *err=NULL;
 		const char *cluster_name="swarmkv-basic-test";
@@ -270,7 +269,7 @@ protected:
 		logger=MESA_create_runtime_log_handle(log_path, 0);
 		struct swarmkv_options* opts=swarmkv_options_new();
 		swarmkv_options_set_p2p_port(opts, 5210);
-		swarmkv_options_set_health_check_port(opts, 5211);
+		swarmkv_options_set_health_check_port(opts, 6210);
 		swarmkv_options_set_logger(opts, logger);
 		db=swarmkv_open(opts, cluster_name, &err);
 		if(err)
@@ -281,12 +280,16 @@ protected:
 	}
 	static void TearDownTestCase()
 	{
-		swarmkv_close(db);
+		swarmkv_close(db);		
+		MESA_destroy_runtime_log_handle(logger);
 	}	
  	// Some expensive resource shared by all tests.
+ 	
+	static void* logger;
 	static struct swarmkv* db;
 };
-struct swarmkv* SwarmkvBasicTest::db;
+struct swarmkv *SwarmkvBasicTest::db;
+void *SwarmkvBasicTest::logger;
 TEST_F(SwarmkvBasicTest, TypeString)
 {
 	struct cmd_exec_arg *arg=NULL;
@@ -312,7 +315,7 @@ TEST_F(SwarmkvBasicTest, TypeString)
 	cmd_exec_arg_free(arg);
 	arg=NULL;
 }
-TEST_F(SwarmkvBasicTest, Del)
+TEST_F(SwarmkvBasicTest, DEL)
 {
 	struct cmd_exec_arg *arg=NULL;
 	struct swarmkv* db=SwarmkvBasicTest::db;
@@ -482,17 +485,17 @@ class SwarmkvTwoNodes : public testing::Test
 protected:	
 	static void SetUpTestCase()
 	{
-		void* logger=NULL;
+		
 		char *err=NULL;
 		const char *log_path="./swarmkv-2-nodes.log";
 		
 		const char *cluster_name="swarmkv-2-nodes";
-		swarmkv_cli_create_cluster(cluster_name, "127.0.0.1 5210 127.0.0.1 5220");
+		swarmkv_cli_create_cluster(cluster_name, "127.0.0.1 5210 127.0.0.1 5211");
 		
 		logger=MESA_create_runtime_log_handle(log_path, 0);
 		struct swarmkv_options* opts1=swarmkv_options_new();
 		swarmkv_options_set_p2p_port(opts1, 5210);
-		swarmkv_options_set_health_check_port(opts1, 5211);
+		swarmkv_options_set_health_check_port(opts1, 6210);
 		swarmkv_options_set_logger(opts1, logger);
 		db1=swarmkv_open(opts1, cluster_name, &err);
 		if(err)
@@ -503,8 +506,8 @@ protected:
 		}
 
 		struct swarmkv_options* opts2=swarmkv_options_new();
-		swarmkv_options_set_p2p_port(opts2, 5220);
-		swarmkv_options_set_health_check_port(opts2, 5221);
+		swarmkv_options_set_p2p_port(opts2, 5211);
+		swarmkv_options_set_health_check_port(opts2, 6211);
 		swarmkv_options_set_logger(opts2, logger);
 		db2=swarmkv_open(opts2, cluster_name, &err);
 		if(err)
@@ -518,11 +521,14 @@ protected:
 	static void TearDownTestCase()
 	{
 		swarmkv_close(db1);
-		swarmkv_close(db2);
+		swarmkv_close(db2);	
+		MESA_destroy_runtime_log_handle(logger);
 	}	
  	// Some expensive resource shared by all tests.
+ 	static void* logger;
 	static struct swarmkv *db1, *db2;
 };
+void * SwarmkvTwoNodes::logger;
 struct swarmkv* SwarmkvTwoNodes::db1;
 struct swarmkv* SwarmkvTwoNodes::db2;
 TEST_F(SwarmkvTwoNodes, SET_GET)
@@ -1084,9 +1090,90 @@ TEST_F(SwarmkvTwoNodes, TypeSet)
 
 TEST_F(SwarmkvTwoNodes, Wait)
 {
-	sleep(3600*2);
+	//sleep(3600*2);
 }
+#define TEST_NODE_NUMBER	3
+class SwarmkvNNodes : public testing::Test 
+{
 
+protected:	
+	static void SetUpTestCase()
+	{		
+		char *err=NULL;
+		const char *log_path="./swarmkv-n-nodes.log";
+		size_t i=0;		
+		char node_list_str[1024]={0};
+		for(i=0; i<TEST_NODE_NUMBER; i++)
+		{
+			snprintf(node_list_str+strlen(node_list_str), sizeof(node_list_str)-strlen(node_list_str), "127.0.0.1 %zu ", 5210+i);
+		}
+		const char *cluster_name="swarmkv-n-nodes";
+		swarmkv_cli_create_cluster(cluster_name, node_list_str);
+		logger=MESA_create_runtime_log_handle(log_path, 0);
+		struct swarmkv_options* opts[TEST_NODE_NUMBER];
+		for(i=0; i<TEST_NODE_NUMBER; i++)
+		{
+			opts[i]=swarmkv_options_new();			
+			swarmkv_options_set_p2p_port(opts[i], 5210+i);
+			swarmkv_options_set_health_check_port(opts[i], 6210+i);
+			swarmkv_options_set_logger(opts[i], logger);
+			db[i]=swarmkv_open(opts[i], cluster_name, &err);
+			if(err)
+			{
+				printf("swarmkv_open %zu instance failed: %s\n", i, err);
+				free(err);
+				err=NULL;
+			}
+		}
+
+	}
+	static void TearDownTestCase()
+	{
+		for(size_t i=0; i<TEST_NODE_NUMBER; i++)
+		{
+			swarmkv_close(db[i]);
+		}
+		MESA_destroy_runtime_log_handle(logger);
+	}	
+ 	// Some expensive resource shared by all tests. 	
+	static void* logger;
+	static struct swarmkv *db[TEST_NODE_NUMBER];
+};
+struct swarmkv* SwarmkvNNodes::db[TEST_NODE_NUMBER];
+void * SwarmkvNNodes::logger;
+TEST_F(SwarmkvNNodes, SET_GET)
+{
+	struct cmd_exec_arg *arg=NULL;
+	const char *key="id001";
+	const char *val1="zhangsan", *val2="lisi";
+	int exec_successful=0;
+	struct swarmkv **db=SwarmkvNNodes::db;
+
+	arg=cmd_exec_arg_new();
+	
+	cmd_exec_arg_expect_OK(arg);
+	swarmkv_set(db[0], key, strlen(key), val1, strlen(val1), generic_callback, arg);
+	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
+	EXPECT_TRUE(exec_successful);
+	cmd_exec_arg_clear(arg);
+
+	size_t success_cnt=0, i=0;
+	
+	cmd_exec_arg_expect_cstring(arg, val1);
+	for(i=0; i<TEST_NODE_NUMBER; i++)
+	{
+		swarmkv_get(db[i], key, strlen(key), generic_callback, arg);
+		exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
+		if(exec_successful)
+		{
+			success_cnt++;
+		}
+	}
+	EXPECT_EQ(success_cnt, TEST_NODE_NUMBER);
+	cmd_exec_arg_clear(arg);
+
+	cmd_exec_arg_free(arg);
+}
 int main(int argc, char ** argv)
 {
 	int ret=0;

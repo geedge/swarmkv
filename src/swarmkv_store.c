@@ -50,6 +50,13 @@ struct scontainer
 	struct scontainer *next; //hook to sync queue
 };
 
+static struct scontainer *obj_container_new(enum sobj_type type, const sds key)
+{
+	struct scontainer *ctr=ALLOC(struct scontainer, 1);
+	ctr->obj.type=type;
+	ctr->obj.key=sdsdup(key);
+	return ctr;
+}
 
 static void obj_container_free(struct scontainer *ctr)
 {
@@ -141,31 +148,9 @@ static struct swarmkv_node_addr *obj_container_iterate_replica_nodes(struct scon
 	return addr;
 }
 
-/*
-static int obj_container_remove_accessed_node(struct scontainer *ctr, const struct swarmkv_node_addr *node)
-{
-	struct swarmkv_node_addr *found=NULL;
-	size_t found_idx=0;
-	if(!ctr->accessed_node_list)
-	{
-		utarray_new(ctr->accessed_node_list, &ut_node_addr_icd);
-	}
-	found=utarray_find(ctr->accessed_node_list, node, node_cmp);
-	if (found)
-	{
-		found_idx=utarray_eltidx(ctr->accessed_node_list, found);
-		utarray_erase(ctr->accessed_node_list, found_idx, 1);
-		return 1;
-	}
-	return 0;
-}
-*/
-
 struct sobj *sobj_new(enum sobj_type type, const sds key)
 {
-	struct scontainer *ctr=ALLOC(struct scontainer, 1);
-	ctr->obj.type=type;
-	ctr->obj.key=sdsdup(key);
+	struct scontainer *ctr=obj_container_new(type, key);
 	return &(ctr->obj);
 }
 void sobj_free(struct sobj *obj)

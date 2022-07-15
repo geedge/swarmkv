@@ -26,7 +26,7 @@ struct swarmkv_reply* swarmkv_msg_get_reply(struct swarmkv_msg *msg);
 struct swarmkv_cmd* swarmkv_msg_get_cmd(struct swarmkv_msg *msg);
 
 unsigned long long swarmkv_msg_read_rr_sequence(struct swarmkv_msg *msg);
-void swarmkv_msg_read_rr_requester_uuid(struct swarmkv_msg* msg, uuid_t out);
+void swarmkv_msg_read_requester_uuid(struct swarmkv_msg* msg, uuid_t out);
 
 struct swarmkv_msg* swarmkv_msg_deserialize(const char* data, size_t len);
 sds swarmkv_msg_serialize(const struct swarmkv_msg *msg);

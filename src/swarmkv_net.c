@@ -224,11 +224,13 @@ static void peer_conn_read_cb(struct bufferevent *bev, void *arg)
 			if(hdr->magic!=MSG_HDR_MAGIC)
 			{
 				MESA_handle_runtime_log(thr->ref_logger, RLOG_LV_FATAL, MODULE_SWAMRKV_NET, "invalid message header magic from %s:%u",
-										conn->peer_connected_from_addr.ip_addr, conn->peer_connected_from_addr.p2p_port);									
-				pthread_mutex_lock(&thr->mutex);
-				swarmkv_net_conn_table_remove(conn);
-				pthread_mutex_unlock(&thr->mutex);
-				
+										conn->peer_connected_from_addr.ip_addr, conn->peer_connected_from_addr.p2p_port);	
+				if(conn->is_in_conn_table)
+				{
+					pthread_mutex_lock(&thr->mutex);
+					swarmkv_net_conn_table_remove(conn);
+					pthread_mutex_unlock(&thr->mutex);
+				}
 				swarmkv_connection_free(conn);
 				break;
 			}
