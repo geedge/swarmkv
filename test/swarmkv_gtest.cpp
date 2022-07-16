@@ -1064,7 +1064,6 @@ TEST_F(SwarmkvTwoNodes, TypeSet)
 
 	wait_for_sync();
 
-
 	for(size_t i=0; i<n_member; i++)
 	{
 		if(i%3==0)
@@ -1092,7 +1091,7 @@ TEST_F(SwarmkvTwoNodes, Wait)
 {
 	//sleep(3600*2);
 }
-#define TEST_NODE_NUMBER	3
+#define TEST_NODE_NUMBER	32
 class SwarmkvNNodes : public testing::Test 
 {
 
@@ -1159,18 +1158,64 @@ TEST_F(SwarmkvNNodes, SET_GET)
 
 	size_t success_cnt=0, i=0;
 	
-	cmd_exec_arg_expect_cstring(arg, val1);
 	for(i=0; i<TEST_NODE_NUMBER; i++)
-	{
+	{		
+		cmd_exec_arg_expect_cstring(arg, val1);
 		swarmkv_get(db[i], key, strlen(key), generic_callback, arg);
 		exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
 		if(exec_successful)
 		{
 			success_cnt++;
 		}
+		cmd_exec_arg_clear(arg);
 	}
 	EXPECT_EQ(success_cnt, TEST_NODE_NUMBER);
+
+	cmd_exec_arg_expect_OK(arg);
+	swarmkv_set(db[0], key, strlen(key), val2, strlen(val2), generic_callback, arg);
+	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
+	EXPECT_TRUE(exec_successful);
 	cmd_exec_arg_clear(arg);
+
+	wait_for_sync();
+
+	success_cnt=0;
+	for(i=0; i<TEST_NODE_NUMBER; i++)
+	{
+		
+		cmd_exec_arg_expect_cstring(arg, val2);
+		swarmkv_get(db[i], key, strlen(key), generic_callback, arg);
+		exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
+		if(exec_successful)
+		{
+			success_cnt++;
+		}		
+		cmd_exec_arg_clear(arg);
+	}
+	EXPECT_EQ(success_cnt, TEST_NODE_NUMBER);
+
+	wait_for_sync();
+	
+	cmd_exec_arg_expect_integer(arg, 1);
+	swarmkv_del(db[TEST_NODE_NUMBER-1], key, strlen(key), generic_callback, arg);	
+	EXPECT_TRUE(exec_successful);
+	cmd_exec_arg_clear(arg);
+
+	wait_for_sync();
+
+	success_cnt=0;
+	for(i=0; i<TEST_NODE_NUMBER; i++)
+	{		
+		cmd_exec_arg_expect_NIL(arg);
+		swarmkv_get(db[i], key, strlen(key), generic_callback, arg);
+		exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
+		if(exec_successful)
+		{
+			success_cnt++;
+		}		
+		cmd_exec_arg_clear(arg);
+	}
+	EXPECT_EQ(success_cnt, TEST_NODE_NUMBER);
 
 	cmd_exec_arg_free(arg);
 }

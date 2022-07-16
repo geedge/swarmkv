@@ -348,7 +348,7 @@ static void key_route_on_success(void* result, void* user)
 		}
 		else
 		{
-			exec_command_at_peer(ctx->db, ctx->cmd, replica_nodes+0, ctx->future_of_caller);
+			exec_command_at_peer(ctx->db, ctx->cmd, replica_nodes+0, ctx->future_of_caller);	
 		}
 		free(replica_nodes);		
 	}

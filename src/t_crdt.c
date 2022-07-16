@@ -16,10 +16,17 @@ enum cmd_exec_result crdt_pull_command(struct swarmkv_module *mod_store, const s
 	obj=store_lookup(mod_store, key);
 	if(obj)
 	{	
-		sobj_serialize(obj, &blob, &blob_sz);
-		*reply=swarmkv_reply_new_string(blob, blob_sz);
-		free(blob);
 		sobj_add_replica_node(obj, accessing_node);
+		if(obj->type!=OBJ_TYPE_UNDEFINED)
+		{
+			sobj_serialize(obj, &blob, &blob_sz);
+			*reply=swarmkv_reply_new_string(blob, blob_sz);
+			free(blob);
+		}
+		else
+		{
+			*reply=swarmkv_reply_new_nil();
+		}
 	}
 	else
 	{

@@ -228,7 +228,7 @@ void sobj_serialize(struct sobj *obj, char **blob, size_t *blob_sz)
 	mpack_writer_t snapshot_mpack;
 	char *mpack_buff=NULL;
 	size_t mpack_sz=0;
-
+	
 	mpack_writer_init_growable(&snapshot_mpack, &mpack_buff, &mpack_sz);
 	mpack_build_map(&snapshot_mpack);
 
@@ -479,7 +479,7 @@ static void crdt_pull_on_succ(void* result, void* user)
 	struct crdt_pull_ctx *ctx=(struct crdt_pull_ctx *)user;
 	const struct swarmkv_reply *reply=(const struct swarmkv_reply*)result;
 	struct sobj *obj=store_lookup(ctx->mod_store, ctx->key);
-	if(obj)
+	if(obj && reply->type==SWARMKV_REPLY_STRING)
 	{
 		sobj_merge_blob(ctx->mod_store, obj, reply->str, reply->len);
 	}

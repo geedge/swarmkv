@@ -51,6 +51,7 @@ struct key_route_entry
 {
 	sds key;	
 	struct replica_node *hash_replica;
+	struct replica_node *first_replica;//a reference of the first replica in hash_replica;
 	uint64_t abs_timeout;
 	char is_expiring;
 	struct timeout timeout_handle;
@@ -94,6 +95,11 @@ int key_entry_add_replica_node(struct key_route_entry *key_entry, const struct s
 	tmp=ALLOC(struct replica_node, 1);
 	swarmkv_node_addr_copy(&tmp->addr, node);
 	HASH_ADD(hh, key_entry->hash_replica, addr, sizeof(struct swarmkv_node_addr), tmp);
+	if(HASH_CNT(hh, key_entry->hash_replica)==1)
+	{
+		assert(key_entry->first_replica==NULL);
+		key_entry->first_replica=tmp;
+	}
 	return 1;
 }
 
@@ -106,8 +112,12 @@ struct swarmkv_reply *key_entry_list_replica_nodes(struct key_route_entry *key_e
 
 	n_existed_replica=HASH_COUNT(key_entry->hash_replica);
 	reply=swarmkv_reply_new_array(n_existed_replica);
+	//make sure the first replica is at the head
+	reply->elements[i]=swarmkv_reply_new_node(&(key_entry->first_replica->addr), 0);
+	i++;
 	HASH_ITER(hh, key_entry->hash_replica, replica, tmp)
 	{
+		if(replica==key_entry->first_replica) continue;
 		reply->elements[i]=swarmkv_reply_new_node(&replica->addr, 0);
 		i++;
 	}
