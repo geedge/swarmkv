@@ -321,7 +321,7 @@ sds keyslots2json(void *slot_container_base, size_t sz_slot_container, size_t of
 	char range[256]="";
 	size_t i=0;
 	sds json_sds=NULL;
-	assert(SWARMKV_SLOT_NUM==n_slot_container);
+	assert(KEYSPACE_SLOT_NUM==n_slot_container);
 	assert(sz_slot_container>=sizeof(struct key_slot));
 	struct key_slot *iterator=(struct key_slot *)(slot_container_base+offset_slot);
 	struct key_slot *start_slot=NULL, *end_slot=NULL;
@@ -366,7 +366,7 @@ void json2keyslots(sds json_buffer, void *slot_container_base, size_t sz_slot_co
 	int range_start=0, range_end=0;
 	slot_table=cJSON_Parse(json_buffer);
 	n_record=cJSON_GetArraySize(slot_table);
-	assert(n_slot_container==SWARMKV_SLOT_NUM);
+	assert(n_slot_container==KEYSPACE_SLOT_NUM);
 	struct key_slot *iterator=NULL;
 	for(i=0; i<n_record; i++)
 	{
@@ -396,7 +396,7 @@ void json2keyslots(sds json_buffer, void *slot_container_base, size_t sz_slot_co
 			k++;
 		}
 	}
-	assert(k==SWARMKV_SLOT_NUM);
+	assert(k==KEYSPACE_SLOT_NUM);
 	cJSON_Delete(slot_table);
 	return;
 }
@@ -437,7 +437,7 @@ void json2leader(const char *resp_body, struct swarmkv_node *leader)
 int get_slot_id(const char* key, size_t keylen)
 {
 	XXH32_hash_t hash = XXH32(key, keylen, KEYSPACE_XXHASH_SEED);
-	int slot_id=hash%SWARMKV_SLOT_NUM;
+	int slot_id=hash%KEYSPACE_SLOT_NUM;
 	return slot_id;
 }
 

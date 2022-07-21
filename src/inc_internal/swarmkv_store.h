@@ -44,7 +44,7 @@ struct sobj *sobj_new(enum sobj_type type, const sds key);
 void sobj_free(struct sobj *obj);
 void sobj_need_sync(struct swarmkv_module *mod_store, struct sobj *obj);
 void sobj_serialize(struct sobj *obj, char **blob, size_t *blob_sz);
-void sobj_merge_blob(struct swarmkv_module *mod_store, struct sobj *obj, const char *blob, size_t blob_sz);
+void sobj_merge_blob(struct sobj *obj, const char *blob, size_t blob_sz, uuid_t uuid);
 int sobj_add_replica_node(struct sobj *obj, const struct swarmkv_node_addr *node);
 
 void store_get_uuid(struct swarmkv_module* mod_store, uuid_t uuid);

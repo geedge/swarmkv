@@ -21,16 +21,20 @@ enum cmd_exec_result
 	REDIRECT,
 	FINISHED
 };
+	
+struct swarmkv_module;
+typedef void swarmkv_module_lock_func_t(struct swarmkv_module *mod, sds key);
+
 struct swarmkv_module
 {
 	char name[SWARMKV_SYMBOL_MAX];
-	pthread_rwlock_t rwlock;
+	swarmkv_module_lock_func_t *lock;
+	swarmkv_module_lock_func_t *unlock;
 	void *mod_ctx;
 };
 
 struct swarmkv_node_addr
 {
-//	uuid_t bin_uuid;
 	char ip_addr[INET6_ADDRSTRLEN];	//#define INET6_ADDRSTRLEN 46 (#include <arpa/inet.h>, see man inet_ntop
 	unsigned int p2p_port;	//host order
 };

@@ -43,9 +43,11 @@ enum cmd_exec_result crdt_push_command(struct swarmkv_module *mod_store, const s
 	const sds blob=cmd->argv[3];	
 	assert(accessing_node!=NULL);//should never invoked by local
 	obj=store_lookup(mod_store, key);
+	uuid_t uuid;
+	store_get_uuid(mod_store, uuid);
 	if(obj)
 	{	
-		sobj_merge_blob(mod_store, obj, blob, sdslen(blob));
+		sobj_merge_blob(obj, blob, sdslen(blob), uuid);
 		*reply=swarmkv_reply_new_integer(1);
 	}
 	else
@@ -73,5 +75,25 @@ enum cmd_exec_result crdt_del_command(struct swarmkv_module *mod_store, const st
 		*reply=swarmkv_reply_new_integer(0);
 	}	
 	return FINISHED;
+}
+enum cmd_exec_result crdt_join_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)
+{
+	/* CRDT JOIN <key>*/
+	struct sobj *obj=NULL;
+	const sds key=cmd->argv[2];
+	assert(accessing_node!=NULL);//should never invoked by local
+	obj=store_lookup(mod_store, key);
+	int added=0;
+	if(obj)
+	{	
+		added=sobj_add_replica_node(obj, accessing_node);
+		*reply=swarmkv_reply_new_integer(added);
+	}
+	else
+	{
+		*reply=swarmkv_reply_new_nil();
+	}
+	return FINISHED;
+
 }
 

@@ -5,7 +5,8 @@
 
 
 **SwarmKV is a embedded and distributed key-CRDT store with peer-to-peer networking .** 
-**Main Features**
+
+Main Features
 
 - Cluster
 - Subscription-based cache syncronization

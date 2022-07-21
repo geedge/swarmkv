@@ -83,12 +83,12 @@ static int consul_kv_init_block(char *cluster_name, char *argv[], size_t argc)
 	int resp_code_put=0;
 	const char *ip=NULL, *port=NULL;
 	size_t node_number=argc/2;
-	size_t slots_per_node=SWARMKV_SLOT_NUM/node_number;
-	struct key_slot slots[SWARMKV_SLOT_NUM];
+	size_t slots_per_node=KEYSPACE_SLOT_NUM/node_number;
+	struct key_slot slots[KEYSPACE_SLOT_NUM];
 	size_t i=0, nth_node=0;
 	int ret=0;
 	memset(slots, 0, sizeof(slots));
-	for(i=0; i<SWARMKV_SLOT_NUM; i++)
+	for(i=0; i<KEYSPACE_SLOT_NUM; i++)
 	{
 		nth_node=MIN(i/slots_per_node, node_number-1);
 		ip=argv[nth_node*2];
@@ -98,7 +98,7 @@ static int consul_kv_init_block(char *cluster_name, char *argv[], size_t argc)
 		slots[i].owner.addr.p2p_port=atoi(port);
 	}
 	sds slot_json=NULL;
-	slot_json=keyslots2json(slots, sizeof(struct key_slot), 0, SWARMKV_SLOT_NUM);
+	slot_json=keyslots2json(slots, sizeof(struct key_slot), 0, KEYSPACE_SLOT_NUM);
 	snprintf(url, sizeof(url), "/v1/kv/swarmkv/%s/slots", cluster_name);
 	resp_code_put=http_blocking_request(EVHTTP_REQ_PUT, g_config.consul_host, g_config.consul_port, url, slot_json, NULL);
 	if(resp_code_put==200)
@@ -254,9 +254,9 @@ struct swarmkv_reply *cluster_addnode_command(struct swarmkv* db, char *argv[], 
 		slots_reply=NULL;
 		goto error_out;
 	}
-	slots=ALLOC(struct key_slot, SWARMKV_SLOT_NUM);
-	json2keyslots(slots_reply->str, slots, sizeof(struct key_slot), 0, SWARMKV_SLOT_NUM);
-	for(i=0; i<SWARMKV_SLOT_NUM; i++)
+	slots=ALLOC(struct key_slot, KEYSPACE_SLOT_NUM);
+	json2keyslots(slots_reply->str, slots, sizeof(struct key_slot), 0, KEYSPACE_SLOT_NUM);
+	for(i=0; i<KEYSPACE_SLOT_NUM; i++)
 	{
 		if(0==swarmkv_node_addr_compare(&(slots[i].owner.addr), &(node.addr)))
 		{
@@ -273,10 +273,10 @@ struct swarmkv_reply *cluster_addnode_command(struct swarmkv* db, char *argv[], 
 	/* STEP 1 Calculate rebalanced slots. */
 
 	
-	qsort(slots, SWARMKV_SLOT_NUM, sizeof(struct key_slot), slot_cmp_by_owner);
+	qsort(slots, KEYSPACE_SLOT_NUM, sizeof(struct key_slot), slot_cmp_by_owner);
 	struct key_slot *tmp=slots;
 	size_t n_active_node=1;
-	for(i=0; i<SWARMKV_SLOT_NUM; i++)
+	for(i=0; i<KEYSPACE_SLOT_NUM; i++)
 	{
 		if(0!=swarmkv_node_compare(&(tmp->owner), &(slots[i].owner)))
 		{
@@ -284,11 +284,11 @@ struct swarmkv_reply *cluster_addnode_command(struct swarmkv* db, char *argv[], 
 			tmp=slots+i;
 		}
 	}
-	int expected_rebalanced_slot_num=SWARMKV_SLOT_NUM/(n_active_node+1);
+	int expected_rebalanced_slot_num=KEYSPACE_SLOT_NUM/(n_active_node+1);
 	int expected_rebalanced_slot_num_per_node=expected_rebalanced_slot_num/n_active_node;
-	int rebalanced_slot_idx[SWARMKV_SLOT_NUM]={0};
+	int rebalanced_slot_idx[KEYSPACE_SLOT_NUM]={0};
 	tmp=slots;
-	for(i=0, j=0, actual_rebalanced_slot_num=0; i<SWARMKV_SLOT_NUM && actual_rebalanced_slot_num<expected_rebalanced_slot_num; i++)
+	for(i=0, j=0, actual_rebalanced_slot_num=0; i<KEYSPACE_SLOT_NUM && actual_rebalanced_slot_num<expected_rebalanced_slot_num; i++)
 	{
 		//Get max expected_rebalanced_slot_num_per_node slots from each active node
 		if(j==expected_rebalanced_slot_num_per_node &&
@@ -406,9 +406,9 @@ struct swarmkv_reply *cluster_addnode_command(struct swarmkv* db, char *argv[], 
 
 	char url[SWARMKV_URL_MAX]="";
 	int resp_code_put=0;
-	qsort(slots, SWARMKV_SLOT_NUM, sizeof(struct key_slot), slot_cmp_by_id);
+	qsort(slots, KEYSPACE_SLOT_NUM, sizeof(struct key_slot), slot_cmp_by_id);
 	sds slot_json=NULL;
-	slot_json=keyslots2json(slots, sizeof(struct key_slot), 0, SWARMKV_SLOT_NUM);
+	slot_json=keyslots2json(slots, sizeof(struct key_slot), 0, KEYSPACE_SLOT_NUM);
 
 	snprintf(url, sizeof(url), "/v1/kv/swarmkv/%s/slots", g_config.db_name);
 	
