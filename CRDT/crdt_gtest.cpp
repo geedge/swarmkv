@@ -9,7 +9,7 @@
 
 #define NDOE_NUMBER	8
 
-TEST(LastWriteWinRegister, Basic)
+TEST(LWWRegister, Basic)
 {
 	struct LWW_register *reg=NULL;
 	uuid_t uuid;
@@ -38,7 +38,7 @@ TEST(LastWriteWinRegister, Basic)
 		
 	return;
 }
-TEST(LastWriteWinRegister, Merge)
+TEST(LWWRegister, Merge)
 {
 	struct LWW_register *reg[2];	
 	uuid_t uuid;
@@ -73,7 +73,7 @@ TEST(LastWriteWinRegister, Merge)
 	}	
 	return;
 }
-TEST(LastWriteWinRegister, Sequential)
+TEST(LWWRegister, Sequential)
 {
 	struct LWW_register *reg[2];
 	uuid_t uuid;

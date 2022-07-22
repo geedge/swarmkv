@@ -30,16 +30,14 @@ struct swarmkv_reply
 {
 	enum swarmkv_reply_type type;
 	long long integer;	/* The integer when type is SWARMKV_REPLY_INTEGER */
-	int len; /* Length of string */
-	char *str; /* Used for SWARMKV_REPLY_ERROR, SWARMKV_REPLY_STATUS, SWARMKV_NODE and SWARMKV_REPLY_STRING */
-	size_t n_element;	 /* number of elements, for SWARMKV_REPLY_ARRAY */
+	int len; 			/* Length of string */
+	char *str; 			/* Used for SWARMKV_REPLY_ERROR, SWARMKV_REPLY_STATUS, SWARMKV_NODE and SWARMKV_REPLY_STRING */
+	size_t n_element;	/* number of elements, for SWARMKV_REPLY_ARRAY */
 	struct swarmkv_reply **elements;/* elements vector for SWARMKV_REPLY_ARRAY */
 };
 void swarmkv_reply_free(struct swarmkv_reply *reply);
 
-typedef void swarmkv_cmd_callback_func_t(const struct swarmkv_reply* reply, void * arg);
 
-struct swarmkv;
 struct swarmkv_options;
 struct swarmkv_options* swarmkv_options_new(void);
 int swarmkv_options_set_p2p_port(struct swarmkv_options *opts, unsigned int p2p_port);
@@ -50,12 +48,17 @@ int swarmkv_options_set_consul_port(struct swarmkv_options *opts, unsigned int c
 int swarmkv_options_set_dryrun(struct swarmkv_options *opts);
 int swarmkv_options_set_worker_thread_number(struct swarmkv_options *opts, size_t nr_worker_threads);
 
+
+struct swarmkv;
+
 struct swarmkv *swarmkv_open(struct swarmkv_options *opts, const char * db_name, char **err);
 void swarmkv_close(struct swarmkv * db);
 
-
-
+//Blocking function
 struct swarmkv_reply* swarmkv_command(struct swarmkv *db, const char *format, ...);
+
+//Non-blockign function
+typedef void swarmkv_cmd_callback_func_t(const struct swarmkv_reply* reply, void * arg);
 
 void swarmkv_get(struct swarmkv * db, 
 	const char * key, size_t keylen, swarmkv_cmd_callback_func_t * cb, void * arg);
@@ -86,7 +89,5 @@ const char *swarmkv_get_command_hint(struct swarmkv *db, const char* cmd_name);
 
 #ifdef __cplusplus
 } /* end extern "C" */
-
-
 #endif
 

@@ -499,6 +499,11 @@ void on_cmd_msg_callback(const struct swarmkv_node_addr * peer, unsigned long lo
 	swarmkv_msg_serialize_reply(reply, &reply_blob, &reply_blob_sz);
 	swarmkv_net_send_reply(db->net, peer, reply_blob, reply_blob_sz, sequence);
 	free(reply_blob);
+
+	swarmkv_cmd_free(cmd);
+	cmd=NULL;
+	swarmkv_reply_free(reply);
+	reply=NULL;
 	return;
 }
 

@@ -82,7 +82,10 @@ SwarmKV Data Types
 | CLUSTER SLOTS          |                         |                                                              |
 | CLUSTER ADDNODE        | IP port                 |                                                              |
 
-NOTE: CLUSTER commands are used for maintainance and debugging purpose, and only available in *swarmkv-cli*.
+NOTE: 
+
+- The command definition is highly inspired by [Redis Commands](https://redis.io/commands/).
+- CLUSTER commands are used for maintainance and debugging purpose, and only available in *swarmkv-cli*.
 
 ## CLUSTER KEYS
 
@@ -314,46 +317,33 @@ Messages between nodes is start with a fixed length header and a variable length
 Command message
 
 ```json
-{
-    "msg_type":"cmd",
-    "rr_seq": 7237914459,
-    "requester": "ebe5a57c-cb33-4b2f-968f-44c4b87ea8d9",
-    "cmd":{
-        "op":"HMGET",
-        "args":[
-            "user1",
-            "phone_number",
-            "address",
-            "avatar"
-        ]
-    }
-}
+[
+  "SADD",
+  "zhangsan's friends",
+  "李四",
+  "Jack"
+]
 ```
 
 Reply message
 
 ```json
 {
-	"msg_type":"reply",
-    "rr_seq": 7237914459,
-    "requester": "ebe5a57c-cb33-4b2f-968f-44c4b87ea8d9",
-    "reply":{
-        "reply_type":"array",
-        "element":[
-            {
-                "reply_type":"string",
-                "string": "+86 186 0000 0000"
-            },
-            {
-                "reply_type":"string",
-                "string":"House 01, Haidian District, Beijing, China"
-            },
-            {
-                "reply_type":"string",
-                "string":"0c 74 65 78 74 20 20 20 20 43 6f 70 79 72 69 67 68 74 20 28 63 29 20 31 39 39 38 20 48 65 77 6c 65 74 74 2d 50 61 63 6b 61 72 64 20 43 6f 6d 70 61 6e 79 20 20 64 65 73 63 20 20 20 20 20 20 20 12 73 52 47 42 20 49 45 43 36 31 39 36 36 2d 32 2e 31 20 20 20 20 20 20 20 20 20 20 20 12 73 52 47 42 20 49 45 43 36 31 39 36 36 2d 32 2e 31 20 20 00"
-            }
-        ]
+  "reply_type": "elements",
+  "element": [
+    {
+      "reply_type": "string",
+      "string": "+86 186 0000 0000"
+    },
+    {
+      "reply_type": "string",
+      "string": "House 01, Haidian District, Beijing, China"
+    },
+    {
+      "reply_type": "string",
+      "string": "0c 74 65 78 74 20 20 20 20 43 6f 70 79 72 69 67 68 74 20 28 63 29 20 31 39 39 38 20 48 65 77 6c 65 74 74 2d 50 61 63 6b 61 72 64 20 43 6f 6d 70 61 6e 79 20 20 64 65 73 63 20 20 20 20 20 20 20 12 73 52 47 42 20 49 45 43 36 31 39 36 36 2d 32 2e 31 20 20 20 20 20 20 20 20 20 20 20 12 73 52 47 42 20 49 45 43 36 31 39 36 36 2d 32 2e 31 20 20 00"
     }
+  ]
 }
 ```
 
@@ -388,10 +378,9 @@ The source files are organized as follows:
 
 - src/swarmkv.c event loop, orchestration
 - src/swarmkv_store.c  kv operation, key hash table is implemented with [uthash](https://troydhanson.github.io/uthash/). Use [sds](https://github.com/antirez/sds) as a dynamic string library.
-- src/t_string.c string operations.
-- src/t_cache.c cache operations.
+- src/t_string.c  commands of data type string.
+- src/t_set.c commands of data type set.
 - src/swarmkv_keyspace.c: The control plane of SwarmKV. Interact with [HashiCorp Consul](https://www.consul.io/) for node discovery, slot assignment, and leader election.
-- src/swarmkv_rr.c: Request and response manager.
 - src/swarmkv_message.c: Message is encoded to [MessagePack](https://msgpack.org/index.html) format by [mpack](https://github.com/ludocode/mpack) library.
 - src/swarmkv_net.c: High performance P2P communication via [libevent](https://libevent.org/).
 - src/test/ Unit tests.

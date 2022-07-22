@@ -28,7 +28,7 @@ struct swarmkv_reply* deserialize_reply(mpack_node_t reply_node)
 		case SWARMKV_REPLY_NIL:
 			break;
 		case SWARMKV_REPLY_ARRAY:
-			array_node=mpack_node_map_cstr(reply_node, "element");
+			array_node=mpack_node_map_cstr(reply_node, "elements");
 			reply->n_element=mpack_node_array_length(array_node);
 			reply->elements=ALLOC(struct swarmkv_reply*, reply->n_element);
 			for(i=0; i<reply->n_element; i++)
@@ -116,7 +116,7 @@ void swarmkv_msg_serialize_reply(const struct swarmkv_reply* reply, char **blob,
 		case SWARMKV_REPLY_NIL:
 			break;
 		case SWARMKV_REPLY_ARRAY:
-			mpack_write_cstr(&writer, "element");
+			mpack_write_cstr(&writer, "elements");
 			mpack_build_array(&writer);
 			for(i=0; i<reply->n_element; i++)
 			{

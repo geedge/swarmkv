@@ -152,7 +152,6 @@ struct snet_rpc * snet_rpc_new(struct snet_thread *thr, struct swarmkv_node_addr
 	struct timeval timeout={0, 500*1000};//500ms
 	rpc->timeout_ev=event_new(thr->evbase, -1, 0, snet_rpc_timeout_callback, rpc);
 	event_add(rpc->timeout_ev, &timeout);
-//	event_active(rpc->timeout_ev, 0, 0);
 	HASH_ADD(hh, thr->rpc_table, sequence, sizeof(rpc->sequence), rpc);
 	return rpc;
 }
@@ -489,7 +488,7 @@ struct snet_conn* snet_conn_new_by_connecting(struct snet_thread* thr, const str
 	
 	struct snet_conn* conn=ALLOC(struct snet_conn, 1);
 	conn->buff_for_sending=evbuffer_new();
-	evbuffer_enable_locking(conn->buff_for_sending, NULL);
+//	evbuffer_enable_locking(conn->buff_for_sending, NULL);
 	
 	//http://www.wangafu.net/~nickm/libevent-book/Ref6_bufferevent.html
 	conn->bev=bufferevent_socket_new(base, -1, BEV_OPT_DEFER_CALLBACKS|BEV_OPT_THREADSAFE);//BEV_OPT_UNLOCK_CALLBACKS|
@@ -541,7 +540,7 @@ struct snet_conn* snet_conn_new_by_fd(struct snet_thread *thr, evutil_socket_t f
 	conn->buff_for_sending=evbuffer_new();
 	int yes=1;
 	setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, (char*)&yes, sizeof(yes));
-	evbuffer_enable_locking(conn->buff_for_sending, NULL);
+//	evbuffer_enable_locking(conn->buff_for_sending, NULL);
 	evutil_make_socket_nonblocking(fd);
 	sockaddr2string(addr, conn->peer_connected_from_addr.ip_addr, sizeof(conn->peer_connected_from_addr.ip_addr), &(conn->peer_connected_from_addr.p2p_port));
 	conn->bev=bufferevent_socket_new(thr->evbase, fd, BEV_OPT_DEFER_CALLBACKS|BEV_OPT_THREADSAFE);//BEV_OPT_UNLOCK_CALLBACKS|
