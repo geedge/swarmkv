@@ -49,36 +49,37 @@ enum cmd_exec_result set_command(struct swarmkv_module *mod_store, const struct 
 	
 	char *endptr=NULL;
 
-
+	long long int_value=-1;	
+	int_value=strtol(cmd->argv[2], &endptr, 10);
+	
 	obj=store_lookup(mod_store, key);
 	if(!obj)
 	{
 		if(accessing_node)
 		{
-			obj=swarmkv_store_add_key(mod_store, key, NULL, 0);
+			obj=sobj_new(OBJ_TYPE_UNDEFINED, key);
+			store_add_obj(mod_store,obj);
 		}
 		else
 		{
 			return NEED_KEY_ROUTE;
 		}
 	}
-	long long int_value=-1;	
-	int_value=strtol(cmd->argv[2], &endptr, 10);
 	
 	if(obj->type==OBJ_TYPE_UNDEFINED)
 	{
 		uuid_t uuid;
 		assert(obj->raw==NULL);
 		store_get_uuid(mod_store, uuid);
-		if(*endptr!='\0')
-		{
-			obj->type=OBJ_TYPE_STRING;			
-			obj->string=LWW_register_new((const char*)uuid, sizeof(uuid));
-		}
-		else if(int_value==0)
+		if(*endptr=='\0' && int_value==0)
 		{
 			obj->type=OBJ_TYPE_COUNTER;
 			obj->counter=PN_counter_new((const char*)uuid, sizeof(uuid));
+		}
+		else
+		{
+			obj->type=OBJ_TYPE_STRING;			
+			obj->string=LWW_register_new((const char*)uuid, sizeof(uuid));
 		}
 	}
 	if(obj->type==OBJ_TYPE_STRING)
@@ -118,7 +119,8 @@ enum cmd_exec_result incrby_command(struct swarmkv_module *mod_store, const stru
 	{
 		if(accessing_node)
 		{
-			obj=swarmkv_store_add_key(mod_store, key, NULL, 0);
+			obj=sobj_new(OBJ_TYPE_UNDEFINED, key);
+			store_add_obj(mod_store,obj);
 		}
 		else
 		{

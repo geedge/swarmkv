@@ -244,7 +244,10 @@ void swarmkv_reply_merge_array(struct swarmkv_reply **dst, struct swarmkv_reply 
 	{
 		*dst=swarmkv_reply_new_array(0);
 	}
-	assert((*dst)->type==SWARMKV_REPLY_ARRAY && src->type==SWARMKV_REPLY_ARRAY);
+	if((*dst)->type!=SWARMKV_REPLY_ARRAY || src->type!=SWARMKV_REPLY_ARRAY)
+	{
+		return;
+	}
 	(*dst)->elements=(struct swarmkv_reply **)realloc((*dst)->elements, ((*dst)->n_element+src->n_element)*sizeof(struct swarmkv_reply*));
 	size_t i=0;
 	for(i=0; i<src->n_element; i++)

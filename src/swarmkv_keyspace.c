@@ -126,24 +126,31 @@ struct swarmkv_reply *key_entry_list_replica_nodes(struct key_route_entry *key_e
 struct crdt_del_ctx
 {
 	struct future *f;
+	struct swarmkv_node_addr peer;
+	sds key;
 };
 void crdt_del_ctx_free(struct crdt_del_ctx *ctx)
 {
 	future_destroy(ctx->f);
+	sdsfree(ctx->key);
 	free(ctx);
 }
 
-static void del_expired_key_on_succ(void* result, void* user)
+static void crdt_del_on_succ(void* result, void* user)
 {
 	
 	struct crdt_del_ctx *ctx = (struct crdt_del_ctx*)user;
 	const struct swarmkv_reply* reply=(const struct swarmkv_reply*) result;
-	assert(reply->type==SWARMKV_REPLY_INTEGER);
-	assert(reply->integer==1);
+//	assert(reply->type==SWARMKV_REPLY_INTEGER);
+//	assert(reply->integer==1);
+	if(reply->type==SWARMKV_REPLY_INTEGER && reply->integer !=1)
+	{
+//		printf("crdt del %s at %s:%u failed.\n", ctx->key, ctx->peer.ip_addr, ctx->peer.p2p_port);
+	}
 	crdt_del_ctx_free(ctx);
 	return;
 }
-static void del_expire_key_on_fail(enum e_future_error err, const char * what, void * user)
+static void crdt_del_on_fail(enum e_future_error err, const char * what, void * user)
 {
 	struct crdt_del_ctx *ctx = (struct crdt_del_ctx*)user;
 	crdt_del_ctx_free(ctx);
@@ -160,7 +167,9 @@ void key_entry_deletion_notification(struct key_route_entry *key_entry, exec_cmd
 	HASH_ITER(hh, key_entry->hash_replica, replica, tmp)
 	{		
 		struct crdt_del_ctx *ctx=ALLOC(struct crdt_del_ctx, 1);
-		ctx->f=future_create("expire_key", del_expired_key_on_succ, del_expire_key_on_fail, ctx);
+		swarmkv_node_addr_copy(&ctx->peer, &replica->addr);
+		ctx->key=sdsdup(key_entry->key);
+		ctx->f=future_create("key_del", crdt_del_on_succ, crdt_del_on_fail, ctx);
 		exec_cmd(exec_cmd_handle, crdt_del_cmd, &replica->addr, ctx->f);		
 	}
 	swarmkv_cmd_free(crdt_del_cmd);
