@@ -20,7 +20,7 @@ Main Features
 
 **Why not SQLite, rqlite, or dqlite?** Because Swarm KV is not designed to be a relational database and extremely fast.
 
-<img src="./doc/imgs/cluster.png" alt="swamrkv-cluster" /> 
+<img src="./docs/imgs/cluster.png" alt="swamrkv-cluster" /> 
 
 Following are terminologies used in Swarm KV.
 
@@ -40,9 +40,9 @@ SwarmKV Data Types
 - String
 - Integer
 - Set
-- Hash Table
-- Bitmap
-- Rate limiter
+- Hash Table [todo]
+- Bitmap [todo]
+- Rate limiter [todo]
 
 # Command Specification
 
@@ -84,7 +84,7 @@ SwarmKV Data Types
 
 NOTE: 
 
-- The command definition is highly inspired by [Redis Commands](https://redis.io/commands/).
+- Most of SwarmKV commands are identical the  [Redis Commands](https://redis.io/commands/).
 - CLUSTER commands are used for maintainance and debugging purpose, and only available in *swarmkv-cli*.
 
 ## CLUSTER KEYS
@@ -164,7 +164,7 @@ SwarmKV uses [HashiCorp Consul](https://www.consul.io/) for cluster management, 
 
 Key-value pairs are distributed over nodes. As shown in the following picture, the key layer keeps track of the current location of every key-value pair, and the value layer stores the actual binary of key-value. This design is inspired by the NSDI'18 paper [*Elastic scaling of stateful network functions*](https://www.usenix.org/conference/nsdi18/presentation/woo).
 
-<img src="./doc/imgs/nsdi18-s6-dht-based-dso-space.png" alt="nsdi18-s6-dht-based-dso-space" style="zoom: 67%;" />
+<img src="./docs/imgs/nsdi18-s6-dht-based-dso-space.png" alt="nsdi18-s6-dht-based-dso-space" style="zoom: 67%;" />
 
 As shown in the above picture, a KV operation is done by following steps:
 
@@ -421,6 +421,8 @@ The source files are organized as follows:
 [SwarmDB](https://github.com/gritzko/swarm) is a proof-of-concept key-value RON store.
 
 [Voldemort](https://github.com/voldemort/voldemort) is a distributed key-value storage system.
+
+[Corfu](https://github.com/CorfuDB/CorfuDB) is a consistency platform designed around the abstraction of a shared log.
 
 ## References
 

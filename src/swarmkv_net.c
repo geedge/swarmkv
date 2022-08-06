@@ -734,10 +734,6 @@ void swarmkv_net_stop(struct swarmkv_net* net)
 		if(thr->is_dispatching)
 		{
 			event_base_loopexit(thr->evbase, NULL);
-			while(!event_base_got_exit(thr->evbase) )
-			{
-				usleep(100);
-			}
 		}
 	}
 	return;

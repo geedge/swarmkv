@@ -1188,10 +1188,7 @@ void swarmkv_keyspace_free(struct swarmkv_module* module)
 	struct swarmkv_keyspace *ks = module2keyspace(module);
 
 	event_base_loopexit(ks->evbase, NULL);
-	while(!event_base_got_exit(ks->evbase))
-	{
-		usleep(100);
-	}
+	pthread_join(ks->thr, NULL);
 	if(ks->http_server)
 	{
 		evhttp_free(ks->http_server);

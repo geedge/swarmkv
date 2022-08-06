@@ -742,6 +742,10 @@ error_out:
 void swarmkv_close(struct swarmkv * db)
 {
 	swarmkv_net_stop(db->net);
+	for(size_t i=0; i<db->opts->nr_worker_threads; i++)
+	{
+		pthread_join(db->worker_threads[i]->thr, NULL);
+	}
 	swarmkv_store_free(db->mod_store);
 	db->mod_store=NULL;
 	swarmkv_keyspace_free(db->mod_keyspace);
