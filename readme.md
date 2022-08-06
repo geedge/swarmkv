@@ -1,5 +1,5 @@
 <h1>
-  <img src="./doc/imgs/swarmkv_logo.svg" align="left" height="40px" alt="swarmkv logo"/>
+  <img src="./docs/imgs/swarmkv_logo.svg" align="left" height="40px" alt="swarmkv logo"/>
   <span>SwarmKV</span>
 </h1>
 
