@@ -1,5 +1,7 @@
 #include "swarmkv/swarmkv.h"
 #include "test_utils.h"
+#include "log.h"
+
 #include <gtest/gtest.h>
 #include <MESA/MESA_handle_logger.h>
 #include <string.h>
@@ -33,7 +35,7 @@ protected:
 		char *err=NULL;
 		const char *cluster_name="swarmkv-basic-test";
 		swarmkv_cli_create_cluster(cluster_name, "127.0.0.1 5210");
-		logger=MESA_create_runtime_log_handle(log_path, 0);
+		logger=create_log_handle(log_path, 0);
 		struct swarmkv_options* opts=swarmkv_options_new();
 		swarmkv_options_set_p2p_port(opts, 5210);
 		swarmkv_options_set_health_check_port(opts, 6210);
@@ -48,11 +50,11 @@ protected:
 	static void TearDownTestCase()
 	{
 		swarmkv_close(db);		
-		MESA_destroy_runtime_log_handle(logger);
+		log_handle_destroy(logger);
 	}	
  	// Some expensive resource shared by all tests.
  	
-	static void* logger;
+	static log_hander_t logger;
 	static struct swarmkv* db;
 };
 struct swarmkv *SwarmkvBasicTest::db;
@@ -259,7 +261,7 @@ protected:
 		const char *cluster_name="swarmkv-2-nodes";
 		swarmkv_cli_create_cluster(cluster_name, "127.0.0.1 5210 127.0.0.1 5211");
 		
-		logger=MESA_create_runtime_log_handle(log_path, 0);
+		logger=create_log_handle(log_path, 0);
 		struct swarmkv_options* opts1=swarmkv_options_new();
 		swarmkv_options_set_p2p_port(opts1, 5210);
 		swarmkv_options_set_health_check_port(opts1, 6210);
@@ -289,10 +291,10 @@ protected:
 	{
 		swarmkv_close(db1);
 		swarmkv_close(db2);	
-		MESA_destroy_runtime_log_handle(logger);
+		log_handle_destroy(logger);
 	}	
  	// Some expensive resource shared by all tests.
- 	static void* logger;
+ 	static log_hander_t logger;
 	static struct swarmkv *db1, *db2;
 };
 void * SwarmkvTwoNodes::logger;
@@ -875,7 +877,7 @@ protected:
 		}
 		const char *cluster_name="swarmkv-n-nodes";
 		swarmkv_cli_create_cluster(cluster_name, node_list_str);
-		logger=MESA_create_runtime_log_handle(log_path, 0);
+		logger=create_log_handle(log_path, 0);
 		struct swarmkv_options* opts[TEST_NODE_NUMBER];
 		for(i=0; i<TEST_NODE_NUMBER; i++)
 		{
@@ -899,10 +901,10 @@ protected:
 		{
 			swarmkv_close(db[i]);
 		}
-		MESA_destroy_runtime_log_handle(logger);
+		log_handle_destroy(logger);
 	}	
  	// Some expensive resource shared by all tests. 	
-	static void* logger;
+	static log_hander_t logger;
 	static struct swarmkv *db[TEST_NODE_NUMBER];
 };
 struct swarmkv* SwarmkvNNodes::db[TEST_NODE_NUMBER];

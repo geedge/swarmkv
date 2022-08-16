@@ -12,6 +12,7 @@
 #include "uthash.h"
 #include "utlist.h"
 #include "timeout.h"
+#include "log.h"
 
 #include <MESA/MESA_handle_logger.h>
 
@@ -281,7 +282,7 @@ struct evhttp* http_server_new(struct event_base* evbase, unsigned port_listen, 
 
     if (evhttp_bind_socket(http, "0.0.0.0", port_listen) != 0)
     {
-		MESA_handle_runtime_log(logger, RLOG_LV_FATAL, MODULE_SWARMKV_KEYSPACE, "evhttp_bind_socket on port %u failed.", port_listen);		
+		log_fatal(logger, MODULE_SWARMKV_KEYSPACE, "evhttp_bind_socket on port %u failed.", port_listen);
 		return NULL;
     }
     int http_option_timeout = 5; //in seconds
@@ -375,8 +376,8 @@ void __consul_session_create_cb(struct evhttp_request *req, void *arg)
 	if(!req || !evhttp_request_get_response_code(req))
 	{
 		int errcode = EVUTIL_SOCKET_ERROR();
-		MESA_handle_runtime_log(ks->logger, RLOG_LV_FATAL, MODULE_SWARMKV_KEYSPACE, "session create failed: socket error %s",
-			evutil_socket_error_to_string(errcode));	
+		log_fatal(ks->logger, MODULE_SWARMKV_KEYSPACE, "session create failed: socket error %s",
+			evutil_socket_error_to_string(errcode));
 	}
 	else
 	{
@@ -398,12 +399,12 @@ void __consul_session_create_cb(struct evhttp_request *req, void *arg)
 		consul_acquire_session_lock_async(ks);
 		sdsfree(out);
 		is_running_for_leader=1;
-		MESA_handle_runtime_log(ks->logger, RLOG_LV_INFO, MODULE_SWARMKV_KEYSPACE, "session %s is created.", ks->consul_session_id);
+		log_info(ks->logger, MODULE_SWARMKV_KEYSPACE, "session %s is created.", ks->consul_session_id);
 	}
 	else
 	{
-		MESA_handle_runtime_log(ks->logger, RLOG_LV_FATAL, MODULE_SWARMKV_KEYSPACE, "session creation failed: HTTP code %d.",
-			resp_code);	
+		log_fatal(ks->logger, MODULE_SWARMKV_KEYSPACE, "session creation failed: HTTP code %d.",
+			resp_code);
 	}
 	if(!is_running_for_leader)
 	{
@@ -491,8 +492,8 @@ void __consul_session_check_cb(struct evhttp_request *req, void *arg)
 	if(!req || !evhttp_request_get_response_code(req))
 	{
 		int errcode = EVUTIL_SOCKET_ERROR();
-		MESA_handle_runtime_log(ks->logger, RLOG_LV_FATAL, MODULE_SWARMKV_KEYSPACE, "session check failed: socket error %s",
-			evutil_socket_error_to_string(errcode));	
+		log_fatal(ks->logger, MODULE_SWARMKV_KEYSPACE, "session check failed: socket error %s",
+			evutil_socket_error_to_string(errcode));
 	}
 	else
 	{
@@ -513,21 +514,20 @@ void __consul_session_check_cb(struct evhttp_request *req, void *arg)
 		sdsfree(out);
 		if(session_check_array_size==0)
 		{
-			consul_create_session_async(ks);		
-			MESA_handle_runtime_log(ks->logger, RLOG_LV_INFO, MODULE_SWARMKV_KEYSPACE, "session %s is not existed, start to create a new session.", ks->consul_session_id);
+			consul_create_session_async(ks);
+			log_info(ks->logger, MODULE_SWARMKV_KEYSPACE, "session %s is not existed, start to create a new session.", ks->consul_session_id);
 			memset(ks->consul_session_id, 0, sizeof(ks->consul_session_id));
 		}
 		else
 		{
-			consul_acquire_session_lock_async(ks);			
-			MESA_handle_runtime_log(ks->logger, RLOG_LV_INFO, MODULE_SWARMKV_KEYSPACE, "session %s is valid, run for leader.", ks->consul_session_id);
+			consul_acquire_session_lock_async(ks);
+			log_info(ks->logger, MODULE_SWARMKV_KEYSPACE, "session %s is valid, run for leader.", ks->consul_session_id);
 		}
 		is_running_for_leader=1;
 	}
 	else
 	{
-		MESA_handle_runtime_log(ks->logger, RLOG_LV_FATAL, MODULE_SWARMKV_KEYSPACE, "session check failed: HTTP code %d.",
-			resp_code);	
+		log_fatal(ks->logger, MODULE_SWARMKV_KEYSPACE, "session check failed: HTTP code %d.", resp_code);
 	}
 	if(!is_running_for_leader)
 	{
@@ -562,7 +562,7 @@ void __acquire_session_lock_cb(struct evhttp_request *req, void *arg)
 	if(!req || !evhttp_request_get_response_code(req))
 	{
 		int errcode = EVUTIL_SOCKET_ERROR();
-		MESA_handle_runtime_log(ks->logger, RLOG_LV_FATAL, MODULE_SWARMKV_KEYSPACE, "run for leader failed: %s",
+		log_fatal(ks->logger, MODULE_SWARMKV_KEYSPACE, "run for leader failed: %s",
 			evutil_socket_error_to_string(errcode));
 	}
 	else
@@ -578,20 +578,20 @@ void __acquire_session_lock_cb(struct evhttp_request *req, void *arg)
 
 			if(0==strncmp(resp_body_buff, "true", strlen("true")))
 			{
-				ks->is_leader=1;			
-				MESA_handle_runtime_log(ks->logger, RLOG_LV_INFO, MODULE_SWARMKV_KEYSPACE, "become cluster leader.");
+				ks->is_leader=1;
+				log_info(ks->logger, MODULE_SWARMKV_KEYSPACE, "become cluster leader.");
 				consul_watch_nodes_changes_async(ks);
 			}
 			else
-			{			
-				MESA_handle_runtime_log(ks->logger, RLOG_LV_INFO, MODULE_SWARMKV_KEYSPACE, "lose the election.");
+			{
+				log_info(ks->logger, MODULE_SWARMKV_KEYSPACE, "lose the election.");
 				ks->is_leader=0;
 			}
 			sdsfree(resp_body_buff);
 		}
 		else
 		{
-			MESA_handle_runtime_log(ks->logger, RLOG_LV_FATAL, MODULE_SWARMKV_KEYSPACE, "run for leader failed: HTTP Code %d.", resp_code);
+			log_fatal(ks->logger, MODULE_SWARMKV_KEYSPACE, "run for leader failed: HTTP Code %d.", resp_code);
 		}
 	}
 	consul_watch_leadership_changes_async(ks);
@@ -670,7 +670,7 @@ void __watch_leadership_changes_cb(struct evhttp_request *req, void *arg)
 	if(!req || !evhttp_request_get_response_code(req))
 	{
 		int errcode = EVUTIL_SOCKET_ERROR();
-		MESA_handle_runtime_log(ks->logger, RLOG_LV_FATAL, MODULE_SWARMKV_KEYSPACE, "watch leadership changes failed: %s",
+		log_fatal(ks->logger, MODULE_SWARMKV_KEYSPACE, "watch leadership changes failed: %s",
 			evutil_socket_error_to_string(errcode));
 		assert(0);
 	}
@@ -691,7 +691,7 @@ void __watch_leadership_changes_cb(struct evhttp_request *req, void *arg)
 			session=cJSON_GetObjectItem(metadata, "Session");
 			if(!session || 0==strlen(session->valuestring))
 			{
-				MESA_handle_runtime_log(ks->logger, RLOG_LV_INFO, MODULE_SWARMKV_KEYSPACE, "cluster losts leader, start to run for leader.");
+				log_info(ks->logger, MODULE_SWARMKV_KEYSPACE, "cluster losts leader, start to run for leader.");
 				consul_run_for_leader_async(ks);
 				is_running_for_leader=1;
 			}
@@ -699,7 +699,7 @@ void __watch_leadership_changes_cb(struct evhttp_request *req, void *arg)
 			{
 				if(ks->is_leader)
 				{
-					MESA_handle_runtime_log(ks->logger, RLOG_LV_INFO, MODULE_SWARMKV_KEYSPACE, "node is no longer a leader.");
+					log_info(ks->logger, MODULE_SWARMKV_KEYSPACE, "node is no longer a leader.");
 					ks->is_leader=0;
 				}
 			}
@@ -708,13 +708,13 @@ void __watch_leadership_changes_cb(struct evhttp_request *req, void *arg)
 		}
 		else if(resp_code==404)
 		{
-			MESA_handle_runtime_log(ks->logger, RLOG_LV_INFO, MODULE_SWARMKV_KEYSPACE, "no leader key, start to run for leader.");
+			log_info(ks->logger, MODULE_SWARMKV_KEYSPACE, "no leader key, start to run for leader.");
 			consul_run_for_leader_async(ks);
 			is_running_for_leader=1;
 		}
 		else
 		{
-			MESA_handle_runtime_log(ks->logger, RLOG_LV_INFO, MODULE_SWARMKV_KEYSPACE, "watch leadership changes failed: HTTP code %d.", resp_code);
+			log_info(ks->logger, MODULE_SWARMKV_KEYSPACE, "watch leadership changes failed: HTTP code %d.", resp_code);
 		}
 	}
 	if(!is_running_for_leader)
@@ -750,8 +750,8 @@ void __watch_slots_changes_cb(struct evhttp_request *req, void *arg)
 	if(!req || !evhttp_request_get_response_code(req))
 	{
 		int errcode = EVUTIL_SOCKET_ERROR();
-		MESA_handle_runtime_log(ks->logger, RLOG_LV_FATAL, MODULE_SWARMKV_KEYSPACE, "watch slots changes failed: %s",
-			evutil_socket_error_to_string(errcode));		
+		log_fatal(ks->logger, MODULE_SWARMKV_KEYSPACE, "watch slots changes failed: %s",
+			evutil_socket_error_to_string(errcode));
 
 	}
 	else
@@ -786,7 +786,7 @@ void __watch_slots_changes_cb(struct evhttp_request *req, void *arg)
 	struct key_slot *slot=NULL;
 	struct slot_runtime *slot_rt=NULL;
 	struct swarmkv_node *owner=NULL;
-	MESA_handle_runtime_log(ks->logger, RLOG_LV_INFO, MODULE_SWARMKV_KEYSPACE, "key slots update started.");
+	log_info(ks->logger, MODULE_SWARMKV_KEYSPACE, "key slots update started.");
 	for(i=0; i<KEYSPACE_SLOT_NUM; i++)
 	{
 		slot_rt=ks->slot_rts+i;	
@@ -797,7 +797,7 @@ void __watch_slots_changes_cb(struct evhttp_request *req, void *arg)
 		{
 			if(slot_rt->state!=STATE_STABLE)
 			{
-				MESA_handle_runtime_log(ks->logger, RLOG_LV_INFO, MODULE_SWARMKV_KEYSPACE, "slot %d is reset to STABLE state, owner %s:%u.",
+				log_info(ks->logger, MODULE_SWARMKV_KEYSPACE, "slot %d is reset to STABLE state, owner %s:%u.",
 					slot->slot_id, owner->addr.ip_addr, owner->addr.p2p_port);
 				memset(&(slot_rt->rebalancing_peer), 0, sizeof(slot_rt->rebalancing_peer));
 			}
@@ -810,7 +810,7 @@ void __watch_slots_changes_cb(struct evhttp_request *req, void *arg)
 		}
 		pthread_mutex_unlock(&slot_rt->mutex);
 	}
-	MESA_handle_runtime_log(ks->logger, RLOG_LV_INFO, MODULE_SWARMKV_KEYSPACE, "key slots update finished.");
+	log_info(ks->logger, MODULE_SWARMKV_KEYSPACE, "key slots update finished.");
 	cJSON_Delete(metadata_array);
 	consul_watch_slots_changes_async(ks);
 	free(new_slots);
@@ -878,8 +878,8 @@ void __propagate_slot_table_cb(struct evhttp_request *req, void *arg)
 	if(!req || !evhttp_request_get_response_code(req))
 	{
 		int errcode = EVUTIL_SOCKET_ERROR();
-		MESA_handle_runtime_log(ks->logger, RLOG_LV_FATAL, MODULE_SWARMKV_KEYSPACE, "key slots table propagate failed: socket error %s",
-			evutil_socket_error_to_string(errcode));	
+		log_fatal(ks->logger, MODULE_SWARMKV_KEYSPACE, "key slots table propagate failed: socket error %s",
+			evutil_socket_error_to_string(errcode));
 	}
 	else
 	{
@@ -888,11 +888,11 @@ void __propagate_slot_table_cb(struct evhttp_request *req, void *arg)
 	}
 	if(resp_code==200)
 	{
-		MESA_handle_runtime_log(ks->logger, RLOG_LV_INFO, MODULE_SWARMKV_KEYSPACE, "key slots table propagate success.");
+		log_info(ks->logger, MODULE_SWARMKV_KEYSPACE, "key slots table propagate success.");
 	}
 	else
 	{
-		MESA_handle_runtime_log(ks->logger, RLOG_LV_FATAL, MODULE_SWARMKV_KEYSPACE, "key slots table propagate failed.");
+		log_fatal(ks->logger, MODULE_SWARMKV_KEYSPACE, "key slots table propagate failed.");
 	}
 	return;
 }
@@ -1015,8 +1015,8 @@ void __watch_nodes_changes_cb(struct evhttp_request *req, void *arg)
 	if(!req || !evhttp_request_get_response_code(req))
 	{
 		int errcode = EVUTIL_SOCKET_ERROR();
-		MESA_handle_runtime_log(ks->logger, RLOG_LV_FATAL, MODULE_SWARMKV_KEYSPACE, "watch node changes failed: %s",
-			evutil_socket_error_to_string(errcode));		
+		log_fatal(ks->logger, MODULE_SWARMKV_KEYSPACE, "watch node changes failed: %s",
+			evutil_socket_error_to_string(errcode));
 	}
 	else
 	{
@@ -1147,8 +1147,8 @@ struct swarmkv_module* swarmkv_keyspace_new(const struct swarmkv_options *opts, 
 	ret=keyslots_init(ks);
 	if(ret<0)
 	{
-		asprintf(err, "key slots init failed.");		
-		MESA_handle_runtime_log(ks->logger, RLOG_LV_FATAL, MODULE_SWARMKV_KEYSPACE, "key slots init failed.");
+		asprintf(err, "key slots init failed.");
+        log_fatal(ks->logger, MODULE_SWARMKV_KEYSPACE, "key slots init failed.");
 		goto error_out;
 	}
 //	consul_kv_init_if_nonexist(ks);	
@@ -1156,14 +1156,14 @@ struct swarmkv_module* swarmkv_keyspace_new(const struct swarmkv_options *opts, 
 	consul_watch_slots_changes_async(ks);
 	if(ks->dryrun)
 	{
-		MESA_handle_runtime_log(ks->logger, RLOG_LV_INFO, MODULE_SWARMKV_KEYSPACE, "work on dry run mode.");
+		log_info(ks->logger, MODULE_SWARMKV_KEYSPACE, "work on dry run mode.");
 		return &(ks->module);
 	}
 	ks->http_server=http_server_new(ks->evbase, ks->health_check_port, ks->logger);
 	if(!ks->http_server)
 	{
 		asprintf(err, "health check HTTP server start failed.");
-		MESA_handle_runtime_log(ks->logger, RLOG_LV_FATAL, MODULE_SWARMKV_KEYSPACE, "health check HTTP server start failed.");
+		log_fatal(ks->logger, MODULE_SWARMKV_KEYSPACE, "health check HTTP server start failed.");
 		goto error_out;
 	}
 
@@ -1171,7 +1171,7 @@ struct swarmkv_module* swarmkv_keyspace_new(const struct swarmkv_options *opts, 
 	if(ret<0)
 	{	
 		asprintf(err, "consul service register failed.");
-		MESA_handle_runtime_log(ks->logger, RLOG_LV_FATAL, MODULE_SWARMKV_KEYSPACE, "consul service register failed.");
+		log_fatal(ks->logger, MODULE_SWARMKV_KEYSPACE, "consul service register failed.");
 		goto error_out;
 	}
 	consul_watch_leadership_changes_async(ks);

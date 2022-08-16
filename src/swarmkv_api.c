@@ -63,7 +63,7 @@ int swarmkv_options_set_bind_address(struct swarmkv_options *opts, const char* i
 }
 int swarmkv_options_set_logger(struct swarmkv_options *opts, void *logger)
 {
-	opts->MESA_handle_logger=logger;
+	opts->logger=logger;
 	return 0;
 }
 

@@ -16,7 +16,8 @@ set(LIB_SOURCE_FILES
 	${PROJECT_SOURCE_DIR}/deps/cJSON/cJSON.c
 	${PROJECT_SOURCE_DIR}/deps/base64/base64.c
 	${PROJECT_SOURCE_DIR}/deps/xxhash/xxhash.c
-	${PROJECT_SOURCE_DIR}/deps/timeout/timeout.c)
+	${PROJECT_SOURCE_DIR}/deps/timeout/timeout.c
+	${PROJECT_SOURCE_DIR}/deps/log/log.c)
 	
 include_directories(${PROJECT_SOURCE_DIR}/include/
 					${PROJECT_SOURCE_DIR}/CRDT/
@@ -26,7 +27,9 @@ include_directories(${PROJECT_SOURCE_DIR}/include/
 					${PROJECT_SOURCE_DIR}/deps/sds/
 					${PROJECT_SOURCE_DIR}/deps/uthash
 					${PROJECT_SOURCE_DIR}/deps/xxhash
-					${PROJECT_SOURCE_DIR}/deps/timeout)
+					${PROJECT_SOURCE_DIR}/deps/timeout
+					${PROJECT_SOURCE_DIR}/deps/cJSON
+					${PROJECT_SOURCE_DIR}/deps/log)
 
 
 # Static Library Output

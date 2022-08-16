@@ -5,6 +5,7 @@
 #include "uthash.h"
 #include "utarray.h"
 #include "xxhash.h"
+#include "log.h"
 
 #include <MESA/MESA_handle_logger.h>
 
@@ -220,7 +221,7 @@ void snet_task_deferred_run(evutil_socket_t fd, short events, void *arg)
 			}
 			else
 			{
-				MESA_handle_runtime_log(task->thr->ref_logger, RLOG_LV_FATAL, MODULE_SWAMRKV_NET, "Unknown reply sequence %llu from %s:%u.",
+				log_fatal(task->thr->ref_logger, MODULE_SWAMRKV_NET, "Unknown reply sequence %llu from %s:%u.",
 										task->sequence,
 										task->peer.ip_addr, task->peer.p2p_port);
 			}
@@ -336,7 +337,7 @@ static void snet_conn_table_overwrite(struct snet_thread* thr, struct snet_conn*
 	HASH_FIND(hh, thr->conn_table, &(conn->peer_listen_addr), sizeof(struct swarmkv_node_addr), tmp_conn);
 	if(tmp_conn)
 	{
-		MESA_handle_runtime_log(thr->ref_logger, RLOG_LV_FATAL, MODULE_SWAMRKV_NET, 
+		log_fatal(thr->ref_logger, MODULE_SWAMRKV_NET,
 			"accept duplicated connection form peer %s:%u, previous connection is %s:%u.",
 							conn->peer_connected_from_addr.ip_addr, conn->peer_connected_from_addr.p2p_port,
 							tmp_conn->peer_connected_from_addr.ip_addr, tmp_conn->peer_connected_from_addr.p2p_port);
@@ -368,7 +369,7 @@ static void peer_conn_read_cb(struct bufferevent *bev, void *arg)
 	
 	if(conn->need_to_be_kill)
 	{
-		MESA_handle_runtime_log(thr->ref_logger, RLOG_LV_FATAL, MODULE_SWAMRKV_NET, "connection %s:%u is killed",
+		log_fatal(thr->ref_logger, MODULE_SWAMRKV_NET, "connection %s:%u is killed",
 									conn->peer_connected_from_addr.ip_addr, conn->peer_connected_from_addr.p2p_port);
 		assert(conn->is_in_conn_table==0);		
 		snet_conn_free(conn);
@@ -391,8 +392,8 @@ static void peer_conn_read_cb(struct bufferevent *bev, void *arg)
 			hdr=(struct swarmkv_msg_hdr*)recv_buff;
 			if(hdr->magic!=MSG_HDR_MAGIC)
 			{
-				MESA_handle_runtime_log(thr->ref_logger, RLOG_LV_FATAL, MODULE_SWAMRKV_NET, "invalid message header magic from %s:%u",
-										conn->peer_connected_from_addr.ip_addr, conn->peer_connected_from_addr.p2p_port);	
+				log_fatal(thr->ref_logger, MODULE_SWAMRKV_NET, "invalid message header magic from %s:%u",
+										conn->peer_connected_from_addr.ip_addr, conn->peer_connected_from_addr.p2p_port);
 				if(conn->is_in_conn_table)
 				{
 					snet_conn_table_remove(conn);
@@ -405,7 +406,7 @@ static void peer_conn_read_cb(struct bufferevent *bev, void *arg)
 				snet_conn_set_peer(conn, &hdr->source);
 				snet_conn_table_overwrite(thr, conn);			
 
-				MESA_handle_runtime_log(thr->ref_logger, RLOG_LV_INFO, MODULE_SWAMRKV_NET, 
+				log_info(thr->ref_logger, MODULE_SWAMRKV_NET,
 							"new peer connection from %s:%d has been set, which is connected from %s:%u.",
 											conn->peer_listen_addr.ip_addr, conn->peer_listen_addr.p2p_port,
 											conn->peer_connected_from_addr.ip_addr, conn->peer_connected_from_addr.p2p_port);
@@ -441,7 +442,7 @@ static void peer_conn_event_cb(struct bufferevent *bev, short events, void *arg)
 
 	if (events & BEV_EVENT_ERROR || events & BEV_EVENT_EOF)
 	{
-		MESA_handle_runtime_log(thr->ref_logger, RLOG_LV_DEBUG, MODULE_SWAMRKV_NET, "%s:%u connection error, %d (%s).",
+		log_debug(thr->ref_logger, MODULE_SWAMRKV_NET, "%s:%u connection error, %d (%s).",
 								conn->peer_connected_from_addr.ip_addr, conn->peer_connected_from_addr.p2p_port,
 								err, evutil_socket_error_to_string(err));
 	}
@@ -468,13 +469,13 @@ void connect_peer_eventcb(struct bufferevent *bev, short events, void *arg)
 		bufferevent_write_buffer(conn->bev, conn->buff_for_sending);
 		bufferevent_setcb(conn->bev, peer_conn_read_cb, peer_conn_write_cb, peer_conn_event_cb, conn);
 		bufferevent_enable(conn->bev, EV_READ | EV_WRITE);
-		MESA_handle_runtime_log(thr->ref_logger, RLOG_LV_DEBUG, MODULE_SWAMRKV_NET, "peer %s:%u is connected.",
+		log_debug(thr->ref_logger, MODULE_SWAMRKV_NET, "peer %s:%u is connected.",
 								conn->peer_listen_addr.ip_addr, conn->peer_listen_addr.p2p_port);
     }
 	else if (events & BEV_EVENT_ERROR)
     {
 		int err = EVUTIL_SOCKET_ERROR();
-		MESA_handle_runtime_log(thr->ref_logger, RLOG_LV_FATAL, MODULE_SWAMRKV_NET, "connect to %s:%u failed %d (%s).",
+		log_fatal(thr->ref_logger, MODULE_SWAMRKV_NET, "connect to %s:%u failed %d (%s).",
 								conn->peer_listen_addr.ip_addr, conn->peer_listen_addr.p2p_port,
 								err, evutil_socket_error_to_string(err));
 		snet_conn_table_remove(conn);
@@ -608,7 +609,7 @@ void snet_send_in_evloop(struct snet_thread *thr, const struct swarmkv_node_addr
 		else
 		{		
 			err = EVUTIL_SOCKET_ERROR();
-			MESA_handle_runtime_log(logger, RLOG_LV_FATAL, MODULE_SWAMRKV_NET, "connect to %s:%u failed, reason %d (%s).",
+			log_fatal(logger, MODULE_SWAMRKV_NET, "connect to %s:%u failed, reason %d (%s).",
 									peer->ip_addr, peer->p2p_port,
 									err, evutil_socket_error_to_string(err));
 			return;
@@ -637,7 +638,7 @@ static void accept_peer_connection_cb(struct evconnlistener *listener, evutil_so
 	thr=net->threads[thread_id];
 	conn=snet_conn_new_by_fd(thr, fd, addr);
 
-	MESA_handle_runtime_log(net->logger, RLOG_LV_DEBUG, MODULE_SWAMRKV_NET, "accept connection form from %s:%u.",
+	log_debug(net->logger, MODULE_SWAMRKV_NET, "accept connection form from %s:%u.",
 							conn->peer_connected_from_addr.ip_addr, conn->peer_connected_from_addr.p2p_port);
 
 	return;
@@ -646,8 +647,8 @@ static void __accept_error_cb(struct evconnlistener *listener, void *arg)
 {
 	struct swarmkv_net *net = (struct swarmkv_net*) arg;
     int err = EVUTIL_SOCKET_ERROR();
-	MESA_handle_runtime_log(net->logger, RLOG_LV_FATAL, MODULE_SWAMRKV_NET, "accept peer connection failed %d (%s).",
-							err, evutil_socket_error_to_string(err));		
+	log_fatal(net->logger, MODULE_SWAMRKV_NET, "accept peer connection failed %d (%s).",
+							err, evutil_socket_error_to_string(err));
 }
 
 struct swarmkv_net* swarmkv_net_new(const struct swarmkv_options *opts, const struct swarmkv_node_addr* self, void* logger, char **err)

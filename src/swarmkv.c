@@ -19,6 +19,7 @@
 
 #include "uthash.h"
 #include "sds.h"
+#include "log.h"
 
 #include <stdio.h>
 #include <assert.h>
@@ -52,7 +53,7 @@ struct swarmkv
 	struct swarmkv_thread_ctx *worker_threads[SWARMKV_THREAD_MAX];
 	struct swarmkv_net *net;
 	pthread_mutex_t mutex;
-	void *logger;
+	log_hander_t logger;
 	struct swarmkv_module *mod_keyspace;
 	struct swarmkv_module *mod_store;
 	struct swarmkv_cmd_spec *command_table;
@@ -492,7 +493,7 @@ void on_cmd_msg_callback(const struct swarmkv_node_addr * peer, unsigned long lo
 	else
 	{
 		reply=swarmkv_reply_new_error("Unknown command %d", cmd->argv[0]);
-		MESA_handle_runtime_log(db->logger, RLOG_LV_FATAL, MODULE_SWAMRKV_CORE, "Unknown command %d", cmd->argv[0]);
+		log_fatal(db->logger, MODULE_SWAMRKV_CORE, "Unknown command %d", cmd->argv[0]);
 	}
 	char *reply_blob=NULL;
 	size_t reply_blob_sz=0;
@@ -678,15 +679,15 @@ struct swarmkv *swarmkv_open(struct swarmkv_options* opts, const char * db_name,
 	db=ALLOC(struct swarmkv, 1);
 	strncpy(db->db_name, db_name, sizeof(db->db_name));
 	db->opts=opts;
-	if(opts->MESA_handle_logger)
+	if(opts->logger)
 	{
-		db->logger=opts->MESA_handle_logger;
+		db->logger=opts->logger;
 	}
 	else
 	{
 		char log_path[1024]="";
 		snprintf(log_path, sizeof(log_path), "%s.log", db_name);
-		db->logger=MESA_create_runtime_log_handle(log_path, opts->loglevel);
+        db->logger=create_log_handle(log_path, opts->loglevel);
 	}
 	swarmkv_create_thread_ctx(db);
 
@@ -720,7 +721,7 @@ struct swarmkv *swarmkv_open(struct swarmkv_options* opts, const char * db_name,
 	char str_uuid[37]="";
 	uuid_unparse(db->opts->bin_uuid, str_uuid);
 	opts->is_assigned_to_db=1;
-	MESA_handle_runtime_log(db->logger, RLOG_LV_INFO, MODULE_SWAMRKV_CORE, "swarmkv instance %s of cluster %s is opened.", str_uuid, db->db_name);
+	log_info(db->logger, MODULE_SWAMRKV_CORE, "swarmkv instance %s of cluster %s is opened.", str_uuid, db->db_name);
 	return db;
 error_out:
 	if(db->net)
@@ -762,10 +763,10 @@ void swarmkv_close(struct swarmkv * db)
 		free(spec);
 	}
 
-	MESA_handle_runtime_log(db->logger, RLOG_LV_INFO, MODULE_SWAMRKV_CORE, "swarmkv cluster %s closed.", db->db_name);
-	if(db->opts->MESA_handle_logger != db->logger)
+	log_info(db->logger, MODULE_SWAMRKV_CORE, "swarmkv cluster %s closed.", db->db_name);
+	if(db->opts->logger != db->logger)
 	{
-		MESA_destroy_runtime_log_handle(db->logger);
+		log_handle_destroy(db->logger);
 		db->logger=NULL;
 	}
 	free(db->opts);

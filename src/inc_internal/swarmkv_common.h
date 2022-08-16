@@ -1,5 +1,6 @@
 #pragma once
 #include "sds.h"
+#include "log.h"
 #include "swarmkv_limits.h"
 #include "swarmkv/swarmkv.h"
 #include "future_promise.h"
@@ -69,7 +70,7 @@ struct swarmkv_options
 	int dryrun;
 	int disable_cache;
 	unsigned int consul_port;
-	void *MESA_handle_logger;
+	log_hander_t logger;
 	int loglevel;
 	char bind_address[SWARMKV_SYMBOL_MAX];
 	uuid_t bin_uuid;

@@ -1,5 +1,6 @@
 #include "swarmkv/swarmkv.h"
 #include "test_utils.h"
+#include "log.h"
 
 #include <gtest/gtest.h>
 #include <MESA/MESA_handle_logger.h>
@@ -105,7 +106,7 @@ TEST(MultiThreads, Nnodes)
 	}
 	const char *cluster_name="swarmkv-n-threads";
 	swarmkv_cli_create_cluster(cluster_name, node_list_str);
-	void *logger=MESA_create_runtime_log_handle(log_path, 0);
+	log_hander_t logger=create_log_handle(log_path, 0);
 	struct swarmkv_options* opts[PERF_TEST_NODE_NUMBER];
 	for(i=0; i<PERF_TEST_NODE_NUMBER; i++)
 	{
@@ -151,7 +152,7 @@ TEST(MultiThreads, Nnodes)
 	{
 		swarmkv_close(db[i]);
 	}
-	MESA_destroy_runtime_log_handle(logger);
+	log_handle_destroy(logger);
 
 
 }
