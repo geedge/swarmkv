@@ -53,7 +53,7 @@ struct swarmkv
 	struct swarmkv_thread_ctx *worker_threads[SWARMKV_THREAD_MAX];
 	struct swarmkv_net *net;
 	pthread_mutex_t mutex;
-	log_hander_t logger;
+	struct log_handle * logger;
 	struct swarmkv_module *mod_keyspace;
 	struct swarmkv_module *mod_store;
 	struct swarmkv_cmd_spec *command_table;
@@ -687,7 +687,7 @@ struct swarmkv *swarmkv_open(struct swarmkv_options* opts, const char * db_name,
 	{
 		char log_path[1024]="";
 		snprintf(log_path, sizeof(log_path), "%s.log", db_name);
-        db->logger=create_log_handle(log_path, opts->loglevel);
+        db->logger=log_handle_create(log_path, opts->loglevel);
 	}
 	swarmkv_create_thread_ctx(db);
 

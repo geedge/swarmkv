@@ -35,7 +35,7 @@ protected:
 		char *err=NULL;
 		const char *cluster_name="swarmkv-basic-test";
 		swarmkv_cli_create_cluster(cluster_name, "127.0.0.1 5210");
-		logger=create_log_handle(log_path, 0);
+		logger=log_handle_create(log_path, 0);
 		struct swarmkv_options* opts=swarmkv_options_new();
 		swarmkv_options_set_p2p_port(opts, 5210);
 		swarmkv_options_set_health_check_port(opts, 6210);
@@ -54,11 +54,11 @@ protected:
 	}	
  	// Some expensive resource shared by all tests.
  	
-	static log_hander_t logger;
+	static struct log_handle *logger;
 	static struct swarmkv* db;
 };
 struct swarmkv *SwarmkvBasicTest::db;
-void *SwarmkvBasicTest::logger;
+struct log_handle *SwarmkvBasicTest::logger;
 TEST_F(SwarmkvBasicTest, TypeString)
 {
 	struct cmd_exec_arg *arg=NULL;
@@ -261,7 +261,7 @@ protected:
 		const char *cluster_name="swarmkv-2-nodes";
 		swarmkv_cli_create_cluster(cluster_name, "127.0.0.1 5210 127.0.0.1 5211");
 		
-		logger=create_log_handle(log_path, 0);
+		logger=log_handle_create(log_path, 0);
 		struct swarmkv_options* opts1=swarmkv_options_new();
 		swarmkv_options_set_p2p_port(opts1, 5210);
 		swarmkv_options_set_health_check_port(opts1, 6210);
@@ -294,10 +294,10 @@ protected:
 		log_handle_destroy(logger);
 	}	
  	// Some expensive resource shared by all tests.
- 	static log_hander_t logger;
+ 	static struct log_handle *logger;
 	static struct swarmkv *db1, *db2;
 };
-void * SwarmkvTwoNodes::logger;
+struct log_handle* SwarmkvTwoNodes::logger;
 struct swarmkv* SwarmkvTwoNodes::db1;
 struct swarmkv* SwarmkvTwoNodes::db2;
 TEST_F(SwarmkvTwoNodes, SET_GET)
@@ -877,7 +877,7 @@ protected:
 		}
 		const char *cluster_name="swarmkv-n-nodes";
 		swarmkv_cli_create_cluster(cluster_name, node_list_str);
-		logger=create_log_handle(log_path, 0);
+		logger=log_handle_create(log_path, 0);
 		struct swarmkv_options* opts[TEST_NODE_NUMBER];
 		for(i=0; i<TEST_NODE_NUMBER; i++)
 		{
@@ -904,11 +904,11 @@ protected:
 		log_handle_destroy(logger);
 	}	
  	// Some expensive resource shared by all tests. 	
-	static log_hander_t logger;
+	static struct log_handle * logger;
 	static struct swarmkv *db[TEST_NODE_NUMBER];
 };
 struct swarmkv* SwarmkvNNodes::db[TEST_NODE_NUMBER];
-void * SwarmkvNNodes::logger;
+struct log_handle * SwarmkvNNodes::logger;
 TEST_F(SwarmkvNNodes, SET_GET)
 {
 	struct cmd_exec_arg *arg=NULL;

@@ -39,7 +39,7 @@ typedef struct {
   int level;
 } Callback;
 
-struct _log_handle_t
+struct log_handle
 {
     int level;
     int enable;
@@ -208,9 +208,9 @@ static void log_print_console(struct log_event *event)
     fflush((FILE *)event->user_data);
 }
 
-void log_options_set_lock_fn(log_hander_t handle, log_lock_func_t fn, void *user_data)
+void log_options_set_lock_fn(struct log_handle * handle, log_lock_func_t fn, void *user_data)
 {
-    struct _log_handle_t *_handle_t = (struct _log_handle_t *)handle;
+    struct log_handle *_handle_t = (struct log_handle *)handle;
     if(_handle_t != NULL)
     {
         _handle_t->lock = fn;
@@ -218,18 +218,18 @@ void log_options_set_lock_fn(log_hander_t handle, log_lock_func_t fn, void *user
     }
 }
 
-void log_options_set_level(log_hander_t handle, int level)
+void log_options_set_level(struct log_handle * handle, int level)
 {
-    struct _log_handle_t *_handle_t = (struct _log_handle_t *)handle;
+    struct log_handle *_handle_t = (struct log_handle *)handle;
     if(_handle_t != NULL)
     {
         _handle_t->level = level;
     }
 }
 
-void log_options_set_enable(void *handle, int enable)
+void log_options_set_enable(struct log_handle * handle, int enable)
 {
-    struct _log_handle_t *_handle_t = (struct _log_handle_t *)handle;
+    struct log_handle *_handle_t = (struct log_handle *)handle;
     if(_handle_t != NULL)
     {
         _handle_t->enable = enable;
@@ -240,7 +240,7 @@ int log_add_method_callback(void *handle, log_func_t fn, void *udata, int level)
 {
     int i=0;
 
-    struct _log_handle_t *_handle_t = (struct _log_handle_t *)handle;
+    struct log_handle *_handle_t = (struct log_handle *)handle;
     if(_handle_t == NULL)
     {
         return -1;
@@ -258,12 +258,12 @@ int log_add_method_callback(void *handle, log_func_t fn, void *udata, int level)
     return -1;
 }
 
-int log_options_add_file_fp(log_hander_t handle, int level)
+int log_options_add_file_fp(struct log_handle *handle, int level)
 {
     int ret=0;
     FILE *fp=NULL;
 
-    struct _log_handle_t *_handle_t = (struct _log_handle_t *)handle;
+    struct log_handle *_handle_t = (struct log_handle *)handle;
     if(!_handle_t)
     {
         return -1;
@@ -276,14 +276,14 @@ int log_options_add_file_fp(log_hander_t handle, int level)
     return log_add_method_callback(handle, log_print_file, fp, level);
 }
 
-int log_options_add_fp(log_hander_t handle, FILE *fp, int level)
+int log_options_add_fp(struct log_handle * handle, FILE *fp, int level)
 {
     return log_add_method_callback(handle, log_print_file, fp, level);
 }
 
 static void log_lock(void *handle)
 {
-    struct _log_handle_t *_handle_t = (struct _log_handle_t *)handle;
+    struct log_handle *_handle_t = (struct log_handle *)handle;
     if(_handle_t != NULL && _handle_t->lock)
     {
         _handle_t->lock(1, _handle_t->user_data);
@@ -292,7 +292,7 @@ static void log_lock(void *handle)
 
 static void log_unlock(void *handle)
 {
-    struct _log_handle_t *_handle_t = (struct _log_handle_t *)handle;
+    struct log_handle *_handle_t = (struct log_handle *)handle;
     if(_handle_t != NULL && _handle_t->lock)
     {
         _handle_t->lock(0, _handle_t->user_data);
@@ -304,9 +304,9 @@ static void log_init_event(struct log_event *event, void *user_data)
     event->user_data = user_data;
 }
 
-log_hander_t create_log_handle(const char *file_path, int level)
+struct log_handle *log_handle_create(const char *file_path, int level)
 {
-    struct _log_handle_t *_handle_t = ALLOC(struct _log_handle_t, 1);
+    struct log_handle *_handle_t = ALLOC(struct log_handle, 1);
     if(!_handle_t)
     {
         return NULL;
@@ -321,10 +321,10 @@ log_hander_t create_log_handle(const char *file_path, int level)
     return _handle_t;
 }
 
-void log_handle_destroy(log_hander_t handle)
+void log_handle_destroy(struct log_handle * handle)
 {
     int i=0;
-    struct _log_handle_t *_handle_t = (struct _log_handle_t *)handle;
+    struct log_handle *_handle_t = (struct log_handle *)handle;
     if(!_handle_t)
     {
         return;
@@ -342,17 +342,18 @@ void log_handle_destroy(log_hander_t handle)
 		    _handle_t->callbacks->user_data = NULL;
         }
     }
+    pthread_mutex_destroy(&(_handle_t->mutex));
     free(handle);
     handle = NULL;
     return;
 }
 
-void log_print(log_hander_t handle, int level, const char *module, const char *fmt, ...)
+void log_print(struct log_handle *handle, int level, const char *module, const char *fmt, ...)
 {
     struct log_event event;
     memset(&event, 0, sizeof(event));
 
-    struct _log_handle_t *_handle_t = (struct _log_handle_t *)handle;
+    struct log_handle *_handle_t = (struct log_handle *)handle;
 
     event.fmt=fmt;
     event.level=level;

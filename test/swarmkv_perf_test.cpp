@@ -106,7 +106,7 @@ TEST(MultiThreads, Nnodes)
 	}
 	const char *cluster_name="swarmkv-n-threads";
 	swarmkv_cli_create_cluster(cluster_name, node_list_str);
-	log_hander_t logger=create_log_handle(log_path, 0);
+	struct log_handle * logger=log_handle_create(log_path, 0);
 	struct swarmkv_options* opts[PERF_TEST_NODE_NUMBER];
 	for(i=0; i<PERF_TEST_NODE_NUMBER; i++)
 	{

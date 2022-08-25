@@ -20,7 +20,7 @@ extern "C"
 
 #define LOG_VERSION "0.1.0"
 
-typedef	void* log_hander_t;
+struct log_handle;
 
 struct log_event
 {
@@ -39,24 +39,24 @@ typedef void (*log_lock_func_t)(int lock, void *udata);
 
 enum { LOG_TRACE, LOG_DEBUG, LOG_INFO, LOG_WARN, LOG_ERROR, LOG_FATAL };
 
-#define log_debug(handler, module, fmt, ...)    log_print(handler, LOG_DEBUG, module, fmt, ##__VA_ARGS__)
-#define log_trace(handler, module, fmt, ...)    log_print(handler, LOG_TRACE, module,  fmt, ##__VA_ARGS__)
-#define log_info(handler, module, fmt, ...)	    log_print(handler, LOG_INFO, module, fmt, ##__VA_ARGS__)
-#define log_warn(handler, module, fmt, ...)		log_print(handler, LOG_WARN, module, fmt, ##__VA_ARGS__)
-#define log_error(handler, module, fmt, ...)	log_print(handler, LOG_ERROR, module, fmt, ##__VA_ARGS__)
-#define log_fatal(handler, module, fmt, ...)	log_print(handler, LOG_FATAL, module, fmt, ##__VA_ARGS__)
+#define log_debug(handle, module, fmt, ...)    log_print(handle, LOG_DEBUG, module, fmt, ##__VA_ARGS__)
+#define log_trace(handle, module, fmt, ...)    log_print(handle, LOG_TRACE, module,  fmt, ##__VA_ARGS__)
+#define log_info(handle, module, fmt, ...)	    log_print(handle, LOG_INFO, module, fmt, ##__VA_ARGS__)
+#define log_warn(handle, module, fmt, ...)		log_print(handle, LOG_WARN, module, fmt, ##__VA_ARGS__)
+#define log_error(handle, module, fmt, ...)	log_print(handle, LOG_ERROR, module, fmt, ##__VA_ARGS__)
+#define log_fatal(handle, module, fmt, ...)	log_print(handle, LOG_FATAL, module, fmt, ##__VA_ARGS__)
 
-void log_print(log_hander_t, int level, const char *module, const char *fmt, ...);
+void log_print(struct log_handle *, int level, const char *module, const char *fmt, ...);
 
-int log_options_add_file_fp(log_hander_t, int level);
-int log_options_add_fp(log_hander_t, FILE *fp, int level);
+int log_options_add_file_fp(struct log_handle *, int level);
+int log_options_add_fp(struct log_handle *, FILE *fp, int level);
 
-void log_options_set_lock_fn(log_hander_t, log_lock_func_t fn, void *user_data);
-void log_options_set_enable(log_hander_t, int enable);
-void log_options_set_level(log_hander_t, int level);
+void log_options_set_lock_fn(struct log_handle *, log_lock_func_t fn, void *user_data);
+void log_options_set_enable(struct log_handle *, int enable);
+void log_options_set_level(struct log_handle *, int level);
 
-log_hander_t create_log_handle(const char *file_path, int level);
-void log_handle_destroy(log_hander_t);
+struct log_handle * log_handle_create(const char *file_path, int level);
+void log_handle_destroy(struct log_handle *);
 
 #ifdef __cplusplus
 }
