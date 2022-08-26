@@ -223,6 +223,14 @@ struct swarmkv_reply *cluster_addnode_command(struct swarmkv* db, char *argv[], 
 	struct swarmkv_node node;
 	struct swarmkv_reply *slots_reply=NULL, *nodes_reply=NULL, *reply=NULL;
 	size_t i=0, j=0, actual_rebalanced_slot_num=0;
+
+    if(argc <= 3)
+    {
+        reply = swarmkv_reply_new_error(error_wrong_number_of_arg);
+        return reply;
+    }
+
+
 	nodes_reply=cluster_nodes_command(db, NULL, 0);
 	struct key_slot *slots=NULL;
 	if(nodes_reply->type!=SWARMKV_REPLY_ARRAY)
@@ -439,6 +447,11 @@ struct swarmkv_reply *cluster_keyslot_command(struct swarmkv* db, char *argv[], 
 {
 	/*KEYSPACE KEYSLOT key*/
 	struct swarmkv_reply *reply=NULL;
+    if(argc <= 2)
+    {
+        reply = swarmkv_reply_new_error(error_read_slot_table_failed);
+        return reply;
+    }
 
 	char* key=argv[2];
 	int slot_id=get_slot_id(key, strlen(key));
@@ -450,6 +463,11 @@ struct swarmkv_reply *cluster_keys_command(struct swarmkv* db, char *argv[], siz
 	struct swarmkv_reply *nodes_reply=NULL, *keyspace_keys_reply=NULL, *reply=NULL;
 	char uuid[38], ip[64], port[16], membership[16];
 	size_t i=0;
+    if(argc <= 2)
+    {
+        reply = swarmkv_reply_new_error(error_wrong_number_of_arg);
+        return reply;
+    }
 	nodes_reply=cluster_nodes_command(db, NULL, 0);
 	if(nodes_reply->type!=SWARMKV_REPLY_ARRAY)
 	{
@@ -470,6 +488,78 @@ struct swarmkv_reply *cluster_keys_command(struct swarmkv* db, char *argv[], siz
 	return reply;
 }
 
+struct swarmkv_reply *cluster_santity_command(struct swarmkv* db, char *argv[], size_t argc)
+{
+    int i=0;
+    const char *pattern="*";
+    struct swarmkv_reply *keyspace_keys_reply=NULL, *crdt_keys_reply=NULL;
+    struct swarmkv_reply *keyspace_replay_merge=NULL,*crdt_replay_merge=NULL;
+    struct swarmkv_reply *nodes_reply=NULL, *reply=NULL;
+    char uuid[38], ip[64], port[16], membership[16];
+
+    if(argc < 3)
+    {
+        reply = swarmkv_reply_new_error(error_wrong_number_of_arg);
+        return reply;
+    }
+
+    nodes_reply=cluster_nodes_command(db, NULL, 0);
+    if(nodes_reply->type!=SWARMKV_REPLY_ARRAY)
+    {
+        return nodes_reply;
+    }
+
+    for(i=0; i<nodes_reply->n_element; i++)
+    {
+        sscanf(nodes_reply->elements[i]->str, "%s %s %s %s", uuid, ip, port, membership);
+        keyspace_keys_reply=swarmkv_command(db, "keyspace keys %s %s %s", ip, port, pattern);
+        swarmkv_reply_merge_array(&keyspace_replay_merge, keyspace_keys_reply);
+        keyspace_keys_reply=NULL;
+    }
+
+    for(i=0; i<nodes_reply->n_element; i++)
+    {
+        sscanf(nodes_reply->elements[i]->str, "%s %s %s %s", uuid, ip, port, membership);
+        crdt_keys_reply=swarmkv_command(db, "CRDT KEYS %s %s %s", ip, port, pattern);
+        swarmkv_reply_merge_array(&crdt_replay_merge, crdt_keys_reply);
+        crdt_keys_reply=NULL;
+    }
+
+    int xret=0;
+    for(i=0; i<keyspace_replay_merge->n_element; i++)
+    {
+        xret=swarmkv_reply_cmp(crdt_replay_merge, keyspace_replay_merge->elements[i]);
+        if(xret==0)
+        {
+            swarmkv_reply_append_arrray(&reply, keyspace_replay_merge->elements[i]);
+        }
+    }
+
+    swarmkv_reply_free(crdt_replay_merge);
+    swarmkv_reply_free(keyspace_replay_merge);
+
+    if(!reply)
+    {
+        reply=swarmkv_reply_new_nil();
+    }
+
+    if(0==strcmp(argv[2], "fix"))
+    {
+        struct swarmkv_reply *del_reply=NULL;
+
+        for(i=0; reply && i<reply->n_element; i++)
+        {
+            del_reply=swarmkv_command(db, "DEL %s", reply->elements[i]->str);
+            swarmkv_reply_free(del_reply);
+        }
+        swarmkv_reply_free(reply);
+        reply=swarmkv_reply_new_status("OK");
+    }
+
+    swarmkv_reply_free(nodes_reply);
+
+    return reply;
+}
 
 typedef struct swarmkv_reply *cluster_command_func(struct swarmkv* db, char *argv[], size_t argc);
 
@@ -485,7 +575,8 @@ struct cluster_cmd_spec cluster_cmds[]={
 	{"CLUSTER NODES", "", cluster_nodes_command},
 	{"CLUSTER SLOTS", "", cluster_slots_command},
 	{"CLUSTER ADDNODE", "IP port", cluster_addnode_command},
-	{"CLUSTER CREATE", "cluster-name IP port [IP port]", cluster_create_command}
+	{"CLUSTER CREATE", "cluster-name IP port [IP port]", cluster_create_command},
+    {"CLUSTER SANITY", "check | fix", cluster_santity_command}
 };
 int is_cluster_command(const char *line)
 {

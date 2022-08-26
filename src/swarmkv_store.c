@@ -33,6 +33,7 @@ struct swarmkv_store
 
 
 UT_icd ut_node_addr_icd = {sizeof(struct swarmkv_node_addr), NULL, NULL, NULL};
+UT_icd ut_array_matched_reply = {sizeof(struct swarmkv_reply *), NULL, NULL, NULL};
 
 struct swarmkv_store *module2store(struct swarmkv_module *module)
 {
@@ -211,6 +212,38 @@ void store_remove_obj(struct swarmkv_module *mod_store, struct sobj *obj)
 		ctr->is_in_sync_q=0;
 	}
 	return;
+}
+
+void store_each_obj(struct swarmkv_module* mod_store, sds pattern, void **arg)
+{
+    int i=0, is_matched=0;
+    struct swarmkv_reply *r=NULL;
+    UT_array* matched_replies=NULL;
+    struct scontainer *ctr=NULL,*tmp=NULL;
+
+    struct swarmkv_store *store=module2store(mod_store);
+
+    utarray_new(matched_replies, &ut_array_matched_reply);
+    for(i=0; i<STORE_SHARD_NUMBER; i++)
+    {
+        HASH_ITER(hh, store->obj_table[i], ctr, tmp)
+        {
+            if(!ctr)
+            {
+                continue;
+            }
+            struct sobj *obj=&ctr->obj;
+
+            is_matched=stringmatchlen(pattern, sdslen(pattern), obj->key, sdslen(obj->key), 0);
+			if(is_matched)
+			{
+				r=swarmkv_reply_new_string(obj->key, sdslen(obj->key));
+                utarray_push_back(matched_replies, &r);
+			}
+        }
+    }
+    *arg = (void *)matched_replies;
+    return;
 }
 
 struct sobj *store_lookup(struct swarmkv_module* mod_store, sds key)

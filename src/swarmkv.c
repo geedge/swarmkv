@@ -584,6 +584,10 @@ void command_spec_init(struct swarmkv *db)
 					1, 2, CMD_KEY_NA,
 					crdt_del_command, db->mod_store);
 
+    command_register(&(db->command_table), "CRDT KEYS", "IP port pattern",
+					1, 2, CMD_KEY_RO,
+					crdt_keys_command, db->mod_store);
+
 	/* low-level keyspace operation command*/
 	command_register(&(db->command_table), "KEYSPACE RLIST", "key",
 					1, 2, CMD_KEY_RO,

@@ -1,6 +1,7 @@
 #include "swarmkv_common.h"
 #include "swarmkv_store.h"
 #include "swarmkv_error.h"
+#include "utarray.h"
 
 #include <stdlib.h>
 #include <assert.h>
@@ -94,6 +95,46 @@ enum cmd_exec_result crdt_join_command(struct swarmkv_module *mod_store, const s
 		*reply=swarmkv_reply_new_nil();
 	}
 	return FINISHED;
-
 }
 
+//CRDT keys IP Port pattern
+enum cmd_exec_result crdt_keys_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)
+{
+    int i=0, n_matched=0;
+    UT_array* matched_replies=NULL;
+    sds pattern;
+    struct swarmkv_node_addr target_node;
+
+    if(cmd->argc < 5)
+    {
+        *reply=swarmkv_reply_new_nil();
+        return FINISHED;
+    }
+
+    sds2node_addr(cmd->argv+2, &target_node);
+    pattern = cmd->argv[4];
+
+    if(!accessing_node)
+    {
+        *reply=swarmkv_reply_new_node(&target_node, 1);
+        return REDIRECT;
+    }
+
+    store_each_obj(mod_store, pattern, (void **)&matched_replies);
+	n_matched=utarray_len(matched_replies);
+	if(n_matched>0)
+	{
+		*reply=swarmkv_reply_new_array(n_matched);
+		for(i=0; i<n_matched; i++)
+		{
+			(*reply)->elements[i]=*(struct swarmkv_reply **)utarray_eltptr(matched_replies, i);
+		}
+	}
+	else
+	{
+		*reply=swarmkv_reply_new_nil();
+	}
+	utarray_free(matched_replies);
+	matched_replies=NULL;
+	return FINISHED;
+}

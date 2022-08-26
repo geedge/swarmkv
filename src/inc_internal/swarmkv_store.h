@@ -51,6 +51,6 @@ void store_get_uuid(struct swarmkv_module* mod_store, uuid_t uuid);
 struct sobj *store_lookup(struct swarmkv_module* mod_store, sds key);
 void store_add_obj(struct swarmkv_module *mod_store, struct sobj *obj);
 void store_remove_obj(struct swarmkv_module *mod_store, struct sobj *obj);
-
+void store_each_obj(struct swarmkv_module* mod_store, sds pattern, void **arg);
 
 

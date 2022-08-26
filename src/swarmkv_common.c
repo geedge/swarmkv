@@ -261,6 +261,57 @@ void swarmkv_reply_merge_array(struct swarmkv_reply **dst, struct swarmkv_reply 
 	return;
 }
 
+int swarmkv_reply_cmp(struct swarmkv_reply *origin, struct swarmkv_reply *reply)
+{
+    int xret=0;	size_t i=0;
+	switch (origin->type)
+	{
+		case SWARMKV_REPLY_INTEGER:
+            if(origin->integer == reply->integer)
+            {
+                xret=1;
+            }
+			break;
+		case SWARMKV_REPLY_STRING:
+		case SWARMKV_REPLY_STATUS:
+		case SWARMKV_REPLY_ERROR:
+		case SWARMKV_REPLY_NODE:
+            if(strcmp(origin->str,reply->str)==0)
+            {
+                xret=1;
+            }
+			break;
+		case SWARMKV_REPLY_ARRAY:
+			for(i=0; i<origin->n_element; i++)
+			{
+				xret=swarmkv_reply_cmp(origin->elements[i], reply);
+                if(xret) return xret;
+			}
+			break;
+		default:
+			break;
+
+	}
+	return xret;
+}
+
+void swarmkv_reply_append_arrray(struct swarmkv_reply **dst, struct swarmkv_reply *src)
+{
+	if(src->type==SWARMKV_REPLY_NIL) return;
+	if(*dst==NULL)
+	{
+		*dst=swarmkv_reply_new_array(0);
+	}
+	if((*dst)->type!=SWARMKV_REPLY_ARRAY || src->type!=SWARMKV_REPLY_STRING)
+	{
+		return;
+	}
+	(*dst)->elements=(struct swarmkv_reply **)realloc((*dst)->elements, 1*sizeof(struct swarmkv_reply*));
+    (*dst)->elements[(*dst)->n_element] = swarmkv_reply_dup(src);
+    (*dst)->n_element+=1;
+	return;
+}
+
 void swarmkv_reply_free(struct swarmkv_reply *reply)
 {
 	size_t i=0;
