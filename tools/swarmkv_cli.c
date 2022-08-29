@@ -488,12 +488,12 @@ struct swarmkv_reply *cluster_keys_command(struct swarmkv* db, char *argv[], siz
 	return reply;
 }
 
-struct swarmkv_reply *cluster_santity_command(struct swarmkv* db, char *argv[], size_t argc)
+struct swarmkv_reply *cluster_sanity_command(struct swarmkv* db, char *argv[], size_t argc)
 {
-    int i=0;
+    int i=0, need_fix=0;
     const char *pattern="*";
     struct swarmkv_reply *keyspace_keys_reply=NULL, *crdt_keys_reply=NULL;
-    struct swarmkv_reply *keyspace_replay_merge=NULL,*crdt_replay_merge=NULL;
+    struct swarmkv_reply *keyspace_reply_merged=NULL,*crdt_reply_merged=NULL;
     struct swarmkv_reply *nodes_reply=NULL, *reply=NULL;
     char uuid[38], ip[64], port[16], membership[16];
 
@@ -508,35 +508,62 @@ struct swarmkv_reply *cluster_santity_command(struct swarmkv* db, char *argv[], 
     {
         return nodes_reply;
     }
+    if(0==strcasecmp(argv[2], "fix"))
+	{
+		need_fix=1;
+	}
+	//mapping check/fix of keyspace -> crdt
+	//for each node
+	//	keyspace keys * IP port
+	//	for each key
+	//		future= keyspace rlist key
+	//			for each node in rlist reply
+	//				crdt exists key IP port
+	//					if reply==0 and need fix then rdel key IP port
+	//			end
+	//		end
+	//	end
+	//end
 
+	//mapping check/fix for crdt -> keyspace
+	// for each node
+	//	crdt keys * node.IP node.port
+	//		for each key
+	//			keyspace rlist key
+	//			if node not in rlist.reply and need_fix then
+	//				radd key node.IP node.port
+	//				crdt join key 
+	//			end
+	//		end
+	//end
     for(i=0; i<nodes_reply->n_element; i++)
     {
         sscanf(nodes_reply->elements[i]->str, "%s %s %s %s", uuid, ip, port, membership);
-        keyspace_keys_reply=swarmkv_command(db, "keyspace keys %s %s %s", ip, port, pattern);
-        swarmkv_reply_merge_array(&keyspace_replay_merge, keyspace_keys_reply);
+        keyspace_keys_reply=swarmkv_command(db, "keyspace keys %s %s *", ip, port);
+        swarmkv_reply_merge_array(&keyspace_reply_merged, keyspace_keys_reply);
         keyspace_keys_reply=NULL;
     }
 
     for(i=0; i<nodes_reply->n_element; i++)
     {
         sscanf(nodes_reply->elements[i]->str, "%s %s %s %s", uuid, ip, port, membership);
-        crdt_keys_reply=swarmkv_command(db, "CRDT KEYS %s %s %s", ip, port, pattern);
-        swarmkv_reply_merge_array(&crdt_replay_merge, crdt_keys_reply);
+        crdt_keys_reply=swarmkv_command(db, "CRDT KEYS %s %s *", ip, port);
+        swarmkv_reply_merge_array(&crdt_reply_merged, crdt_keys_reply);
         crdt_keys_reply=NULL;
     }
 
     int xret=0;
-    for(i=0; i<keyspace_replay_merge->n_element; i++)
+    for(i=0; i<keyspace_reply_merged->n_element; i++)
     {
-        xret=swarmkv_reply_cmp(crdt_replay_merge, keyspace_replay_merge->elements[i]);
+        xret=swarmkv_reply_cmp(crdt_reply_merged, keyspace_reply_merged->elements[i]);
         if(xret==0)
         {
-            swarmkv_reply_append_arrray(&reply, keyspace_replay_merge->elements[i]);
+            swarmkv_reply_append_arrray(&reply, keyspace_reply_merged->elements[i]);
         }
     }
 
-    swarmkv_reply_free(crdt_replay_merge);
-    swarmkv_reply_free(keyspace_replay_merge);
+    swarmkv_reply_free(crdt_reply_merged);
+    swarmkv_reply_free(keyspace_reply_merged);
 
     if(!reply)
     {
@@ -576,7 +603,7 @@ struct cluster_cmd_spec cluster_cmds[]={
 	{"CLUSTER SLOTS", "", cluster_slots_command},
 	{"CLUSTER ADDNODE", "IP port", cluster_addnode_command},
 	{"CLUSTER CREATE", "cluster-name IP port [IP port]", cluster_create_command},
-    {"CLUSTER SANITY", "check | fix", cluster_santity_command}
+    {"CLUSTER SANITY", "check | fix", cluster_sanity_command}
 };
 int is_cluster_command(const char *line)
 {

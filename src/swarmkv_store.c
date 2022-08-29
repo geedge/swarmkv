@@ -33,7 +33,6 @@ struct swarmkv_store
 
 
 UT_icd ut_node_addr_icd = {sizeof(struct swarmkv_node_addr), NULL, NULL, NULL};
-UT_icd ut_array_matched_reply = {sizeof(struct swarmkv_reply *), NULL, NULL, NULL};
 
 struct swarmkv_store *module2store(struct swarmkv_module *module)
 {
@@ -53,12 +52,14 @@ int get_shard_id(sds key)
 void store_lock(struct swarmkv_module *mod, sds key)
 {
 	struct swarmkv_store *store=module2store(mod);
+	if(!key) return;
 	int shard_idx=get_shard_id(key);
 	pthread_mutex_lock(&(store->mutex[shard_idx]));
 }
 void store_unlock(struct swarmkv_module *mod, sds key)
 {
 	struct swarmkv_store *store=module2store(mod);
+	if(!key) return;
 	int shard_idx=get_shard_id(key);
 	pthread_mutex_unlock(&(store->mutex[shard_idx]));
 
@@ -213,37 +214,22 @@ void store_remove_obj(struct swarmkv_module *mod_store, struct sobj *obj)
 	}
 	return;
 }
-
-void store_each_obj(struct swarmkv_module* mod_store, sds pattern, void **arg)
+void store_iterate_sobj(struct swarmkv_module *mod_store, sobj_callback_func_t *cb, void *cb_arg)
 {
-    int i=0, is_matched=0;
-    struct swarmkv_reply *r=NULL;
-    UT_array* matched_replies=NULL;
-    struct scontainer *ctr=NULL,*tmp=NULL;
-
     struct swarmkv_store *store=module2store(mod_store);
+    struct scontainer *ctr=NULL, *tmp=NULL;
 
-    utarray_new(matched_replies, &ut_array_matched_reply);
-    for(i=0; i<STORE_SHARD_NUMBER; i++)
+
+    for(size_t i=0; i<STORE_SHARD_NUMBER; i++)
     {
+		pthread_mutex_lock(&(store->mutex[i]));
         HASH_ITER(hh, store->obj_table[i], ctr, tmp)
         {
-            if(!ctr)
-            {
-                continue;
-            }
-            struct sobj *obj=&ctr->obj;
-
-            is_matched=stringmatchlen(pattern, sdslen(pattern), obj->key, sdslen(obj->key), 0);
-			if(is_matched)
-			{
-				r=swarmkv_reply_new_string(obj->key, sdslen(obj->key));
-                utarray_push_back(matched_replies, &r);
-			}
+			cb(&ctr->obj, cb_arg);
         }
+		pthread_mutex_unlock(&(store->mutex[i]));
     }
-    *arg = (void *)matched_replies;
-    return;
+	
 }
 
 struct sobj *store_lookup(struct swarmkv_module* mod_store, sds key)
