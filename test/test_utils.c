@@ -8,11 +8,18 @@
 #include <unistd.h>
 #include <stdlib.h>
 
-int swarmkv_cli_create_cluster(const char* cluster_name, const char *node_string)
+int swarmkv_cli_create_cluster(const char *cluster_name, const char *node_string)
 {
 	char cmd_string[1024];
 	snprintf(cmd_string, sizeof(cmd_string), "../tools/swarmkv-cli --cluster-create %s %s", cluster_name, node_string);
 	return system(cmd_string);
+}
+int swarmkv_cli_add_node(const char *cluster_name, const char *ip, int port)
+{
+	char cmd_string[1024];
+	snprintf(cmd_string, sizeof(cmd_string), "../tools/swarmkv-cli -n %s --exec cluster addnode %s %d", cluster_name, ip, port);
+	return system(cmd_string);
+
 }
 void wait_for_sync()
 {
@@ -166,6 +173,19 @@ void cmd_exec_arg_failed(struct cmd_exec_arg* arg)
 		arg->cb(arg, arg->cb_uarg);
 	}
 	pthread_cond_signal(&arg->cond);
+}
+void cmd_exec_generic_callback(const struct swarmkv_reply* reply, void * cb_arg)
+{
+	struct cmd_exec_arg* arg=(struct cmd_exec_arg*)cb_arg;
+	if(0==reply_compare(reply, &(arg->expected_reply)))
+	{
+		cmd_exec_arg_success(arg);
+	}
+	else
+	{
+		cmd_exec_arg_failed(arg);
+	}
+	return;
 }
 
 

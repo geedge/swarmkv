@@ -858,7 +858,7 @@ TEST_F(SwarmkvTwoNodes, TypeSet)
 
 TEST_F(SwarmkvTwoNodes, Wait)
 {
-	//sleep(3600*2);
+	sleep(3600*2);
 }
 #define TEST_NODE_NUMBER	8
 class SwarmkvNNodes : public testing::Test 

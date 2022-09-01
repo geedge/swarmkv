@@ -13,6 +13,8 @@ extern "C"
 #define ALLOC(type, number) ((type *)calloc(sizeof(type), number))
 
 int swarmkv_cli_create_cluster(const char* cluster_name, const char *node_string);
+int swarmkv_cli_add_node(const char *cluster_name , const char *ip, int port);
+
 struct cmd_exec_arg;
 typedef void proc_result_callback_t(struct cmd_exec_arg* exec_arg, void *uarg);
 struct cmd_exec_arg
@@ -40,6 +42,7 @@ void cmd_exec_arg_expect_NIL(struct cmd_exec_arg* arg);
 int cmd_exec_arg_wait(struct cmd_exec_arg* arg, long timeout_ms);
 void cmd_exec_arg_success(struct cmd_exec_arg* arg);
 void cmd_exec_arg_failed(struct cmd_exec_arg* arg);
+void cmd_exec_generic_callback(const struct swarmkv_reply* reply, void * cb_arg);
 
 int reply_compare(const struct swarmkv_reply *r1, const struct swarmkv_reply *r2);
 void wait_for_sync();
