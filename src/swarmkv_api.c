@@ -241,7 +241,7 @@ void blocking_query_cb(const struct swarmkv_reply* reply, void * arg)
 	pthread_cond_signal(&ctx->cond);
 	return;
 }
-struct swarmkv_reply *swarmkv_cmd_argv(struct swarmkv *db, size_t argc, sds *argv)
+struct swarmkv_reply *swarmkv_cmd_argv(struct swarmkv *db, int argc, sds *argv)
 {
 	struct swarmkv_cmd *cmd=NULL;
 	struct swarmkv_reply *reply=NULL;
@@ -250,7 +250,7 @@ struct swarmkv_reply *swarmkv_cmd_argv(struct swarmkv *db, size_t argc, sds *arg
 	pthread_cond_init(&ctx.cond, NULL);
 	pthread_mutex_init(&ctx.mutex, NULL);
 	cmd=swarmkv_cmd_new(argc);
-	for(size_t i=0; i<argc; i++)
+	for(int i=0; i<argc; i++)
 	{
 		cmd->argv[i]=sdsdup(argv[i]);
 	}

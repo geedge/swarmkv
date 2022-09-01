@@ -39,7 +39,8 @@ static void usage(void)
 	"Usage: swarmkv-cli [OPTIONS] [cmd [arg [arg ...]]]\n"
 	"  -n <cluster-name>  Cluster name used for orchestration.\n"
 	"  -p <consul-port>   Consul Agent port (default: 8500).\n"
-	"  --cluster-create	<cluster-name> IP port [IP port]  Create orchestration information in Consul KV.\n",
+	"  --cluster-create	<cluster-name> IP port [IP port]  Create cluster orchestration information in Consul KV.\n",	
+	"  --exec	[Command]  Execute comand and exit.\n",
 	SWARMKV_CLI_VERSION);
 	
     exit(1);
@@ -491,7 +492,7 @@ struct swarmkv_reply *cluster_keys_command(struct swarmkv* db, char *argv[], siz
 struct swarmkv_reply *cluster_sanity_command(struct swarmkv* db, char *argv[], size_t argc)
 {
     int i=0, need_fix=0;
-    const char *pattern="*";
+//    const char *pattern="*";
     struct swarmkv_reply *keyspace_keys_reply=NULL, *crdt_keys_reply=NULL;
     struct swarmkv_reply *keyspace_reply_merged=NULL,*crdt_reply_merged=NULL;
     struct swarmkv_reply *nodes_reply=NULL, *reply=NULL;
@@ -605,10 +606,12 @@ struct cluster_cmd_spec cluster_cmds[]={
 	{"CLUSTER CREATE", "cluster-name IP port [IP port]", cluster_create_command},
     {"CLUSTER SANITY", "check | fix", cluster_sanity_command}
 };
-int is_cluster_command(const char *line)
+int is_cluster_command(int argc, char *argv[])
 {
 	size_t n_cmd=sizeof(cluster_cmds)/sizeof(struct cluster_cmd_spec);
 	size_t i=0;
+	char line[256];
+	snprintf(line, sizeof(line), "%s %s", argv[0], argv[1]);
 	for(i=0; i<n_cmd; i++)
 	{
 		if(0==strncasecmp(line, cluster_cmds[i].name, strlen(cluster_cmds[i].name)))
@@ -667,6 +670,20 @@ cluster_command_func *get_cluster_func(const char* line)
 	}
 	return ret_func;
 }
+struct swarmkv_reply *cluster_command_argv(struct swarmkv *db, size_t argc, sds *argv)
+{
+	char line[256];
+	snprintf(line, sizeof(line), "%s %s", argv[0], argv[1]);
+	cluster_command_func *cmd_func=get_cluster_func(line);
+	if(cmd_func)
+	{
+		return cmd_func(db, argv, argc);
+	}
+	else
+	{
+		return NULL;
+	}
+}
 
 struct swarmkv_reply *cluster_command(struct swarmkv *db, const char *line)
 {
@@ -674,15 +691,14 @@ struct swarmkv_reply *cluster_command(struct swarmkv *db, const char *line)
 	sds *argv=NULL;
 	argv=sdssplitargs(line, &argc);
 
-	cluster_command_func *cmd_func=get_cluster_func(line);
-	struct swarmkv_reply *reply=NULL;
-	reply=cmd_func(db, argv, argc);
+	struct swarmkv_reply *reply=cluster_command_argv(db, argc, argv);
 
     if (argv)
         sdsfreesplitres(argv, argc);
 
 	return reply;
 }
+
 void completion(const char *buff, linenoiseCompletions *lc)
 {
 	size_t n_matched=0, i=0;
@@ -756,7 +772,8 @@ int main(int argc, char * argv[])
 	g_config.consul_port=8500;
 	strcpy(g_config.consul_host, "127.0.0.1");
     int i;
-
+	sds *exec_argv;
+	int exec_argc=0;
     for (i = 1; i < argc; i++)
 	{
         int lastarg = i==argc-1;
@@ -777,17 +794,28 @@ int main(int argc, char * argv[])
 			reply=cluster_create_command(NULL, argv+i, j-i+1);
 			i = j;
 		}
+		else if(!strcmp(argv[i], "--exec") && !lastarg)
+		{
+			exec_argv=ALLOC(sds, argc);
+			while (++i < argc && argv[i][0] != '-') 
+			{
+				exec_argv[exec_argc]=sdsnew(argv[i]);				
+				exec_argc++;
+			}
+		}
 		else
 		{
 			usage();
 		}
     }
+	
 	if(CLUSTER_MANAGER_MODE())
-	{	
+	{
 		print_reply(reply);
 		swarmkv_reply_free(reply);
 		return 1;
 	}
+	
 	if(!strlen(g_config.db_name))
 	{
 		usage();
@@ -802,9 +830,28 @@ int main(int argc, char * argv[])
 	{
 		fprintf(stderr, "Open DB %s error: %s", g_config.db_name, err);
 		free(err);
+		free(exec_argv);
 		err=NULL;
 		return 0;
 	}
+
+	//command is part of swarmkv-cli arguments.
+	if(exec_argc)
+	{
+		if(is_cluster_command(exec_argc, exec_argv))
+		{
+			reply=cluster_command_argv(g_config.db, exec_argc, exec_argv);
+		}
+		else
+		{
+			reply=swarmkv_cmd_argv(g_config.db, exec_argc, exec_argv);
+		}
+		print_reply(reply);
+		swarmkv_reply_free(reply);
+		free(exec_argv);
+		return 1;
+	}
+	
 	/* Set the completion callback. This will be called every time the
 	* user uses the <tab> key. */
 	linenoiseSetCompletionCallback(completion);
@@ -820,13 +867,16 @@ int main(int argc, char * argv[])
 		{
 			continue;
 		}
-		if(is_cluster_command(line))
+		
+		exec_argv=sdssplitargs(line, &exec_argc);
+		
+		if(is_cluster_command(exec_argc, exec_argv))
 		{
-			reply=cluster_command(g_config.db, line);
+			reply=cluster_command_argv(g_config.db, exec_argc, exec_argv);
 		}
 		else
 		{
-			reply=swarmkv_command(g_config.db, line);		
+			reply=swarmkv_cmd_argv(g_config.db, exec_argc, exec_argv);
 		}
 		print_reply(reply);
 		swarmkv_reply_free(reply);
@@ -835,6 +885,9 @@ int main(int argc, char * argv[])
 		linenoiseHistorySave(history_file); // Save the history on disk. 
 		
 		free(line);
+		
+	    if (exec_argv)
+	        sdsfreesplitres(exec_argv, exec_argc);
 	}
 	return 0;
 
