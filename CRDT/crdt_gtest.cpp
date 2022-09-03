@@ -171,16 +171,7 @@ TEST(PNCounter, Merge)
 	PN_counter_incrby(pnc[0], 200);
 	PN_counter_incrby(pnc[1], -100);
 
-	char *blob=NULL;
-	size_t blob_sz=0;
-
-	PN_counter_serialize(pnc[0], &blob, &blob_sz);
-	PN_counter_merge_blob(pnc[1], blob, blob_sz);
-	free(blob);
-	
-	PN_counter_serialize(pnc[1], &blob, &blob_sz);
-	PN_counter_merge_blob(pnc[0], blob, blob_sz);
-	free(blob);
+	PN_counter_sync(pnc, 2);
 
 	value=PN_counter_get(pnc[0]);
 	EXPECT_EQ(value, 100);
@@ -189,29 +180,22 @@ TEST(PNCounter, Merge)
 	EXPECT_EQ(value, 100);
 
 	PN_counter_reset(pnc[0]);
-	PN_counter_serialize(pnc[0], &blob, &blob_sz);
-	PN_counter_merge_blob(pnc[1], blob, blob_sz);
+	PN_counter_sync(pnc, 2);
 	value=PN_counter_get(pnc[1]);
 	EXPECT_EQ(value, 0);
-	free(blob);
 
 
 	PN_counter_set(pnc[0], 1314);
-	PN_counter_serialize(pnc[0], &blob, &blob_sz);
-	PN_counter_merge_blob(pnc[1], blob, blob_sz);
+	PN_counter_sync(pnc, 2);
 	value=PN_counter_get(pnc[1]);
 	EXPECT_EQ(value, 1314);
-	free(blob);
 
 
 	PN_counter_set(pnc[0], 3344);
 	PN_counter_incrby(pnc[1], -11);
-	PN_counter_serialize(pnc[0], &blob, &blob_sz);
-	PN_counter_merge_blob(pnc[1], blob, blob_sz);
+	PN_counter_sync(pnc, 2);
 	value=PN_counter_get(pnc[1]);
 	EXPECT_EQ(value, 3333);
-	free(blob);
-
 
 	for(size_t i=0; i<2; i++)
 	{
@@ -250,6 +234,34 @@ TEST(PNCounter, ObservedSet)
 	EXPECT_EQ(value, 8);
 	value=PN_counter_get(pnc[1]);
 	EXPECT_EQ(value, 8);
+
+	PN_counter_set(pnc[0], 10);
+	usleep(10);
+	PN_counter_set(pnc[1], 11);
+	PN_counter_sync(pnc, 2);
+	value=PN_counter_get(pnc[0]);
+	EXPECT_EQ(value, 11);
+	value=PN_counter_get(pnc[1]);
+	EXPECT_EQ(value, 11);
+
+	PN_counter_incrby(pnc[0], 1);	
+	PN_counter_sync(pnc, 2);
+	usleep(10);
+	PN_counter_set(pnc[1], 13);
+	PN_counter_sync(pnc, 2);
+	value=PN_counter_get(pnc[0]);
+	EXPECT_EQ(value, 13);
+	value=PN_counter_get(pnc[1]);
+	EXPECT_EQ(value, 13);
+
+	PN_counter_set(pnc[0], 15);
+	usleep(10);
+	PN_counter_incrby(pnc[1], -10);
+	PN_counter_sync(pnc, 2);
+	value=PN_counter_get(pnc[0]);
+	EXPECT_EQ(value, 5);
+	value=PN_counter_get(pnc[1]);
+	EXPECT_EQ(value, 5);
 
 	for(size_t i=0; i<2; i++)
 	{

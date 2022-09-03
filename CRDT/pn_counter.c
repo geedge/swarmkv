@@ -36,8 +36,8 @@ struct PN_counter
 	size_t my_id_sz;
 	
 	struct timeval write_timestamp;
-	long long W; //value wrote by pN_counter_set
-	long long _P, _N; //counter value when PN_counter_set;
+	long long W; //value wrote by PN_counter_set
+	long long _P, _N; //observed value at PN_counter_set;
 	struct counter_item *hash_item;
 };
 struct PN_counter *PN_counter_new(const char* id, size_t id_sz)
