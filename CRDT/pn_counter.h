@@ -1,5 +1,6 @@
 /*
-* State-based PN (Positive-Negative) CRDT counter.
+* State-based PN (Positive-Negative) CRDT counter with write update.
+* Preguiça, Nuno. "Conflict-free replicated data types: An overview." arXiv preprint arXiv:1806.10254 (2018). page 5
 * Author: contact@zhengchao.io
 * 
 */
@@ -18,6 +19,7 @@ void PN_counter_free(struct PN_counter *pnc);
 
 long long PN_counter_get(struct PN_counter *pnc);
 long long PN_counter_reset(struct PN_counter *pnc);
+long long PN_counter_set(struct PN_counter *pnc, long long value);
 
 long long PN_counter_incrby(struct PN_counter *pnc, long long increment);
 

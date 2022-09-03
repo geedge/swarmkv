@@ -4,6 +4,7 @@
 
 #include <assert.h>
 #include <string.h>
+#include <sys/time.h>
 
 
 
@@ -33,6 +34,10 @@ struct PN_counter
 {
 	char* my_id;
 	size_t my_id_sz;
+	
+	struct timeval write_timestamp;
+	long long W; //value wrote by pN_counter_set
+	long long _P, _N; //counter value when PN_counter_set;
 	struct counter_item *hash_item;
 };
 struct PN_counter *PN_counter_new(const char* id, size_t id_sz)
@@ -64,10 +69,23 @@ long long PN_counter_get(struct PN_counter *pnc)
 		abs_positive_counter+=item->P;
 		abs_negtive_counter+=item->N;
 	}
-	return abs_positive_counter-abs_negtive_counter;
+	long long value= pnc->W + (abs_positive_counter - pnc->_P) - (abs_negtive_counter - pnc->_N);
+	return value;
 }
-
-
+long long PN_counter_set(struct PN_counter *pnc, long long value)
+{
+	struct counter_item *item=NULL, *tmp=NULL;
+	gettimeofday(&pnc->write_timestamp, NULL);
+	pnc->W=value;
+	pnc->_P=0;
+	pnc->_N=0;
+	HASH_ITER(hh, pnc->hash_item, item, tmp)
+	{
+		pnc->_P+=item->P;
+		pnc->_N+=item->N;
+	}
+	return PN_counter_get(pnc);
+}
 long long PN_counter_incrby(struct PN_counter *pnc, long long increment)
 {
 	struct counter_item *c=NULL;
@@ -89,12 +107,7 @@ long long PN_counter_incrby(struct PN_counter *pnc, long long increment)
 }
 void PN_counter_reset(struct PN_counter *pnc)
 {
-	struct counter_item *item=NULL, *tmp=NULL;
-	HASH_ITER(hh, pnc->hash_item, item, tmp)
-	{
-		item->P=MAX(item->P, item->N);
-		item->N=MAX(item->P, item->N);
-	}
+	PN_counter_set(pnc, 0);
 	return;
 }
 
@@ -107,6 +120,11 @@ void PN_counter_serialize(struct PN_counter *pnc, char **blob, size_t *blob_sz)
 
 	mpack_writer_init_growable(&writer, &mpack_buff, &mpack_sz);
 	mpack_build_array(&writer);	
+	mpack_write_bin(&writer, (const char*)&(pnc->write_timestamp), sizeof(pnc->write_timestamp));
+	mpack_write_i64(&writer, pnc->W);
+	mpack_write_i64(&writer, pnc->_P);
+	mpack_write_i64(&writer, pnc->_N);
+	
 	HASH_ITER(hh, pnc->hash_item, c, tmp)
 	{
 		mpack_write_str(&writer, c->replica_id, c->replica_id_sz);
@@ -130,10 +148,28 @@ struct PN_counter *PN_counter_deserialize(const char *blob, size_t blob_sz)
 	mpack_node_t mpnode_node_id, mpnode_P, mpnode_N;
 	
 	size_t array_sz=mpack_node_array_length(root);
-	assert(array_sz%3==0);
+	assert((array_sz-4)%3==0);
+	size_t i=0;
+	mpack_node_t tmp_node;
+	tmp_node=mpack_node_array_at(root, i);
+	assert(mpack_node_bin_size(tmp_node)==sizeof(pnc->write_timestamp));
+	memcpy(&pnc->write_timestamp, mpack_node_bin_data(tmp_node), mpack_node_bin_size(tmp_node));
+	i++;
+
+	tmp_node=mpack_node_array_at(root, i);
+	pnc->W=mpack_node_i64(tmp_node);
+	i++;
+
+	tmp_node=mpack_node_array_at(root, i);
+	pnc->_P=mpack_node_i64(tmp_node);
+	i++;
+
+	tmp_node=mpack_node_array_at(root, i);
+	pnc->_N=mpack_node_i64(tmp_node);
+	i++;
 	
 	struct counter_item *item=NULL;	
-	for(size_t i=0; i<array_sz; i+=3)
+	for(; i<array_sz; i+=3)
 	{
 		mpnode_node_id=mpack_node_array_at(root, i);
 		HASH_FIND(hh, pnc->hash_item, mpack_node_str(mpnode_node_id), mpack_node_strlen(mpnode_node_id), item);
@@ -155,7 +191,13 @@ struct PN_counter *PN_counter_deserialize(const char *blob, size_t blob_sz)
 void PN_counter_merge(struct PN_counter *dst, struct PN_counter *src)
 {
 	struct counter_item *src_item=NULL, *dst_item=NULL, *tmp=NULL;	
-
+	if(timercmp(&dst->write_timestamp, &src->write_timestamp, <))//Last-Write-Wins
+	{
+		dst->W=src->W;
+		dst->_P=src->_P;
+		dst->_N=src->_N;
+		memcpy(&dst->write_timestamp, &src->write_timestamp, sizeof(dst->write_timestamp));
+	}
 	HASH_ITER(hh, src->hash_item, src_item, tmp)
 	{
 		HASH_FIND(hh, dst->hash_item, src_item->replica_id,  src_item->replica_id_sz, dst_item);

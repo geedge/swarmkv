@@ -117,6 +117,23 @@ TEST(LWWRegister, Sequential)
 	}	
 	return;
 }
+void PN_counter_sync(struct PN_counter *list[], size_t n)
+{
+	char *blob=NULL;
+	size_t blob_sz=0;
+	
+	for(size_t i=0; i<n; i++)
+	{
+		PN_counter_serialize(list[i], &blob, &blob_sz);
+		for(size_t j=0; j<n; j++)
+		{
+			PN_counter_merge_blob(list[j], blob, blob_sz);
+		}
+		free(blob);
+		blob=NULL;
+	}	
+	return;
+}
 TEST(PNCounter, Basic)
 {
 	struct PN_counter *pnc=NULL;
@@ -135,6 +152,9 @@ TEST(PNCounter, Basic)
 
 	value=PN_counter_reset(pnc);
 	EXPECT_EQ(value, 0);
+
+	value=PN_counter_set(pnc, 2379);
+	EXPECT_EQ(value, 2379);
 
 	PN_counter_free(pnc);
 }
@@ -174,14 +194,32 @@ TEST(PNCounter, Merge)
 	value=PN_counter_get(pnc[1]);
 	EXPECT_EQ(value, 0);
 	free(blob);
-	
+
+
+	PN_counter_set(pnc[0], 1314);
+	PN_counter_serialize(pnc[0], &blob, &blob_sz);
+	PN_counter_merge_blob(pnc[1], blob, blob_sz);
+	value=PN_counter_get(pnc[1]);
+	EXPECT_EQ(value, 1314);
+	free(blob);
+
+
+	PN_counter_set(pnc[0], 3344);
+	PN_counter_incrby(pnc[1], -11);
+	PN_counter_serialize(pnc[0], &blob, &blob_sz);
+	PN_counter_merge_blob(pnc[1], blob, blob_sz);
+	value=PN_counter_get(pnc[1]);
+	EXPECT_EQ(value, 3333);
+	free(blob);
+
+
 	for(size_t i=0; i<2; i++)
 	{
 		PN_counter_free(pnc[i]);
 	}
 
 }
-TEST(PNCounter, ObservedReset)
+TEST(PNCounter, ObservedSet)
 {
 	struct PN_counter *pnc[2];
 	uuid_t uuid;
@@ -190,38 +228,28 @@ TEST(PNCounter, ObservedReset)
 		uuid_generate(uuid);
 		pnc[i]=PN_counter_new((const char*)uuid, sizeof(uuid));
 	}
-	PN_counter_incrby(pnc[0], 200);
-	PN_counter_reset(pnc[0]);
-	PN_counter_incrby(pnc[1], -100);
-	
-
-	char *blob=NULL;
-	size_t blob_sz=0;
 	long long value=0;
-
-	PN_counter_serialize(pnc[0], &blob, &blob_sz);
-	PN_counter_merge_blob(pnc[1], blob, blob_sz);
-	free(blob);
+	PN_counter_incrby(pnc[0], 2);
+	PN_counter_set(pnc[0], 3);
+	PN_counter_incrby(pnc[1], -1);
 	
-	PN_counter_serialize(pnc[1], &blob, &blob_sz);
-	PN_counter_merge_blob(pnc[0], blob, blob_sz);
-	free(blob);
+	PN_counter_sync(pnc, 2);
 	
 	value=PN_counter_get(pnc[0]);
-	EXPECT_EQ(value, -100);
+	EXPECT_EQ(value, 2);
 	value=PN_counter_get(pnc[1]);
-	EXPECT_EQ(value, -100);
+	EXPECT_EQ(value, 2);
 
-	PN_counter_reset(pnc[0]);
+	PN_counter_incrby(pnc[0], 7);	
+	PN_counter_sync(pnc, 2);
+	PN_counter_set(pnc[1], 8);
+	PN_counter_sync(pnc, 2);
 
-	PN_counter_serialize(pnc[0], &blob, &blob_sz);
-	PN_counter_merge_blob(pnc[1], blob, blob_sz);
-	free(blob);
-
+	
 	value=PN_counter_get(pnc[0]);
-	EXPECT_EQ(value, 0);
+	EXPECT_EQ(value, 8);
 	value=PN_counter_get(pnc[1]);
-	EXPECT_EQ(value, 0);
+	EXPECT_EQ(value, 8);
 
 	for(size_t i=0; i<2; i++)
 	{
@@ -231,7 +259,7 @@ TEST(PNCounter, ObservedReset)
 
 TEST(PNCounter, Replica100)
 {
-	size_t test_replica_num=100, i=0, j=0;	
+	size_t test_replica_num=100, i=0;	
 	uuid_t uuid;
 
 	struct PN_counter *pnc[test_replica_num];
@@ -251,20 +279,8 @@ TEST(PNCounter, Replica100)
 		expect_value+=increment;
 		
 	}
+	PN_counter_sync(pnc, test_replica_num);
 
-	char *blob=NULL;
-	size_t blob_sz=0;
-	
-	for(i=0; i<test_replica_num; i++)
-	{
-		PN_counter_serialize(pnc[i], &blob, &blob_sz);
-		for(j=0; j<test_replica_num; j++)
-		{
-			PN_counter_merge_blob(pnc[j], blob, blob_sz);
-		}
-		free(blob);
-		blob=NULL;
-	}	
 	size_t success=0;
 	for(i=0; i<test_replica_num; i++)
 	{
