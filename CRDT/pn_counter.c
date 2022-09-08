@@ -145,7 +145,7 @@ struct PN_counter *PN_counter_deserialize(const char *blob, size_t blob_sz)
 	mpack_tree_init_data(&tree, blob, blob_sz);
 	mpack_tree_parse(&tree);
 	mpack_node_t root=mpack_tree_root(&tree);
-	mpack_node_t mpnode_node_id, mpnode_P, mpnode_N;
+	mpack_node_t mpnode_replica_id, mpnode_P, mpnode_N;
 	
 	size_t array_sz=mpack_node_array_length(root);
 	assert((array_sz-4)%3==0);
@@ -171,11 +171,11 @@ struct PN_counter *PN_counter_deserialize(const char *blob, size_t blob_sz)
 	struct counter_item *item=NULL;	
 	for(; i<array_sz; i+=3)
 	{
-		mpnode_node_id=mpack_node_array_at(root, i);
-		HASH_FIND(hh, pnc->hash_item, mpack_node_str(mpnode_node_id), mpack_node_strlen(mpnode_node_id), item);
+		mpnode_replica_id=mpack_node_array_at(root, i);
+		HASH_FIND(hh, pnc->hash_item, mpack_node_str(mpnode_replica_id), mpack_node_strlen(mpnode_replica_id), item);
 		assert(item==NULL);
 
-		item=counter_item_new( mpack_node_str(mpnode_node_id), mpack_node_strlen(mpnode_node_id));
+		item=counter_item_new( mpack_node_str(mpnode_replica_id), mpack_node_strlen(mpnode_replica_id));
 		mpnode_P=mpack_node_array_at(root, i+1);
 		mpnode_N=mpack_node_array_at(root, i+2);
 		item->P=mpack_node_i64(mpnode_P);

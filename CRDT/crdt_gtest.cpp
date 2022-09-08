@@ -2,12 +2,97 @@
 #include "pn_counter.h"
 #include "or_set.h"
 #include "or_map.h"
+#include "oc_token_bucket.h"
 
 #include <gtest/gtest.h>
 #include <unistd.h> //usleep
 #include <uuid/uuid.h>
 
 #define NDOE_NUMBER	8
+void OC_token_bucket_sync(struct OC_token_bucket *list[], size_t n)
+{
+	char *blob=NULL;
+	size_t blob_sz=0;
+	
+	for(size_t i=0; i<n; i++)
+	{
+		OC_token_bucket_serialize(list[i], &blob, &blob_sz);
+		for(size_t j=0; j<n; j++)
+		{
+			OC_token_bucket_merge_blob(list[j], blob, blob_sz);
+		}
+		free(blob);
+		blob=NULL;
+	}	
+	return;
+}
+
+TEST(OCTokenBucket, Basic)
+{
+	uuid_t uuid;
+	uuid_generate(uuid);
+
+	struct OC_token_bucket *bucket=NULL;
+	long long CIR=100;
+	long long CBS=200;
+	bucket=OC_token_bucket_new((const char*)uuid, sizeof(uuid), CIR, CBS);
+	long long tokens=0;
+	tokens=OC_token_bucket_consume(bucket, 140);
+	EXPECT_EQ(tokens, 140);
+	
+	tokens=OC_token_bucket_consume(bucket, 61);
+	EXPECT_EQ(tokens, 0);
+
+	tokens=OC_token_bucket_consume(bucket, 60);
+	EXPECT_EQ(tokens, 60);
+
+	sleep(1);
+
+	tokens=OC_token_bucket_consume(bucket, 90);
+	EXPECT_EQ(tokens, 90);
+	
+	tokens=OC_token_bucket_get_available(bucket);
+	EXPECT_GE(tokens, 110);
+//	printf("avail=%lld\n", tokens);
+	
+	tokens=OC_token_bucket_consume(bucket, 110);
+	EXPECT_EQ(tokens, 110);
+	OC_token_bucket_free(bucket);
+	
+}
+TEST(OCTokenBucket, Merge)
+{
+	struct OC_token_bucket *buckets[2];
+	uuid_t uuid;
+	long long CIR=100;
+	long long CBS=200;
+
+	size_t i=0;
+	for(i=0; i<2; i++)
+	{
+		uuid_generate(uuid);
+		buckets[i]=OC_token_bucket_new((const char*)uuid, sizeof(uuid), CIR, CBS);
+	}
+	long long tokens=0;
+	OC_token_bucket_sync(buckets, 2);
+	tokens=OC_token_bucket_consume(buckets[0], 130);
+	EXPECT_EQ(tokens, 130);
+	tokens=OC_token_bucket_consume(buckets[1], 30);
+	EXPECT_EQ(tokens, 30);
+
+	OC_token_bucket_sync(buckets, 2);
+	
+	tokens=OC_token_bucket_consume(buckets[0], 41);
+	EXPECT_EQ(tokens, 0);
+	tokens=OC_token_bucket_consume(buckets[1], 40);
+	EXPECT_EQ(tokens, 40);
+	OC_token_bucket_sync(buckets, 2);
+	
+	for(i=0; i<2; i++)
+	{
+		OC_token_bucket_free(buckets[i]);
+	}
+}
 
 TEST(LWWRegister, Basic)
 {
