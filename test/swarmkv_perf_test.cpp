@@ -142,7 +142,7 @@ TEST(MultiThreads, Nthreads)
 
 
 }
-int g_stop_flag=0;
+int g_running_flag=0;
 void *background_running_thread(void *thread_arg)
 {
 	struct swarmkv *db=(struct swarmkv *)thread_arg;
@@ -154,24 +154,44 @@ void *background_running_thread(void *thread_arg)
 	arg=cmd_exec_arg_new();
 
 	char key[256], value[256];
-	snprintf(key, sizeof(key), "background-running-key-%s", uuid_str);
-	snprintf(value, sizeof(value), "background-running-value");	
-
-	int ret=3;
-	while(ret==3 && !g_stop_flag)
+	int ret=0;
+	int static_key_cnt=1024;
+	for(int i=0; i<static_key_cnt; i++)
 	{
-		ret=0;
-		cmd_exec_arg_clear(arg);
+		snprintf(key, sizeof(key), "static-key-%d-of-%s", i, uuid_str);
+		snprintf(value, sizeof(value), "background-running-value"); 
+
+		cmd_exec_arg_clear(arg);		
+		cmd_exec_arg_expect_OK(arg);
 		swarmkv_set(db, key, strlen(key), value, strlen(value), cmd_exec_generic_callback, arg);
 		ret+=cmd_exec_arg_wait(arg, PERF_TEST_EXEC_TO_MS);
+	}
+	EXPECT_EQ(ret, static_key_cnt);
+
+	snprintf(key, sizeof(key), "ephemeral-key-of-%s", uuid_str);
+	snprintf(value, sizeof(value), "background-running-value");	
+	ret=3;
+	while(ret==3 && g_running_flag)
+	{
+		ret=0;
+		cmd_exec_arg_clear(arg);		
+		cmd_exec_arg_expect_OK(arg);
+		swarmkv_set(db, key, strlen(key), value, strlen(value), cmd_exec_generic_callback, arg);
+		ret+=cmd_exec_arg_wait(arg, PERF_TEST_EXEC_TO_MS);
+		
+		cmd_exec_arg_clear(arg);		
+		cmd_exec_arg_expect_cstring(arg, value);		
 		swarmkv_get(db, key, strlen(key), cmd_exec_generic_callback, arg); 
 		ret+=cmd_exec_arg_wait(arg, PERF_TEST_EXEC_TO_MS);
+
+		cmd_exec_arg_clear(arg);
 		cmd_exec_arg_expect_integer(arg, 1);
 		swarmkv_del(db, key, strlen(key), cmd_exec_generic_callback, arg);
 		ret+=cmd_exec_arg_wait(arg, PERF_TEST_EXEC_TO_MS);
 	}
-	
+	cmd_exec_arg_free(arg);
 	int *success=ALLOC(int, 1);
+	EXPECT_EQ(ret, 3);
 	if(ret==3)
 		*success=1;
 	else
@@ -182,7 +202,7 @@ TEST(Migration, AddNode)
 {
 	int NODE_NUMBER=3;
 	int CALLBACK_THREAD_NUMBER=2;
-	int WORKER_THREAD_NUMBER=2;
+	int WORKER_THREAD_NUMBER=1;
 	int i=0, j=0;
 	struct swarmkv *db[NODE_NUMBER+1];
 	char *err=NULL;
@@ -213,7 +233,7 @@ TEST(Migration, AddNode)
 		}
 	}
 	struct swarmkv *to_join_db=db[NODE_NUMBER];
-	g_stop_flag=0;
+	g_running_flag=1;
 	pthread_t threads[NODE_NUMBER][WORKER_THREAD_NUMBER];
 	for(i=0; i<NODE_NUMBER; i++)
 	{
@@ -222,9 +242,10 @@ TEST(Migration, AddNode)
 			pthread_create(&(threads[i][j]), NULL, background_running_thread, db[i]);
 		}
 	}
-	swarmkv_cli_add_node(cluster_name, "127.0.0.1", p2p_port_start+NODE_NUMBER+1);
-	sleep(10);
-	g_stop_flag=1;
+	sleep(5);
+//	swarmkv_cli_add_node(cluster_name, "127.0.0.1", p2p_port_start+NODE_NUMBER+1);
+	sleep(3600);
+	g_running_flag=0;
 	int *successful_backgroud_running_thread=NULL;
 	for(i=0; i<NODE_NUMBER; i++)
 	{
@@ -238,6 +259,12 @@ TEST(Migration, AddNode)
 			successful_backgroud_running_thread=NULL;
 		}
 	}
+
+	for(i=0; i<NODE_NUMBER+1; i++)
+	{
+		swarmkv_close(db[i]);
+	}
+
 	log_handle_destroy(logger);
 
 }

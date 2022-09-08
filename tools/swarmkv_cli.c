@@ -39,8 +39,8 @@ static void usage(void)
 	"Usage: swarmkv-cli [OPTIONS] [cmd [arg [arg ...]]]\n"
 	"  -n <cluster-name>  Cluster name used for orchestration.\n"
 	"  -p <consul-port>   Consul Agent port (default: 8500).\n"
-	"  --cluster-create	<cluster-name> IP port [IP port]  Create cluster orchestration information in Consul KV.\n",	
-	"  --exec	[Command]  Execute comand and exit.\n",
+	"  --cluster-create	<cluster-name> IP port [IP port]  Create cluster orchestration information in Consul KV.\n"	
+	"  --exec [Command]  Execute comand and exit.\n",
 	SWARMKV_CLI_VERSION);
 	
     exit(1);
@@ -749,7 +749,7 @@ void print_reply(const struct swarmkv_reply *reply)
 			printf("%s\n", reply->str);
 			break;
 		case SWARMKV_REPLY_STRING:
-			printf("\"%s\"\n", reply->str);
+			printf("\"%.*s\"\n", reply->len, reply->str);
 			break;
 		case SWARMKV_REPLY_ARRAY:
 			for(i=0; i<reply->n_element; i++)
@@ -848,6 +848,7 @@ int main(int argc, char * argv[])
 		}
 		print_reply(reply);
 		swarmkv_reply_free(reply);
+		for(i=0; i<exec_argc; i++) sdsfree(exec_argv[i]);
 		free(exec_argv);
 		return 1;
 	}
