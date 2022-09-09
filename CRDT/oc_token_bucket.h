@@ -5,6 +5,7 @@
 */
 #pragma once
 #include <stddef.h>
+#include <sys/time.h>
 
 #ifdef __cplusplus
 extern "C"
@@ -18,7 +19,14 @@ struct OC_token_bucket *OC_token_bucket_new(const char* id, size_t id_sz, long l
 void OC_token_bucket_free(struct OC_token_bucket *bucket);
 
 long long OC_token_bucket_consume(struct OC_token_bucket *bucket, long long tokens);
+long long OC_token_bucket_consume_flexible(struct OC_token_bucket *bucket, long long tokens);
 long long OC_token_bucket_get_available(struct OC_token_bucket *bucket);
+
+#define	CONSUME_FLAG_DRYRUN						(1<<1)
+#define	CONSUME_FLAG_FORCE						(1<<2)
+#define	CONSUME_FLAG_FLEXIBLE					(1<<3)
+#define	CONSUME_FLAG_AS_MUCH_AS_POSSIBLE		(1<<4)
+long long OC_token_bucket_consume_generic(struct OC_token_bucket *bucket, struct timeval now, long long tokens, int flag);
 
 void OC_token_bucket_serialize(struct OC_token_bucket *bucket, char **blob, size_t *blob_sz);
 struct OC_token_bucket *OC_token_bucket_deserialize(const char *blob, size_t blob_sz);

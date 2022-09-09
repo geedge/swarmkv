@@ -1,3 +1,4 @@
+#include "oc_token_bucket.h"
 #include "crdt_utils.h"
 #include "pn_counter.h"
 #include "uthash.h"
@@ -5,7 +6,6 @@
 
 #include <assert.h>
 #include <string.h>
-#include <sys/time.h>
 
 struct OC_configuration
 {
@@ -40,12 +40,15 @@ void OC_token_bucket_free(struct OC_token_bucket *bucket)
 	PN_counter_free(bucket->consumed);
 	free(bucket);
 }
-#define	CONSUME_FLAG_DRYRUN	(1<<1)
-#define	CONSUME_FLAG_FORCE	(1<<2)
-static long long token_consume_generic(struct OC_token_bucket *bucket, long long tokens, int flag)
+void OC_token_bucket_configure(struct OC_token_bucket *bucket, long long CIR, long long CBS, long long refill_duration_ms)
 {
-	struct timeval now;
-	gettimeofday(&now, NULL);
+	gettimeofday(&bucket->cfg.write_timestamp, NULL);
+	if(CIR>=0) bucket->cfg.CIR=CIR;
+	if(CBS>=0) bucket->cfg.CBS=CBS;
+	if(refill_duration_ms>=0) bucket->cfg.refill_duration_ms=refill_duration_ms;
+}
+long long OC_token_bucket_consume_generic(struct OC_token_bucket *bucket, struct timeval now, long long tokens, int flag)
+{
 	long long delta_time_ms=timeval_delta_ms(bucket->refill_timestamp, now);
 	long long consumed=PN_counter_get(bucket->consumed);
 	long long to_add=0;
@@ -53,7 +56,7 @@ static long long token_consume_generic(struct OC_token_bucket *bucket, long long
 	
 	if(delta_time_ms>bucket->cfg.refill_duration_ms)
 	{
-		to_add=bucket->cfg.CBS*delta_time_ms/1000;
+		to_add=bucket->cfg.CIR*delta_time_ms/1000;
 		if(to_add + refilled - consumed < bucket->cfg.CBS)
 		{
 			refilled+=to_add;
@@ -63,32 +66,54 @@ static long long token_consume_generic(struct OC_token_bucket *bucket, long long
 			refilled+=bucket->cfg.CBS - (refilled - consumed);
 		}
 	}
-	if(bucket->refilled!=refilled && !(flag&CONSUME_FLAG_DRYRUN))
+	long long available=refilled-consumed;
+	long long assigned=0;
+	if(flag&CONSUME_FLAG_AS_MUCH_AS_POSSIBLE)
+	{
+		assigned=available;
+	}
+	else if(flag&CONSUME_FLAG_FORCE)
+	{	
+		assigned=tokens;
+	}
+	else if(flag&CONSUME_FLAG_FLEXIBLE)
+	{
+		assigned=MIN(tokens, available);
+	}
+	else
+	{
+		assigned=(tokens<=available) ? tokens:0;
+	}
+	if(flag&CONSUME_FLAG_DRYRUN)
+	{
+		return assigned;
+	}
+	if(bucket->refilled!=refilled)
 	{
 		bucket->refilled=refilled;		
 		memcpy(&bucket->refill_timestamp, &now, sizeof(bucket->refill_timestamp));
 	}
-	if(tokens<0)
-	{
-		return refilled-consumed;
-	}
-	else if(tokens  <= refilled-consumed || (flag&CONSUME_FLAG_FORCE))
-	{
-		PN_counter_incrby(bucket->consumed, tokens);
-		return tokens;
-	}
-	else
-	{
-		return 0;
-	}
+	PN_counter_incrby(bucket->consumed, assigned);
+	return assigned;
 }
 long long OC_token_bucket_get_available(struct OC_token_bucket *bucket)
 {
-	return token_consume_generic(bucket, -1, CONSUME_FLAG_DRYRUN);
+	struct timeval now;
+	gettimeofday(&now, NULL);
+	return OC_token_bucket_consume_generic(bucket, now, -1, CONSUME_FLAG_DRYRUN|CONSUME_FLAG_AS_MUCH_AS_POSSIBLE);
+}
+long long OC_token_bucket_consume_flexible(struct OC_token_bucket *bucket, long long tokens)
+{
+	struct timeval now;
+	gettimeofday(&now, NULL);
+	return OC_token_bucket_consume_generic(bucket, now, tokens, CONSUME_FLAG_FLEXIBLE);
 }
 long long OC_token_bucket_consume(struct OC_token_bucket *bucket, long long tokens)
 {
-	return token_consume_generic(bucket, tokens, 0);
+	if(tokens<0) return -1;
+	struct timeval now;
+	gettimeofday(&now, NULL);
+	return OC_token_bucket_consume_generic(bucket, now, tokens, 0);
 }
 void OC_token_bucket_serialize(struct OC_token_bucket *bucket, char **blob, size_t *blob_sz)
 {

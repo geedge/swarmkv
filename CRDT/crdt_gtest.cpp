@@ -3,12 +3,13 @@
 #include "or_set.h"
 #include "or_map.h"
 #include "oc_token_bucket.h"
+#include "crdt_utils.h"
 
 #include <gtest/gtest.h>
 #include <unistd.h> //usleep
 #include <uuid/uuid.h>
 
-#define NDOE_NUMBER	8
+#define REPLICA_NUMBER	3
 void OC_token_bucket_sync(struct OC_token_bucket *list[], size_t n)
 {
 	char *blob=NULL;
@@ -19,6 +20,7 @@ void OC_token_bucket_sync(struct OC_token_bucket *list[], size_t n)
 		OC_token_bucket_serialize(list[i], &blob, &blob_sz);
 		for(size_t j=0; j<n; j++)
 		{
+			if(j==i) continue;
 			OC_token_bucket_merge_blob(list[j], blob, blob_sz);
 		}
 		free(blob);
@@ -52,11 +54,11 @@ TEST(OCTokenBucket, Basic)
 	EXPECT_EQ(tokens, 90);
 	
 	tokens=OC_token_bucket_get_available(bucket);
-	EXPECT_GE(tokens, 110);
+	EXPECT_GE(tokens, 10);
 //	printf("avail=%lld\n", tokens);
 	
-	tokens=OC_token_bucket_consume(bucket, 110);
-	EXPECT_EQ(tokens, 110);
+	tokens=OC_token_bucket_consume(bucket, 10);
+	EXPECT_EQ(tokens, 10);
 	OC_token_bucket_free(bucket);
 	
 }
@@ -93,7 +95,57 @@ TEST(OCTokenBucket, Merge)
 		OC_token_bucket_free(buckets[i]);
 	}
 }
+TEST(OCTokenBucket, NReplica)
+{
+	struct OC_token_bucket *buckets[REPLICA_NUMBER];
+	size_t i=0, j=0;
+	long long CIR=1*1024*1024;
+	long long CBS=2*1024*1024;
+	uuid_t uuid;
+	for(i=0; i<REPLICA_NUMBER; i++)
+	{
+		uuid_generate(uuid);
+		buckets[i]=OC_token_bucket_new((const char*)uuid, sizeof(uuid), CIR, CBS);
+	}
+	srandom(17);
+	long long tokens=0;
+	long long consumed=0, requested=0, ideal=0;
+	long long mimic_duration_us=(long long)100*1000*1000;
+	long long step_us=100;
+	struct timeval start, step, now;
+	gettimeofday(&start, NULL);
+	memcpy(&now, &start, sizeof(now));
+	step.tv_sec=0;
+	step.tv_usec=(suseconds_t)step_us;
+	for(i=0; (long long)i<mimic_duration_us/step_us; i++)
+	{
+		timeradd(&now, &step, &now);
+		j=random()%REPLICA_NUMBER;
+		tokens=CIR*step_us/(1000*1000);
+		tokens=tokens*2+random()%tokens;
+		requested+=tokens;
+		consumed+=OC_token_bucket_consume_generic(buckets[j], now, tokens, 0);
+		//if(i%1000==0)
+		{
+			OC_token_bucket_sync(buckets, REPLICA_NUMBER);
+		}
+	}
+	ideal=CBS+CIR*timeval_delta_ms(start, now)/1000;
+	EXPECT_LE(consumed, ideal);
+	EXPECT_LE(consumed, requested);
+	EXPECT_GE(requested, ideal);
+	double accuracy=(double)consumed/ideal;
+	EXPECT_NEAR(accuracy, 1, 0.1);
+	printf("accuracy=%f\n", accuracy);
+	for(i=0; i<REPLICA_NUMBER; i++)
+	{
+		OC_token_bucket_free(buckets[i]);
+	}
+}
+TEST(OCTokenBucket, Configure)
+{
 
+}
 TEST(LWWRegister, Basic)
 {
 	struct LWW_register *reg=NULL;
