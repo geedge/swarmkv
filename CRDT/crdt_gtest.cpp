@@ -53,7 +53,7 @@ TEST(OCTokenBucket, Basic)
 	tokens=OC_token_bucket_consume(bucket, 90);
 	EXPECT_EQ(tokens, 90);
 	
-	tokens=OC_token_bucket_get_available(bucket);
+	tokens=OC_token_bucket_read_available(bucket);
 	EXPECT_GE(tokens, 10);
 //	printf("avail=%lld\n", tokens);
 	
@@ -95,25 +95,26 @@ TEST(OCTokenBucket, Merge)
 		OC_token_bucket_free(buckets[i]);
 	}
 }
-TEST(OCTokenBucket, NReplica)
+TEST(OCTokenBucket, HevayConsumer)
 {
 	struct OC_token_bucket *buckets[REPLICA_NUMBER];
 	size_t i=0, j=0;
 	long long CIR=1*1024*1024;
 	long long CBS=2*1024*1024;
 	uuid_t uuid;
+	struct timeval start;
+	gettimeofday(&start, NULL);
 	for(i=0; i<REPLICA_NUMBER; i++)
 	{
 		uuid_generate(uuid);
-		buckets[i]=OC_token_bucket_new((const char*)uuid, sizeof(uuid), CIR, CBS);
+		buckets[i]=OC_token_bucket_new_with_time((const char*)uuid, sizeof(uuid), start, CIR, CBS);
 	}
 	srandom(17);
 	long long tokens=0;
-	long long consumed=0, requested=0, ideal=0;
+	long long consumed=0, requested=0, upper_limit=0, refilled=0;
 	long long mimic_duration_us=(long long)100*1000*1000;
 	long long step_us=100;
-	struct timeval start, step, now;
-	gettimeofday(&start, NULL);
+	struct timeval step, now;
 	memcpy(&now, &start, sizeof(now));
 	step.tv_sec=0;
 	step.tv_usec=(suseconds_t)step_us;
@@ -122,25 +123,76 @@ TEST(OCTokenBucket, NReplica)
 		timeradd(&now, &step, &now);
 		j=random()%REPLICA_NUMBER;
 		tokens=CIR*step_us/(1000*1000);
-		tokens=tokens*2+random()%tokens;
+		tokens=tokens+random()%tokens;
 		requested+=tokens;
-		consumed+=OC_token_bucket_consume_generic(buckets[j], now, tokens, 0);
-		//if(i%1000==0)
+		consumed+=OC_token_bucket_control(buckets[j], now, OCTB_CMD_CONSUME_NORMAL, tokens);
+		if(i%50==0)
 		{
 			OC_token_bucket_sync(buckets, REPLICA_NUMBER);
 		}
 	}
-	ideal=CBS+CIR*timeval_delta_ms(start, now)/1000;
-	EXPECT_LE(consumed, ideal);
+	upper_limit=CBS+CIR*timeval_delta_ms(start, now)/1000;
+	refilled=OC_token_bucket_control(buckets[0], now, OCTB_CMD_READ_REFILLED, 0);
+	EXPECT_LE(refilled, upper_limit);
 	EXPECT_LE(consumed, requested);
-	EXPECT_GE(requested, ideal);
-	double accuracy=(double)consumed/ideal;
+	double accuracy=(double)consumed/refilled;
 	EXPECT_NEAR(accuracy, 1, 0.1);
 	printf("accuracy=%f\n", accuracy);
 	for(i=0; i<REPLICA_NUMBER; i++)
 	{
 		OC_token_bucket_free(buckets[i]);
 	}
+}
+TEST(OCTokenBucket, LightConsumer)
+{
+	struct OC_token_bucket *buckets[REPLICA_NUMBER];
+	size_t i=0, j=0;
+	long long CIR=1*1024*1024;
+	long long CBS=2*1024*1024;
+	uuid_t uuid;
+	struct timeval start;
+	gettimeofday(&start, NULL);
+	for(i=0; i<REPLICA_NUMBER; i++)
+	{
+		uuid_generate(uuid);
+		buckets[i]=OC_token_bucket_new_with_time((const char*)uuid, sizeof(uuid), start, CIR, CBS);
+	}
+	srandom(17);
+	long long tokens=0;
+	long long consumed=0, requested=0, upper_limit=0, refilled=0;
+	long long mimic_duration_us=(long long)100*1000*1000;
+	long long step_us=100;
+	struct timeval step, now;
+	memcpy(&now, &start, sizeof(now));
+	step.tv_sec=0;
+	step.tv_usec=(suseconds_t)step_us;
+	for(i=0; (long long)i<mimic_duration_us/step_us; i++)
+	{
+		timeradd(&now, &step, &now);
+		j=random()%REPLICA_NUMBER;
+		tokens=CIR*step_us/(1000*1000);
+		tokens=random()%tokens;
+		requested+=tokens;
+		consumed+=OC_token_bucket_control(buckets[j], now, OCTB_CMD_CONSUME_NORMAL, tokens);
+		if(i%50==0)
+		{
+			OC_token_bucket_sync(buckets, REPLICA_NUMBER);
+		}
+	}
+	upper_limit=CBS+CIR*timeval_delta_ms(start, now)/1000;
+	refilled=OC_token_bucket_control(buckets[0], now, OCTB_CMD_READ_REFILLED, 0);
+	EXPECT_LE(consumed, refilled);
+	EXPECT_LE(refilled, upper_limit);
+	EXPECT_LE(consumed, requested);
+	double accuracy=(double)consumed/requested;
+	EXPECT_NEAR(accuracy, 1, 0.1);
+	printf("accuracy=%f\n", accuracy);
+	for(i=0; i<REPLICA_NUMBER; i++)
+	{
+		OC_token_bucket_free(buckets[i]);
+	}
+
+
 }
 TEST(OCTokenBucket, Configure)
 {

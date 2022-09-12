@@ -16,45 +16,59 @@ struct OC_configuration
 };
 struct OC_token_bucket
 {
-	char* my_id;
-	size_t my_id_sz;	
 	struct OC_configuration cfg;
 	long long refilled;
 	struct timeval refill_timestamp;//no sync, local only
 	struct PN_counter *consumed;
 };
-struct OC_token_bucket *OC_token_bucket_new(const char* id, size_t id_sz, long long CIR, long long CBS)
+struct OC_token_bucket *OC_token_bucket_new_with_time(const char* id, size_t id_sz, struct timeval now, long long CIR, long long CBS)
 {
 	struct OC_token_bucket *bucket=ALLOC(struct OC_token_bucket, 1);
 	bucket->consumed=PN_counter_new(id, id_sz);
 	gettimeofday(&bucket->cfg.write_timestamp, NULL);
+	memcpy(&bucket->cfg.write_timestamp, &now, sizeof(bucket->cfg.write_timestamp));
 	bucket->cfg.CIR=CIR;
 	bucket->cfg.CBS=CBS;
 	bucket->cfg.refill_duration_ms=10;
-	gettimeofday(&bucket->refill_timestamp, NULL);
+	memcpy(&bucket->refill_timestamp, &now, sizeof(bucket->cfg.write_timestamp));
 	bucket->refilled=bucket->cfg.CBS;
 	return bucket;
 }
+struct OC_token_bucket *OC_token_bucket_new(const char* id, size_t id_sz, long long CIR, long long CBS)
+{
+	struct timeval now;
+	gettimeofday(&now, NULL);
+	return OC_token_bucket_new_with_time(id, id_sz, now, CIR, CBS);
+}
+
 void OC_token_bucket_free(struct OC_token_bucket *bucket)
 {
 	PN_counter_free(bucket->consumed);
 	free(bucket);
 }
-void OC_token_bucket_configure(struct OC_token_bucket *bucket, long long CIR, long long CBS, long long refill_duration_ms)
+void OC_token_bucket_configure_with_time(struct OC_token_bucket *bucket, struct timeval now, long long CIR, long long CBS, long long refill_duration_ms)
 {
-	gettimeofday(&bucket->cfg.write_timestamp, NULL);
+	memcpy(&bucket->cfg.write_timestamp, &now, sizeof(bucket->cfg.write_timestamp));
 	if(CIR>=0) bucket->cfg.CIR=CIR;
 	if(CBS>=0) bucket->cfg.CBS=CBS;
 	if(refill_duration_ms>=0) bucket->cfg.refill_duration_ms=refill_duration_ms;
 }
-long long OC_token_bucket_consume_generic(struct OC_token_bucket *bucket, struct timeval now, long long tokens, int flag)
+void OC_token_bucket_configure(struct OC_token_bucket *bucket, long long CIR, long long CBS, long long refill_duration_ms)
+{
+	struct timeval now;
+	gettimeofday(&now, NULL);
+	OC_token_bucket_configure_with_time(bucket, now, CIR, CBS, refill_duration_ms);
+}
+
+long long OC_token_bucket_control(struct OC_token_bucket *bucket, struct timeval now, enum OC_token_bucket_command cmd, long long tokens)
 {
 	long long delta_time_ms=timeval_delta_ms(bucket->refill_timestamp, now);
 	long long consumed=PN_counter_get(bucket->consumed);
 	long long to_add=0;
 	long long refilled=bucket->refilled;
+	int refill_flag=0;
 	
-	if(delta_time_ms>bucket->cfg.refill_duration_ms)
+	if(delta_time_ms>=bucket->cfg.refill_duration_ms)
 	{
 		to_add=bucket->cfg.CIR*delta_time_ms/1000;
 		if(to_add + refilled - consumed < bucket->cfg.CBS)
@@ -65,30 +79,34 @@ long long OC_token_bucket_consume_generic(struct OC_token_bucket *bucket, struct
 		{
 			refilled+=bucket->cfg.CBS - (refilled - consumed);
 		}
+		refill_flag=1;
 	}
+//	assert(refilled<102010000);
 	long long available=refilled-consumed;
 	long long assigned=0;
-	if(flag&CONSUME_FLAG_AS_MUCH_AS_POSSIBLE)
+	switch(cmd)
 	{
-		assigned=available;
+		case OCTB_CMD_CONSUME_AS_MUCH_AS_POSSIBLE:
+			assigned=available;
+			break;
+		case OCTB_CMD_CONSUME_FORCE:
+			assigned=tokens;
+			break;
+		case OCTB_CMD_CONSUME_FLEXIBLE:			
+			assigned=MIN(tokens, available);
+			break;
+		case OCTB_CMD_CONSUME_NORMAL:
+			assigned=(tokens<=available) ? tokens:0;
+			break;
+		case OCTB_CMD_READ_AVAILABLE:
+			return available;
+		case OCTB_CMD_READ_REFILLED:
+			return refilled;
+		default:
+			assert(0);
+			break;
 	}
-	else if(flag&CONSUME_FLAG_FORCE)
-	{	
-		assigned=tokens;
-	}
-	else if(flag&CONSUME_FLAG_FLEXIBLE)
-	{
-		assigned=MIN(tokens, available);
-	}
-	else
-	{
-		assigned=(tokens<=available) ? tokens:0;
-	}
-	if(flag&CONSUME_FLAG_DRYRUN)
-	{
-		return assigned;
-	}
-	if(bucket->refilled!=refilled)
+	if(refill_flag)
 	{
 		bucket->refilled=refilled;		
 		memcpy(&bucket->refill_timestamp, &now, sizeof(bucket->refill_timestamp));
@@ -96,24 +114,31 @@ long long OC_token_bucket_consume_generic(struct OC_token_bucket *bucket, struct
 	PN_counter_incrby(bucket->consumed, assigned);
 	return assigned;
 }
-long long OC_token_bucket_get_available(struct OC_token_bucket *bucket)
+long long OC_token_bucket_read_refilled(struct OC_token_bucket *bucket)
 {
 	struct timeval now;
 	gettimeofday(&now, NULL);
-	return OC_token_bucket_consume_generic(bucket, now, -1, CONSUME_FLAG_DRYRUN|CONSUME_FLAG_AS_MUCH_AS_POSSIBLE);
+	return OC_token_bucket_control(bucket, now, OCTB_CMD_READ_REFILLED, 0);
+
+}
+long long OC_token_bucket_read_available(struct OC_token_bucket *bucket)
+{
+	struct timeval now;
+	gettimeofday(&now, NULL);
+	return OC_token_bucket_control(bucket, now, OCTB_CMD_READ_AVAILABLE, 0);
 }
 long long OC_token_bucket_consume_flexible(struct OC_token_bucket *bucket, long long tokens)
 {
 	struct timeval now;
 	gettimeofday(&now, NULL);
-	return OC_token_bucket_consume_generic(bucket, now, tokens, CONSUME_FLAG_FLEXIBLE);
+	return OC_token_bucket_control(bucket, now, OCTB_CMD_CONSUME_FLEXIBLE, tokens);
 }
 long long OC_token_bucket_consume(struct OC_token_bucket *bucket, long long tokens)
 {
 	if(tokens<0) return -1;
 	struct timeval now;
 	gettimeofday(&now, NULL);
-	return OC_token_bucket_consume_generic(bucket, now, tokens, 0);
+	return OC_token_bucket_control(bucket, now, OCTB_CMD_CONSUME_NORMAL, tokens);
 }
 void OC_token_bucket_serialize(struct OC_token_bucket *bucket, char **blob, size_t *blob_sz)
 {
