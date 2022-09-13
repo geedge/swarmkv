@@ -299,6 +299,33 @@ When a requestor executes a command, it takes the following steps
 - Other replica executes the command, registers the requestor as one of the replica nodes, and send a reply to the requestor
 - The requestor receives the reply and invokes user callback function.
 
+## CRDT Explained
+
+Swarm KV uses state-based CRDT types to store values. 
+
+### String
+
+Swarm KV implements Last-Write-Wins Register (LWW Register) to store string values. Swarm KV didn't implement logical clock such as  [Version Vector](https://en.wikipedia.org/wiki/Version_vector) or [Lamport Clock](https://en.wikipedia.org/wiki/Lamport_timestamp),  instead,  it uses real time (man 3 gettimeofday) for simplicity.
+
+### Counter
+
+Swarm KV uses Positive-Negative Counter (PN-Counter) to store numeric values.
+
+### Set and Hash
+
+Swarm KV implements Add-Wins Observed-Remove Set (OR Set) to store set and hash values. OR Set is state-based and has no tombstone. Please referrer [An optimized conflict-free replicated set](https://arxiv.org/pdf/1210.3368.pdf) for more details.
+
+### Token Bucket
+
+Swarm KV implements Observe-Consumed Token Bucket (OC Token Bucket), which has a PN Counter to count consumed tokens and a Last-write-wins register to track refilled tokens. It is initialized with two parameters:
+
+- CIR: Committed Information Rate
+- CBS: Committed Burst Size
+
+After the initialization, the bucket is full, which means it has *CBS* tokens. You can reconfigure token bucket at anytime. Note that the reconfiguration will not refill token bucket to full.
+
+When network partitions and token bucket out-of-sync, each replica have the entire CIR. And after the network heals, replicas share the CIR again.
+
 ## Fault Tolerance
 
 ### High Availability
