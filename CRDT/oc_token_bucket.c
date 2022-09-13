@@ -51,7 +51,7 @@ void OC_token_bucket_configure_with_time(struct OC_token_bucket *bucket, struct 
 	memcpy(&bucket->cfg.write_timestamp, &now, sizeof(bucket->cfg.write_timestamp));
 	if(CIR>=0) bucket->cfg.CIR=CIR;
 	if(CBS>=0) bucket->cfg.CBS=CBS;
-	if(refill_duration_ms>=0) bucket->cfg.refill_duration_ms=refill_duration_ms;
+	if(refill_duration_ms>0) bucket->cfg.refill_duration_ms=refill_duration_ms;
 }
 void OC_token_bucket_configure(struct OC_token_bucket *bucket, long long CIR, long long CBS, long long refill_duration_ms)
 {
@@ -66,11 +66,17 @@ long long OC_token_bucket_control(struct OC_token_bucket *bucket, struct timeval
 	long long consumed=PN_counter_get(bucket->consumed);
 	long long to_add=0;
 	long long refilled=bucket->refilled;
+	assert(refilled>=0);
+	assert(consumed>=0);
 	int refill_flag=0;
 	
 	if(delta_time_ms>=bucket->cfg.refill_duration_ms)
 	{
 		to_add=bucket->cfg.CIR*delta_time_ms/1000;
+		if(refilled<consumed)
+		{
+			refilled=consumed;
+		}
 		if(to_add + refilled - consumed < bucket->cfg.CBS)
 		{
 			refilled+=to_add;
@@ -81,8 +87,8 @@ long long OC_token_bucket_control(struct OC_token_bucket *bucket, struct timeval
 		}
 		refill_flag=1;
 	}
-//	assert(refilled<102010000);
 	long long available=refilled-consumed;
+	if(available<0) available=0;
 	long long assigned=0;
 	switch(cmd)
 	{
@@ -111,6 +117,7 @@ long long OC_token_bucket_control(struct OC_token_bucket *bucket, struct timeval
 		bucket->refilled=refilled;		
 		memcpy(&bucket->refill_timestamp, &now, sizeof(bucket->refill_timestamp));
 	}
+	assert(assigned>=0);
 	PN_counter_incrby(bucket->consumed, assigned);
 	return assigned;
 }
@@ -209,12 +216,14 @@ void OC_token_bucket_merge(struct OC_token_bucket *dst, struct OC_token_bucket *
 	{
 		memcpy(&dst->cfg, &src->cfg, sizeof(src->cfg));
 	}
+	PN_counter_merge(dst->consumed, src->consumed);
+	
+	assert(dst->refilled>=0 && src->refilled>=0);
 	if(dst->refilled < src->refilled)//Bigger refilled wins
 	{
 		dst->refilled=src->refilled;
 		memcpy(&dst->refill_timestamp, &src->refill_timestamp, sizeof(dst->refill_timestamp));
-	}
-	PN_counter_merge(dst->consumed, src->consumed);
+	}	
 	return;
 }
 void OC_token_bucket_merge_blob(struct OC_token_bucket *bucket, const char *blob, size_t blob_sz)

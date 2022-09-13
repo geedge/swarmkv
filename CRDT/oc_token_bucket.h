@@ -18,6 +18,9 @@ struct OC_token_bucket;
 struct OC_token_bucket *OC_token_bucket_new(const char* id, size_t id_sz, long long CIR, long long CBS);
 struct OC_token_bucket *OC_token_bucket_new_with_time(const char* id, size_t id_sz, struct timeval now, long long CIR, long long CBS);
 
+void OC_token_bucket_configure(struct OC_token_bucket *bucket, long long CIR, long long CBS, long long refill_duration_ms);
+void OC_token_bucket_configure_with_time(struct OC_token_bucket *bucket, struct timeval now, long long CIR, long long CBS, long long refill_duration_ms);
+
 void OC_token_bucket_free(struct OC_token_bucket *bucket);
 
 long long OC_token_bucket_consume(struct OC_token_bucket *bucket, long long tokens);
