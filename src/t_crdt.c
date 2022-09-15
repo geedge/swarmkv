@@ -7,6 +7,14 @@
 #include <stdlib.h>
 #include <assert.h>
 
+UT_icd ut_array_matched_reply = {sizeof(struct swarmkv_reply *), NULL, NULL, NULL};
+
+struct pattern_match_arg
+{
+	sds pattern;
+    UT_array *matched_replies;
+};
+
 enum cmd_exec_result crdt_pull_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)
 {
 /* CRDT PULL key */
@@ -61,15 +69,23 @@ enum cmd_exec_result crdt_push_command(struct swarmkv_module *mod_store, const s
 
 enum cmd_exec_result crdt_del_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)
 {
-/* CRDT DEL <key> */
+/* CRDT DEL <ip port key> */
+    struct swarmkv_node_addr target_node;
+    sds2node_addr(cmd->argv+2, &target_node);
 
-	sds key=cmd->argv[2];
+    if(store_cmp_by_owner(mod_store, &target_node))
+    {
+        *reply=swarmkv_reply_new_node(&target_node, 1);
+        return REDIRECT;
+    }
+
+	sds key=cmd->argv[4];
 	struct sobj *obj=NULL;
 	obj=store_lookup(mod_store, key);
 	if(obj)
 	{
 		store_remove_obj(mod_store, obj);
-		sobj_free(obj);	
+		sobj_free(obj);
 		*reply=swarmkv_reply_new_integer(1);
 	}
 	else
@@ -97,18 +113,43 @@ enum cmd_exec_result crdt_join_command(struct swarmkv_module *mod_store, const s
 	}
 	return FINISHED;
 }
-UT_icd ut_array_matched_reply = {sizeof(struct swarmkv_reply *), NULL, NULL, NULL};
 
-struct pattern_match_arg
+enum cmd_exec_result crdt_join_conect_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)
 {
-	sds pattern;
-    UT_array *matched_replies;
-	
-};
+	/* CRDT CONNECT <key> replica.IP replica.port peer.IP peer.port*/
+	struct sobj *obj=NULL;
+	const sds key=cmd->argv[2];
+
+    struct swarmkv_node_addr target_node;
+    struct swarmkv_node_addr replica_node;
+
+    sds2node_addr(cmd->argv+3, &replica_node);
+    sds2node_addr(cmd->argv+5, &target_node);
+
+    if(!accessing_node)
+    {
+        *reply=swarmkv_reply_new_node(&target_node, 1);
+        return REDIRECT;
+    }
+
+	obj=store_lookup(mod_store, key);
+	int added=0;
+	if(obj)
+	{
+		added=sobj_add_replica_node(obj, &replica_node);
+		*reply=swarmkv_reply_new_integer(added);
+	}
+	else
+	{
+		*reply=swarmkv_reply_new_nil();
+	}
+	return FINISHED;
+}
+
 static void pattern_match_function(struct sobj * obj, void *cb_arg)
 {
 	int is_matched=0;
-	struct pattern_match_arg *arg=(struct pattern_match_arg*)arg;
+	struct pattern_match_arg *arg=(struct pattern_match_arg*)cb_arg;
     struct swarmkv_reply *r=NULL;
 	is_matched=stringmatchlen(arg->pattern, sdslen(arg->pattern), obj->key, sdslen(obj->key), 0);
 	if(is_matched)
@@ -149,15 +190,18 @@ enum cmd_exec_result crdt_keys_command(struct swarmkv_module *mod_store, const s
 	{
 		*reply=swarmkv_reply_new_nil();
 	}
+
 	utarray_free(cb_arg.matched_replies);
 	cb_arg.matched_replies=NULL;
 	cb_arg.pattern=NULL;
 	return FINISHED;
 }
+
 //CRDT EXISTS IP Port key
 enum cmd_exec_result crdt_exists_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)
 {
     struct swarmkv_node_addr target_node;
+
     sds2node_addr(cmd->argv+2, &target_node);
 	sds key=cmd->argv[4];
 

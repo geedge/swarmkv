@@ -22,6 +22,7 @@
 struct swarmkv_store
 {
 	struct swarmkv_module module;
+	struct swarmkv_node self;
 	struct scontainer* obj_table[STORE_SHARD_NUMBER];
 	struct scontainer *sync_queue[STORE_SHARD_NUMBER];
 	pthread_mutex_t mutex[STORE_SHARD_NUMBER];
@@ -229,7 +230,18 @@ void store_iterate_sobj(struct swarmkv_module *mod_store, sobj_callback_func_t *
         }
 		pthread_mutex_unlock(&(store->mutex[i]));
     }
-	
+
+}
+
+int store_cmp_by_owner(struct swarmkv_module* mod_store, struct swarmkv_node_addr *target_node)
+{
+    struct swarmkv_store *store=module2store(mod_store);
+
+    if(0!=swarmkv_node_addr_compare(&(store->self.addr), target_node))
+	{
+        return 1;
+	}
+    return 0;
 }
 
 struct sobj *store_lookup(struct swarmkv_module* mod_store, sds key)
@@ -517,7 +529,7 @@ void swarmkv_store_periodic(struct swarmkv_module * module)
 		pthread_mutex_unlock(&store->mutex[i]);
 	}
 }
-struct swarmkv_module *swarmkv_store_new(exec_cmd_func *send_cmd, void *handle_send_cmd, uuid_t node_uuid)
+struct swarmkv_module *swarmkv_store_new(const struct swarmkv_options *opts, exec_cmd_func *send_cmd, void *handle_send_cmd, uuid_t node_uuid)
 {
 	struct swarmkv_store* store=ALLOC(struct swarmkv_store, 1);
 	strncpy(store->module.name, "store", sizeof(store->module.name));
@@ -529,6 +541,8 @@ struct swarmkv_module *swarmkv_store_new(exec_cmd_func *send_cmd, void *handle_s
 		pthread_mutex_init(&(store->mutex[i]), NULL);
 	}
 	uuid_copy(store->my_uuid, node_uuid);
+    strncpy(store->self.addr.ip_addr, opts->bind_address, sizeof(store->self.addr.ip_addr));
+    store->self.addr.p2p_port=opts->p2p_port;
 	store->exec_cmd=send_cmd;
 	store->exec_cmd_handle=handle_send_cmd;
 	return &(store->module);

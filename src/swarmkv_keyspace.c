@@ -104,6 +104,34 @@ int key_entry_add_replica_node(struct key_route_entry *key_entry, const struct s
 	return 1;
 }
 
+int key_entry_rdel_replica_node(struct key_route_entry *key_entry, const struct swarmkv_node_addr *node)
+{
+	struct replica_node  *tmp=NULL, *find_replica=NULL, *replica=NULL;
+
+	HASH_FIND(hh, key_entry->hash_replica, node, sizeof(struct swarmkv_node_addr), find_replica);
+	if(!find_replica)
+	{
+		return 0;
+	}
+
+    if(key_entry->first_replica!=find_replica)
+    {
+        HASH_DEL(key_entry->hash_replica, find_replica);
+        return 1;
+    }
+
+    HASH_ITER(hh, key_entry->hash_replica, replica, tmp)
+    {
+        if(replica==find_replica)
+        {
+            HASH_DEL(key_entry->hash_replica, replica);
+            replica=NULL;
+        }
+        key_entry->first_replica=replica;
+    }
+
+	return 1;
+}
 
 struct swarmkv_reply *key_entry_list_replica_nodes(struct key_route_entry *key_entry)
 {
@@ -160,20 +188,26 @@ static void crdt_del_on_fail(enum e_future_error err, const char * what, void * 
 
 void key_entry_deletion_notification(struct key_route_entry *key_entry, exec_cmd_func *exec_cmd, struct swarmkv *exec_cmd_handle)
 {
-	struct replica_node *replica=NULL, *tmp=NULL;	
-	struct swarmkv_cmd *crdt_del_cmd=swarmkv_cmd_new(3);
-	crdt_del_cmd->argv[0]=sdsnew("crdt");
-	crdt_del_cmd->argv[1]=sdsnew("del");
-	crdt_del_cmd->argv[2]=sdsdup(key_entry->key);
+	struct replica_node *replica=NULL, *tmp=NULL;
+	struct swarmkv_cmd *crdt_del_cmd=NULL;
+
 	HASH_ITER(hh, key_entry->hash_replica, replica, tmp)
-	{		
+	{
 		struct crdt_del_ctx *ctx=ALLOC(struct crdt_del_ctx, 1);
 		swarmkv_node_addr_copy(&ctx->peer, &replica->addr);
 		ctx->key=sdsdup(key_entry->key);
 		ctx->f=future_create("key_del", crdt_del_on_succ, crdt_del_on_fail, ctx);
-		exec_cmd(exec_cmd_handle, crdt_del_cmd, &replica->addr, ctx->f);		
+
+        crdt_del_cmd=swarmkv_cmd_new(5);
+        crdt_del_cmd->argv[0]=sdsnew("crdt");
+	    crdt_del_cmd->argv[1]=sdsnew("del");
+        crdt_del_cmd->argv[2]=sdsnew(replica->addr.ip_addr);
+        crdt_del_cmd->argv[3]=sdsfromlonglong(replica->addr.p2p_port);
+	    crdt_del_cmd->argv[4]=sdsdup(key_entry->key);
+		exec_cmd(exec_cmd_handle, crdt_del_cmd, &replica->addr, ctx->f);
+        swarmkv_cmd_free(crdt_del_cmd);
 	}
-	swarmkv_cmd_free(crdt_del_cmd);
+
 	return;
 }
 
@@ -1551,7 +1585,8 @@ enum KEYSPACE_OP
 	KEYSPACE_RLIST,
 	KEYSPACE_RADD,
 	KEYSPACE_XRADD,
-	KEYSPACE_DEL
+	KEYSPACE_DEL,
+    KEYSPACE_RDEL
 };
 
 enum cmd_exec_result key_route_generic(struct swarmkv_keyspace *ks, enum KEYSPACE_OP op, const sds key, const struct swarmkv_node_addr *new_replica, struct swarmkv_reply **reply)
@@ -1620,6 +1655,23 @@ enum cmd_exec_result key_route_generic(struct swarmkv_keyspace *ks, enum KEYSPAC
 				*reply=swarmkv_reply_new_integer(0);
 			}
 			break;
+        case KEYSPACE_RDEL:
+            if(key_entry)
+            {
+                size_t n_existed_replica=0;
+                key_entry_rdel_replica_node(key_entry, new_replica);
+                n_existed_replica=HASH_COUNT(key_entry->hash_replica);
+                if(n_existed_replica==0)
+                {
+                    HASH_DELETE(hh, slot_rt->keyroute_table, key_entry);
+                }
+                *reply=swarmkv_reply_new_integer(1);
+            }
+            else
+            {
+                 *reply=swarmkv_reply_new_integer(0);
+            }
+            break;
 		default:
 			assert(0);
 			break;
@@ -1743,6 +1795,20 @@ enum cmd_exec_result del_command(struct swarmkv_module *mod_keyspace, const stru
 	enum cmd_exec_result ret=FINISHED;
 	sds key=cmd->argv[1];
 	ret=key_route_generic(ks, KEYSPACE_DEL, key, NULL, reply);
+	return ret;
+}
+
+enum cmd_exec_result keyspace_rdel_command(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)
+{
+/*KEYSPACE RDEL <key ip port> */
+	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
+	enum cmd_exec_result ret=FINISHED;
+	sds key=cmd->argv[4];
+
+    struct swarmkv_node_addr del_replica;
+	sds2node_addr(cmd->argv+2, &del_replica);
+
+	ret=key_route_generic(ks, KEYSPACE_RDEL, key, &del_replica, reply);
 	return ret;
 }
 

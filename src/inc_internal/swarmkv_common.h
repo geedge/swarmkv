@@ -100,8 +100,7 @@ struct swarmkv_reply *swarmkv_reply_new_status(const char *format, ...);
 struct swarmkv_reply *swarmkv_reply_new_error(const char *format, ...);
 struct swarmkv_reply *swarmkv_reply_dup(const struct swarmkv_reply *origin);
 void swarmkv_reply_merge_array(struct swarmkv_reply **dst, struct swarmkv_reply *src);
-void swarmkv_reply_append_arrray(struct swarmkv_reply **dst, struct swarmkv_reply *src);
-int swarmkv_reply_cmp(struct swarmkv_reply *reply_node, struct swarmkv_reply *node);
+void swarmkv_reply_append_string(struct swarmkv_reply **dst, struct swarmkv_reply *src);
 
 int swarmkv_reply2node_addr(const struct swarmkv_reply *reply, struct swarmkv_node_addr *node);
 int swarmkv_reply2nodelist(const struct swarmkv_reply *reply, struct swarmkv_node_addr **node_list, size_t *n_node);

@@ -580,8 +580,13 @@ void command_spec_init(struct swarmkv *db)
 	command_register(&(db->command_table), "CRDT JOIN", "key",
 					1, 2, CMD_KEY_NA,
 					crdt_join_command, db->mod_store);
-	command_register(&(db->command_table), "CRDT DEL", "key",
-					1, 2, CMD_KEY_NA,
+
+    command_register(&(db->command_table), "CRDT CONNECT", "key IP port IP port",
+                    5, 2, CMD_KEY_NA,
+                    crdt_join_conect_command, db->mod_store);
+
+	command_register(&(db->command_table), "CRDT DEL", "IP port key",
+					3, 4, CMD_KEY_NA,
 					crdt_del_command, db->mod_store);
     command_register(&(db->command_table), "CRDT KEYS", "IP port pattern",
 					3, -1, CMD_KEY_RO,
@@ -603,6 +608,9 @@ void command_spec_init(struct swarmkv *db)
 	command_register(&(db->command_table), "KEYSPACE KEYS", "IP port pattern",
 					3, -1, CMD_KEY_RO,
 					keyspace_keys_command, db->mod_keyspace);
+    command_register(&(db->command_table), "KEYSPACE RDEL", "IP port key",
+					3, 4, CMD_KEY_RO,
+					keyspace_rdel_command, db->mod_keyspace);
 
 	/* key slot migration commands */
 	command_register(&(db->command_table), "KEYSPACE SETSLOT", "node-IP node-port <slot> IMPORTING peer-IP peer-port | MIGRATING peer-IP peer-port | NODE peer-IP peer-port | STABLE",
@@ -719,7 +727,7 @@ struct swarmkv *swarmkv_open(struct swarmkv_options* opts, const char * db_name,
 	}
 	swarmkv_keyspace_set_exec_cmd_func(db->mod_keyspace, __exec_cmd, db);
 
-	db->mod_store=swarmkv_store_new(__exec_cmd, db, opts->bin_uuid);
+	db->mod_store=swarmkv_store_new(db->opts, __exec_cmd, db, opts->bin_uuid);
 	swarmkv_net_timer_add(db->net, 0, 10, 1, (timeout_cb*)swarmkv_store_periodic, db->mod_store);
 
 	command_spec_init(db);

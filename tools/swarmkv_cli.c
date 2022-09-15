@@ -2,7 +2,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <pthread.h>
 
+#include "uthash.h"
 #include "sds.h"
 #include "cJSON.h"
 #include "swarmkv_error.h"
@@ -441,9 +443,6 @@ error_out:
 	return reply;
 }
 
-
-
-
 struct swarmkv_reply *cluster_keyslot_command(struct swarmkv* db, char *argv[], size_t argc)
 {
 	/*KEYSPACE KEYSLOT key*/
@@ -489,12 +488,187 @@ struct swarmkv_reply *cluster_keys_command(struct swarmkv* db, char *argv[], siz
 	return reply;
 }
 
+struct replica_node_addr
+{
+    struct swarmkv_node_addr addr;
+	UT_hash_handle hh;
+};
+
+struct replica_list
+{
+    int len;
+    sds key;
+	struct replica_node_addr *replica_node_hash;
+	UT_hash_handle hh;
+};
+
+struct cluster_sanity_cmd_ctx
+{
+    int reply_cnt;
+    int heal_replica_cnt;
+    pthread_mutex_t mutex;
+    pthread_cond_t cond;
+	struct replica_list *keyspace_replica_hash;
+    struct replica_list *crdt_replica_hash;
+};
+
+struct keyspace_cmd_ctx
+{
+    sds key;
+    size_t keylen;
+    struct cluster_sanity_cmd_ctx *ctx;
+};
+
+void cluster_sanity_cond_signal(void * arg)
+{
+	struct cluster_sanity_cmd_ctx *ctx=(struct cluster_sanity_cmd_ctx*) arg;
+	pthread_cond_signal(&ctx->cond);
+	return;
+}
+
+int cluster_sanity_cond_timedwait(struct cluster_sanity_cmd_ctx *ctx)
+{
+	struct timespec max_wait = {0, 0};
+	clock_gettime(CLOCK_REALTIME, &max_wait);
+	max_wait.tv_sec+=1800;
+	int timed_wait_rv=0;
+
+    if(ctx->reply_cnt==0)
+	{
+        return 0;
+	}
+    pthread_mutex_lock(&ctx->mutex);
+    timed_wait_rv=pthread_cond_timedwait(&ctx->cond, &ctx->mutex, &max_wait);
+    pthread_mutex_unlock(&ctx->mutex);
+
+    return timed_wait_rv;
+}
+
+void exec_cmd_generic_callback(const struct swarmkv_reply* reply, void * cb_arg)
+{
+   struct cluster_sanity_cmd_ctx *ctx=(struct cluster_sanity_cmd_ctx *)cb_arg;
+
+    ctx->reply_cnt--;
+
+    if(ctx->reply_cnt==0)
+    {
+        cluster_sanity_cond_signal(ctx);
+    }
+    return;
+}
+
+void exec_cmd_crdt_connect(struct swarmkv* db, struct cluster_sanity_cmd_ctx *ctx, struct replica_list *keyspace_list, struct replica_node_addr *crdt_addr, char *key)
+{
+    struct replica_node_addr *tmp=NULL, *keyspace_addr=NULL;
+
+    HASH_ITER(hh, keyspace_list->replica_node_hash, keyspace_addr, tmp)
+    {
+        ctx->reply_cnt++;
+        swarmkv_exec_async(db, ctx, exec_cmd_generic_callback, "ctdt connnect %s %s %d %s %d", key, crdt_addr->addr.ip_addr,
+                             crdt_addr->addr.p2p_port, keyspace_addr->addr.ip_addr, keyspace_addr->addr.p2p_port);
+    }
+}
+
+void build_crdt_replica_list(const struct swarmkv_reply* reply, struct cluster_sanity_cmd_ctx *ctx, char *ip, char *port)
+{
+    int i=0;
+    for(i=0; i<reply->n_element; i++)
+    {
+        struct swarmkv_node_addr node_addr;
+        memset(&node_addr, 0, sizeof(struct swarmkv_node_addr));
+	    strncpy(node_addr.ip_addr, ip, strlen(ip));
+	    node_addr.p2p_port=(unsigned int)atoll(port);
+
+        struct replica_list *crdt_replica_list=NULL;
+        HASH_FIND(hh, ctx->crdt_replica_hash, reply->elements[i]->str, reply->elements[i]->len, crdt_replica_list);
+        if(!crdt_replica_list)
+        {
+            crdt_replica_list=ALLOC(struct replica_list, 1);
+            crdt_replica_list->key=sdsnewlen(reply->elements[i]->str, reply->elements[i]->len);
+            crdt_replica_list->len=reply->elements[i]->len;
+            HASH_ADD_KEYPTR(hh, ctx->crdt_replica_hash, crdt_replica_list->key, crdt_replica_list->len, crdt_replica_list);
+        }
+
+        struct replica_node_addr *replica_node=NULL;
+        replica_node=ALLOC(struct replica_node_addr, 1);
+        swarmkv_node_addr_copy(&replica_node->addr, &node_addr);
+        HASH_ADD(hh, crdt_replica_list->replica_node_hash, addr, sizeof(struct swarmkv_node_addr), replica_node);
+    }
+    return;
+}
+
+void build_keyspace_replica_list(const struct swarmkv_reply* reply, void * cb_arg)
+{
+    int i=0;
+    struct keyspace_cmd_ctx *cmd_ctx=(struct keyspace_cmd_ctx *)cb_arg;
+    for(i=0; i<reply->n_element; i++)
+    {
+        struct swarmkv_node_addr node_addr;
+        swarmkv_reply2node_addr(reply->elements[i], &node_addr);
+
+        struct replica_list *keysapce_replica_list=NULL;
+        HASH_FIND(hh, cmd_ctx->ctx->keyspace_replica_hash, cmd_ctx->key, cmd_ctx->keylen, keysapce_replica_list);
+        if(!keysapce_replica_list)
+        {
+            continue;
+        }
+        struct replica_node_addr *replica_node=NULL;
+	    replica_node=ALLOC(struct replica_node_addr, 1);
+	    swarmkv_node_addr_copy(&replica_node->addr, &node_addr);
+        HASH_ADD(hh, keysapce_replica_list->replica_node_hash, addr, sizeof(struct swarmkv_node_addr), replica_node);
+    }
+
+    cmd_ctx->ctx->reply_cnt--;
+
+    if(cmd_ctx->ctx->reply_cnt==0)
+    {
+        cluster_sanity_cond_signal(cmd_ctx->ctx);
+    }
+
+    sdsfree(cmd_ctx->key);
+    FREE(&cmd_ctx);
+
+    return;
+}
+
+void destroy_relica_list_hash(struct cluster_sanity_cmd_ctx *ctx)
+{
+    struct replica_list *keyspace_list=NULL, *crdt_list=NULL, *tmp_list=NULL;
+    struct replica_node_addr *keyspace_node_addr=NULL, *crdt_node_addr=NULL, *tmp_node_addr=NULL;
+
+    HASH_ITER(hh, ctx->keyspace_replica_hash, keyspace_list, tmp_list)
+    {
+        HASH_ITER(hh, keyspace_list->replica_node_hash, keyspace_node_addr, tmp_node_addr)
+        {
+            HASH_DEL(keyspace_list->replica_node_hash, keyspace_node_addr);
+            FREE(&keyspace_node_addr);
+        }
+        HASH_DEL(ctx->keyspace_replica_hash, keyspace_list);
+        if(keyspace_list->key)
+            sdsfree(keyspace_list->key);
+        FREE(&keyspace_list);
+    }
+
+    HASH_ITER(hh, ctx->crdt_replica_hash, crdt_list, tmp_list)
+    {
+        HASH_ITER(hh, crdt_list->replica_node_hash, crdt_node_addr, tmp_node_addr)
+        {
+            HASH_DEL(crdt_list->replica_node_hash, crdt_node_addr);
+            FREE(&crdt_node_addr);
+        }
+        HASH_DEL(ctx->crdt_replica_hash, crdt_list);
+        if(crdt_list->key)
+            sdsfree(crdt_list->key);
+        FREE(&crdt_list);
+    }
+    FREE(&ctx);
+}
+
 struct swarmkv_reply *cluster_sanity_command(struct swarmkv* db, char *argv[], size_t argc)
 {
     int i=0, need_fix=0;
-//    const char *pattern="*";
-    struct swarmkv_reply *keyspace_keys_reply=NULL, *crdt_keys_reply=NULL;
-    struct swarmkv_reply *keyspace_reply_merged=NULL,*crdt_reply_merged=NULL;
+    int timed_wait_rv;
+    struct swarmkv_reply *keyspace_keys_reply=NULL;
     struct swarmkv_reply *nodes_reply=NULL, *reply=NULL;
     char uuid[38], ip[64], port[16], membership[16];
 
@@ -509,84 +683,170 @@ struct swarmkv_reply *cluster_sanity_command(struct swarmkv* db, char *argv[], s
     {
         return nodes_reply;
     }
-    if(0==strcasecmp(argv[2], "fix"))
+    if(0==strcasecmp(argv[2], "heal"))
 	{
 		need_fix=1;
 	}
-	//mapping check/fix of keyspace -> crdt
-	//for each node
-	//	keyspace keys * IP port
-	//	for each key
-	//		future= keyspace rlist key
-	//			for each node in rlist reply
-	//				crdt exists key IP port
-	//					if reply==0 and need fix then rdel key IP port
-	//			end
-	//		end
-	//	end
-	//end
 
-	//mapping check/fix for crdt -> keyspace
-	// for each node
-	//	crdt keys * node.IP node.port
-	//		for each key
-	//			keyspace rlist key
-	//			if node not in rlist.reply and need_fix then
-	//				radd key node.IP node.port
-	//				crdt join key 
-	//			end
-	//		end
-	//end
+    struct cluster_sanity_cmd_ctx *ctx=ALLOC(struct cluster_sanity_cmd_ctx, 1);
+    pthread_cond_init(&ctx->cond, NULL);
+	pthread_mutex_init(&ctx->mutex, NULL);
+
+    //Step1 Build the keyspace replica list
     for(i=0; i<nodes_reply->n_element; i++)
     {
         sscanf(nodes_reply->elements[i]->str, "%s %s %s %s", uuid, ip, port, membership);
         keyspace_keys_reply=swarmkv_command(db, "keyspace keys %s %s *", ip, port);
-        swarmkv_reply_merge_array(&keyspace_reply_merged, keyspace_keys_reply);
+        swarmkv_reply_merge_array(&reply, keyspace_keys_reply);
         keyspace_keys_reply=NULL;
     }
 
+    for(i=0; reply && i<reply->n_element; i++)
+    {
+        struct replica_list *keysapce_replica_list=NULL;
+        HASH_FIND(hh, ctx->keyspace_replica_hash, reply->elements[i]->str, reply->elements[i]->len, keysapce_replica_list);
+        if(!keysapce_replica_list)
+        {
+            keysapce_replica_list=ALLOC(struct replica_list, 1);
+            keysapce_replica_list->key=sdsnewlen(reply->elements[i]->str, reply->elements[i]->len);
+            keysapce_replica_list->len=reply->elements[i]->len;
+            HASH_ADD_KEYPTR(hh, ctx->keyspace_replica_hash, keysapce_replica_list->key, keysapce_replica_list->len, keysapce_replica_list);
+        }
+
+        struct keyspace_cmd_ctx *cmd_ctx=ALLOC(struct keyspace_cmd_ctx, 1);
+        cmd_ctx->key=sdsnewlen(reply->elements[i]->str, reply->elements[i]->len);
+        cmd_ctx->keylen=reply->elements[i]->len;
+        ctx->reply_cnt=reply->n_element;
+        cmd_ctx->ctx=ctx;
+        swarmkv_exec_async(db, cmd_ctx, build_keyspace_replica_list, "keyspace rlist %s", reply->elements[i]->str);
+    }
+
+    if(reply)
+    {
+        swarmkv_reply_free(reply);
+    }
+
+    //Step2 Build the crdt replica list
     for(i=0; i<nodes_reply->n_element; i++)
     {
         sscanf(nodes_reply->elements[i]->str, "%s %s %s %s", uuid, ip, port, membership);
-        crdt_keys_reply=swarmkv_command(db, "CRDT KEYS %s %s *", ip, port);
-        swarmkv_reply_merge_array(&crdt_reply_merged, crdt_keys_reply);
-        crdt_keys_reply=NULL;
+        reply=swarmkv_command(db, "crdt keys %s %s *", ip, port);
+        build_crdt_replica_list(reply, ctx, ip, port);
+        swarmkv_reply_free(reply);
+        reply=NULL;
+    }
+    swarmkv_reply_free(nodes_reply);
+
+    timed_wait_rv=cluster_sanity_cond_timedwait(ctx);
+    if(timed_wait_rv)
+    {
+        printf("%s\n", swarmkv_util_pthread_cond_timedwait_error_to_string(timed_wait_rv));
+        reply=swarmkv_reply_new_error("timeout");
+        goto finish;
     }
 
-    int xret=0;
-    for(i=0; i<keyspace_reply_merged->n_element; i++)
+    //Step3 check/heal by keyspace list
+    struct swarmkv_reply *r=NULL;
+    struct replica_list *keyspace_list=NULL, *crdt_list=NULL, *tmp_list=NULL;
+    struct replica_node_addr *keyspace_node_addr=NULL, *crdt_node_addr=NULL, *tmp_node_addr=NULL;
+
+    HASH_ITER(hh, ctx->keyspace_replica_hash, keyspace_list, tmp_list)
     {
-        xret=swarmkv_reply_cmp(crdt_reply_merged, keyspace_reply_merged->elements[i]);
-        if(xret==0)
+        HASH_FIND(hh, ctx->crdt_replica_hash, keyspace_list->key, sdslen(keyspace_list->key), crdt_list);
+        if(!crdt_list && !need_fix)
         {
-            swarmkv_reply_append_arrray(&reply, keyspace_reply_merged->elements[i]);
+            r=swarmkv_reply_new_string(keyspace_list->key, sdslen(keyspace_list->key));
+            swarmkv_reply_append_string(&reply, r);
+        }
+        if(!crdt_list && need_fix)
+        {
+            HASH_ITER(hh, keyspace_list->replica_node_hash, keyspace_node_addr, tmp_node_addr)
+            {
+                ctx->reply_cnt++;
+                ctx->heal_replica_cnt++;
+                swarmkv_exec_async(db, ctx, exec_cmd_generic_callback, "keyspace rdel %s %d %s", keyspace_node_addr->addr.ip_addr, keyspace_node_addr->addr.p2p_port, keyspace_list->key);
+            }
+        }
+
+        if(crdt_list)
+        {
+            //Step3.1 foreach keysapce list, if keysapce node not in crdt list, keyspace rdel node
+            HASH_ITER(hh, keyspace_list->replica_node_hash, keyspace_node_addr, tmp_node_addr)
+            {
+                HASH_FIND(hh, crdt_list->replica_node_hash, &keyspace_node_addr->addr, sizeof(struct swarmkv_node_addr), crdt_node_addr);
+                if(!crdt_node_addr && !need_fix)
+                {
+                    r=swarmkv_reply_new_string(keyspace_list->key, sdslen(keyspace_list->key));
+                    swarmkv_reply_append_string(&reply, r);
+                }
+                if(!crdt_node_addr && need_fix)
+                {
+                    ctx->reply_cnt++;
+                    ctx->heal_replica_cnt++;
+                    swarmkv_exec_async(db, ctx, exec_cmd_generic_callback, "keyspace rdel %s %d %s", keyspace_node_addr->addr.ip_addr, keyspace_node_addr->addr.p2p_port, keyspace_list->key);
+                }
+            }
+            //Step3.2 foreach crdt list, if crdt node not in keyspace list, keyspace radd node
+            HASH_ITER(hh, crdt_list->replica_node_hash, crdt_node_addr, tmp_node_addr)
+            {
+                HASH_FIND(hh, keyspace_list->replica_node_hash, &crdt_node_addr->addr, sizeof(struct swarmkv_node_addr), keyspace_node_addr);
+                if(!keyspace_node_addr && !need_fix)
+                {
+                    r=swarmkv_reply_new_string(keyspace_list->key, sdslen(keyspace_list->key));
+                    swarmkv_reply_append_string(&reply, r);
+                }
+                if(!keyspace_node_addr && need_fix)
+                {
+                    ctx->reply_cnt++;
+                    ctx->heal_replica_cnt++;
+                    swarmkv_exec_async(db, ctx, exec_cmd_generic_callback, "keyspace radd %s %s %d",crdt_list->key, crdt_node_addr->addr.ip_addr, crdt_node_addr->addr.p2p_port);
+                    exec_cmd_crdt_connect(db,ctx, keyspace_list, crdt_node_addr, crdt_list->key);
+                }
+            }
         }
     }
 
-    swarmkv_reply_free(crdt_reply_merged);
-    swarmkv_reply_free(keyspace_reply_merged);
+    //Step4 check/heal by crdt list
+    HASH_ITER(hh, ctx->crdt_replica_hash, crdt_list, tmp_list)
+    {
+        HASH_FIND(hh, ctx->keyspace_replica_hash, crdt_list->key, sdslen(crdt_list->key), keyspace_list);
+        if(!keyspace_list && !need_fix)
+        {
+            r=swarmkv_reply_new_string(crdt_list->key, sdslen(crdt_list->key));
+            swarmkv_reply_append_string(&reply, r);
+        }
+        if(!keyspace_list && need_fix)
+        {
+            HASH_ITER(hh, crdt_list->replica_node_hash, crdt_node_addr, tmp_node_addr)
+            {
+                ctx->reply_cnt++;
+                ctx->heal_replica_cnt++;
+                swarmkv_exec_async(db, ctx, exec_cmd_generic_callback, "keyspace radd %s %s %d", crdt_list->key, crdt_node_addr->addr.ip_addr, crdt_node_addr->addr.p2p_port);
+            }
+        }
+    }
+
+    timed_wait_rv=cluster_sanity_cond_timedwait(ctx);
+    if(timed_wait_rv)
+    {
+        printf("%s\n", swarmkv_util_pthread_cond_timedwait_error_to_string(timed_wait_rv));
+        reply=swarmkv_reply_new_error("timeout");
+        goto finish;
+    }
+
+    if(need_fix)
+    {
+        reply=swarmkv_reply_new_integer(ctx->heal_replica_cnt);
+        goto finish;
+    }
 
     if(!reply)
     {
-        reply=swarmkv_reply_new_nil();
+        reply=swarmkv_reply_new_integer(0);
     }
-
-    if(0==strcmp(argv[2], "fix"))
-    {
-        struct swarmkv_reply *del_reply=NULL;
-
-        for(i=0; reply && i<reply->n_element; i++)
-        {
-            del_reply=swarmkv_command(db, "DEL %s", reply->elements[i]->str);
-            swarmkv_reply_free(del_reply);
-        }
-        swarmkv_reply_free(reply);
-        reply=swarmkv_reply_new_status("OK");
-    }
-
-    swarmkv_reply_free(nodes_reply);
-
-    return reply;
+finish:
+    destroy_relica_list_hash(ctx);
+	return reply;
 }
 
 typedef struct swarmkv_reply *cluster_command_func(struct swarmkv* db, char *argv[], size_t argc);
@@ -604,7 +864,7 @@ struct cluster_cmd_spec cluster_cmds[]={
 	{"CLUSTER SLOTS", "", cluster_slots_command},
 	{"CLUSTER ADDNODE", "IP port", cluster_addnode_command},
 	{"CLUSTER CREATE", "cluster-name IP port [IP port]", cluster_create_command},
-    {"CLUSTER SANITY", "check | fix", cluster_sanity_command}
+    {"CLUSTER SANITY", "check | heal", cluster_sanity_command}
 };
 int is_cluster_command(int argc, char *argv[])
 {

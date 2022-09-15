@@ -33,7 +33,7 @@ struct sobj
 	};
 };
 
-struct swarmkv_module *swarmkv_store_new(exec_cmd_func *send_cmd, void *handle_send_cmd, uuid_t node_uuid);
+struct swarmkv_module *swarmkv_store_new(const struct swarmkv_options *opts, exec_cmd_func *send_cmd, void *handle_send_cmd, uuid_t node_uuid);
 void swarmkv_store_free(struct swarmkv_module* mod_store);
 void swarmkv_store_periodic(struct swarmkv_module *module);
 struct sobj * swarmkv_store_add_key(struct swarmkv_module *mod_store, const sds key, struct swarmkv_node_addr *replica_nodes, size_t n_replica_node);
@@ -47,6 +47,7 @@ void sobj_serialize(struct sobj *obj, char **blob, size_t *blob_sz);
 void sobj_merge_blob(struct sobj *obj, const char *blob, size_t blob_sz, uuid_t uuid);
 int sobj_add_replica_node(struct sobj *obj, const struct swarmkv_node_addr *node);
 
+int store_cmp_by_owner(struct swarmkv_module* mod_store, struct swarmkv_node_addr *target_node);
 void store_get_uuid(struct swarmkv_module* mod_store, uuid_t uuid);
 struct sobj *store_lookup(struct swarmkv_module* mod_store, sds key);
 void store_add_obj(struct swarmkv_module *mod_store, struct sobj *obj);

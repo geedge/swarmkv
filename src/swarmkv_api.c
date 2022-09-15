@@ -84,10 +84,8 @@ int swarmkv_options_set_worker_thread_number(struct swarmkv_options *opts, size_
 	return 0;
 }
 
-
-void swarmkv_set(struct swarmkv * db, 
+void swarmkv_set(struct swarmkv * db,
 	const char * key, size_t keylen, const char * value, size_t vallen, swarmkv_cmd_callback_func_t * cb, void * cb_arg)
-
 {
 	struct swarmkv_cmd *cmd=NULL;
 	cmd=swarmkv_cmd_new(3);
@@ -296,3 +294,30 @@ struct swarmkv_reply *swarmkv_command(struct swarmkv *db, const char *format, ..
 
 	return reply;
 }
+
+void swarmkv_exec_async(struct swarmkv *db, void *ctx, swarmkv_cmd_callback_func_t * cb, const char *format, ...)
+{
+	int argc=0; sds *argv=NULL;
+	char *cmd_str=NULL;
+
+    va_list ap;
+    va_start(ap,format);
+	vasprintf(&cmd_str, format, ap);
+    va_end(ap);
+
+	argv=sdssplitargs(cmd_str, &argc);
+
+    struct swarmkv_cmd *cmd=NULL;
+	cmd=swarmkv_cmd_new(argc);
+	for(size_t i=0; i<argc; i++)
+	{
+		cmd->argv[i]=sdsdup(argv[i]);
+	}
+	swarmkv_exec(db, cmd, cb, ctx);
+    if (argv)
+        sdsfreesplitres(argv, argc);
+
+	free(cmd_str);
+    swarmkv_cmd_free(cmd);
+}
+
