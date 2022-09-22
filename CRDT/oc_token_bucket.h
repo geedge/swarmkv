@@ -35,7 +35,8 @@ enum OC_token_bucket_command
 	OCTB_CMD_CONSUME_FLEXIBLE,
 	OCTB_CMD_CONSUME_AS_MUCH_AS_POSSIBLE,
 	OCTB_CMD_READ_AVAILABLE,
-	OCTB_CMD_READ_REFILLED
+	OCTB_CMD_READ_REFILLED,
+	OCTB_CMD_READ_CONSUEMD
 };
 long long OC_token_bucket_control(struct OC_token_bucket *bucket, struct timeval now, enum OC_token_bucket_command cmd, long long tokens);
 

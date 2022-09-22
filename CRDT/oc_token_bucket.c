@@ -108,6 +108,8 @@ long long OC_token_bucket_control(struct OC_token_bucket *bucket, struct timeval
 			return available;
 		case OCTB_CMD_READ_REFILLED:
 			return refilled;
+		case OCTB_CMD_READ_CONSUEMD:
+			return consumed;
 		default:
 			assert(0);
 			break;

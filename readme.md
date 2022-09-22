@@ -48,39 +48,41 @@ SwarmKV Data Types
 
 ## Quick List
 
-| Command                | Arguments               | Response                                                     |
-| ---------------------- | ----------------------- | ------------------------------------------------------------ |
-| GET                    | key                     | Bulk string reply: the value of key, or nil when key does not exist. |
-| SET                    | key value               | Simple string reply: OK if SET was executed correctly.       |
-| DEL                    | key                     | Integer reply: The number of keys that were removed.         |
-| INCRYBY                | key increment           | Integer reply: the value of key after the increment          |
-| EXPIRE                 | key seconds             | Integer reply, specifically: 1 if the timeout was set. 0 if the timeout was not set. e.g. key doesn't exist |
-| TTL                    | key                     | Integer reply: TTL in seconds, in case of error:   -2 if the key does not exist;  -1 if the key exists but has no associated expire. |
-| PERSIST                | key                     |                                                              |
-| SADD                   | key member [member ...] | Integer reply: the number of elements that were added to the set, not including all the elements already present in the set. |
-| SREM                   | key member [member ...] | Integer reply: the number of members that were removed from the set, not including non existing members. The key will NOT be deleted if all members are removed. |
-| SCARD                  | key                     | Integer reply: the cardinality (number of elements) of the set, or 0 if key does not exist. |
-| SISMEMBER              | key member              | Integer reply, specifically:<br/><br/>1 if the element is a member of the set.<br/>0 if the element is not a member of the set, or if key does not exist. |
-| SMEMBERS               | key                     | Array reply: all elements of the set.                        |
-| TSET(?)                | key id bandwidth        | QoS cluster, qos job qos task?                               |
-| HGET                   |                         |                                                              |
-| KEYSPACE RADD          | key IP port             | Add replica to the key, create the key if key does not exist. |
-| KEYSPACE XRADD         | key IP Port             | Add replica to the key, return NULL if the key does not exist. |
-| KEYSPACE RLIST         | key                     | Node Array reply:<br/>1) "192.168.1.200:5211"<br/>2) "192.168.1.201:5211"<br/>3) "[2001:db8::1]:5211"<br/> |
-| KEYSPACE DEL           | key                     |                                                              |
-| KEYSPACE SETSLOT       | see source code         |                                                              |
-| KEYSPACE GETKEYSINSLOT | IP port slot            |                                                              |
-| KEYSPACE ADDKEYSTOSLOT | IP port slot blob       |                                                              |
-| KEYSPACE DELSLOTKEYS   | IP port slot            |                                                              |
-| KEYSPACE KEYS          | IP port pattern         |                                                              |
-| CRDT DEL               | key                     | Integer reply: The number of cached keys that were removed.  |
-| CRDT PUSH              | key blob                | Simple string reply: OK if PUSH was executed correctly.      |
-| CRDT PULL              | key                     | Blog reply: a blob of state-based CRDT                       |
-| CLUSTER KEYS           | pattern                 | Array reply: list of keys matching pattern.                  |
-| CLUSTER KEYSLOT        | keyslot                 | Integer reply: The hash slot the specified key hashes to.    |
-| CLUSTER NODES          |                         |                                                              |
-| CLUSTER SLOTS          |                         |                                                              |
-| CLUSTER ADDNODE        | IP port                 |                                                              |
+| Command                | Arguments                    | Response                                                     |
+| ---------------------- | ---------------------------- | ------------------------------------------------------------ |
+| GET                    | key                          | Bulk string reply: the value of key, or nil when key does not exist. |
+| SET                    | key value                    | Simple string reply: OK if SET was executed correctly.       |
+| DEL                    | key                          | Integer reply: The number of keys that were removed.         |
+| INCRYBY                | key increment                | Integer reply: the value of key after the increment          |
+| EXPIRE                 | key seconds                  | Integer reply, specifically: 1 if the timeout was set. 0 if the timeout was not set. e.g. key doesn't exist |
+| TTL                    | key                          | Integer reply: TTL in seconds, in case of error:   -2 if the key does not exist;  -1 if the key exists but has no associated expire. |
+| PERSIST                | key                          |                                                              |
+| SADD                   | key member [member ...]      | Integer reply: the number of elements that were added to the set, not including all the elements already present in the set. |
+| SREM                   | key member [member ...]      | Integer reply: the number of members that were removed from the set, not including non existing members. The key will NOT be deleted if all members are removed. |
+| SCARD                  | key                          | Integer reply: the cardinality (number of elements) of the set, or 0 if key does not exist. |
+| SISMEMBER              | key member                   | Integer reply, specifically:<br/><br/>1 if the element is a member of the set.<br/>0 if the element is not a member of the set, or if key does not exist. |
+| SMEMBERS               | key                          | Array reply: all elements of the set.                        |
+| TSET                   | key capacity rate            | Simple String Reply: OK if the token bucket was set. Create the token bucket if key does not exist. |
+| TGET                   | key tokens [FORCE\|FLEXIBLE] | Integer reply： the number of tokens that were allow to consume, or -1 if key does not exist. |
+| TINFO                  | key                          | Array Reply: <br/>1) "Capacity"<br/>2) (integer) 1000000<br/>3) "Rate"<br/>4) (integer) 1000<br/>5) "Consumed"<br/>6) (integer) 5239123<br/>7) "Number of replicas"<br/>8) (integer) 16 |
+| HGET                   |                              |                                                              |
+| KEYSPACE RADD          | key IP port                  | Add replica to the key, create the key if key does not exist. |
+| KEYSPACE XRADD         | key IP Port                  | Add replica to the key, return NULL if the key does not exist. |
+| KEYSPACE RLIST         | key                          | Node Array reply:<br/>1) "192.168.1.200:5211"<br/>2) "192.168.1.201:5211"<br/>3) "[2001:db8::1]:5211"<br/> |
+| KEYSPACE DEL           | key                          |                                                              |
+| KEYSPACE SETSLOT       | see source code              |                                                              |
+| KEYSPACE GETKEYSINSLOT | IP port slot                 |                                                              |
+| KEYSPACE ADDKEYSTOSLOT | IP port slot blob            |                                                              |
+| KEYSPACE DELSLOTKEYS   | IP port slot                 |                                                              |
+| KEYSPACE KEYS          | IP port pattern              |                                                              |
+| CRDT DEL               | key                          | Integer reply: The number of cached keys that were removed.  |
+| CRDT PUSH              | key blob                     | Simple string reply: OK if PUSH was executed correctly.      |
+| CRDT PULL              | key                          | Blog reply: a blob of state-based CRDT                       |
+| CLUSTER KEYS           | pattern                      | Array reply: list of keys matching pattern.                  |
+| CLUSTER KEYSLOT        | keyslot                      | Integer reply: The hash slot the specified key hashes to.    |
+| CLUSTER NODES          |                              |                                                              |
+| CLUSTER SLOTS          |                              |                                                              |
+| CLUSTER ADDNODE        | IP port                      |                                                              |
 
 NOTE: 
 
@@ -307,9 +309,9 @@ Swarm KV uses state-based CRDT types to store values.
 
 Swarm KV implements Last-Write-Wins Register (LWW Register) to store string values. Swarm KV didn't implement logical clock such as  [Version Vector](https://en.wikipedia.org/wiki/Version_vector) or [Lamport Clock](https://en.wikipedia.org/wiki/Lamport_timestamp),  instead,  it uses real time (man 3 gettimeofday) for simplicity.
 
-### Counter
+### Integer
 
-Swarm KV uses Positive-Negative Counter (PN-Counter) to store numeric values.
+Swarm KV uses Positive-Negative Counter (PN-Counter) to store integer values.
 
 ### Set and Hash
 
@@ -317,7 +319,7 @@ Swarm KV implements Add-Wins Observed-Remove Set (OR Set) to store set and hash 
 
 ### Token Bucket
 
-Swarm KV implements Observe-Consumed Token Bucket (OC Token Bucket), which has a PN Counter to count consumed tokens and a Last-write-wins register to track refilled tokens. It is initialized with two parameters:
+Swarm KV implements Observe-Consumed Token Bucket (OC Token Bucket), which has a PN-Counter to track consumed tokens and a Last-write-wins register to track refilled tokens. It is initialized with two parameters:
 
 - CIR: Committed Information Rate
 - CBS: Committed Burst Size
@@ -450,6 +452,8 @@ The source files are organized as follows:
 [Voldemort](https://github.com/voldemort/voldemort) is a distributed key-value storage system.
 
 [Corfu](https://github.com/CorfuDB/CorfuDB) is a consistency platform designed around the abstraction of a shared log.
+
+[Riak KV](https://riak.com/index.html) is a distributed NoSQL key-value database with advanced local and multi-cluster replication that guarantees reads and writes even in the event of hardware failures or network partitions.
 
 ## References
 

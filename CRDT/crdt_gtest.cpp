@@ -95,7 +95,7 @@ TEST(OCTokenBucket, Merge)
 		OC_token_bucket_free(buckets[i]);
 	}
 }
-TEST(OCTokenBucket, HevayConsumer)
+TEST(OCTokenBucket, HeavyConsumer)
 {
 	struct OC_token_bucket *buckets[REPLICA_NUMBER];
 	size_t i=0, j=0;
@@ -180,6 +180,8 @@ TEST(OCTokenBucket, LightConsumer)
 	}
 	upper_limit=CBS+CIR*timeval_delta_ms(start, now)/1000;
 	refilled=OC_token_bucket_control(buckets[0], now, OCTB_CMD_READ_REFILLED, 0);
+	tokens=OC_token_bucket_control(buckets[0], now, OCTB_CMD_READ_CONSUEMD, 0);
+	EXPECT_EQ(tokens, consumed);
 	EXPECT_NEAR((double)consumed/MIN(refilled, requested), 1, 0.01);
 	EXPECT_LE(refilled, upper_limit);
 	EXPECT_LE(consumed, requested);
