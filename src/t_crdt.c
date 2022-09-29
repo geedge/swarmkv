@@ -69,17 +69,8 @@ enum cmd_exec_result crdt_push_command(struct swarmkv_module *mod_store, const s
 
 enum cmd_exec_result crdt_del_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)
 {
-/* CRDT DEL <ip port key> */
-    struct swarmkv_node_addr target_node;
-    sds2node_addr(cmd->argv+2, &target_node);
-
-    if(store_cmp_by_owner(mod_store, &target_node))
-    {
-        *reply=swarmkv_reply_new_node(&target_node, 1);
-        return REDIRECT;
-    }
-
-	sds key=cmd->argv[4];
+    /* CRDT DEL <key> */
+	sds key=cmd->argv[2];
 	struct sobj *obj=NULL;
 	obj=store_lookup(mod_store, key);
 	if(obj)
@@ -96,41 +87,13 @@ enum cmd_exec_result crdt_del_command(struct swarmkv_module *mod_store, const st
 }
 enum cmd_exec_result crdt_join_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)
 {
-	/* CRDT JOIN <key> replica.IP replica.port peer.IP peer.port*/
+	/* CRDT JOIN <key> replica.IP replica.port*/
 	struct sobj *obj=NULL;
 	const sds key=cmd->argv[2];
 	assert(accessing_node!=NULL);//should never invoked by local
-	obj=store_lookup(mod_store, key);
-	int added=0;
-	if(obj)
-	{	
-		added=sobj_add_replica_node(obj, accessing_node);
-		*reply=swarmkv_reply_new_integer(added);
-	}
-	else
-	{
-		*reply=swarmkv_reply_new_nil();
-	}
-	return FINISHED;
-}
 
-enum cmd_exec_result crdt_join_conect_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)
-{
-	/* CRDT CONNECT <key> replica.IP replica.port peer.IP peer.port*/
-	struct sobj *obj=NULL;
-	const sds key=cmd->argv[2];
-
-    struct swarmkv_node_addr target_node;
     struct swarmkv_node_addr replica_node;
-
     sds2node_addr(cmd->argv+3, &replica_node);
-    sds2node_addr(cmd->argv+5, &target_node);
-
-    if(!accessing_node)
-    {
-        *reply=swarmkv_reply_new_node(&target_node, 1);
-        return REDIRECT;
-    }
 
 	obj=store_lookup(mod_store, key);
 	int added=0;
@@ -160,21 +123,13 @@ static void pattern_match_function(struct sobj * obj, void *cb_arg)
 	return;
 }
 
-//CRDT keys IP Port pattern
+
 enum cmd_exec_result crdt_keys_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)
 {
+//CRDT KEYS IP Port pattern
     int i=0, n_matched=0;
-    struct swarmkv_node_addr target_node;
-
-    sds2node_addr(cmd->argv+2, &target_node);
-
-    if(!accessing_node)
-    {
-        *reply=swarmkv_reply_new_node(&target_node, 1);
-        return REDIRECT;
-    }
 	struct pattern_match_arg cb_arg;
-	cb_arg.pattern=cmd->argv[4];
+	cb_arg.pattern=cmd->argv[2];
     utarray_new(cb_arg.matched_replies, &ut_array_matched_reply);
     store_iterate_sobj(mod_store, pattern_match_function, &cb_arg);
 	n_matched=utarray_len(cb_arg.matched_replies);
@@ -197,22 +152,58 @@ enum cmd_exec_result crdt_keys_command(struct swarmkv_module *mod_store, const s
 	return FINISHED;
 }
 
-//CRDT EXISTS IP Port key
 enum cmd_exec_result crdt_exists_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)
 {
-    struct swarmkv_node_addr target_node;
-
-    sds2node_addr(cmd->argv+2, &target_node);
-	sds key=cmd->argv[4];
-
-    if(!accessing_node)
-    {
-        *reply=swarmkv_reply_new_node(&target_node, 1);
-        return REDIRECT;
-    }
+//CRDT EXISTS key
+	sds key=cmd->argv[2];
 	struct sobj *obj=NULL;
 	obj=store_lookup(mod_store, key);
 	*reply=swarmkv_reply_new_integer(obj?1:0);
+	return FINISHED;
+}
+
+
+enum cmd_exec_result crdt_rlist_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)
+{
+/* CRDT RLIST key*/
+	struct sobj *obj=NULL;
+    int n_matched=0,i=0;
+    UT_array *matched_replies;
+	assert(accessing_node!=NULL);//should never invoked by local
+
+	const sds key=cmd->argv[2];
+	obj=store_lookup(mod_store, key);
+	if(obj)
+	{
+        utarray_new(matched_replies, &ut_array_matched_reply);
+        int iterator=0;
+        struct swarmkv_node_addr *replica_node=NULL;
+        while((replica_node=store_iterate_replica_node(obj, &iterator)) && replica_node)
+        {
+            struct swarmkv_reply *r=NULL;
+            r=swarmkv_reply_new_node(replica_node, 0);
+            utarray_push_back(matched_replies, &r);
+        }
+        n_matched=utarray_len(matched_replies);
+        if(n_matched>0)
+        {
+            *reply=swarmkv_reply_new_array(n_matched);
+            for(i=0; i<n_matched; i++)
+            {
+                (*reply)->elements[i]=*(struct swarmkv_reply **)utarray_eltptr(matched_replies, i);
+            }
+        }
+        else
+        {
+            *reply=swarmkv_reply_new_nil();
+        }
+        utarray_free(matched_replies);
+	}
+	else
+	{
+		*reply=swarmkv_reply_new_nil();
+	}
+
 	return FINISHED;
 }
 

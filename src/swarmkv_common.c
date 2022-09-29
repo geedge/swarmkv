@@ -66,7 +66,6 @@ struct swarmkv_reply* swarmkv_reply_new_error(const char *format, ...)
 {
 	struct swarmkv_reply *reply=ALLOC(struct swarmkv_reply, 1);
 	reply->type=SWARMKV_REPLY_ERROR;
-	reply->str=ALLOC(char, reply->len);
 	va_list ap;
     va_start(ap, format);
 	reply->len=vasprintf(&(reply->str), format, ap);
@@ -85,8 +84,8 @@ struct swarmkv_reply *swarmkv_reply_new_node(struct swarmkv_node_addr *addr, int
 		snprintf(node_str, sizeof(node_str), "-ASK %s:%u", addr->ip_addr, addr->p2p_port);
 	}
 	else
-	{		
-		snprintf(node_str, sizeof(node_str), "-ASK %s:%u", addr->ip_addr, addr->p2p_port);
+	{
+		snprintf(node_str, sizeof(node_str), "%s:%u", addr->ip_addr, addr->p2p_port);
 	}
 	reply->len=strlen(node_str)+1;
 	reply->str=ALLOC(char, reply->len);
@@ -205,7 +204,7 @@ void swarmkv_node_copy(struct swarmkv_node *dst, const struct swarmkv_node *src)
 	return;
 }
 
-struct swarmkv_reply *swarmkv_reply_dup(const struct swarmkv_reply *origin)
+struct swarmkv_reply *swarmkv_reply_clone(const struct swarmkv_reply *origin)
 {
 	struct swarmkv_reply *copy=ALLOC(struct swarmkv_reply, 1);
 	copy->type=origin->type;
@@ -228,7 +227,7 @@ struct swarmkv_reply *swarmkv_reply_dup(const struct swarmkv_reply *origin)
 			copy->elements=ALLOC(struct swarmkv_reply*, origin->n_element);
 			for(i=0; i<origin->n_element; i++)
 			{
-				copy->elements[i]=swarmkv_reply_dup(origin->elements[i]);
+				copy->elements[i]=swarmkv_reply_clone(origin->elements[i]);
 			}
 			break;
 		default:

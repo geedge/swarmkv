@@ -98,7 +98,7 @@ struct swarmkv_reply *swarmkv_reply_new_node(struct swarmkv_node_addr *addr, int
 struct swarmkv_reply *swarmkv_reply_new_nil(void);
 struct swarmkv_reply *swarmkv_reply_new_status(const char *format, ...);
 struct swarmkv_reply *swarmkv_reply_new_error(const char *format, ...);
-struct swarmkv_reply *swarmkv_reply_dup(const struct swarmkv_reply *origin);
+struct swarmkv_reply *swarmkv_reply_clone(const struct swarmkv_reply *origin);
 void swarmkv_reply_merge_array(struct swarmkv_reply **dst, struct swarmkv_reply *src);
 void swarmkv_reply_append_string(struct swarmkv_reply **dst, struct swarmkv_reply *src);
 

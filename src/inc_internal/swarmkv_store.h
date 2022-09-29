@@ -47,12 +47,11 @@ void sobj_serialize(struct sobj *obj, char **blob, size_t *blob_sz);
 void sobj_merge_blob(struct sobj *obj, const char *blob, size_t blob_sz, uuid_t uuid);
 int sobj_add_replica_node(struct sobj *obj, const struct swarmkv_node_addr *node);
 
-int store_cmp_by_owner(struct swarmkv_module* mod_store, struct swarmkv_node_addr *target_node);
 void store_get_uuid(struct swarmkv_module* mod_store, uuid_t uuid);
 struct sobj *store_lookup(struct swarmkv_module* mod_store, sds key);
 void store_add_obj(struct swarmkv_module *mod_store, struct sobj *obj);
 void store_remove_obj(struct swarmkv_module *mod_store, struct sobj *obj);
 typedef void sobj_callback_func_t(struct sobj * obj, void *cb_arg);
 void store_iterate_sobj(struct swarmkv_module *mod_store, sobj_callback_func_t *cb, void *cb_arg);
-
+struct swarmkv_node_addr *store_iterate_replica_node(struct sobj *obj, int *iterator);
 

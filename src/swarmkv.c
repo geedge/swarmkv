@@ -456,14 +456,14 @@ static void exec_cmd_on_fail(enum e_future_error err, const char * what, void * 
 	swarmkv_reply_free(reply);
 }
 
-void swarmkv_exec(struct swarmkv *db, const struct swarmkv_cmd *cmd, swarmkv_cmd_callback_func_t * cb, void * cb_arg)
+void swarmkv_exec(struct swarmkv *db, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *target_node, swarmkv_cmd_callback_func_t * cb, void * cb_arg)
 {
 	struct caller_ctx *ctx=NULL;
 	ctx=ALLOC(struct caller_ctx, 1);
 	ctx->cb=cb;
 	ctx->cb_arg=cb_arg;
 	ctx->my_future=future_create("exec_cmd", exec_cmd_on_success, exec_cmd_on_fail, ctx);
-	__exec_cmd(db, cmd, NULL, ctx->my_future);
+	__exec_cmd(db, cmd, target_node, ctx->my_future);
 
 	return;
 }
@@ -577,23 +577,23 @@ void command_spec_init(struct swarmkv *db)
 	command_register(&(db->command_table), "CRDT PUSH", "key blob",
 					2, 2, CMD_KEY_NA,
 					crdt_push_command, db->mod_store);
-	command_register(&(db->command_table), "CRDT JOIN", "key",
-					1, 2, CMD_KEY_NA,
+	command_register(&(db->command_table), "CRDT JOIN", "key IP port",
+					3, 2, CMD_KEY_NA,
 					crdt_join_command, db->mod_store);
 
-    command_register(&(db->command_table), "CRDT CONNECT", "key IP port IP port",
-                    5, 2, CMD_KEY_NA,
-                    crdt_join_conect_command, db->mod_store);
-
-	command_register(&(db->command_table), "CRDT DEL", "IP port key",
-					3, 4, CMD_KEY_NA,
+	command_register(&(db->command_table), "CRDT DEL", "key",
+					1, 2, CMD_KEY_NA,
 					crdt_del_command, db->mod_store);
-    command_register(&(db->command_table), "CRDT KEYS", "IP port pattern",
-					3, -1, CMD_KEY_RO,
+    command_register(&(db->command_table), "CRDT KEYS", "pattern",
+					1, -1, CMD_KEY_RO,
 					crdt_keys_command, db->mod_store);
-    command_register(&(db->command_table), "CRDT EXISTS", "IP port key",
-					3, 4, CMD_KEY_RO,
+    command_register(&(db->command_table), "CRDT EXISTS", "key",
+					1, 2, CMD_KEY_RO,
 					crdt_exists_command, db->mod_store);
+
+     command_register(&(db->command_table), "CRDT RLIST", "key",
+					1, 2, CMD_KEY_RO,
+					crdt_rlist_command, db->mod_store);
 
 	/* low-level keyspace operation command*/
 	command_register(&(db->command_table), "KEYSPACE RLIST", "key",
@@ -605,11 +605,11 @@ void command_spec_init(struct swarmkv *db)
 	command_register(&(db->command_table), "KEYSPACE XRADD", "key IP port",
 					1, 2, CMD_KEY_OW,
 					keyspace_xradd_command, db->mod_keyspace);
-	command_register(&(db->command_table), "KEYSPACE KEYS", "IP port pattern",
-					3, -1, CMD_KEY_RO,
+	command_register(&(db->command_table), "KEYSPACE KEYS", "pattern",
+					1, -1, CMD_KEY_RO,
 					keyspace_keys_command, db->mod_keyspace);
-    command_register(&(db->command_table), "KEYSPACE RDEL", "IP port key",
-					3, 4, CMD_KEY_RO,
+    command_register(&(db->command_table), "KEYSPACE RDEL", "key IP port",
+					3, 2, CMD_KEY_RO,
 					keyspace_rdel_command, db->mod_keyspace);
 
 	/* key slot migration commands */

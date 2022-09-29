@@ -602,7 +602,7 @@ TEST_F(SwarmkvTwoNodes, EXPIRE)
 		snprintf(key, sizeof(key), "expiring-key-%d", i);
 		tmp_db=i%2?db2:db1;
 		seconds=min_timeout_seconds+i%(max_timeout_seconds-min_timeout_seconds);
-		reply=swarmkv_command(tmp_db, "KEYSPACE RLIST %s", key);
+		reply=swarmkv_command(tmp_db, NULL, "KEYSPACE RLIST %s", key);
 		if(reply->type==SWARMKV_REPLY_NIL)
 		{
 			n_success++;
