@@ -22,6 +22,12 @@ Main Features
 
 <img src="./docs/imgs/cluster.png" alt="swamrkv-cluster" /> 
 
+
+
+[TOC]
+
+
+
 Following are terminologies used in Swarm KV.
 
 Vocabularies
@@ -44,7 +50,7 @@ SwarmKV Data Types
 - Bitmap [todo]
 - Rate limiter [todo]
 
-# Command Specification
+# COMMANDS
 
 ## Quick List
 
@@ -103,7 +109,7 @@ Use `\` to escape special characters if you want to match them verbatim.
 
 The pattern is exactly same as Redis https://redis.io/commands/keys/ .
 
-# Getting start
+# GET STARTED
 
 Download and unzip swarmkv-xx.zip
 
@@ -151,7 +157,7 @@ Download and unzip swarmkv-xx.zip
 
    
 
-# SwarmKV Design
+# Design
 
 I list design choices here.
 
