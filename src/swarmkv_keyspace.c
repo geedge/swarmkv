@@ -1329,7 +1329,7 @@ enum cmd_exec_result keyspace_setslot_command(struct swarmkv_module *mod_keyspac
 	struct slot_runtime *slot_rt=NULL;	
 	int slot_id=-1;
 	
-	slot_id=(int)atoll(cmd->argv[2]);
+	slot_id=(int)atoll(cmd->argv[4]);
 	slot_rt=&(ks->slot_rts[slot_id]);
 	
 	pthread_mutex_lock(&slot_rt->mutex);
