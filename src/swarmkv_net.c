@@ -91,6 +91,7 @@ struct snet_thread
 	struct event_base *evbase;
 	struct snet_conn* conn_table;
 
+    unsigned int timeout;
 	unsigned long long sequence_generator;
 	struct snet_rpc *rpc_table;
 
@@ -150,7 +151,7 @@ struct snet_rpc * snet_rpc_new(struct snet_thread *thr, struct swarmkv_node_addr
 	rpc->cb=cb;
 	rpc->cb_arg=cb_arg;
 	rpc->thr=thr;
-	struct timeval timeout={0, 500*1000};//500ms
+	struct timeval timeout={0, thr->timeout*1000};//500ms
 	rpc->timeout_ev=event_new(thr->evbase, -1, 0, snet_rpc_timeout_callback, rpc);
 	event_add(rpc->timeout_ev, &timeout);
 	HASH_ADD(hh, thr->rpc_table, sequence, sizeof(rpc->sequence), rpc);
@@ -666,6 +667,7 @@ struct swarmkv_net* swarmkv_net_new(const struct swarmkv_options *opts, const st
 		net->threads[i]=ALLOC(struct snet_thread, 1);
 		net->threads[i]->evbase=event_base_new();
 		net->threads[i]->thread_id=i;
+		net->threads[i]->timeout=opts->timeout_ms;
 		net->threads[i]->ref_logger=logger;
 		net->threads[i]->ref_net=net;
 		net->threads[i]->sequence_generator=1;

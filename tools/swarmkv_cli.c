@@ -25,6 +25,7 @@ struct config
 {	
 	char db_name[256];
 	int consul_port;
+    int p2p_port;
 	char consul_host[64];
 	struct swarmkv *db;
 	struct cluster_manager_command cluster_mgr_cmd;
@@ -50,6 +51,7 @@ static void usage(void)
 	"Usage: swarmkv-cli [OPTIONS] [cmd [arg [arg ...]]]\n"
 	"  -n <cluster-name>  Cluster name used for orchestration.\n"
 	"  -p <consul-port>   Consul Agent port (default: 8500).\n"
+    "  -l <p2p-port>      Consul Agent dryrun listen port (default: 15210).\n"
 	"  --cluster-create	<cluster-name> IP port [IP port]  Create cluster orchestration information in Consul KV.\n"
 	"  --exec [Command]  Execute comand and exit.\n"
     "  --attach <IP port>  Attach to a node.\n",
@@ -495,6 +497,10 @@ struct swarmkv_reply *cluster_keys_command(struct swarmkv* db, char *argv[], siz
         snprintf(target, sizeof(target), "%s %u", ip, (unsigned int)atoll(port));
 		keyspace_keys_reply=swarmkv_command(db, target, "keyspace keys %s", argv[2]);
 		swarmkv_reply_merge_array(&reply, keyspace_keys_reply);
+        if(keyspace_keys_reply->type==SWARMKV_REPLY_NIL)
+        {
+            swarmkv_reply_free(keyspace_keys_reply);
+        }
 		keyspace_keys_reply=NULL;
 	}
 	swarmkv_reply_free(nodes_reply);
@@ -720,6 +726,10 @@ struct swarmkv_reply *cluster_sanity_command(struct swarmkv* db, char *argv[], s
         snprintf(target, sizeof(target), "%s %u", ip, (unsigned int)atoll(port));
         keyspace_keys_reply=swarmkv_command(db, target, "keyspace keys *");
         swarmkv_reply_merge_array(&reply, keyspace_keys_reply);
+        if(keyspace_keys_reply->type==SWARMKV_REPLY_NIL)
+        {
+            swarmkv_reply_free(keyspace_keys_reply);
+        }
         keyspace_keys_reply=NULL;
     }
 
@@ -1099,6 +1109,7 @@ int main(int argc, char * argv[])
 	struct swarmkv_reply *reply=NULL;
 	memset(&g_config, 0, sizeof(g_config));
 	g_config.consul_port=8500;
+	g_config.p2p_port=15210;
 	strcpy(g_config.consul_host, "127.0.0.1");
     int i;
 	sds *exec_argv, *attach_argv;
@@ -1114,6 +1125,10 @@ int main(int argc, char * argv[])
 		{
 			sscanf(argv[++i], "%u", &g_config.consul_port);
 		}
+        else if(!strcmp(argv[i], "-l") && !lastarg)
+        {
+            sscanf(argv[++i], "%u", &g_config.p2p_port);
+        }
 		else if(!strcmp(argv[i], "--cluster-create") && !lastarg)
 		{
 			g_config.cluster_mgr_cmd.cluster_name=argv[++i];
@@ -1167,6 +1182,7 @@ int main(int argc, char * argv[])
 	}
 	struct swarmkv_options *opts=swarmkv_options_new();
 	swarmkv_options_set_dryrun(opts);
+    swarmkv_options_set_p2p_port(opts, g_config.p2p_port);
 	swarmkv_options_set_worker_thread_number(opts, 2);
 	char *err=NULL;
 	g_config.db=swarmkv_open(opts, g_config.db_name, &err);

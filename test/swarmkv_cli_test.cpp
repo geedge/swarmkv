@@ -574,6 +574,40 @@ TEST_F(SwarmkvTwoNodes, CRDT_JOIN)
 	cmd_exec_arg_free(reply_arg);
 }
 
+TEST_F(SwarmkvTwoNodes, Set_Key)
+{
+	char result[2048]={0};
+	struct cmd_exec_arg* reply_arg=NULL;
+
+	reply_arg=cmd_exec_arg_new();
+
+	swarmkv_cli_attach("127.0.0.1", 5210);
+	cmd_exec_arg_expect_OK(reply_arg);
+	swarmkv_cli_system_cmd(reply_arg, result, sizeof(result), swarmkv_expect_reply_string, "set %s %s", "id001", "1");
+	cmd_exec_arg_clear(reply_arg);
+	swarmkv_cli_detach();
+
+	cmd_exec_arg_expect_NIL(reply_arg);
+	swarmkv_cli_system_cmd(reply_arg, result, sizeof(result), swarmkv_expect_reply_nil, "get %s", "id001");
+	cmd_exec_arg_clear(reply_arg);
+
+	wait_for_check();
+	cmd_exec_arg_expect_cstring(reply_arg, "0) \"id001\"");
+	swarmkv_cli_system_cmd(reply_arg, result, sizeof(result), swarmkv_expect_reply_string, "CLUSTER SANITY check");
+	cmd_exec_arg_clear(reply_arg);
+
+	cmd_exec_arg_expect_integer(reply_arg, 1);
+	swarmkv_cli_system_cmd(reply_arg, result, sizeof(result), swarmkv_expect_reply_integer, "CLUSTER SANITY heal");
+	cmd_exec_arg_clear(reply_arg);
+
+	cmd_exec_arg_expect_cstring(reply_arg, "\"1\"");
+	swarmkv_cli_system_cmd(reply_arg, result, sizeof(result), swarmkv_expect_reply_string, "get %s", "id001");
+	cmd_exec_arg_clear(reply_arg);
+
+	wait_for_sync();
+	cmd_exec_arg_free(reply_arg);
+}
+
 int main(int argc, char ** argv)
 {
 	int ret=0;
