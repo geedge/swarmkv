@@ -613,17 +613,17 @@ void command_spec_init(struct swarmkv *db)
 					keyspace_rdel_command, db->mod_keyspace);
 
 	/* key slot migration commands */
-	command_register(&(db->command_table), "KEYSPACE SETSLOT", "node-IP node-port <slot> IMPORTING peer-IP peer-port | MIGRATING peer-IP peer-port | NODE peer-IP peer-port | STABLE",
-					1, -1, CMD_KEY_NA,
+	command_register(&(db->command_table), "KEYSPACE SETSLOT", "node-IP node-port <slot> IMPORTING|MIGRATING|NODE|STABLE peer-IP peer-port",
+					4, -1, CMD_KEY_NA,
 					keyspace_setslot_command, db->mod_keyspace);
 	command_register(&(db->command_table), "KEYSPACE GETKEYSINSLOT", "IP port slot",
-					1, -1, CMD_KEY_NA,
+					3, -1, CMD_KEY_NA,
 					keyspace_getkeysinslot_command, db->mod_keyspace);
 	command_register(&(db->command_table), "KEYSPACE ADDKEYSTOSLOT", "IP port slot blob",
-					1, -1, CMD_KEY_NA,
+					4, -1, CMD_KEY_NA,
 					keyspace_addkeystoslot_command, db->mod_keyspace);
 	command_register(&(db->command_table), "KEYSPACE DELSLOTKEYS", "IP port slot",
-					1, -1, CMD_KEY_NA,
+					3, -1, CMD_KEY_NA,
 					keyspace_delslotkeys_command, db->mod_keyspace);
 
 	/* cluster commands are defined in swarmkv-cli.c */

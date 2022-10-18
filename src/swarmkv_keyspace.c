@@ -822,7 +822,8 @@ void __watch_slots_changes_cb(struct evhttp_request *req, void *arg)
 		owner=&(slot->owner);
 		pthread_mutex_lock(&slot_rt->mutex);
 		if(0!=swarmkv_node_compare(owner, &(new_slots[i].owner)))
-		{
+		{		
+			swarmkv_node_copy(owner, &(new_slots[i].owner));
 			if(slot_rt->state!=STATE_STABLE)
 			{
 				log_info(ks->logger, MODULE_SWARMKV_KEYSPACE, "slot %d is reset to STABLE state, owner %s:%u.",
@@ -831,10 +832,13 @@ void __watch_slots_changes_cb(struct evhttp_request *req, void *arg)
 			}
 			slot_rt->state=STATE_STABLE;
 		}
-		swarmkv_node_copy(owner, &(new_slots[i].owner));
 		if(0==swarmkv_node_addr_compare(&owner->addr, &(ks->self.addr)))
 		{
 			slot_rt->I_am_owner=1;
+		}
+		else
+		{
+			slot_rt->I_am_owner=0;
 		}
 		pthread_mutex_unlock(&slot_rt->mutex);
 	}
@@ -1511,7 +1515,7 @@ enum cmd_exec_result keyspace_getkeysinslot_command(struct swarmkv_module *mod_k
 
 enum cmd_exec_result keyspace_addkeystoslot_command(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)
 {
-/* KEYSPACE ADDKEYSTOSLOT IP port slot key owner-IP owner-port [key ...] */
+/* KEYSPACE ADDKEYSTOSLOT IP port slot blob */
 
 	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
 
