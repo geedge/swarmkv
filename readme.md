@@ -263,39 +263,45 @@ The keyspace is sharding to slots and each slot is owned by one node. This infor
 
 You can use  `CLUSTER ADDNODE` in swarmkv-cli for adding nodes.
 
-When adding a new node, the operation is **Move slot k from `source node`  to `destination node`**,  it has the following steps:
+When adding a new node, the operation is **Assign slot_id from `original_node`  to `new_node`**, the  `swarmkv-cli` executes the following commands:
 
-- Cluster leader sends `MOVESLOT k source_node destination_node` to the destination node
-- The destination node sets its slot k to IMPORTING
-- The destination node sends the command `SETSLOT k MIGRATING destination_node` to the source node
-- The source node sets slot k to MIGRATING and replies OK
-  - When a slot is set as MIGRATING, the node will accept all queries that are about this hash slot, but only if the key in question exists, otherwise the query is forwarded using a -ASK redirection to the node that is target of the migration.
+- `KEYSPACE SETSLOT new_node_ip new_node_port <slot_id> IMPORTING original_node_ip original_node_port` 
+  - The command sets the <slot_id> of new_node to IMPORTING state.
   - When a slot is set as IMPORTING, the node will accept all queries that are about this hash slot, but only if the request is preceded by an ASKING command. If the ASKING command was not given by the client, the query is redirected to the real hash slot owner via a -MOVED redirection error, as would happen normally.
-- The destination node sends command `MIGRATESLOT k destination_node` to the source node
-- The source node replies destination node with keys and object owner map
-- The destination node sends  `SLOTMOVED k destination_node` to the cluster leader
-- Cluster leader updates the global slot table in Consul KV, so that the all nodes receive the change.
-- The source node releases local slot k.
 
-What if someone fails during the migration?
+- `KEYSPACE SETSLOT original_node_ip original_node_port <slot_id> MIGRATING new_node_ip new_node_port` 
+  - The command sets the <slot_id> of old_node to MIGRATING state.
+  - When a slot is set as MIGRATING, the node will accept all queries that are about this hash slot, but only if the key in question exists, otherwise the query is forwarded using a -ASK redirection to the node that is target of the migration.
 
-- If the cluster leader fails, the new leader will receive destination node's notification and update the slot table.
-- If the destination node fails, the source node still owns slot k, and after a timeout without receiving slot table update, it will restore it to a stable state.
-- if the source node fails, the destination node aborts this migration and waits for the cluster leader to update the global slot table.
+- `KEYSPACE GETKEYSINSLOT original_node_ip original_node_port <slot_id>`
+  - The command gets a blob of all key entries of <slot_Id> from the original_node
 
-When a master node A fails, if slots owned by A has a replica which is node B, the cluster leader will promote node B to slot owner. It has the following steps:
+- `KEYSPACE ADDKEYSTOSLOT new_node_ip new_node_port <slot_id> blob_of_getkeysinslot  `
+  - The command adds all key entries to the <slot_id> of new_node.
 
-- Cluster leader sends promote command to 
+- `KEYSPACE DELSLOTKEYS original_node_ip original_node_port <slot_id>`
+  - The command erases all key entries of the <slot_id> of the original_node.
 
-,  in which,  N is slot id, Y contains a 32-bit node ID, UUID format version, IP and port. 
+
+After all desired slots are migrated, the `swarmkv-cli` updates the global slot table in Consul.
+
+Known Issues:
+
+- Deleting existing keys and adding replica to existing keys between the `getkeysinslot` and `delslotkeys` could not take effect on the new node. It's better to execute `CLUSTER SANITY heal` after the migration.
+
+What if someone nodes are failed during the migration? [Todo] ``swarmkv-cli` acquires the cluster leadership before the migration.
+
+- If the new node fails, the original node still owns slot k, and after a timeout without receiving slot table update, it will restore it to a stable state.
+- If the original node fails, the new node aborts this migration and waits for the cluster leader to update the global slot table.
+- If other nodes fail, the cluster leader will receive destination node's notification and update the slot table.
 
 ## KV Operation
 
 When a requestor executes a command, it takes the following steps
 
-- Local Execute
-  - For key exists in local store, commands are executed in local node, except DEL command.
-- Key space route
+- Local Execution
+  - For key exists in local store, commands are executed locally, except for commands influence keyspace.
+- Key Route
   - The requestor hash the key to slot to find out the key owner.
   - The requestor send  `KEYSPACE RADD/RLIST/DEL` command to the key owner.
 - The Key owner processes the keyspace command and return the addresses of all replica.

@@ -169,15 +169,17 @@ int swarmkv_node_addr_list_exists(const struct swarmkv_node_addr *list, size_t n
 int swarmkv_node_addr_list_remove(struct swarmkv_node_addr *list, size_t n_list, const struct swarmkv_node_addr *addr)
 {
 	int removed=0;
-	for(size_t i=0; i<n_list; i++)
+	struct swarmkv_node_addr copy[n_list];
+	memcpy(copy, list, sizeof(struct swarmkv_node_addr)*n_list);
+	for(size_t i=0, j=0; i<n_list; i++)
 	{
-		if(0==swarmkv_node_addr_compare(list+i, addr))
+		if(0!=swarmkv_node_addr_compare(copy+i, addr))
 		{
-			if(i<n_list-1)
-			{
-				memmove(list+i, list+i+1, sizeof(struct swarmkv_node_addr)*(n_list-i-1));
-				i--;
-			}			
+			memcpy(list+j, copy+i, sizeof(struct swarmkv_node_addr));
+			j++;
+		}
+		else
+		{
 			removed++;
 		}
 	}

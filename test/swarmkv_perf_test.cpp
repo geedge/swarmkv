@@ -168,26 +168,39 @@ void *background_running_thread(void *thread_arg)
 	}
 	EXPECT_EQ(ret, static_key_cnt);
 
-	snprintf(key, sizeof(key), "ephemeral-key-of-%s", uuid_str);
 	snprintf(value, sizeof(value), "background-running-value");	
 	ret=3;
+	int seq=0;
 	while(ret==3 && g_running_flag)
 	{
 		ret=0;
+		snprintf(key, sizeof(key), "ephemeral-key-of-%s-%d", uuid_str, seq);
+		seq++;
 		cmd_exec_arg_clear(arg);		
 		cmd_exec_arg_expect_OK(arg);
 		swarmkv_set(db, key, strlen(key), value, strlen(value), cmd_exec_generic_callback, arg);
 		ret+=cmd_exec_arg_wait(arg, PERF_TEST_EXEC_TO_MS);
-		
+		if(ret!=1)
+		{
+			printf("set %s failed\n", key);
+		}		
 		cmd_exec_arg_clear(arg);		
 		cmd_exec_arg_expect_cstring(arg, value);		
 		swarmkv_get(db, key, strlen(key), cmd_exec_generic_callback, arg); 
 		ret+=cmd_exec_arg_wait(arg, PERF_TEST_EXEC_TO_MS);
+		if(ret!=2)
+		{
+			printf("get %s failed\n", key);
+		}
 
 		cmd_exec_arg_clear(arg);
 		cmd_exec_arg_expect_integer(arg, 1);
 		swarmkv_del(db, key, strlen(key), cmd_exec_generic_callback, arg);
 		ret+=cmd_exec_arg_wait(arg, PERF_TEST_EXEC_TO_MS);
+		if(ret!=3)
+		{
+			printf("del %s failed\n", key);
+		}
 	}
 	cmd_exec_arg_free(arg);
 	int *success=ALLOC(int, 1);
@@ -242,9 +255,9 @@ TEST(Migration, AddNode)
 			pthread_create(&(threads[i][j]), NULL, background_running_thread, db[i]);
 		}
 	}
-	sleep(5);
-//	swarmkv_cli_add_node(cluster_name, "127.0.0.1", p2p_port_start+NODE_NUMBER+1);
-	sleep(3600);
+	sleep(60);
+	swarmkv_cli_add_node(cluster_name, "127.0.0.1", p2p_port_start+NODE_NUMBER);
+	sleep(20);
 	g_running_flag=0;
 	int *successful_backgroud_running_thread=NULL;
 	for(i=0; i<NODE_NUMBER; i++)
@@ -259,7 +272,7 @@ TEST(Migration, AddNode)
 			successful_backgroud_running_thread=NULL;
 		}
 	}
-
+	sleep(3600);
 	for(i=0; i<NODE_NUMBER+1; i++)
 	{
 		swarmkv_close(db[i]);
