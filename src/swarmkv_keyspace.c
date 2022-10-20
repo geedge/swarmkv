@@ -1142,7 +1142,7 @@ void swarmkv_keyspace_set_exec_cmd_func(struct swarmkv_module *mod_keyspace, exe
 void keyspace_lock(struct swarmkv_module *mod_keyspace, const sds key)
 {
 	if(!key) return;
-	int slot_id=get_slot_id(key, sdslen(key));
+	int slot_id=key_hash_slot(key, sdslen(key));
 	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
 	struct slot_runtime *slot_rt=ks->slot_rts+slot_id;
 	pthread_mutex_lock(&slot_rt->mutex);
@@ -1151,7 +1151,7 @@ void keyspace_lock(struct swarmkv_module *mod_keyspace, const sds key)
 void keyspace_unlock(struct swarmkv_module *mod_keyspace, const sds key)
 {
 	if(!key) return;
-	int slot_id=get_slot_id(key, sdslen(key));
+	int slot_id=key_hash_slot(key, sdslen(key));
 	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
 	struct slot_runtime *slot_rt=ks->slot_rts+slot_id;
 	pthread_mutex_unlock(&slot_rt->mutex);
@@ -1593,7 +1593,7 @@ enum cmd_exec_result key_route_generic(struct swarmkv_keyspace *ks, enum KEYSPAC
 	int slot_id=-1;
 	struct slot_runtime *slot_rt=NULL;
 
-	slot_id=get_slot_id(key, sdslen(key));
+	slot_id=key_hash_slot(key, sdslen(key));
 	slot_rt=ks->slot_rts+slot_id;
 	if(!slot_rt->I_am_owner && slot_rt->state!=STATE_IMPORTING)
 	{
@@ -1812,7 +1812,7 @@ enum cmd_exec_result key_ttl_generic(struct swarmkv_keyspace *ks, enum KEY_TTL_O
 
 	enum cmd_exec_result ret=FINISHED;
 
-	int slot_id=get_slot_id(key, sdslen(key));
+	int slot_id=key_hash_slot(key, sdslen(key));
 	struct slot_runtime *slot_rt=ks->slot_rts+slot_id;
 	struct timespec now;
 	clock_gettime(CLOCK_REALTIME, &now);

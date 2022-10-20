@@ -700,7 +700,7 @@ struct swarmkv_net* swarmkv_net_new(const struct swarmkv_options *opts, struct s
 	{
 		self->p2p_port=ntohs(sin.sin_port);
 	}
-	assert(self->p2p_port==htons(sin.sin_port));
+	assert(self->p2p_port==ntohs(sin.sin_port));
 	return net;
 }
 

@@ -257,6 +257,24 @@ Except for node in dry run mode, cluster nodes will watch leadership changes and
    - If the response is `true`, the node is elected to be a leader.
 3. Go to  step 1.
 
+### Hash tags
+
+Like [Redis Cluster](https://redis.io/docs/reference/cluster-spec/), SwarmKV implements hash tags, which can be used to ensure that multiple keys are allocated in the same hash slot. If the key contains a "{...}" pattern only the substring between `{` and `}` is hashed in order to obtain the hash slot. However since it is possible that there are multiple occurrences of `{` or `}` the algorithm is well specified by the following rules:
+
+- IF the key contains a `{` character.
+- AND IF there is a `}` character to the right of `{`.
+- AND IF there are one or more characters between the first occurrence of `{` and the first occurrence of `}`.
+
+Then instead of hashing the key, only what is between the first occurrence of `{` and the following first occurrence of `}` is hashed.
+
+Examples:
+
+- The two keys `{user1000}.following` and `{user1000}.followers` will hash to the same hash slot since only the substring `user1000` will be hashed in order to compute the hash slot.
+- For the key `foo{}{bar}` the whole key will be hashed as usually since the first occurrence of `{` is followed by `}` on the right without characters in the middle.
+- For the key `foo{{bar}}zap` the substring `{bar` will be hashed, because it is the substring between the first occurrence of `{` and the first occurrence of `}` on its right.
+- For the key `foo{bar}{zap}` the substring `bar` will be hashed, since the algorithm stops at the first valid or invalid (without bytes inside) match of `{` and `}`.
+- What follows from the algorithm is that if the key starts with `{}`, it is guaranteed to be hashed as a whole. This is useful when using binary data as key names.
+
 ### Keyspace reorganization
 
 The keyspace is sharding to slots and each slot is owned by one node. This information is recorded in the global shared slot table. If any node's health check failed, the cluster leader will choose a randome health node as the new slot owner.

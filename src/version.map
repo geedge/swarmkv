@@ -9,7 +9,7 @@ global:
 		http_blocking_request;
 		json2leader;
 		json2nodes;
-		get_slot_id;
+		key_hash_slot;
 	};
 local: *;
 };

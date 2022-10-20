@@ -471,7 +471,7 @@ struct swarmkv_reply *cluster_keyslot_command(struct swarmkv* db, char *argv[], 
     }
 
 	char* key=argv[2];
-	int slot_id=get_slot_id(key, strlen(key));
+	int slot_id=key_hash_slot(key, strlen(key));
 	reply=swarmkv_reply_new_integer(slot_id);
 	return reply;
 }

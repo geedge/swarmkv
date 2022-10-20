@@ -60,7 +60,7 @@ void json2keyslots(sds json_buffer, void *slot_container_base, size_t sz_slot_co
 sds keyslots2json(void *slot_container_base, size_t sz_slot_container, size_t offset_slot, size_t n_slot_container);
 void json2nodes(const char* resp_buff, struct swarmkv_node *nodes, size_t *n_node);
 void json2leader(const char *resp_body, struct swarmkv_node *leader);
-int get_slot_id(const char* key, size_t keylen);
+int key_hash_slot(const char* key, size_t keylen);
 
 struct swarmkv_options
 {

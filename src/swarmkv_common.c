@@ -456,14 +456,39 @@ void json2leader(const char *resp_body, struct swarmkv_node *leader)
 	uuid_parse(item->valuestring, leader->bin_uuid);
 	cJSON_Delete(leader_json);
 }
+/* This is an modified version of keyHashSlot of Redis source code.
+ * If the key contains the {...} pattern, only the part between
+ * { and } is hashed. This is to force certain keys to be in
+ * the same node. 
+*/
 #define	KEYSPACE_XXHASH_SEED	5210
-int get_slot_id(const char* key, size_t keylen)
+int key_hash_slot(const char *key, size_t keylen)
 {
-	XXH32_hash_t hash = XXH32(key, keylen, KEYSPACE_XXHASH_SEED);
-	int slot_id=hash%KEYSPACE_SLOT_NUM;
-	return slot_id;
-}
+	int slot_id=-1;
+    int s=0, e=0; /* start-end indexes of { and } */
 
+    for (s = 0; s < keylen; s++)
+        if (key[s] == '{') break;
+
+    /* No '{' ? Hash the whole key. This is the base case. */
+    if (s == keylen)
+	{
+		slot_id=XXH32(key, keylen, KEYSPACE_XXHASH_SEED)%KEYSPACE_SLOT_NUM;
+		return slot_id;
+	}
+
+    /* '{' found? Check if we have the corresponding '}'. */
+    for (e = s+1; e < keylen; e++)
+        if (key[e] == '}') break;
+
+    /* No '}' or nothing between {} ? Hash the whole key. */
+    if (e == keylen || e == s+1)
+	{
+		slot_id=XXH32(key, keylen, KEYSPACE_XXHASH_SEED)%KEYSPACE_SLOT_NUM;
+		return slot_id;
+	}
+	return XXH32(key+s+1, e-s-1, KEYSPACE_XXHASH_SEED)%KEYSPACE_SLOT_NUM;
+}
 struct http_client
 {
 	int response_code;
