@@ -27,7 +27,7 @@ struct swarmkv_options* swarmkv_options_new(void)
 	opts->p2p_port=5210;
 	opts->health_check_port=5211;
 	opts->loglevel=0;
-    opts->timeout_ms=500;
+    opts->p2p_timeout_ms=500;
 	strcpy(opts->bind_address, "127.0.0.1");
 	uuid_generate(opts->bin_uuid);
 	opts->nr_worker_threads=1;
@@ -56,9 +56,9 @@ int swarmkv_options_set_health_check_port(struct swarmkv_options *opts, unsigned
 	opts->health_check_port=health_check_port;
 	return 0;
 }
-int swarmkv_options_set_timeout(struct swarmkv_options *opts, unsigned int timeout_ms)
+int swarmkv_options_set_p2p_timeout(struct swarmkv_options *opts, unsigned int timeout_ms)
 {
-	opts->timeout_ms=timeout_ms;
+	opts->p2p_timeout_ms=timeout_ms;
 	return 0;
 }
 

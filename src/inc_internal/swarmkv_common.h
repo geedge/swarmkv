@@ -70,7 +70,7 @@ struct swarmkv_options
 	int dryrun;
 	int disable_cache;
 	unsigned int consul_port;
-    unsigned int timeout_ms;
+    unsigned int p2p_timeout_ms;
 	struct log_handle *logger;
 	int loglevel;
 	char bind_address[SWARMKV_SYMBOL_MAX];

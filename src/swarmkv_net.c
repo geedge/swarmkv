@@ -667,7 +667,7 @@ struct swarmkv_net* swarmkv_net_new(const struct swarmkv_options *opts, struct s
 		net->threads[i]=ALLOC(struct snet_thread, 1);
 		net->threads[i]->evbase=event_base_new();
 		net->threads[i]->thread_id=i;
-		net->threads[i]->timeout=opts->timeout_ms;
+		net->threads[i]->timeout=opts->p2p_timeout_ms;
 		net->threads[i]->ref_logger=logger;
 		net->threads[i]->ref_net=net;
 		net->threads[i]->sequence_generator=1;
