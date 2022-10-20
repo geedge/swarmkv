@@ -48,7 +48,7 @@ SwarmKV Data Types
 - Set
 - Hash Table [todo]
 - Bitmap [todo]
-- Rate limiter [todo]
+- Token Bucket [todo]
 
 # COMMANDS
 
@@ -289,11 +289,14 @@ Known Issues:
 
 - Deleting existing keys and adding replica to existing keys between the `getkeysinslot` and `delslotkeys` could not take effect on the new node. It's better to execute `CLUSTER SANITY heal` after the migration.
 
-What if someone nodes are failed during the migration? [Todo] ``swarmkv-cli` acquires the cluster leadership before the migration.
+- What if someone nodes are failed during the migration? [Todo] ``swarmkv-cli` acquires the cluster leadership before the migration.
 
-- If the new node fails, the original node still owns slot k, and after a timeout without receiving slot table update, it will restore it to a stable state.
-- If the original node fails, the new node aborts this migration and waits for the cluster leader to update the global slot table.
-- If other nodes fail, the cluster leader will receive destination node's notification and update the slot table.
+  - If the new node fails, the original node still owns slot k, and after a timeout without receiving slot table update, it will restore it to a stable state.
+
+  - If the original node fails, the new node aborts this migration and waits for the cluster leader to update the global slot table.
+
+  - If other nodes fail, the cluster leader will receive destination node's notification and update the slot table.
+
 
 ## KV Operation
 
@@ -348,14 +351,14 @@ Replication is not implemented yet.
 
 ### Health Check
 
-Each node registers an HTTP service to the consul, and the consul agent is responsible for checking node health periodically via HTTP GET.
-If a node fails, the cluster leader will be notified and remove the failed node by reassigning its slots to other nodes.
+Each node registers an HTTP service to the Consul, and the Consul agent is responsible for checking node health periodically via HTTP GET.
+If a node fails, the cluster leader gets notification and removes the failed node by reassigning its slots to other nodes.
 
 ## Wire Protocol
 
 Messages between nodes is start with a fixed length header and a variable length payload. The payload is serialized with [MessagePack](https://msgpack.org/index.html) format.  For readability, we use JSON to describe the request and response here.
 
-Command message
+Take the following command as an example:
 
 ```json
 [

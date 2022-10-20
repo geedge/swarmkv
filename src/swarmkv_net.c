@@ -652,7 +652,7 @@ static void __accept_error_cb(struct evconnlistener *listener, void *arg)
 							err, evutil_socket_error_to_string(err));
 }
 
-struct swarmkv_net* swarmkv_net_new(const struct swarmkv_options *opts, const struct swarmkv_node_addr* self, void* logger, char **err)
+struct swarmkv_net* swarmkv_net_new(const struct swarmkv_options *opts, struct swarmkv_node_addr* self, void* logger, char **err)
 {
 	size_t i=0;
 	struct swarmkv_net* net=NULL;	
@@ -690,7 +690,17 @@ struct swarmkv_net* swarmkv_net_new(const struct swarmkv_options *opts, const st
 		return NULL;
 	}
 	evconnlistener_set_error_cb(net->listener, __accept_error_cb);
-	
+	int sockfd=evconnlistener_get_fd(net->listener);
+	socklen_t sin_len=0;
+	if (getsockname(sockfd, (struct sockaddr *)&sin, &sin_len) < 0)
+	{
+		asprintf(err, "getsockname failed");
+	}
+	if(self->p2p_port==0)
+	{
+		self->p2p_port=ntohs(sin.sin_port);
+	}
+	assert(self->p2p_port==htons(sin.sin_port));
 	return net;
 }
 

@@ -711,7 +711,8 @@ struct swarmkv *swarmkv_open(struct swarmkv_options* opts, const char * db_name,
 	}
 	db->self.p2p_port=opts->p2p_port;
 	strncpy(db->self.ip_addr, opts->bind_address, sizeof(db->self.ip_addr));
-	
+
+	//Note: if the p2p_port is 0, swarmkv_net_new updates db->self.p2p_port.
 	db->net=swarmkv_net_new(opts, &db->self, db->logger, err);
 	if(*err)
 	{

@@ -1109,7 +1109,7 @@ int main(int argc, char * argv[])
 	struct swarmkv_reply *reply=NULL;
 	memset(&g_config, 0, sizeof(g_config));
 	g_config.consul_port=8500;
-	g_config.p2p_port=15210;
+	g_config.p2p_port=0;//listen on random port
 	strcpy(g_config.consul_host, "127.0.0.1");
     int i;
 	sds *exec_argv, *attach_argv;
