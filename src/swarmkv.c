@@ -11,6 +11,7 @@
 
 #include "t_string.h"
 #include "t_set.h"
+#include "t_token_bucket.h"
 #include "t_crdt.h"
 
 #include "swarmkv_message.h"
@@ -569,7 +570,19 @@ void command_spec_init(struct swarmkv *db)
 	command_register(&(db->command_table), "SCARD", "key",
 					1, 1, CMD_KEY_RO,
 					scard_command, db->mod_store);
-	
+
+	/* Token Bucket Command */
+	command_register(&(db->command_table), "TCFG", "key capacity rate",
+					3, 1, CMD_KEY_OW,
+					tcfg_command, db->mod_store);
+	command_register(&(db->command_table), "TCONSUME", "key tokens [NORMAL|FORCE|FLEXIBLE]",
+					2, 1, CMD_KEY_RW,
+					tconsume_command, db->mod_store);
+	command_register(&(db->command_table), "TINFO", "key",
+					1, 1, CMD_KEY_RO,
+					tinfo_command, db->mod_store);
+
+
 	/* low-level state-based CRDT synchronization command*/
 	command_register(&(db->command_table), "CRDT PULL", "key",
 					1, 2, CMD_KEY_NA,
@@ -612,7 +625,7 @@ void command_spec_init(struct swarmkv *db)
 					3, 2, CMD_KEY_RO,
 					keyspace_rdel_command, db->mod_keyspace);
 
-	/* key slot migration commands */
+	/* low-level keyspace reorgnization commands */
 	command_register(&(db->command_table), "KEYSPACE SETSLOT", "node-IP node-port <slot> IMPORTING|MIGRATING|NODE|STABLE peer-IP peer-port",
 					4, -1, CMD_KEY_NA,
 					keyspace_setslot_command, db->mod_keyspace);
@@ -729,7 +742,7 @@ struct swarmkv *swarmkv_open(struct swarmkv_options* opts, const char * db_name,
 	swarmkv_keyspace_set_exec_cmd_func(db->mod_keyspace, __exec_cmd, db);
 
 	db->mod_store=swarmkv_store_new(db->opts, __exec_cmd, db, opts->bin_uuid);
-	swarmkv_net_timer_add(db->net, 0, 10, 1, (timeout_cb*)swarmkv_store_periodic, db->mod_store);
+	swarmkv_net_timer_add(db->net, 0, 1, 1, (timeout_cb*)swarmkv_store_periodic, db->mod_store);
 
 	command_spec_init(db);
 	swarmkv_threads_run(db);

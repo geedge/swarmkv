@@ -113,6 +113,10 @@ static void obj_container_free(struct scontainer *ctr)
 			OR_map_free(ctr->obj.hash);
 			ctr->obj.hash=NULL;
 			break;
+		case OBJ_TYPE_TOKEN_BUCKET:
+			OC_token_bucket_free(ctr->obj.bucket);
+			ctr->obj.bucket=NULL;
+			break;
 		case OBJ_TYPE_UNDEFINED:
 			assert(ctr->obj.raw==NULL);
 			break;
@@ -314,6 +318,9 @@ void sobj_serialize(struct sobj *obj, char **blob, size_t *blob_sz)
 		case OBJ_TYPE_HASH:
 			OR_map_serialize(obj->hash, &value_blob, &value_blob_sz);
 			break;
+		case OBJ_TYPE_TOKEN_BUCKET:
+			OC_token_bucket_serialize(obj->bucket, &value_blob, &value_blob_sz);
+			break;
 		default:
 			assert(0);
 			break;
@@ -380,9 +387,18 @@ void sobj_merge_blob(struct sobj *obj, const char *blob, size_t blob_sz, uuid_t 
 		case OBJ_TYPE_HASH:
 			if(!obj->hash)
 			{
-				obj->hash=OR_map_new(mpack_node_str(v_node), mpack_node_strlen(v_node));
+				obj->hash=OR_map_new((const char*)uuid, sizeof(uuid));
 			}
 			OR_map_merge_blob(obj->hash, mpack_node_str(v_node), mpack_node_strlen(v_node));
+			break;
+		case OBJ_TYPE_TOKEN_BUCKET:
+			if(!obj->bucket)
+			{
+				struct timeval beginning_of_history;
+				memset(&beginning_of_history, 0, sizeof(beginning_of_history));
+				obj->bucket=OC_token_bucket_new_with_time((const char*)uuid, sizeof(uuid), beginning_of_history, 0, 0);
+			}
+			OC_token_bucket_merge_blob(obj->bucket, mpack_node_str(v_node), mpack_node_strlen(v_node));
 			break;
 		default:
 			assert(0);

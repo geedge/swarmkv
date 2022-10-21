@@ -13,7 +13,7 @@
 #include "linenoise/linenoise.h"
 #include "swarmkv/swarmkv.h"
 
-struct swarmkv_reply *swarmkv_cmd_argv(struct swarmkv *db, const char *target, int argc, sds *argv);
+struct swarmkv_reply *swarmkv_command_argv(struct swarmkv *db, const char *target, int argc, sds *argv);
 
 struct cluster_manager_command
 {
@@ -396,7 +396,7 @@ struct swarmkv_reply *cluster_addnode_command(struct swarmkv* db, char *argv[], 
 		swarmkv_reply_free(getkeysinslot_reply);
 		getkeysinslot_reply=NULL;
 
-		addkeystoslot_reply=swarmkv_cmd_argv(db, NULL, 6, migrate_argv);
+		addkeystoslot_reply=swarmkv_command_argv(db, NULL, 6, migrate_argv);
 
 		for(j=0; j<6; j++)
 		{
@@ -589,7 +589,7 @@ void exec_cmd_crdt_join(struct swarmkv* db, struct cluster_sanity_cmd_ctx *ctx, 
     {
         ctx->reply_cnt++;
         snprintf(target, sizeof(target), "%s %u", keyspace_addr->addr.ip_addr, keyspace_addr->addr.p2p_port);
-        swarmkv_exec_async(db, ctx, target, exec_cmd_generic_callback, "CRDT JOIN %s %s %d", key, crdt_addr->addr.ip_addr, crdt_addr->addr.p2p_port);
+        swarmkv_command_async(db, exec_cmd_generic_callback, ctx, target, "CRDT JOIN %s %s %d", key, crdt_addr->addr.ip_addr, crdt_addr->addr.p2p_port);
     }
 }
 
@@ -750,7 +750,7 @@ struct swarmkv_reply *cluster_sanity_command(struct swarmkv* db, char *argv[], s
         cmd_ctx->keylen=reply->elements[i]->len;
         ctx->reply_cnt=reply->n_element;
         cmd_ctx->ctx=ctx;
-        swarmkv_exec_async(db, cmd_ctx, get_attach_target(&g_attach_target), build_keyspace_replica_list, "keyspace rlist %s", reply->elements[i]->str);
+        swarmkv_command_async(db, build_keyspace_replica_list, cmd_ctx, get_attach_target(&g_attach_target), "keyspace rlist %s", reply->elements[i]->str);
     }
 
     if(reply)
@@ -799,7 +799,7 @@ struct swarmkv_reply *cluster_sanity_command(struct swarmkv* db, char *argv[], s
             {
                 ctx->reply_cnt++;
                 ctx->heal_replica_cnt++;
-                swarmkv_exec_async(db, ctx, get_attach_target(&g_attach_target), exec_cmd_generic_callback, "keyspace rdel %s %s %u", keyspace_list->key, keyspace_node_addr->addr.ip_addr, keyspace_node_addr->addr.p2p_port);
+                swarmkv_command_async(db,  exec_cmd_generic_callback, ctx, get_attach_target(&g_attach_target), "keyspace rdel %s %s %u", keyspace_list->key, keyspace_node_addr->addr.ip_addr, keyspace_node_addr->addr.p2p_port);
             }
         }
 
@@ -818,7 +818,7 @@ struct swarmkv_reply *cluster_sanity_command(struct swarmkv* db, char *argv[], s
                 {
                     ctx->reply_cnt++;
                     ctx->heal_replica_cnt++;
-                    swarmkv_exec_async(db, ctx, get_attach_target(&g_attach_target), exec_cmd_generic_callback,  "keyspace rdel %s %s %u", keyspace_list->key, keyspace_node_addr->addr.ip_addr, keyspace_node_addr->addr.p2p_port);
+                    swarmkv_command_async(db, exec_cmd_generic_callback, ctx, get_attach_target(&g_attach_target), "keyspace rdel %s %s %u", keyspace_list->key, keyspace_node_addr->addr.ip_addr, keyspace_node_addr->addr.p2p_port);
                 }
             }
             //Step3.2 foreach crdt list, if crdt node not in keyspace list, keyspace radd node
@@ -834,7 +834,7 @@ struct swarmkv_reply *cluster_sanity_command(struct swarmkv* db, char *argv[], s
                 {
                     ctx->reply_cnt++;
                     ctx->heal_replica_cnt++;
-                    swarmkv_exec_async(db, ctx, get_attach_target(&g_attach_target), exec_cmd_generic_callback, "keyspace radd %s %s %d",crdt_list->key, crdt_node_addr->addr.ip_addr, crdt_node_addr->addr.p2p_port);
+                    swarmkv_command_async(db, exec_cmd_generic_callback, ctx, get_attach_target(&g_attach_target), "keyspace radd %s %s %d",crdt_list->key, crdt_node_addr->addr.ip_addr, crdt_node_addr->addr.p2p_port);
                     exec_cmd_crdt_join(db,ctx, keyspace_list, crdt_node_addr, crdt_list->key);
                 }
             }
@@ -856,7 +856,7 @@ struct swarmkv_reply *cluster_sanity_command(struct swarmkv* db, char *argv[], s
             {
                 ctx->reply_cnt++;
                 ctx->heal_replica_cnt++;
-                swarmkv_exec_async(db, ctx, get_attach_target(&g_attach_target), exec_cmd_generic_callback, "keyspace radd %s %s %d", crdt_list->key, crdt_node_addr->addr.ip_addr, crdt_node_addr->addr.p2p_port);
+                swarmkv_command_async(db, exec_cmd_generic_callback, ctx, get_attach_target(&g_attach_target), "keyspace radd %s %s %d", crdt_list->key, crdt_node_addr->addr.ip_addr, crdt_node_addr->addr.p2p_port);
             }
         }
     }
@@ -925,7 +925,7 @@ struct cluster_cmd_spec cluster_cmds[]={
 	{"CLUSTER ADDNODE", "IP port", cluster_addnode_command},
 	{"CLUSTER CREATE", "cluster-name IP port [IP port]", cluster_create_command},
     {"CLUSTER SANITY", "check | heal", cluster_sanity_command},
-    {"ATTACH", "Ip port", attach_command},
+    {"ATTACH", "IP port", attach_command},
     {"DETACH", "", detach_command}
 };
 
@@ -1183,7 +1183,7 @@ int main(int argc, char * argv[])
 	struct swarmkv_options *opts=swarmkv_options_new();
 	swarmkv_options_set_dryrun(opts);
     swarmkv_options_set_p2p_port(opts, g_config.p2p_port);
-	swarmkv_options_set_worker_thread_number(opts, 2);
+	swarmkv_options_set_worker_thread_number(opts, 1);
 	char *err=NULL;
 	g_config.db=swarmkv_open(opts, g_config.db_name, &err);
 	if(err)
@@ -1204,7 +1204,7 @@ int main(int argc, char * argv[])
 		}
 		else
 		{
-			reply=swarmkv_cmd_argv(g_config.db, get_attach_target(&g_attach_target), exec_argc, exec_argv);
+			reply=swarmkv_command_argv(g_config.db, get_attach_target(&g_attach_target), exec_argc, exec_argv);
 		}
 		print_reply(reply);
 		swarmkv_reply_free(reply);
@@ -1237,7 +1237,7 @@ int main(int argc, char * argv[])
 		}
 		else
 		{
-			reply=swarmkv_cmd_argv(g_config.db, get_attach_target(&g_attach_target), exec_argc, exec_argv);
+			reply=swarmkv_command_argv(g_config.db, get_attach_target(&g_attach_target), exec_argc, exec_argv);
 		}
 		print_reply(reply);
 		swarmkv_reply_free(reply);

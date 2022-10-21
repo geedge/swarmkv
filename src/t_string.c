@@ -58,7 +58,7 @@ enum cmd_exec_result set_command(struct swarmkv_module *mod_store, const struct 
 		if(accessing_node)
 		{
 			obj=sobj_new(OBJ_TYPE_UNDEFINED, key);
-			store_add_obj(mod_store,obj);
+			store_add_obj(mod_store, obj);
 		}
 		else
 		{

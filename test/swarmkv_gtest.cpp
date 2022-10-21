@@ -9,6 +9,8 @@
 #include <asm/errno.h>
 #include <sys/syscall.h>
 #include <unistd.h>
+#include <sys/time.h>
+
 #define	CMD_EXEC_TIMEOUT_MS	1000*2
 
 void generic_callback(const struct swarmkv_reply* reply, void * cb_arg)
@@ -187,6 +189,41 @@ TEST_F(SwarmkvBasicTest, TypeSet)
 	cmd_exec_arg_free(arg);
 	arg=NULL;
 }
+TEST_F(SwarmkvBasicTest, TypeTokenBucket)
+{
+	struct cmd_exec_arg *arg=NULL;
+	struct swarmkv* db=SwarmkvBasicTest::db;
+	const char *key="tb-192.168.0.1";
+	int exec_successful=0;
+	arg=cmd_exec_arg_new();
+	long long capacity=1024*4, rate=1024*2, request_tokens=0, got_tokens=0;
+	cmd_exec_arg_expect_OK(arg);	
+	swarmkv_command_async(db, generic_callback, arg, NULL, "TCFG %s %lld %lld", key, capacity, rate);	
+	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
+	cmd_exec_arg_clear(arg);
+	EXPECT_TRUE(exec_successful);
+	struct timeval start, now;
+	gettimeofday(&start, NULL);
+	gettimeofday(&now, NULL);
+	srand(171);
+	struct swarmkv_reply *reply=NULL;
+	int i=0;
+	while(now.tv_sec - start.tv_sec<10)
+	{
+		request_tokens=random()%(2*rate);
+		cmd_exec_arg_expect_integer(arg, 0);
+		reply=swarmkv_command(db, NULL, "TCONSUME %s %lld FLEXIBLE", key, request_tokens);
+		if(reply->type==SWARMKV_REPLY_INTEGER)
+		{
+			got_tokens+=reply->integer;
+		}
+		swarmkv_reply_free(reply);
+		gettimeofday(&now, NULL);
+		i++;
+	}
+	EXPECT_LE(got_tokens, (now.tv_sec -start.tv_sec)*rate+capacity);	
+	cmd_exec_arg_free(arg);
+}
 
 TEST_F(SwarmkvBasicTest, EXPIRE_TTL)
 {
@@ -219,7 +256,7 @@ TEST_F(SwarmkvBasicTest, EXPIRE_TTL)
 	EXPECT_TRUE(exec_successful);
 	cmd_exec_arg_clear(arg);
 
-	sleep(seconds+1);
+	sleep(seconds+2);
 
 	//GET key
 	cmd_exec_arg_expect_NIL(arg);
@@ -243,7 +280,6 @@ TEST_F(SwarmkvBasicTest, EXPIRE_TTL)
 	EXPECT_TRUE(exec_successful);
 	cmd_exec_arg_clear(arg);
 	
-
 	cmd_exec_arg_free(arg);
 	arg=NULL;
 }
@@ -855,7 +891,44 @@ TEST_F(SwarmkvTwoNodes, TypeSet)
 	free(members);
 	free(member_len);
 }
-
+TEST_F(SwarmkvTwoNodes, TypeTokenBucket)
+{
+	struct cmd_exec_arg *arg=NULL;
+	struct swarmkv* db[2];
+	db[0]=SwarmkvTwoNodes::db1;
+	db[1]=SwarmkvTwoNodes::db2;
+	const char *key="tb-192.168.0.1";
+	int exec_successful=0;
+	arg=cmd_exec_arg_new();
+	long long capacity=1024*4, rate=1024*2, request_tokens=0, got_tokens=0;
+	cmd_exec_arg_expect_OK(arg);	
+	swarmkv_command_async(db[0], generic_callback, arg, NULL, "TCFG %s %lld %lld", key, capacity, rate);	
+	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
+	cmd_exec_arg_clear(arg);
+	EXPECT_TRUE(exec_successful);
+	struct timeval start, now;
+	gettimeofday(&start, NULL);
+	gettimeofday(&now, NULL);
+	srand(171);
+	struct swarmkv_reply *reply=NULL;
+	int i=0;
+	while(now.tv_sec - start.tv_sec<10)
+	{
+		request_tokens=random()%(2*rate);
+		cmd_exec_arg_expect_integer(arg, 0);
+		reply=swarmkv_command(db[i%2], NULL, "TCONSUME %s %lld FLEXIBLE", key, request_tokens);
+		if(reply->type==SWARMKV_REPLY_INTEGER)
+		{
+			got_tokens+=reply->integer;
+		}
+		swarmkv_reply_free(reply);
+		gettimeofday(&now, NULL);
+		i++;
+		usleep(1000*10);
+	}
+	EXPECT_LE(got_tokens, (now.tv_sec-start.tv_sec)*rate+capacity);	
+	cmd_exec_arg_free(arg);
+}
 TEST_F(SwarmkvTwoNodes, Wait)
 {
 	sleep(3600*2);

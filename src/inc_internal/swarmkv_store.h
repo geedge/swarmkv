@@ -8,13 +8,15 @@
 #include "pn_counter.h"
 #include "or_set.h"
 #include "or_map.h"
+#include "oc_token_bucket.h"
+
 enum sobj_type
 {
 	OBJ_TYPE_STRING,
 	OBJ_TYPE_COUNTER,
 	OBJ_TYPE_SET,
 	OBJ_TYPE_HASH,
-	OBJ_TYPE_THROTTLE,
+	OBJ_TYPE_TOKEN_BUCKET,
 	OBJ_TYPE_UNDEFINED,
 	__SWARMKV_OBJ_TYPE_MAX
 };
@@ -29,6 +31,7 @@ struct sobj
 		struct PN_counter *counter;
 		struct OR_set *set;
 		struct OR_map *hash;
+		struct OC_token_bucket *bucket;
 		void *raw;
 	};
 };

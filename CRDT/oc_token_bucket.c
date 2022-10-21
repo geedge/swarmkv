@@ -136,6 +136,20 @@ long long OC_token_bucket_read_available(struct OC_token_bucket *bucket)
 	gettimeofday(&now, NULL);
 	return OC_token_bucket_control(bucket, now, OCTB_CMD_READ_AVAILABLE, 0);
 }
+void OC_token_bucket_info(struct OC_token_bucket *bucket, struct OC_token_bucket_info *info)
+{
+	struct timeval now;
+	gettimeofday(&now, NULL);
+
+	info->CIR=bucket->cfg.CIR;
+	info->CBS=bucket->cfg.CBS;
+	info->refill_duration_ms=bucket->cfg.refill_duration_ms;
+	info->consumed=OC_token_bucket_control(bucket, now, OCTB_CMD_READ_CONSUEMD, 0);
+	info->refilled=OC_token_bucket_control(bucket, now, OCTB_CMD_READ_REFILLED, 0);
+	info->available=OC_token_bucket_control(bucket, now, OCTB_CMD_READ_AVAILABLE, 0);
+	return;
+}
+
 long long OC_token_bucket_consume_flexible(struct OC_token_bucket *bucket, long long tokens)
 {
 	struct timeval now;

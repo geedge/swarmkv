@@ -245,7 +245,7 @@ void blocking_query_cb(const struct swarmkv_reply* reply, void * arg)
 	pthread_cond_signal(&ctx->cond);
 	return;
 }
-struct swarmkv_reply *swarmkv_cmd_argv(struct swarmkv *db, const char *target, int argc, sds *argv)
+struct swarmkv_reply *swarmkv_command_argv(struct swarmkv *db, const char *target, int argc, sds *argv)
 {
 	struct swarmkv_cmd *cmd=NULL;
 	struct swarmkv_reply *reply=NULL;
@@ -305,7 +305,7 @@ struct swarmkv_reply *swarmkv_command(struct swarmkv *db, const char *target, co
 	sds *argv=NULL;
 	argv=sdssplitargs(cmd_str, &argc);
 	struct swarmkv_reply *reply=NULL;
-	reply=swarmkv_cmd_argv(db, target, argc, argv);
+	reply=swarmkv_command_argv(db, target, argc, argv);
 
     if (argv)
         sdsfreesplitres(argv, argc);
@@ -314,7 +314,7 @@ struct swarmkv_reply *swarmkv_command(struct swarmkv *db, const char *target, co
 	return reply;
 }
 
-void swarmkv_exec_async(struct swarmkv *db, void *ctx, const char *target, swarmkv_cmd_callback_func_t * cb, const char *format, ...)
+void swarmkv_command_async(struct swarmkv *db, swarmkv_cmd_callback_func_t * cb, void *cb_arg, const char *target, const char *format, ...)
 {
 	int argc=0; sds *argv=NULL;
 	char *cmd_str=NULL;
@@ -335,15 +335,15 @@ void swarmkv_exec_async(struct swarmkv *db, void *ctx, const char *target, swarm
 		cmd->argv[i]=sdsdup(argv[i]);
 	}
 
-   if(!target)
+	if(!target)
     {
-        swarmkv_exec(db, cmd, NULL, cb, ctx);
+        swarmkv_exec(db, cmd, NULL, cb, cb_arg);
 
     }
     else
     {
         sscanf(target, "%s %u", target_node.ip_addr, &target_node.p2p_port);
-        swarmkv_exec(db, cmd, &target_node, cb, ctx);
+        swarmkv_exec(db, cmd, &target_node, cb, cb_arg);
     }
 
     if (argv)

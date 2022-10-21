@@ -4,6 +4,8 @@
 #define	error_wrong_number_of_arg	"ERR wrong number of arguments for `%s` command"
 #define	error_unknown_command		"ERR unknown command `%s`, with args beginning with: `%s`,"
 #define	error_value_not_integer		"ERR value is not an integer or out of range"
+#define error_parameter_not_valid_integer "ERR parameter `%s` is not an integer or out of range"
+#define error_parameter_not_valid_string "ERR parameter `%s` is not valid"
 
 #define	error_cluster_leader_not_found	"ERR cluster leader not found"
 #define	error_list_health_node_failed	"ERR list health node failed"
