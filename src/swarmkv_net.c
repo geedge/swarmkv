@@ -667,7 +667,7 @@ struct swarmkv_net* swarmkv_net_new(const struct swarmkv_options *opts, struct s
 		net->threads[i]=ALLOC(struct snet_thread, 1);
 		net->threads[i]->evbase=event_base_new();
 		net->threads[i]->thread_id=i;
-		net->threads[i]->timeout=opts->p2p_timeout_ms;
+		net->threads[i]->timeout=opts->p2p_timeout_us;
 		net->threads[i]->ref_logger=logger;
 		net->threads[i]->ref_net=net;
 		net->threads[i]->sequence_generator=1;
@@ -723,7 +723,7 @@ static void wrap_timeout_handler(evutil_socket_t fd, short what, void * arg)
 	return;
 }
 
-void swarmkv_net_timer_add(struct swarmkv_net *net, int thread_id, int msec, int is_persist, timeout_cb *cb, void *cb_arg)
+void swarmkv_net_timer_add(struct swarmkv_net *net, int thread_id, int usec, int is_persist, timeout_cb *cb, void *cb_arg)
 {
 	struct timeout_ctx *ctx=ALLOC(struct timeout_ctx, 1);
 	ctx->cb=cb;
@@ -731,7 +731,7 @@ void swarmkv_net_timer_add(struct swarmkv_net *net, int thread_id, int msec, int
 	ctx->cb_arg=cb_arg;
 	ctx->ev=event_new(net->threads[thread_id]->evbase, -1, EV_PERSIST, wrap_timeout_handler, ctx);
 
-	struct timeval timer_delay = {msec/1000, (msec%1000)*1000};
+	struct timeval timer_delay = {usec/(1000*1000), usec%(1000*1000)};
 	evtimer_add(ctx->ev, &timer_delay);
 	assert(net->threads[thread_id]->to_ctx==NULL);
 	net->threads[thread_id]->to_ctx=ctx;

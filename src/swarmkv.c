@@ -742,7 +742,7 @@ struct swarmkv *swarmkv_open(struct swarmkv_options* opts, const char * db_name,
 	swarmkv_keyspace_set_exec_cmd_func(db->mod_keyspace, __exec_cmd, db);
 
 	db->mod_store=swarmkv_store_new(db->opts, __exec_cmd, db, opts->bin_uuid);
-	swarmkv_net_timer_add(db->net, 0, 1, 1, (timeout_cb*)swarmkv_store_periodic, db->mod_store);
+	swarmkv_net_timer_add(db->net, 0, opts->sync_interval_us, 1, (timeout_cb*)swarmkv_store_periodic, db->mod_store);
 
 	command_spec_init(db);
 	swarmkv_threads_run(db);

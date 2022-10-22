@@ -54,14 +54,14 @@ enum cmd_exec_result tcfg_command(struct swarmkv_module *mod_store, const struct
 		store_get_uuid(mod_store, uuid);
 	
 		obj->type=OBJ_TYPE_TOKEN_BUCKET;
-		obj->bucket=OC_token_bucket_new_with_time((const char*)uuid, sizeof(uuid), now, capacity, rate);
+		obj->bucket=OC_token_bucket_new((const char*)uuid, sizeof(uuid), now, capacity, rate);
 		
 		*reply=swarmkv_reply_new_status("OK");
 	}
 	else if(obj->type==OBJ_TYPE_TOKEN_BUCKET)
 	{
 		LWW_register_set(obj->string, value, sdslen(value));
-		OC_token_bucket_configure_with_time(obj->bucket, now, capacity, rate, 0);
+		OC_token_bucket_configure(obj->bucket, now, capacity, rate, 0);
 		sobj_need_sync(mod_store, obj);
 		
 		*reply=swarmkv_reply_new_status("OK");

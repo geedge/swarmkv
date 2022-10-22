@@ -924,7 +924,7 @@ TEST_F(SwarmkvTwoNodes, TypeTokenBucket)
 		swarmkv_reply_free(reply);
 		gettimeofday(&now, NULL);
 		i++;
-		usleep(1000*10);
+//		usleep(1000*1.5);
 	}
 	EXPECT_LE(got_tokens, (now.tv_sec-start.tv_sec)*rate+capacity);	
 	cmd_exec_arg_free(arg);

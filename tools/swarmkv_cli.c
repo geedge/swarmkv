@@ -25,7 +25,6 @@ struct config
 {	
 	char db_name[256];
 	int consul_port;
-    int p2p_port;
 	char consul_host[64];
 	struct swarmkv *db;
 	struct cluster_manager_command cluster_mgr_cmd;
@@ -1109,7 +1108,6 @@ int main(int argc, char * argv[])
 	struct swarmkv_reply *reply=NULL;
 	memset(&g_config, 0, sizeof(g_config));
 	g_config.consul_port=8500;
-	g_config.p2p_port=0;//listen on random port
 	strcpy(g_config.consul_host, "127.0.0.1");
     int i;
 	sds *exec_argv, *attach_argv;
@@ -1125,10 +1123,6 @@ int main(int argc, char * argv[])
 		{
 			sscanf(argv[++i], "%u", &g_config.consul_port);
 		}
-        else if(!strcmp(argv[i], "-l") && !lastarg)
-        {
-            sscanf(argv[++i], "%u", &g_config.p2p_port);
-        }
 		else if(!strcmp(argv[i], "--cluster-create") && !lastarg)
 		{
 			g_config.cluster_mgr_cmd.cluster_name=argv[++i];
@@ -1182,13 +1176,13 @@ int main(int argc, char * argv[])
 	}
 	struct swarmkv_options *opts=swarmkv_options_new();
 	swarmkv_options_set_dryrun(opts);
-    swarmkv_options_set_p2p_port(opts, g_config.p2p_port);
+	swarmkv_options_set_p2p_port(opts, 0);//listen on random port
 	swarmkv_options_set_worker_thread_number(opts, 1);
 	char *err=NULL;
 	g_config.db=swarmkv_open(opts, g_config.db_name, &err);
 	if(err)
 	{
-		fprintf(stderr, "Open DB %s error: %s", g_config.db_name, err);
+		printf("Open DB `%s` error: %s\n", g_config.db_name, err);
 		free(err);
 		free(exec_argv);
 		err=NULL;

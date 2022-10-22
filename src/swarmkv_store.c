@@ -396,7 +396,7 @@ void sobj_merge_blob(struct sobj *obj, const char *blob, size_t blob_sz, uuid_t 
 			{
 				struct timeval beginning_of_history;
 				memset(&beginning_of_history, 0, sizeof(beginning_of_history));
-				obj->bucket=OC_token_bucket_new_with_time((const char*)uuid, sizeof(uuid), beginning_of_history, 0, 0);
+				obj->bucket=OC_token_bucket_new((const char*)uuid, sizeof(uuid), beginning_of_history, 0, 0);
 			}
 			OC_token_bucket_merge_blob(obj->bucket, mpack_node_str(v_node), mpack_node_strlen(v_node));
 			break;

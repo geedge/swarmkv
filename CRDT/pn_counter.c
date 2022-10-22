@@ -218,4 +218,7 @@ void PN_counter_merge_blob(struct PN_counter *pnc, const char *blob, size_t blob
 	PN_counter_free(to_merge);
 	return;
 }
-
+size_t PN_counter_replica_num(struct PN_counter *pnc)
+{
+	return MAX(HASH_COUNT(pnc->hash_item), 1);
+}
