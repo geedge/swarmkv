@@ -88,9 +88,9 @@ enum cmd_exec_result set_command(struct swarmkv_module *mod_store, const struct 
 		*reply=swarmkv_reply_new_status("OK");
 		sobj_need_sync(mod_store, obj);
 	}
-	else if(obj->type==OBJ_TYPE_COUNTER && int_value==0)
+	else if(obj->type==OBJ_TYPE_COUNTER)
 	{
-		PN_counter_reset(obj->counter);		
+		PN_counter_set(obj->counter, int_value);		
 		*reply=swarmkv_reply_new_status("OK");
 		sobj_need_sync(mod_store, obj);
 	}

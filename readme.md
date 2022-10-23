@@ -32,7 +32,7 @@ Following are terminologies used in Swarm KV.
 
 Vocabularies
 
-| Name      | Explanation                                                  |
+| Name      | Explained                                                  |
 | --------- | ------------------------------------------------------------ |
 | KV        | Key-value pair                                               |
 | Node      | Instances in a Swarm KV cluster. A swarmkv node is identified with its IP, P2P port and UUID. |
@@ -48,7 +48,7 @@ SwarmKV Data Types
 - Set
 - Hash Table [todo]
 - Bitmap [todo]
-- Token Bucket [todo]
+- Token Bucket
 
 # COMMANDS
 
@@ -161,11 +161,6 @@ Download and unzip swarmkv-xx.zip
 
 I list design choices here.
 
-Todo: 
-
-- Object migration
-- Nodes failover by object replication
-
 SwarmKV uses [HashiCorp Consul](https://www.consul.io/) for cluster management, which includes leader election, health checking, and slot table management.
 
 ## DHT-based KV spaces
@@ -250,7 +245,7 @@ curl http://localhost:8500/v1/kv/swarmkv/<cluster_name>/lead?raw=true
 
 Except for node in dry run mode, cluster nodes will watch leadership changes and [run for it](https://learn.hashicorp.com/tutorials/consul/application-leader-elections) when no cluster leader.
 
-1. Read `swarmkv/<cluster_name>/lead` with [blocking query](https://www.consul.io/api/features/blocking).
+1. Watch `swarmkv/<cluster_name>/lead` with [blocking query](https://www.consul.io/api/features/blocking).
 2. If there is no session in the result, then run for leader with following steps
    - [Create a session](https://www.consul.io/api-docs/session#create-session).
    - [Update](https://www.consul.io/api-docs/kv#acquire) swarmkv/<cluster_name>/lead with `?acquire=<session>` parameter.
@@ -307,7 +302,7 @@ Known Issues:
 
 - Deleting existing keys and adding replica to existing keys between the `getkeysinslot` and `delslotkeys` could not take effect on the new node. It's better to execute `CLUSTER SANITY heal` after the migration.
 
-- What if someone nodes are failed during the migration? [Todo] ``swarmkv-cli` acquires the cluster leadership before the migration.
+- What if someone nodes are failed during the migration? [Todo] `swarmkv-cli` acquires the cluster leadership before the migration.
 
   - If the new node fails, the original node still owns slot k, and after a timeout without receiving slot table update, it will restore it to a stable state.
 
