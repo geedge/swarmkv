@@ -899,23 +899,25 @@ TEST_F(SwarmkvTwoNodes, TypeTokenBucket)
 	const char *key="tb-192.168.0.1";
 	int exec_successful=0;
 	arg=cmd_exec_arg_new();
-	long long capacity=1024*4, rate=1024*2, request_tokens=0, got_tokens=0;
+	long long capacity=1024*4, rate=1024*2;
 	cmd_exec_arg_expect_OK(arg);	
 	swarmkv_command_async(db[0], generic_callback, arg, NULL, "TCFG %s %lld %lld", key, capacity, rate);	
 	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
 	cmd_exec_arg_clear(arg);
 	EXPECT_TRUE(exec_successful);
+	srandom(171);
+	struct swarmkv_reply *reply=NULL;
+	int i=0;
 	struct timeval start, now;
 	gettimeofday(&start, NULL);
 	gettimeofday(&now, NULL);
-	srand(171);
-	struct swarmkv_reply *reply=NULL;
-	int i=0;
-	while(now.tv_sec - start.tv_sec<10)
+	long long token=0, requested_tokens=0, got_tokens=0;
+	//Two heavy consumers
+	while(now.tv_sec - start.tv_sec<5)
 	{
-		request_tokens=random()%(2*rate);
-		cmd_exec_arg_expect_integer(arg, 0);
-		reply=swarmkv_command(db[i%2], NULL, "TCONSUME %s %lld FLEXIBLE", key, request_tokens);
+		token=random()%(4*rate);
+		requested_tokens+=token;
+		reply=swarmkv_command(db[i%2], NULL, "TCONSUME %s %lld FLEXIBLE", key, token);
 		if(reply->type==SWARMKV_REPLY_INTEGER)
 		{
 			got_tokens+=reply->integer;
@@ -923,9 +925,63 @@ TEST_F(SwarmkvTwoNodes, TypeTokenBucket)
 		swarmkv_reply_free(reply);
 		gettimeofday(&now, NULL);
 		i++;
-//		usleep(1000*1.5);
 	}
-	EXPECT_LE(got_tokens, (now.tv_sec-start.tv_sec)*rate+capacity);	
+	//Light consumers
+	while(now.tv_sec - start.tv_sec<10)
+	{
+		token=rate*3/4+random()%(rate/2);
+		if(i%2==0)
+		{
+			token=token*2/10;
+		}
+		else
+		{
+			token=token*8/10;
+		}
+		token=token*6/10;
+		requested_tokens+=token;
+		reply=swarmkv_command(db[i%2], NULL, "TCONSUME %s %lld FLEXIBLE", key, token);
+		if(reply->type==SWARMKV_REPLY_INTEGER)
+		{
+			got_tokens+=reply->integer;
+		}
+		swarmkv_reply_free(reply);
+		gettimeofday(&now, NULL);
+		i++;
+	}
+	//One heavy consumer
+	while(now.tv_sec - start.tv_sec<15)
+	{
+		token=rate*3/4+random()%(rate);
+		requested_tokens+=token;
+		reply=swarmkv_command(db[0], NULL, "TCONSUME %s %lld", key, token);
+		if(reply->type==SWARMKV_REPLY_INTEGER)
+		{
+			got_tokens+=reply->integer;
+		}
+		swarmkv_reply_free(reply);
+		gettimeofday(&now, NULL);
+		i++;
+	}
+//	printf("consume round %d, speed %d ops\n", i, i/(int)(now.tv_sec-start.tv_sec));
+	EXPECT_GE(i/(int)(now.tv_sec-start.tv_sec), 100000);
+	long long upper_limit=(now.tv_sec-start.tv_sec)*rate+capacity;
+	double accuracy=(double)got_tokens/(upper_limit<requested_tokens?upper_limit:requested_tokens);
+	EXPECT_NEAR(accuracy, 1, 0.02);	
+
+	wait_for_sync();
+
+	cmd_exec_arg_expect_integer(arg, 1);
+	swarmkv_del(db[0], key, strlen(key), generic_callback, arg);	
+	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
+	cmd_exec_arg_clear(arg);
+	wait_for_sync();
+
+	cmd_exec_arg_expect_integer(arg, 0);
+	swarmkv_command_async(db[1], generic_callback, arg, "TCONSUME %s %lld FLEXIBLE", key, 4096);
+	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
+	cmd_exec_arg_clear(arg);
+
 	cmd_exec_arg_free(arg);
 }
 TEST_F(SwarmkvTwoNodes, Wait)

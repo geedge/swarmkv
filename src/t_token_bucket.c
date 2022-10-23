@@ -125,7 +125,7 @@ enum cmd_exec_result tconsume_command(struct swarmkv_module *mod_store, const st
 	{
 		if(accessing_node)
 		{
-			*reply=swarmkv_reply_new_nil();
+			*reply=swarmkv_reply_new_integer(0);
 			return FINISHED;
 		}
 		else
