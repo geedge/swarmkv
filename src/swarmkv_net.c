@@ -7,8 +7,6 @@
 #include "xxhash.h"
 #include "log.h"
 
-#include <MESA/MESA_handle_logger.h>
-
 
 #include <event2/listener.h>
 #include <event2/bufferevent.h>

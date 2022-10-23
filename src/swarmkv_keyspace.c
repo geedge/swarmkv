@@ -14,8 +14,6 @@
 #include "timeout.h"
 #include "log.h"
 
-#include <MESA/MESA_handle_logger.h>
-
 #include <pthread.h>
 #include <assert.h>
 #include <stdio.h>

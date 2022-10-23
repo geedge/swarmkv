@@ -1214,7 +1214,7 @@ int main(int argc, char * argv[])
 
 	linenoiseHistoryLoad(history_file); /* Load the history at startup */
 
-	char prompt[256];
+	char prompt[258];
 	snprintf(prompt, sizeof(prompt), "%s> ", g_config.db_name);
 	while((line = linenoise(prompt)) != NULL)
 	{

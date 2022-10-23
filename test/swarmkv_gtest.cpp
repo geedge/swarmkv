@@ -3,7 +3,6 @@
 #include "log.h"
 
 #include <gtest/gtest.h>
-#include <MESA/MESA_handle_logger.h>
 #include <string.h>
 #include <pthread.h>
 #include <asm/errno.h>
