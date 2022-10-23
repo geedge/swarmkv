@@ -7,7 +7,6 @@
 
 #include <netinet/ip.h>
 #include <uuid/uuid.h>
-#include <MESA/MESA_handle_logger.h>
 
 #include <event2/event.h>
 #include <event2/listener.h>
