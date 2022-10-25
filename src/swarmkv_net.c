@@ -670,8 +670,6 @@ struct swarmkv_net* swarmkv_net_new(const struct swarmkv_options *opts, struct s
 		net->threads[i]->ref_net=net;
 		net->threads[i]->sequence_generator=1;
 	}
-	memcpy(&(net->self), self, sizeof(struct swarmkv_node_addr));
-
 
 	//Refer to http://www.wangafu.net/~nickm/libevent-book/Ref8_listener.html
 	struct sockaddr_in sin;
@@ -689,19 +687,19 @@ struct swarmkv_net* swarmkv_net_new(const struct swarmkv_options *opts, struct s
 	}
 	evconnlistener_set_error_cb(net->listener, __accept_error_cb);
 	int sockfd=evconnlistener_get_fd(net->listener);
-	socklen_t sin_len=0;
-	if (getsockname(sockfd, (struct sockaddr *)&sin, &sin_len) < 0)
+    struct sockaddr_storage ss;
+	ev_socklen_t socklen = sizeof(ss);
+	if (getsockname(sockfd, (struct sockaddr *)&ss, &socklen) < 0)
 	{
 		asprintf(err, "getsockname failed");
 	}
 	if(self->p2p_port==0)
 	{
-		self->p2p_port=ntohs(sin.sin_port);
+		self->p2p_port=ntohs(((struct sockaddr_in*)&ss)->sin_port);
 	}
-	assert(self->p2p_port==ntohs(sin.sin_port));
+	memcpy(&(net->self), self, sizeof(struct swarmkv_node_addr));
 	return net;
 }
-
 
 static void timeout_ctx_free(struct timeout_ctx *ctx)
 {
