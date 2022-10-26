@@ -225,7 +225,7 @@ double OC_token_bucket_test(size_t replica_num, long long mimic_duration_s, long
 {
 	struct OC_token_bucket *buckets[replica_num];
 	size_t i=0, j=0;
-	long long CIR=1*1024*1024;
+	long long CIR=512*1024;
 	long long CBS=2*1024*1024;
 	uuid_t uuid;
 	struct timeval start;
@@ -274,10 +274,10 @@ double OC_token_bucket_test(size_t replica_num, long long mimic_duration_s, long
 TEST(OCTokenBucket, HeavyConsumer)
 {
 	double accuracy=0.0;
-	long long replica_num=0, test_duration_s=200, sync_interval_ms=0;
+	long long replica_num=0, test_duration_s=500, sync_interval_ms=0;
 
 	long long i=0, j=0;
-	for(i=0; i<4; i++)
+	for(i=8; i<16; i++)
 	{
 		replica_num=i+1;
 		for(j=0; j<10; j++)
@@ -285,7 +285,7 @@ TEST(OCTokenBucket, HeavyConsumer)
 			sync_interval_ms=100*(j+1);
 			accuracy=OC_token_bucket_test(replica_num, test_duration_s, sync_interval_ms, 200);
 			printf("replica_num=%lld, sync_interval_ms=%lld, accuracy=%.4f\n", replica_num, sync_interval_ms, accuracy);
-			EXPECT_NEAR(accuracy, 1, 0.03);
+			EXPECT_NEAR(accuracy, 1, 0.05);
 		}
 	}
 }

@@ -81,7 +81,7 @@ long long OC_token_bucket_control(struct OC_token_bucket *bucket, struct timeval
 
 	
 	long long global_available=MAX(refilled-consumed, 0);
-	long long reserved=bucket->cfg.CIR*(n_replica-1)/n_replica;	
+	long long reserved=bucket->cfg.CIR*(n_replica-1)/n_replica;
 	long long local_available=MAX(global_available-reserved, 0);
 //	long long local_available=global_available;
 	long long assigned=0;

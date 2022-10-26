@@ -354,7 +354,7 @@ Swarm KV implements Observe-Consumed Token Bucket (OC Token Bucket), which has a
 
 After the initialization, the bucket is full, which means it has *CBS* tokens. You can reconfigure token bucket at anytime. Note that the reconfiguration will not refill token bucket to full.
 
-When network partitions and token bucket out-of-sync, each replica have the entire CIR. And after the network heals, replicas share the CIR again. The OC Token Bucket is robust to over consuming, as long as the sync interval is resonable.
+When network partitions and token bucket out-of-sync, each replica have the entire CIR. And after the network heals, replicas share the CIR again. The OC Token Bucket is robust to over consuming, as long as the sync interval is reasonable.
 
 ## Fault Tolerance
 
@@ -502,3 +502,5 @@ https://hermes-protocol.com/
 [Redis Active-Active Architecture](https://redis.com/redis-enterprise/technology/active-active-geo-distribution/)
 
 [A fast, fault-tolerant & linearizable replication protocol](https://hermes-protocol.com/)
+
+https://bucket4j.com/8.1.0/toc.html
