@@ -446,7 +446,7 @@ struct swarmkv_reply *cluster_addnode_command(struct swarmkv* db, char *argv[], 
 	}
 	else
 	{
-		reply=swarmkv_reply_new_status("slot table updated, %lld slots and %lld keys were migrated to %s %u",
+		reply=swarmkv_reply_new_status("slot table updated, %I slots and %I keys were migrated to %s %u",
 									actual_rebalanced_slot_num, migrated_keys,
 									node.addr.ip_addr, node.addr.p2p_port);
 	}
@@ -1031,9 +1031,9 @@ struct swarmkv_reply *cluster_command(struct swarmkv *db, const char *line)
 
 	struct swarmkv_reply *reply=cluster_command_argv(db, argc, argv);
 
-    if (argv)
+    if (argv){
         sdsfreesplitres(argv, argc);
-
+	}
 	return reply;
 }
 

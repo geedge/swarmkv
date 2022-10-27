@@ -5,32 +5,31 @@
 
 struct swarmkv_reply* deserialize_reply(mpack_node_t reply_node)
 {
-	struct swarmkv_reply* reply=ALLOC(struct swarmkv_reply, 1);
+	struct swarmkv_reply* reply=NULL;
 	mpack_node_t item, array_node;
 	item=mpack_node_map_cstr(reply_node, "reply_type");
-	reply->type=mpack_node_int(item);
 	size_t i=0;
-	switch(reply->type)
+	enum swarmkv_reply_type type=mpack_node_int(item);
+	switch(type)
 	{
 		case SWARMKV_REPLY_INTEGER:
 			item=mpack_node_map_cstr(reply_node, "integer");
-			reply->integer=mpack_node_int(item);
+			reply=swarmkv_reply_new_integer(mpack_node_int(item));
 			break;
 		case SWARMKV_REPLY_STRING:
 		case SWARMKV_REPLY_ERROR:
 		case SWARMKV_REPLY_STATUS:
 		case SWARMKV_REPLY_NODE:
 			item=mpack_node_map_cstr(reply_node, "string");
-			reply->len=mpack_node_strlen(item);
-			reply->str=ALLOC(char, reply->len);
-			memcpy(reply->str, mpack_node_str(item), reply->len);
+			reply=swarmkv_reply_new_string(mpack_node_str(item), mpack_node_strlen(item));
+			reply->type=type;
 			break;
 		case SWARMKV_REPLY_NIL:
+			reply=swarmkv_reply_new_nil();
 			break;
-		case SWARMKV_REPLY_ARRAY:
+		case SWARMKV_REPLY_ARRAY:		
 			array_node=mpack_node_map_cstr(reply_node, "elements");
-			reply->n_element=mpack_node_array_length(array_node);
-			reply->elements=ALLOC(struct swarmkv_reply*, reply->n_element);
+			reply=swarmkv_reply_new_array(mpack_node_array_length(array_node));
 			for(i=0; i<reply->n_element; i++)
 			{
 				item=mpack_node_array_at(array_node, i);

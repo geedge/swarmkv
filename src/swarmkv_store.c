@@ -366,28 +366,28 @@ void sobj_merge_blob(struct sobj *obj, const char *blob, size_t blob_sz, uuid_t 
 		case OBJ_TYPE_STRING:
 			if(!obj->string)
 			{				
-				obj->string=LWW_register_new((const char*)uuid, sizeof(uuid));
+				obj->string=LWW_register_new((const char*)uuid, sizeof(uuid_t));
 			}
 			LWW_register_merge_blob(obj->string, mpack_node_str(v_node), mpack_node_strlen(v_node));
 			break;
 		case OBJ_TYPE_COUNTER:
 			if(!obj->counter)
 			{
-				obj->counter=PN_counter_new((const char*)uuid, sizeof(uuid));
+				obj->counter=PN_counter_new((const char*)uuid, sizeof(uuid_t));
 			}
 			PN_counter_merge_blob(obj->counter, mpack_node_str(v_node), mpack_node_strlen(v_node));
 			break;
 		case OBJ_TYPE_SET:
 			if(!obj->set)
 			{
-				obj->set=OR_set_new((const char*)uuid, sizeof(uuid));
+				obj->set=OR_set_new((const char*)uuid, sizeof(uuid_t));
 			}
 			OR_set_merge_blob(obj->set, mpack_node_str(v_node), mpack_node_strlen(v_node));
 			break;
 		case OBJ_TYPE_HASH:
 			if(!obj->hash)
 			{
-				obj->hash=OR_map_new((const char*)uuid, sizeof(uuid));
+				obj->hash=OR_map_new((const char*)uuid, sizeof(uuid_t));
 			}
 			OR_map_merge_blob(obj->hash, mpack_node_str(v_node), mpack_node_strlen(v_node));
 			break;
@@ -396,7 +396,7 @@ void sobj_merge_blob(struct sobj *obj, const char *blob, size_t blob_sz, uuid_t 
 			{
 				struct timeval beginning_of_history;
 				memset(&beginning_of_history, 0, sizeof(beginning_of_history));
-				obj->bucket=OC_token_bucket_new((const char*)uuid, sizeof(uuid), beginning_of_history, 0, 0);
+				obj->bucket=OC_token_bucket_new((const char*)uuid, sizeof(uuid_t), beginning_of_history, 0, 0);
 			}
 			OC_token_bucket_merge_blob(obj->bucket, mpack_node_str(v_node), mpack_node_strlen(v_node));
 			break;

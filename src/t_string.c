@@ -33,7 +33,7 @@ enum cmd_exec_result get_command(struct swarmkv_module *mod_store, const struct 
 	else if(obj->type==OBJ_TYPE_COUNTER)
 	{
 		long long integer_val=PN_counter_get(obj->counter);
-		*reply=swarmkv_reply_new_string_fmt("%lld", integer_val);
+		*reply=swarmkv_reply_new_string_fmt("%I", integer_val);
 	}
 	else
 	{

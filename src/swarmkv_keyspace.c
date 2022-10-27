@@ -302,15 +302,28 @@ void health_check_cb(struct evhttp_request *request, void *arg)
 	return;
 }
 
-struct evhttp* http_server_new(struct event_base* evbase, unsigned port_listen, void* logger)
+struct evhttp* http_server_new(struct event_base* evbase, unsigned int *port_listen, void* logger)
 {
     struct evhttp* http = evhttp_new(evbase);
-
-    if (evhttp_bind_socket(http, "0.0.0.0", port_listen) != 0)
+	struct evhttp_bound_socket *bound_socket=NULL;
+	bound_socket=evhttp_bind_socket_with_handle(http, "0.0.0.0", *port_listen);
+	if(bound_socket==NULL)
     {
 		log_fatal(logger, MODULE_SWARMKV_KEYSPACE, "evhttp_bind_socket on port %u failed.", port_listen);
 		return NULL;
     }
+	evutil_socket_t sockfd=-1;
+	sockfd=evhttp_bound_socket_get_fd(bound_socket);
+    struct sockaddr_storage ss;
+	ev_socklen_t socklen = sizeof(ss);
+	if (getsockname(sockfd, (struct sockaddr *)&ss, &socklen) < 0)
+	{
+		log_fatal(logger, MODULE_SWARMKV_KEYSPACE,  "getsockname from evhttp fd failed.");
+	}
+	if(*port_listen==0)
+	{
+		*port_listen=ntohs(((struct sockaddr_in*)&ss)->sin_port);
+	}
     int http_option_timeout = 5; //in seconds
     evhttp_set_timeout(http, http_option_timeout);
     evhttp_set_allowed_methods( http , EVHTTP_REQ_GET);
@@ -350,7 +363,7 @@ int consul_service_register(struct swarmkv_keyspace* ks)
 	char uuid_str[37];
 	cJSON* service=cJSON_CreateObject();
 	cJSON_AddStringToObject(service, "Name", ks->db_name);
-	snprintf(ks->consul_service_id, sizeof(ks->consul_service_id), "%s-%d", ks->db_name, ks->health_check_port);
+	snprintf(ks->consul_service_id, sizeof(ks->consul_service_id), "%128.s-%d", ks->db_name, ks->self.addr.p2p_port);
 	cJSON_AddStringToObject(service, "ID", ks->consul_service_id);
 	cJSON_AddStringToObject(service, "Address", ks->self.addr.ip_addr);
 	cJSON_AddNumberToObject(service, "Port", ks->self.addr.p2p_port);
@@ -364,7 +377,7 @@ int consul_service_register(struct swarmkv_keyspace* ks)
 	cJSON* check=cJSON_CreateObject();
 
 	cJSON_AddStringToObject(check, "Name", ks->db_name);
-	snprintf(ks->consul_check_id, sizeof(ks->consul_check_id), "%s-%d", ks->db_name, ks->health_check_port);
+	snprintf(ks->consul_check_id, sizeof(ks->consul_check_id), "%.128s-%u", ks->db_name, ks->health_check_port);
 	cJSON_AddStringToObject(check, "CheckID", ks->consul_check_id);
 	snprintf(health_check_url, sizeof(health_check_url), "http://localhost:%u/health", ks->health_check_port);
 	cJSON_AddStringToObject(check, "HTTP", health_check_url);
@@ -1189,7 +1202,7 @@ struct swarmkv_module* swarmkv_keyspace_new(const struct swarmkv_options *opts, 
 		log_info(ks->logger, MODULE_SWARMKV_KEYSPACE, "work on dry run mode.");
 		return &(ks->module);
 	}
-	ks->http_server=http_server_new(ks->evbase, ks->health_check_port, ks->logger);
+	ks->http_server=http_server_new(ks->evbase, &(ks->health_check_port), ks->logger);
 	if(!ks->http_server)
 	{
 		asprintf(err, "health check HTTP server start failed.");

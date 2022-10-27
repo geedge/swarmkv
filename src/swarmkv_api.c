@@ -25,7 +25,7 @@ struct swarmkv_options* swarmkv_options_new(void)
 	struct swarmkv_options *opts=ALLOC(struct swarmkv_options, 1);
 	opts->consul_port=8500;
 	opts->p2p_port=5210;
-	opts->health_check_port=5211;
+	opts->health_check_port=0;
 	opts->loglevel=0;
     opts->p2p_timeout_us=500*1000;//5ms
 	opts->sync_interval_us=500;
@@ -314,7 +314,9 @@ struct swarmkv_reply *swarmkv_command(struct swarmkv *db, const char *target, co
 	reply=swarmkv_command_argv(db, target, argc, argv);
 
     if (argv)
+	{
         sdsfreesplitres(argv, argc);
+	}
 	free(cmd_str);
 
 	return reply;
@@ -353,8 +355,9 @@ void swarmkv_command_async(struct swarmkv *db, swarmkv_cmd_callback_func_t * cb,
     }
 
     if (argv)
+	{
         sdsfreesplitres(argv, argc);
-
+	}
 	free(cmd_str);
     swarmkv_cmd_free(cmd);
 }
