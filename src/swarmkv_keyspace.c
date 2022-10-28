@@ -1401,7 +1401,7 @@ static void key_entry_merge(struct key_route_entry *key_entry, const char *blob,
 	mpnode_replicas=mpack_node_map_cstr(root, "replicas");
 	
 	size_t n_replica=mpack_node_array_length(mpnode_replicas)/2;
-	for(size_t i=0; i<n_replica*2; i=+2)
+	for(size_t i=0; i<n_replica*2; i+=2)
 	{
 		mpnode_ip=mpack_node_array_at(mpnode_replicas, i);
 		mpnode_port=mpack_node_array_at(mpnode_replicas, i+1);
