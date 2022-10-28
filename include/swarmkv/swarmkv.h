@@ -48,6 +48,7 @@ int swarmkv_options_set_bind_address(struct swarmkv_options *opts, const char* i
 int swarmkv_options_set_logger(struct swarmkv_options *opts, void *logger);
 int swarmkv_options_set_consul_port(struct swarmkv_options *opts, unsigned int consul_port);
 int swarmkv_options_set_dryrun(struct swarmkv_options *opts);
+int swarmkv_options_set_run_for_leader_flag(struct swarmkv_options *opts, int run_for_leader_flag);
 int swarmkv_options_set_worker_thread_number(struct swarmkv_options *opts, size_t nr_worker_threads);
 
 

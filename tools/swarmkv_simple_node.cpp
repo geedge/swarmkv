@@ -71,6 +71,7 @@ int main(int argc, char ** argv)
 	swarmkv_options_set_bind_address(opts, host);
 	swarmkv_options_set_worker_thread_number(opts, worker_thread_number);
 	swarmkv_options_set_p2p_timeout_us(opts,500000);
+	swarmkv_options_set_run_for_leader_flag(opts, 0);
 	struct swarmkv *db=swarmkv_open(opts, cluster_name, &err);
 	if(err)
 	{
@@ -86,19 +87,20 @@ int main(int argc, char ** argv)
 	{
 		printf("Adding %lld keys:", key_number);
 		fflush(stdout);
-	}
-	for(i=0; i<key_number; i++)
-	{
-		reply=swarmkv_command(db, NULL, "SET scalable-key-%d scalable-value-%d", i, i);
-		swarmkv_reply_free(reply);
-		if(i%(key_number/10)==0)
+	
+		for(i=0; i<key_number; i++)
 		{
-			printf(" > %lld%%", i*100/key_number);
-			fflush(stdout);
+			reply=swarmkv_command(db, NULL, "SET scalable-key-%d scalable-value-%d", i, i);
+			swarmkv_reply_free(reply);
+			if(i%(key_number/10)==0)
+			{
+				printf(" > %lld%%", i*100/key_number);
+				fflush(stdout);
+			}
 		}
+		gettimeofday(&end, NULL);
+		printf("> 100%%\nUse %lld seconds, %lld cmd/s.\n", (long long) end.tv_sec-start.tv_sec, key_number/(end.tv_sec-start.tv_sec));
 	}
-	gettimeofday(&end, NULL);
-	printf("> 100%%\nUse %lld seconds, %lld cmd/s.\n", (long long) end.tv_sec-start.tv_sec, key_number/(end.tv_sec-start.tv_sec));
 	FOREVER
 	{
 		sleep(1);

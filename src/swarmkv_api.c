@@ -33,6 +33,7 @@ struct swarmkv_options* swarmkv_options_new(void)
 	uuid_generate(opts->bin_uuid);
 	opts->nr_worker_threads=1;
 	opts->is_assigned_to_db=0;
+	opts->run_for_leader_flag=1;
 	return opts;
 }
 void swarmkv_options_free(struct swarmkv_options *opt)
@@ -78,7 +79,11 @@ int swarmkv_options_set_logger(struct swarmkv_options *opts, void *logger)
 	opts->logger=logger;
 	return 0;
 }
-
+int swarmkv_options_set_run_for_leader_flag(struct swarmkv_options *opts, int run_for_leader_flag)
+{
+	opts->run_for_leader_flag=run_for_leader_flag;
+	return 0;
+}
 int swarmkv_options_set_consul_port(struct swarmkv_options *opts, unsigned int consul_port)
 {
 	opts->consul_port=consul_port;

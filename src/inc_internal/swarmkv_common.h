@@ -67,7 +67,7 @@ struct swarmkv_options
 	unsigned int p2p_port;
 	int minimum_replica_num;
 	int dryrun;
-	int disable_cache;
+	int run_for_leader_flag;
 	unsigned int consul_port;
     unsigned int p2p_timeout_us;
 	unsigned int sync_interval_us;

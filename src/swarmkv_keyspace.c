@@ -1217,8 +1217,10 @@ struct swarmkv_module* swarmkv_keyspace_new(const struct swarmkv_options *opts, 
 		log_fatal(ks->logger, MODULE_SWARMKV_KEYSPACE, "consul service register failed.");
 		goto error_out;
 	}
-	consul_watch_leadership_changes_async(ks);
-	
+	if(opts->run_for_leader_flag)
+	{
+		consul_watch_leadership_changes_async(ks);
+	}
 	return &(ks->module);
 
 error_out:

@@ -40,7 +40,7 @@ set_target_properties(swarmkv-static PROPERTIES CLEAN_DIRECT_OUTPUT 1)
 set_target_properties(swarmkv-static PROPERTIES LINK_FLAGS "-Wl,--version-script=${CMAKE_CURRENT_LIST_DIR}/version.map")
 target_include_directories(swarmkv-static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/inc_internal/)
 
-target_link_libraries(swarmkv-static CRDT fieldstat2-static libevent-static)
+target_link_libraries(swarmkv-static CRDT libevent-static libevent-static-pthreads fieldstat2-static libevent-static)
 
 
 
