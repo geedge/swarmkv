@@ -29,7 +29,6 @@ struct config
 	struct swarmkv *db;
 	struct cluster_manager_command cluster_mgr_cmd;
 };
-
 struct attach_target
 {
     int attached;
@@ -157,20 +156,19 @@ struct swarmkv_reply *cluster_create_command(struct swarmkv* db, char *argv[], s
 struct swarmkv_reply *cluster_nodes_command(struct swarmkv* db, char *argv[], size_t argc)
 {
 	struct swarmkv_reply *reply=NULL;
-	int ret=0;
+	int ret=0, no_leader=1;
 	struct swarmkv_node leader; 	
 	struct swarmkv_node nodes[SWARMKV_NODE_MAX];
 	size_t n_node=SWARMKV_NODE_MAX;
 	ret=consul_get_cluster_leader_block(g_config.db_name, g_config.consul_port, &leader);
 	if(ret<0)
 	{
-		reply=swarmkv_reply_new_error(error_cluster_leader_not_found);
-		return reply;
+		no_leader=1;
 	}
 	ret=consul_list_health_nodes_block(g_config.db_name, g_config.consul_port, nodes, &n_node);
 	if(ret<0)
 	{
-		reply=swarmkv_reply_new_error(error_cluster_leader_not_found);
+		reply=swarmkv_reply_new_error(error_cluster_no_node);
 		return reply;
 	}
 	size_t i=0;
@@ -180,7 +178,7 @@ struct swarmkv_reply *cluster_nodes_command(struct swarmkv* db, char *argv[], si
 	for(i=0; i<n_node; i++)
 	{
 		uuid_unparse_lower(nodes[i].bin_uuid, uuid_str);
-		if(0==swarmkv_node_compare(&leader, nodes+i))
+		if(!no_leader && 0==swarmkv_node_compare(&leader, nodes+i))
 		{
 			is_leader=1;
 		}

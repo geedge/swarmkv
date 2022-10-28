@@ -363,7 +363,7 @@ int consul_service_register(struct swarmkv_keyspace* ks)
 	char uuid_str[37];
 	cJSON* service=cJSON_CreateObject();
 	cJSON_AddStringToObject(service, "Name", ks->db_name);
-	snprintf(ks->consul_service_id, sizeof(ks->consul_service_id), "%128.s-%d", ks->db_name, ks->self.addr.p2p_port);
+	snprintf(ks->consul_service_id, sizeof(ks->consul_service_id), "%.128s-%d", ks->db_name, ks->self.addr.p2p_port);
 	cJSON_AddStringToObject(service, "ID", ks->consul_service_id);
 	cJSON_AddStringToObject(service, "Address", ks->self.addr.ip_addr);
 	cJSON_AddNumberToObject(service, "Port", ks->self.addr.p2p_port);
@@ -377,7 +377,7 @@ int consul_service_register(struct swarmkv_keyspace* ks)
 	cJSON* check=cJSON_CreateObject();
 
 	cJSON_AddStringToObject(check, "Name", ks->db_name);
-	snprintf(ks->consul_check_id, sizeof(ks->consul_check_id), "%.128s-%u", ks->db_name, ks->health_check_port);
+	snprintf(ks->consul_check_id, sizeof(ks->consul_check_id), "%.128s-%u", ks->db_name, ks->self.addr.p2p_port);
 	cJSON_AddStringToObject(check, "CheckID", ks->consul_check_id);
 	snprintf(health_check_url, sizeof(health_check_url), "http://localhost:%u/health", ks->health_check_port);
 	cJSON_AddStringToObject(check, "HTTP", health_check_url);

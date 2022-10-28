@@ -18,21 +18,27 @@ struct swarmkv_reply* swarmkv_reply_new_string(const char* str, size_t sz)
 	reply->str=sdsnewlen(str, sz);
 	return reply;
 }
-struct swarmkv_reply* swarmkv_reply_new_string_fmt(const char *format, ...)
+struct swarmkv_reply *swarmkv_reply_new_string_from_integer(long long integer)
 {
 	struct swarmkv_reply *reply=ALLOC(struct swarmkv_reply, 1);
 	reply->type=SWARMKV_REPLY_STRING;
-	reply->str=sdsnewlen(NULL, strlen(format)*2);
+	reply->str=sdsfromlonglong(integer);
+	reply->len=sdslen(reply->str);
+	return reply;
+}
+struct swarmkv_reply *swarmkv_reply_new_string_fmt(const char *fmt, ...)
+{
+	struct swarmkv_reply *reply=ALLOC(struct swarmkv_reply, 1);
+	reply->type=SWARMKV_REPLY_STRING;
 	va_list ap;
-    va_start(ap, format);
-	reply->str=sdscatvprintf(sdsempty(), format, ap);
+    va_start(ap, fmt);
+	reply->str=sdscatvprintf(sdsempty(), fmt, ap);
     va_end(ap);
-
-	reply->len=strlen(reply->str);
+	reply->len=sdslen(reply->str);
 	return reply;
 
 }
-struct swarmkv_reply* swarmkv_reply_new_array(size_t n_element)
+struct swarmkv_reply *swarmkv_reply_new_array(size_t n_element)
 {
 	struct swarmkv_reply *reply=ALLOC(struct swarmkv_reply, 1);
 	reply->type=SWARMKV_REPLY_ARRAY;
@@ -41,20 +47,20 @@ struct swarmkv_reply* swarmkv_reply_new_array(size_t n_element)
 	return reply;
 
 }
-struct swarmkv_reply* swarmkv_reply_new_integer(long long integer)
+struct swarmkv_reply *swarmkv_reply_new_integer(long long integer)
 {
 	struct swarmkv_reply *reply=ALLOC(struct swarmkv_reply, 1);
 	reply->type=SWARMKV_REPLY_INTEGER;
 	reply->integer=integer;
 	return reply;
 }
-struct swarmkv_reply* swarmkv_reply_new_nil(void)
+struct swarmkv_reply *swarmkv_reply_new_nil(void)
 {
 	struct swarmkv_reply *reply=ALLOC(struct swarmkv_reply, 1);
 	reply->type=SWARMKV_REPLY_NIL;
 	return reply;
 }
-struct swarmkv_reply* swarmkv_reply_new_status(const char *format, ...)
+struct swarmkv_reply *swarmkv_reply_new_status(const char *format, ...)
 {
 	struct swarmkv_reply *reply=ALLOC(struct swarmkv_reply, 1);
 	reply->type=SWARMKV_REPLY_STATUS;
@@ -65,7 +71,7 @@ struct swarmkv_reply* swarmkv_reply_new_status(const char *format, ...)
 	reply->len=strlen(reply->str);
 	return reply;
 }
-struct swarmkv_reply* swarmkv_reply_new_error(const char *format, ...)
+struct swarmkv_reply *swarmkv_reply_new_error(const char *format, ...)
 {
 	struct swarmkv_reply *reply=ALLOC(struct swarmkv_reply, 1);
 	reply->type=SWARMKV_REPLY_ERROR;
@@ -304,15 +310,15 @@ void swarmkv_reply_free(struct swarmkv_reply *reply)
 	}
 	free(reply);
 }
-struct swarmkv_cmd* swarmkv_cmd_new(size_t argc)
+struct swarmkv_cmd *swarmkv_cmd_new(size_t argc)
 {
 	size_t size=sizeof(struct swarmkv_cmd)+argc*sizeof(sds);
-	struct swarmkv_cmd* cmd=(struct swarmkv_cmd*)malloc(size);
+	struct swarmkv_cmd *cmd=(struct swarmkv_cmd*)malloc(size);
 	cmd->argc=argc;
 	cmd->argv=(sds*)((char*)cmd+sizeof(struct swarmkv_cmd));
 	return cmd;
 }
-void swarmkv_cmd_free(struct swarmkv_cmd* p)
+void swarmkv_cmd_free(struct swarmkv_cmd *p)
 {
 	size_t i=0;
 	for(i=0; i<p->argc; i++)
@@ -323,7 +329,7 @@ void swarmkv_cmd_free(struct swarmkv_cmd* p)
 	p->argv=NULL;
 	free(p);
 }
-struct swarmkv_cmd* swarmkv_cmd_dup(const struct swarmkv_cmd* origin)
+struct swarmkv_cmd* swarmkv_cmd_dup(const struct swarmkv_cmd *origin)
 {
 	struct swarmkv_cmd* copy=swarmkv_cmd_new(origin->argc);
 	size_t i=0;
@@ -419,7 +425,7 @@ void json2keyslots(sds json_buffer, void *slot_container_base, size_t sz_slot_co
 	cJSON_Delete(slot_table);
 	return;
 }
-void json2nodes(const char* resp_buff, struct swarmkv_node *nodes, size_t *n_node)
+void json2nodes(const char *resp_buff, struct swarmkv_node *nodes, size_t *n_node)
 {
 	size_t n_record=0, i=0;
 	cJSON *health_reponse=NULL, *record=NULL, *item=NULL, *service=NULL, *meta=NULL, *meta_node_uuid=NULL;
@@ -516,7 +522,7 @@ void __http_blocking_request_cb(struct evhttp_request *req, void *arg)
 	}
 	event_base_loopbreak(client->evbase);
 }
-int http_blocking_request(enum evhttp_cmd_type type, const char* host, unsigned int port, const char* url, const sds req_body, sds *resp_body)
+int http_blocking_request(enum evhttp_cmd_type type, const char *host, unsigned int port, const char *url, const sds req_body, sds *resp_body)
 {
 	struct http_client client_data;
 	struct http_client* client=&client_data;

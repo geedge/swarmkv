@@ -81,6 +81,7 @@ int main(int argc, char ** argv)
 		return -1;
 	}
 	struct timeval start, end;
+	long long eplapsed_second=0;
 	gettimeofday(&start, NULL);
 	struct swarmkv_reply *reply=NULL;
 	if(key_number>0)
@@ -99,7 +100,9 @@ int main(int argc, char ** argv)
 			}
 		}
 		gettimeofday(&end, NULL);
-		printf("> 100%%\nUse %lld seconds, %lld cmd/s.\n", (long long) end.tv_sec-start.tv_sec, key_number/(end.tv_sec-start.tv_sec));
+		eplapsed_second=end.tv_sec-start.tv_sec;
+		if(eplapsed_second==0){ eplapsed_second=1;}
+		printf("> 100%%\nUse %lld seconds, %lld cmd/s.\n", (long long) end.tv_sec-start.tv_sec, key_number/eplapsed_second);
 	}
 	FOREVER
 	{

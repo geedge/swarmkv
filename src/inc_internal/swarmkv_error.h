@@ -8,6 +8,7 @@
 #define error_parameter_not_valid_string "ERR parameter `%s` is not valid"
 
 #define	error_cluster_leader_not_found	"ERR cluster leader not found"
+#define error_cluster_no_node           "ERR cluster has no active node"
 #define	error_list_health_node_failed	"ERR list health node failed"
 #define	error_read_slot_table_failed	"ERR read slot table failed"
 #define error_keyspace_obj_owner_not_found "ERR can't find object owner from keyspace"
