@@ -89,7 +89,7 @@ struct snet_thread
 	struct event_base *evbase;
 	struct snet_conn* conn_table;
 
-    unsigned int timeout;
+    long long peer_timeout_us;
 	unsigned long long sequence_generator;
 	struct snet_rpc *rpc_table;
 
@@ -149,7 +149,7 @@ struct snet_rpc * snet_rpc_new(struct snet_thread *thr, struct swarmkv_node_addr
 	rpc->cb=cb;
 	rpc->cb_arg=cb_arg;
 	rpc->thr=thr;
-	struct timeval timeout={0, thr->timeout*1000};//500ms
+	struct timeval timeout={thr->peer_timeout_us/(1000*1000), thr->peer_timeout_us%(1000*1000)};
 	rpc->timeout_ev=event_new(thr->evbase, -1, 0, snet_rpc_timeout_callback, rpc);
 	event_add(rpc->timeout_ev, &timeout);
 	HASH_ADD(hh, thr->rpc_table, sequence, sizeof(rpc->sequence), rpc);
@@ -573,7 +573,7 @@ void snet_conn_send(struct snet_conn *conn, const void *hdr, size_t hdr_sz, cons
 	return;
 }
 
-void snet_send(struct swarmkv_net* net, const struct swarmkv_node_addr* peer, enum MSG_TYPE msg_type, const void *data, size_t size, unsigned long long sequence, on_reply_callback_t *cb, void *cb_arg)
+void snet_send(struct swarmkv_net *net, const struct swarmkv_node_addr *peer, enum MSG_TYPE msg_type, const void *data, size_t size, unsigned long long sequence, on_reply_callback_t *cb, void *cb_arg)
 {
 	int thread_id=0;
 	thread_id=get_net_thread_id(peer->ip_addr, net->n_thread);
@@ -581,11 +581,11 @@ void snet_send(struct swarmkv_net* net, const struct swarmkv_node_addr* peer, en
 	snet_task_new(thr, peer, TASK_TYPE_SEND, msg_type, sequence, data, size, cb, cb_arg);
 	return;
 }
-void swarmkv_net_send_cmd(struct swarmkv_net* net, const struct swarmkv_node_addr* peer, const void *data, size_t size, on_reply_callback_t *cb, void *cb_arg)
+void swarmkv_net_send_cmd(struct swarmkv_net *net, const struct swarmkv_node_addr *peer, const void *data, size_t size, on_reply_callback_t *cb, void *cb_arg)
 {
 	snet_send(net, peer, MSG_TYPE_CMD, data, size, 0, cb, cb_arg);
 }
-void swarmkv_net_send_reply(struct swarmkv_net* net, const struct swarmkv_node_addr* peer, const void *data, size_t size, unsigned long long sequence)
+void swarmkv_net_send_reply(struct swarmkv_net *net, const struct swarmkv_node_addr *peer, const void *data, size_t size, unsigned long long sequence)
 {	
 	snet_send(net, peer, MSG_TYPE_REPLY, data, size, sequence, NULL, NULL);
 }
@@ -665,7 +665,7 @@ struct swarmkv_net* swarmkv_net_new(const struct swarmkv_options *opts, struct s
 		net->threads[i]=ALLOC(struct snet_thread, 1);
 		net->threads[i]->evbase=event_base_new();
 		net->threads[i]->thread_id=i;
-		net->threads[i]->timeout=opts->p2p_timeout_us;
+		net->threads[i]->peer_timeout_us=opts->p2p_timeout_us;
 		net->threads[i]->ref_logger=logger;
 		net->threads[i]->ref_net=net;
 		net->threads[i]->sequence_generator=1;

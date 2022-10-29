@@ -39,6 +39,3 @@ enum key_route_result
 	FOUND,
 	ASK
 };	
-enum key_route_result swarmkv_keyspace_reply2node(const struct swarmkv_reply *reply, struct swarmkv_node_addr *out);
-
-

@@ -329,6 +329,7 @@ When a requestor executes a command, it takes the following steps
 - Other replica executes the command, registers the requestor as one of the replica nodes, and send a reply to the requestor
 - The requestor receives the reply and invokes user callback function.
 
+Low-level commands don't have auto-route ability. If you execute low-level command via `swarmkv-cli`, you should execute `ATTACH IP:port` first.
 ## CRDT Explained
 
 Swarm KV uses state-based CRDT types to store values. 

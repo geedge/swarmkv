@@ -783,7 +783,7 @@ void __watch_slots_changes_cb(struct evhttp_request *req, void *arg)
 	cJSON *metadata_array=NULL, *metadata=NULL, *value=NULL, *modify_idx=NULL;
 	int resp_code=0;
 	int	i=0;
-
+	
 	struct key_slot *new_slots=NULL;
 
 	if(!req || !evhttp_request_get_response_code(req))
@@ -837,8 +837,8 @@ void __watch_slots_changes_cb(struct evhttp_request *req, void *arg)
 			swarmkv_node_copy(owner, &(new_slots[i].owner));
 			if(slot_rt->state!=STATE_STABLE)
 			{
-				log_info(ks->logger, MODULE_SWARMKV_KEYSPACE, "slot %d is reset to STABLE state, owner %s:%u.",
-					slot->slot_id, owner->addr.ip_addr, owner->addr.p2p_port);
+//				log_info(ks->logger, MODULE_SWARMKV_KEYSPACE, "slot %d is reset to STABLE state, owner %s:%u.",
+//					slot->slot_id, owner->addr.ip_addr, owner->addr.p2p_port);
 				memset(&(slot_rt->rebalancing_peer), 0, sizeof(slot_rt->rebalancing_peer));
 			}
 			slot_rt->state=STATE_STABLE;
@@ -1266,94 +1266,72 @@ void swarmkv_keyspace_free(struct swarmkv_module* module)
 	return;
 }
 
-enum key_route_result swarmkv_keyspace_reply2node(const struct swarmkv_reply *reply, struct swarmkv_node_addr *out)
-{
-	int offset_node_ip=0;
-	enum key_route_result ret=__INVALID;
-
-	if(reply->type==SWARMKV_REPLY_ARRAY)
-	{
-		if(0==strncasecmp(reply->elements[0]->str, "ASK", reply->elements[0]->len))
-		{
-			offset_node_ip++;
-			ret=ASK;
-		}
-		else
-		{
-			ret=FOUND;
-		}
-		memset(out, 0, sizeof(struct swarmkv_node_addr));
-		strncpy(out->ip_addr, reply->elements[offset_node_ip]->str, sizeof(out->ip_addr));
-		out->p2p_port=(unsigned int)(reply->elements[offset_node_ip+1]->integer);
-	}
-	else
-	{
-		ret=NOT_FOUND;
-	}
-	
-	return ret;
-}
-
 
 enum cmd_exec_result keyspace_setslot_command(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)
 {
-/* KEYSPACE SETSLOT node-ip node-port <slot> IMPORTING ip port | MIGRATING ip port | NODE ip port | STABLE */
+/* KEYSPACE SETSLOT <slot> IMPORTING|MIGRATING|NODE|STABLE IP:port */
 
 	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
 
-	struct swarmkv_node_addr target_node, peer_node, *p=NULL;
-	sds2node_addr(cmd->argv+2, &target_node);
-	
-	if(0!=swarmkv_node_addr_compare(&(ks->self.addr), &(target_node)))
-	{
-		*reply=swarmkv_reply_new_node(&target_node, 1);
-		return REDIRECT;
-	}
-	if(cmd->argc<6)
-	{
-		*reply=swarmkv_reply_new_error(error_wrong_number_of_arg);
-		return FINISHED;
-	}
+	struct swarmkv_node_addr peer_node;
 
 	enum slot_state state;
-	sds str_state=cmd->argv[5];
-	p=&peer_node;
+	sds str_state=cmd->argv[3];
+	sds str_addr=cmd->argv[4];
+
+	int ret_string2node=0;
 	if(0==strcasecmp(str_state, "IMPORTING"))
 	{
 		state=STATE_IMPORTING;
-		sds2node_addr(cmd->argv+6, &peer_node);
 	}
 	else if(0==strcasecmp(str_state, "MIGRATING"))
 	{
 		state=STATE_MIGRATING;
-		sds2node_addr(cmd->argv+6, &peer_node);
 	}
 	else if(0==strcasecmp(str_state, "NODE"))
 	{
 		state=STATE_STABLE;
-		sds2node_addr(cmd->argv+6, &peer_node);
 	}
 	else if(0==strcasecmp(str_state, "STABLE"))
 	{
 		state=STATE_STABLE;
-		p=NULL;
+
 	}
 	else
 	{
-		*reply=swarmkv_reply_new_error("unknwon state %s", str_state);
+		*reply=swarmkv_reply_new_error(error_arg_string_should_be, str_state, "IMPORTING|MIGRATING|NODE|STABLE");
 		return FINISHED;
 	}
+
+	if(state!=STATE_STABLE)
+	{
+		if(cmd->argc<5)
+		{
+			*reply=swarmkv_reply_new_error(error_need_additional_arg, str_state);
+			return FINISHED;
+		}
+		ret_string2node=sds2node_addr(str_addr, &peer_node);
+		if(ret_string2node!=0)
+		{
+			*reply=swarmkv_reply_new_error(error_arg_not_valid_address, str_state);
+			return FINISHED;
+		}
+	}
+
 	struct slot_runtime *slot_rt=NULL;	
-	int slot_id=-1;
-	
-	slot_id=(int)atoll(cmd->argv[4]);
+	long long slot_id=-1;
+	if(0!=str2integer(cmd->argv[2], &slot_id) || slot_id>=KEYSPACE_SLOT_NUM)
+	{
+		*reply=swarmkv_reply_new_error(error_arg_not_valid_integer, cmd->argv[2]);
+		return FINISHED;
+	}
 	slot_rt=&(ks->slot_rts[slot_id]);
 	
 	pthread_mutex_lock(&slot_rt->mutex);
 	slot_rt->state=state;
-	if(p)
+	if(state!=STATE_STABLE)
 	{
-		swarmkv_node_addr_copy(&(slot_rt->rebalancing_peer.addr), p);
+		swarmkv_node_addr_copy(&(slot_rt->rebalancing_peer.addr), &peer_node);
 	}
 	pthread_mutex_unlock(&slot_rt->mutex);
 	*reply=swarmkv_reply_new_status("OK");
@@ -1497,24 +1475,17 @@ long long key_slot_merge(struct slot_runtime *slot_rt, const char *blob, size_t 
 
 enum cmd_exec_result keyspace_getkeysinslot_command(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd,  const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)
 {
-/* KEYSPACE GETKEYSINSLOT IP port slot */
+/* KEYSPACE GETKEYSINSLOT slot */
 	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
 
-	int slot_id=-1;
+	long long slot_id=-1;
 	struct slot_runtime* slot_rt=NULL;
-
-	struct swarmkv_node_addr target_node;
-	sds2node_addr(cmd->argv+2, &target_node);
-
-	if(0!=swarmkv_node_addr_compare(&(ks->self.addr), &target_node))
+	if(0!=str2integer(cmd->argv[2], &slot_id) || slot_id>=KEYSPACE_SLOT_NUM)
 	{
-		*reply=swarmkv_reply_new_node(&target_node, 1);
-		return REDIRECT;
+		*reply=swarmkv_reply_new_error(error_arg_not_valid_integer, cmd->argv[2]);
+		return FINISHED;
 	}
-	slot_id=(int)atoll(cmd->argv[4]);
-	assert(slot_id<KEYSPACE_SLOT_NUM);
 	slot_rt=ks->slot_rts+slot_id;
-	assert(0==swarmkv_node_addr_compare(&(ks->self.addr), &(slot_rt->slot.owner.addr)));
 	char *blob=NULL;
 	size_t blob_sz;
 	pthread_mutex_lock(&slot_rt->mutex);
@@ -1528,29 +1499,24 @@ enum cmd_exec_result keyspace_getkeysinslot_command(struct swarmkv_module *mod_k
 
 enum cmd_exec_result keyspace_addkeystoslot_command(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)
 {
-/* KEYSPACE ADDKEYSTOSLOT IP port slot blob */
+/* KEYSPACE ADDKEYSTOSLOT slot blob */
 
 	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
 
-	struct swarmkv_node_addr target_node;
 
-	assert(cmd->argc==6);
-	
-	sds2node_addr(cmd->argv+2, &target_node);
-	int slot_id=-1;
+	long long slot_id=-1;
 	long long new_added_entry_num=0;
 	struct slot_runtime* slot_rt=NULL;
-	const sds blob=cmd->argv[5];
+	const sds blob=cmd->argv[3];
 
-	if(0!=swarmkv_node_addr_compare(&(ks->self.addr), &target_node))
+	if(0!=str2integer(cmd->argv[2], &slot_id) || slot_id>=KEYSPACE_SLOT_NUM)
 	{
-		*reply=swarmkv_reply_new_node(&target_node, 1);
-		return REDIRECT;
+		*reply=swarmkv_reply_new_error(error_arg_not_valid_integer, cmd->argv[2]);
+		return FINISHED;
 	}
-	
-	slot_id=(int)atoll(cmd->argv[4]);
+
 	slot_rt=ks->slot_rts+slot_id;
-	
+
 	pthread_mutex_lock(&slot_rt->mutex);
 	new_added_entry_num=key_slot_merge(slot_rt, blob, sdslen(blob));
 	pthread_mutex_unlock(&slot_rt->mutex);
@@ -1561,28 +1527,29 @@ enum cmd_exec_result keyspace_addkeystoslot_command(struct swarmkv_module *mod_k
 
 enum cmd_exec_result keyspace_delslotkeys_command(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)
 {
-/* KEYSPACE DELSLOTKEYS IP port slot */
+/* KEYSPACE DELSLOTKEYS slot */
 	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
 
-	struct swarmkv_node_addr target_node;
-	sds2node_addr(cmd->argv+2, &target_node);
-	
-	int slot_id=-1;
+	long long slot_id=-1;
 	struct slot_runtime* slot_rt=NULL;
 	struct key_route_entry *key_entry=NULL, *tmp=NULL;
 	long long delete_num=0;
-	if(0!=swarmkv_node_addr_compare(&(ks->self.addr), &target_node))
+
+	if(0!=str2integer(cmd->argv[2], &slot_id) || slot_id>=KEYSPACE_SLOT_NUM)
 	{
-		*reply=swarmkv_reply_new_node(&target_node, 1);
-		return REDIRECT;
+		*reply=swarmkv_reply_new_error(error_arg_not_valid_integer, cmd->argv[2]);
+		return FINISHED;
 	}
-	
-	slot_id=(int)atoll(cmd->argv[4]);
+
 	slot_rt=ks->slot_rts+slot_id;
 	pthread_mutex_lock(&slot_rt->mutex);
 	HASH_ITER(hh, slot_rt->keyroute_table, key_entry, tmp)
 	{
 		HASH_DELETE(hh, slot_rt->keyroute_table, key_entry);
+		if(key_entry->is_expiring)
+		{
+			timeouts_del(slot_rt->expires, &key_entry->timeout_handle);
+		}
 		key_entry_free(key_entry);
 		delete_num++;
 	}
@@ -1756,15 +1723,19 @@ enum cmd_exec_result keyspace_rlist_command(struct swarmkv_module *mod_keyspace,
 
 enum cmd_exec_result keyspace_radd_command(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)
 {
-/*KEYSPACE RADD <key> IP Port*/
+/*KEYSPACE RADD <key> IP:port*/
 	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
 	enum cmd_exec_result ret=FINISHED;
 	sds key=cmd->argv[2];
-	
+
 	struct swarmkv_node_addr new_replica;
-	if(cmd->argc==5)
+	if(cmd->argc==4)
 	{
-		sds2node_addr(cmd->argv+3, &new_replica);
+		if(0>sds2node_addr(cmd->argv[3], &new_replica))
+		{
+			*reply=swarmkv_reply_new_error(error_arg_not_valid_address, cmd->argv+3);
+			return ret;
+		}
 	}
 	else
 	{
@@ -1775,14 +1746,17 @@ enum cmd_exec_result keyspace_radd_command(struct swarmkv_module *mod_keyspace, 
 }
 enum cmd_exec_result keyspace_xradd_command(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)
 {
-/*KEYSPACE XRADD <key> IP Port*/
+/*KEYSPACE XRADD <key> IP:port*/
 	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
 	enum cmd_exec_result ret=FINISHED;
 	sds key=cmd->argv[2];
 	
 	struct swarmkv_node_addr new_replica;
-	sds2node_addr(cmd->argv+3, &new_replica);
-
+	if(0>sds2node_addr(cmd->argv[3], &new_replica))
+	{
+		*reply=swarmkv_reply_new_error(error_arg_not_valid_address, cmd->argv+3);
+		return ret;
+	}
 	ret=key_route_generic(ks, KEYSPACE_XRADD, key, &new_replica, reply);
 	return ret;
 }
@@ -1799,14 +1773,17 @@ enum cmd_exec_result del_command(struct swarmkv_module *mod_keyspace, const stru
 
 enum cmd_exec_result keyspace_rdel_command(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)
 {
-/*KEYSPACE RDEL <key ip port> */
+/*KEYSPACE RDEL <key IP:port> */
 	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
 	enum cmd_exec_result ret=FINISHED;
 	sds key=cmd->argv[2];
 
     struct swarmkv_node_addr del_replica;
-	sds2node_addr(cmd->argv+3, &del_replica);
-
+	if(0>sds2node_addr(cmd->argv[3], &del_replica))
+	{
+		*reply=swarmkv_reply_new_error(error_arg_not_valid_address, cmd->argv+3);
+		return ret;
+	}
 	ret=key_route_generic(ks, KEYSPACE_RDEL, key, &del_replica, reply);
 	return ret;
 }

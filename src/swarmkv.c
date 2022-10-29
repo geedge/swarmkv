@@ -204,11 +204,11 @@ static struct swarmkv_cmd *make_keyroute_cmd(enum cmd_key_flag flag, const sds k
 		case CMD_KEY_RW:
 			if(obj_owner)
 			{
-				keyroute_cmd=swarmkv_cmd_new(5);
+				keyroute_cmd=swarmkv_cmd_new(4);
 				keyroute_cmd->argv[0]=sdsnew("keyspace");
 				keyroute_cmd->argv[1]=sdsnew("xradd");
 				keyroute_cmd->argv[2]=sdsdup(key);
-				node_addr2sds(obj_owner, keyroute_cmd->argv+3);
+				keyroute_cmd->argv[3]=node_addr2sds(obj_owner);
 			}
 			else
 			{
@@ -221,11 +221,11 @@ static struct swarmkv_cmd *make_keyroute_cmd(enum cmd_key_flag flag, const sds k
 		case CMD_KEY_OW:
 			if(obj_owner)
 			{
-				keyroute_cmd=swarmkv_cmd_new(5);
+				keyroute_cmd=swarmkv_cmd_new(4);
 				keyroute_cmd->argv[0]=sdsnew("keyspace");
 				keyroute_cmd->argv[1]=sdsnew("radd");
 				keyroute_cmd->argv[2]=sdsdup(key);
-				node_addr2sds(obj_owner, keyroute_cmd->argv+3);
+				keyroute_cmd->argv[3]=node_addr2sds(obj_owner);
 			}
 			else
 			{
@@ -308,8 +308,19 @@ static void peer_exec_on_success(void* result, void* user)
 	if(reply->type==SWARMKV_REPLY_NODE && 0==strncasecmp(reply->str, "-ASK", 4))
 	{
 		ctx->redirect_cnt++;
-		swarmkv_reply2node_addr(reply, &peer);
-		exec_command_at_peer(ctx->db, ctx->cmd, &peer, ctx->future_of_mine);
+		if(ctx->redirect_cnt<=3)
+		{
+			swarmkv_reply2node_addr(reply, &peer);
+			exec_command_at_peer(ctx->db, ctx->cmd, &peer, ctx->future_of_mine);
+		}
+		else
+		{
+			struct promise *p=future_to_promise(ctx->future_of_caller);
+			char err_msg[256];
+			snprintf(err_msg, sizeof(err_msg), error_too_many_redirects, reply->str);
+			promise_failed(p, FUTURE_ERROR_EXCEPTION, err_msg);
+			cmd_ctx_free(ctx);
+		}
 	}
 	else
 	{
@@ -390,6 +401,14 @@ void __exec_cmd(struct swarmkv *db, const struct swarmkv_cmd *cmd, const struct 
 	if(!is_sufficient_arg_num(spec, cmd))//error happens
 	{
 		reply=swarmkv_reply_new_error(error_wrong_number_of_arg, spec->name);
+		p=future_to_promise(future_of_caller);
+		promise_success(p, reply);
+		swarmkv_reply_free(reply);
+		return;
+	}
+	if(!spec->auto_route && !target_node)
+	{
+		reply=swarmkv_reply_new_error(error_no_target_node, spec->name);
 		p=future_to_promise(future_of_caller);
 		promise_success(p, reply);
 		swarmkv_reply_free(reply);
@@ -510,7 +529,7 @@ void on_cmd_msg_callback(const struct swarmkv_node_addr * peer, unsigned long lo
 }
 
 void command_register(struct swarmkv_cmd_spec **table, const char *name, const char *hint,
-						int arity, int key_offset, enum cmd_key_flag flag,
+						int arity, int key_offset, enum cmd_key_flag flag, int auto_route,
 						command_proc_func *proc, struct swarmkv_module *module)
 {
 	struct swarmkv_cmd_spec *spec=NULL;
@@ -522,6 +541,7 @@ void command_register(struct swarmkv_cmd_spec **table, const char *name, const c
 	spec->key_offset=key_offset;
 	spec->flag=flag;
 	spec->proc=proc;
+	spec->auto_route=auto_route;
 
 	spec->module=module;
 	HASH_ADD_KEYPTR(hh, *table, spec->name, strlen(spec->name), spec);
@@ -530,113 +550,113 @@ void command_register(struct swarmkv_cmd_spec **table, const char *name, const c
 void command_spec_init(struct swarmkv *db)
 {
 	command_register(&(db->command_table), "GET", "key",
-					1, 1, CMD_KEY_RO,
+					1, 1, CMD_KEY_RO, 1,
 					get_command, db->mod_store);
 	command_register(&(db->command_table), "SET", "key value",
-					2, 1, CMD_KEY_OW,
+					2, 1, CMD_KEY_OW, 1,
 					set_command, db->mod_store);
 	command_register(&(db->command_table), "INCRBY", "key increment",
-					2, 1, CMD_KEY_OW,
+					2, 1, CMD_KEY_OW, 1,
 					incrby_command, db->mod_store);
 
 	/* Generic command*/
 					
 	command_register(&(db->command_table), "DEL", "key",
-					1, 1, CMD_KEY_RM,
+					1, 1, CMD_KEY_RM, 1,
 					del_command, db->mod_keyspace);
 	command_register(&(db->command_table), "EXPIRE", "key seconds",
-					2, 1, CMD_KEY_RW,
+					2, 1, CMD_KEY_RW, 1,
 					expire_command, db->mod_keyspace);
 	command_register(&(db->command_table), "TTL", "key",
-					1, 1, CMD_KEY_RO,
+					1, 1, CMD_KEY_RO, 1,
 					ttl_command, db->mod_keyspace);
 	command_register(&(db->command_table), "PERSIST", "key",
-					1, 1, CMD_KEY_RW,
+					1, 1, CMD_KEY_RW, 1,
 					persist_command, db->mod_keyspace);
 
 	/* Set Command */
 	command_register(&(db->command_table), "SADD", "key member [member ...]",
-					2, 1, CMD_KEY_OW,
+					2, 1, CMD_KEY_OW, 1,
 					sadd_command, db->mod_store);
 	command_register(&(db->command_table), "SREM", "key member [member ...]",
-					2, 1, CMD_KEY_RW,
+					2, 1, CMD_KEY_RW, 1,
 					srem_command, db->mod_store);
 	command_register(&(db->command_table), "SMEMBERS", "key",
-					1, 1, CMD_KEY_RO,
+					1, 1, CMD_KEY_RO, 1,
 					smembers_command, db->mod_store);
 	command_register(&(db->command_table), "SISMEMBER", "key member",
-					2, 1, CMD_KEY_RO,
+					2, 1, CMD_KEY_RO, 1,
 					sismember_command, db->mod_store);
 	command_register(&(db->command_table), "SCARD", "key",
-					1, 1, CMD_KEY_RO,
+					1, 1, CMD_KEY_RO, 1,
 					scard_command, db->mod_store);
 
 	/* Token Bucket Command */
 	command_register(&(db->command_table), "TCFG", "key capacity rate",
-					3, 1, CMD_KEY_OW,
+					3, 1, CMD_KEY_OW, 1,
 					tcfg_command, db->mod_store);
 	command_register(&(db->command_table), "TCONSUME", "key tokens [NORMAL|FORCE|FLEXIBLE]",
-					2, 1, CMD_KEY_RW,
+					2, 1, CMD_KEY_RW, 1,
 					tconsume_command, db->mod_store);
 	command_register(&(db->command_table), "TINFO", "key",
-					1, 1, CMD_KEY_RO,
+					1, 1, CMD_KEY_RO, 1,
 					tinfo_command, db->mod_store);
 
 
 	/* low-level state-based CRDT synchronization command*/
 	command_register(&(db->command_table), "CRDT PULL", "key",
-					1, 2, CMD_KEY_NA,
+					1, 2, CMD_KEY_NA, 0,
 					crdt_pull_command, db->mod_store);
 	command_register(&(db->command_table), "CRDT PUSH", "key blob",
-					2, 2, CMD_KEY_NA,
+					2, 2, CMD_KEY_NA, 0,
 					crdt_push_command, db->mod_store);
-	command_register(&(db->command_table), "CRDT JOIN", "key IP port",
-					3, 2, CMD_KEY_NA,
+	command_register(&(db->command_table), "CRDT JOIN", "key",
+					3, 2, CMD_KEY_NA, 0,
 					crdt_join_command, db->mod_store);
 
 	command_register(&(db->command_table), "CRDT DEL", "key",
-					1, 2, CMD_KEY_NA,
+					1, 2, CMD_KEY_NA, 0,
 					crdt_del_command, db->mod_store);
     command_register(&(db->command_table), "CRDT KEYS", "pattern",
-					1, -1, CMD_KEY_RO,
+					1, -1, CMD_KEY_RO, 0,
 					crdt_keys_command, db->mod_store);
     command_register(&(db->command_table), "CRDT EXISTS", "key",
-					1, 2, CMD_KEY_RO,
+					1, 2, CMD_KEY_RO, 0,
 					crdt_exists_command, db->mod_store);
 
      command_register(&(db->command_table), "CRDT RLIST", "key",
-					1, 2, CMD_KEY_RO,
+					1, 2, CMD_KEY_RO, 0,
 					crdt_rlist_command, db->mod_store);
 
 	/* low-level keyspace operation command*/
 	command_register(&(db->command_table), "KEYSPACE RLIST", "key",
-					1, 2, CMD_KEY_RO,
+					1, 2, CMD_KEY_RO, 1,
 					keyspace_rlist_command, db->mod_keyspace);
-	command_register(&(db->command_table), "KEYSPACE RADD", "key IP port",
-					1, 2, CMD_KEY_OW,
+	command_register(&(db->command_table), "KEYSPACE RADD", "key IP:port",
+					1, 2, CMD_KEY_OW, 1,
 					keyspace_radd_command, db->mod_keyspace);
-	command_register(&(db->command_table), "KEYSPACE XRADD", "key IP port",
-					1, 2, CMD_KEY_OW,
+	command_register(&(db->command_table), "KEYSPACE XRADD", "key IP:port",
+					1, 2, CMD_KEY_OW, 1,
 					keyspace_xradd_command, db->mod_keyspace);
 	command_register(&(db->command_table), "KEYSPACE KEYS", "pattern",
-					1, -1, CMD_KEY_RO,
+					1, -1, CMD_KEY_RO, 0,
 					keyspace_keys_command, db->mod_keyspace);
-    command_register(&(db->command_table), "KEYSPACE RDEL", "key IP port",
-					3, 2, CMD_KEY_RO,
+    command_register(&(db->command_table), "KEYSPACE RDEL", "key IP:port",
+					3, 2, CMD_KEY_RO, 1,
 					keyspace_rdel_command, db->mod_keyspace);
 
 	/* low-level keyspace reorgnization commands */
-	command_register(&(db->command_table), "KEYSPACE SETSLOT", "node-IP node-port <slot> IMPORTING|MIGRATING|NODE|STABLE peer-IP peer-port",
-					4, -1, CMD_KEY_NA,
+	command_register(&(db->command_table), "KEYSPACE SETSLOT", "<slot> IMPORTING|MIGRATING|NODE|STABLE IP:port",
+					2, -1, CMD_KEY_NA, 0,
 					keyspace_setslot_command, db->mod_keyspace);
-	command_register(&(db->command_table), "KEYSPACE GETKEYSINSLOT", "IP port slot",
-					3, -1, CMD_KEY_NA,
+	command_register(&(db->command_table), "KEYSPACE GETKEYSINSLOT", "slot",
+					1, -1, CMD_KEY_NA, 0,
 					keyspace_getkeysinslot_command, db->mod_keyspace);
-	command_register(&(db->command_table), "KEYSPACE ADDKEYSTOSLOT", "IP port slot blob",
-					4, -1, CMD_KEY_NA,
+	command_register(&(db->command_table), "KEYSPACE ADDKEYSTOSLOT", "slot blob",
+					2, -1, CMD_KEY_NA, 0,
 					keyspace_addkeystoslot_command, db->mod_keyspace);
-	command_register(&(db->command_table), "KEYSPACE DELSLOTKEYS", "IP port slot",
-					3, -1, CMD_KEY_NA,
+	command_register(&(db->command_table), "KEYSPACE DELSLOTKEYS", "slot",
+					1, -1, CMD_KEY_NA, 0,
 					keyspace_delslotkeys_command, db->mod_keyspace);
 
 	/* cluster commands are defined in swarmkv-cli.c */

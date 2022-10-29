@@ -14,10 +14,10 @@ int swarmkv_cli_create_cluster(const char *cluster_name, const char *node_string
 	snprintf(cmd_string, sizeof(cmd_string), "../tools/swarmkv-cli --cluster-create %s %s", cluster_name, node_string);
 	return system(cmd_string);
 }
-int swarmkv_cli_add_node(const char *cluster_name, const char *ip, int port)
+int swarmkv_cli_add_node(const char *cluster_name, const char *ip, unsigned int port)
 {
 	char cmd_string[1024];
-	snprintf(cmd_string, sizeof(cmd_string), "../tools/swarmkv-cli -n %s --exec cluster addnode %s %d", cluster_name, ip, port);
+	snprintf(cmd_string, sizeof(cmd_string), "../tools/swarmkv-cli -n %s --exec cluster addnode %s:%u", cluster_name, ip, port);
 	return system(cmd_string);
 
 }
@@ -183,38 +183,11 @@ void cmd_exec_generic_callback(const struct swarmkv_reply* reply, void * cb_arg)
 	}
 	else
 	{
+		swarmkv_reply_print(reply, stdout);
 		cmd_exec_arg_failed(arg);
 	}
 	return;
 }
-
-
-size_t swarmkv_reply_print(const struct swarmkv_reply* reply, char* buff, size_t buff_sz)
-{
-	size_t print_len=0;
-	switch(reply->type)
-	{
-		case SWARMKV_REPLY_STRING:
-		case SWARMKV_REPLY_STATUS:
-		case SWARMKV_REPLY_ERROR:
-			print_len=snprintf(buff, buff_sz, "%.*s", reply->len, reply->str);
-			break;
-		case SWARMKV_REPLY_INTEGER:
-			print_len=snprintf(buff, buff_sz, "%lld", reply->integer);
-			break;
-		case SWARMKV_REPLY_NIL:
-			print_len=snprintf(buff, buff_sz, "null");
-			break;
-		case SWARMKV_REPLY_ARRAY:
-			print_len=snprintf(buff, buff_sz, "array(%zu)", reply->n_element);
-			break;
-		default:
-			assert(0);
-			break;
-	}
-	return print_len;
-}
-
 
 int reply_compare(const struct swarmkv_reply *r1, const struct swarmkv_reply *r2)
 {

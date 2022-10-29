@@ -35,7 +35,7 @@ protected:
 		const char* log_path="./basic-test.log";
 		char *err=NULL;
 		const char *cluster_name="swarmkv-basic-test";
-		swarmkv_cli_create_cluster(cluster_name, "127.0.0.1 5210");
+		swarmkv_cli_create_cluster(cluster_name, "127.0.0.1:5210");
 		logger=log_handle_create(log_path, 0);
 		struct swarmkv_options* opts=swarmkv_options_new();
 		swarmkv_options_set_p2p_port(opts, 5210);
@@ -294,7 +294,7 @@ protected:
 		const char *log_path="./swarmkv-2-nodes.log";
 		
 		const char *cluster_name="swarmkv-2-nodes";
-		swarmkv_cli_create_cluster(cluster_name, "127.0.0.1 5210 127.0.0.1 5211");
+		swarmkv_cli_create_cluster(cluster_name, "127.0.0.1:5210 127.0.0.1:5211");
 		
 		logger=log_handle_create(log_path, 0);
 		struct swarmkv_options* opts1=swarmkv_options_new();
@@ -1001,7 +1001,7 @@ protected:
 		char node_list_str[1024]={0};
 		for(i=0; i<TEST_NODE_NUMBER; i++)
 		{
-			snprintf(node_list_str+strlen(node_list_str), sizeof(node_list_str)-strlen(node_list_str), "127.0.0.1 %zu ", 5210+i);
+			snprintf(node_list_str+strlen(node_list_str), sizeof(node_list_str)-strlen(node_list_str), "127.0.0.1:%zu ", 5210+i);
 		}
 		const char *cluster_name="swarmkv-n-nodes";
 		swarmkv_cli_create_cluster(cluster_name, node_list_str);

@@ -171,7 +171,7 @@ protected:
 		const char *log_path="./swarmkv-cli-nodes.log";
 
 		const char *cluster_name="swarmkv-cli-nodes";
-		swarmkv_cli_create_cluster(cluster_name, "127.0.0.1 5210");
+		swarmkv_cli_create_cluster(cluster_name, "127.0.0.1:5210");
 
 		logger=log_handle_create(log_path, 0);
 		struct swarmkv_options* opts1=swarmkv_options_new();
@@ -375,7 +375,7 @@ TEST_F(SwarmkvCliNodes, KEYSPACE_RDEL)
 */
 TEST_F(SwarmkvCliNodes, KEYSPACE_RADD)
 {
-	char result[2048]={0}, reply_string[64]={0};
+	char result[2048]={0}, reply_string[128]={0};
 	struct cmd_exec_arg* reply_arg=NULL;
 	reply_arg=cmd_exec_arg_new();
 
@@ -391,7 +391,7 @@ TEST_F(SwarmkvCliNodes, KEYSPACE_RADD)
 
 	unsigned int p2p_port = (node_addr.p2p_port == 5210) ? 5211: 5210;
 
-	sprintf(reply_string, "0) %s:%d,1) %s:%d", node_addr.ip_addr, node_addr.p2p_port, node_addr.ip_addr, p2p_port);
+	sprintf(reply_string, "0) %s:%u,1) %s:%u", node_addr.ip_addr, node_addr.p2p_port, node_addr.ip_addr, p2p_port);
 	cmd_exec_arg_expect_cstring(reply_arg, reply_string);
 	swarmkv_cli_system_cmd(reply_arg, result, sizeof(result), swarmkv_expect_reply_string, "KEYSPACE RADD %s %s %d", "xiaolan", node_addr.ip_addr, p2p_port);
 	cmd_exec_arg_clear(reply_arg);
@@ -424,7 +424,7 @@ protected:
 		const char *log_path="./swarmkv-2-nodes.log";
 
 		const char *cluster_name="swarmkv-2-nodes";
-		swarmkv_cli_create_cluster(cluster_name, "127.0.0.1 5210 127.0.0.1 5211");
+		swarmkv_cli_create_cluster(cluster_name, "127.0.0.1:5210 127.0.0.1:5211");
 
 		logger=log_handle_create(log_path, 0);
 		struct swarmkv_options* opts1=swarmkv_options_new();

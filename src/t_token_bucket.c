@@ -20,14 +20,14 @@ enum cmd_exec_result tcfg_command(struct swarmkv_module *mod_store, const struct
 	rate=strtol(cmd->argv[2], &endptr, 10);
 	if(*endptr!='\0' || capacity<0)
 	{
-		*reply=swarmkv_reply_new_error(error_parameter_not_valid_integer, cmd->argv[2]);
+		*reply=swarmkv_reply_new_error(error_arg_not_valid_integer, cmd->argv[2]);
 		return FINISHED; 		
 	}
 
 	capacity=strtol(cmd->argv[3], &endptr, 10);
 	if(*endptr!='\0' || rate<0)
 	{
-		*reply=swarmkv_reply_new_error(error_parameter_not_valid_integer, cmd->argv[3]);
+		*reply=swarmkv_reply_new_error(error_arg_not_valid_integer, cmd->argv[3]);
 		return FINISHED; 		
 	}
 	
@@ -143,7 +143,7 @@ enum cmd_exec_result tconsume_command(struct swarmkv_module *mod_store, const st
 	request=strtol(cmd->argv[2], &endptr, 10);
 	if(*endptr!='\0' || request<0)
 	{
-		*reply=swarmkv_reply_new_error(error_parameter_not_valid_integer, cmd->argv[2]);
+		*reply=swarmkv_reply_new_error(error_arg_not_valid_integer, cmd->argv[2]);
 		return FINISHED; 		
 	}
 	struct timeval now;
@@ -166,7 +166,7 @@ enum cmd_exec_result tconsume_command(struct swarmkv_module *mod_store, const st
 		}
 		else
 		{
-			*reply=swarmkv_reply_new_error(error_parameter_not_valid_string, mode);
+			*reply=swarmkv_reply_new_error(error_arg_string_should_be, mode, "NORMAL|FORCE|FLEXIBLE");
 			return FINISHED;
 		}
 	}

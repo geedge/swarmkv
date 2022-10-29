@@ -27,7 +27,7 @@ struct swarmkv_options* swarmkv_options_new(void)
 	opts->p2p_port=5210;
 	opts->health_check_port=0;
 	opts->loglevel=0;
-    opts->p2p_timeout_us=500*1000;//5ms
+    opts->p2p_timeout_us=500*1000;//Default 500ms
 	opts->sync_interval_us=500;
 	strcpy(opts->bind_address, "127.0.0.1");
 	uuid_generate(opts->bin_uuid);
@@ -79,9 +79,9 @@ int swarmkv_options_set_logger(struct swarmkv_options *opts, void *logger)
 	opts->logger=logger;
 	return 0;
 }
-int swarmkv_options_set_run_for_leader_flag(struct swarmkv_options *opts, int run_for_leader_flag)
+int swarmkv_options_set_disable_run_for_leader(struct swarmkv_options *opts)
 {
-	opts->run_for_leader_flag=run_for_leader_flag;
+	opts->run_for_leader_flag=0;
 	return 0;
 }
 int swarmkv_options_set_consul_port(struct swarmkv_options *opts, unsigned int consul_port)
@@ -252,7 +252,7 @@ struct blocking_query_ctx
 void blocking_query_cb(const struct swarmkv_reply* reply, void * arg)
 {
 	struct blocking_query_ctx *ctx=(struct blocking_query_ctx*) arg;
-	ctx->reply=swarmkv_reply_clone(reply);
+	ctx->reply=swarmkv_reply_dup(reply);
 	pthread_cond_signal(&ctx->cond);
 	return;
 }
@@ -263,7 +263,7 @@ struct swarmkv_reply *swarmkv_command_argv(struct swarmkv *db, const char *targe
 	struct blocking_query_ctx ctx;
 	memset(&ctx, 0, sizeof(ctx));
     struct swarmkv_node_addr target_node;
-    memset(&target_node, 0, sizeof(struct swarmkv_node_addr));
+	memset(&target_node, 0, sizeof(struct swarmkv_node_addr));
 	pthread_cond_init(&ctx.cond, NULL);
 	pthread_mutex_init(&ctx.mutex, NULL);
 	cmd=swarmkv_cmd_new(argc);
@@ -278,13 +278,13 @@ struct swarmkv_reply *swarmkv_command_argv(struct swarmkv *db, const char *targe
     }
     else
     {
-        sscanf(target, "%s %u", target_node.ip_addr, &target_node.p2p_port);
+		sds2node_addr(target, &target_node);
         swarmkv_exec(db, cmd, &target_node, blocking_query_cb, &ctx);
     }
 
 	struct timespec max_wait = {0, 0};
 	clock_gettime(CLOCK_REALTIME, &max_wait);
-	max_wait.tv_sec+=1800;
+	max_wait.tv_sec+=100;
 	int timed_wait_rv=0;
 	if(NULL==ctx.reply)
 	{
@@ -294,7 +294,6 @@ struct swarmkv_reply *swarmkv_command_argv(struct swarmkv *db, const char *targe
 		if(timed_wait_rv)
 		{
 			printf("%s\n", swarmkv_util_pthread_cond_timedwait_error_to_string(timed_wait_rv));
-			assert(0);
 			ctx.reply=swarmkv_reply_new_error("timeout");
 		}
 	}
@@ -355,7 +354,7 @@ void swarmkv_command_async(struct swarmkv *db, swarmkv_cmd_callback_func_t * cb,
     }
     else
     {
-        sscanf(target, "%s %u", target_node.ip_addr, &target_node.p2p_port);
+		sds2node_addr(target, &target_node);
         swarmkv_exec(db, cmd, &target_node, cb, cb_arg);
     }
 

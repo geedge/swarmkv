@@ -9,7 +9,49 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+int str2integer(const char *str, long long *integer)
+{
+	char *endptr=NULL;
+	*integer=strtol(str, &endptr, 10);
+	if(*endptr!='\0')
+	{
+		return -1;		
+	}
+	return 0;
+}
+void swarmkv_reply_print(const struct swarmkv_reply *reply, FILE* stream)
+{
+	size_t i=0;
+	switch (reply->type)
+	{
+		case SWARMKV_REPLY_INTEGER:
+			fprintf(stream, "(integer) %lld\n", reply->integer);
+			break;
+		case SWARMKV_REPLY_NIL:
+			fprintf(stream, "(nil)\n");
+			break;
+		case SWARMKV_REPLY_ERROR:
+			fprintf(stream, "(error) %s\n", reply->str);
+			break;
+		case SWARMKV_REPLY_NODE:
+		case SWARMKV_REPLY_STATUS:
+			fprintf(stream, "%s\n", reply->str);
+			break;
+		case SWARMKV_REPLY_STRING:
+			fprintf(stream, "\"%.*s\"\n", reply->len, reply->str);
+			break;
+		case SWARMKV_REPLY_ARRAY:
+			for(i=0; i<reply->n_element; i++)
+			{
+				fprintf(stream, "%zu) ", i);
+				swarmkv_reply_print(reply->elements[i], stream);
+			}
+			break;
+		default:
+			break;
 
+	}
+}
 struct swarmkv_reply* swarmkv_reply_new_string(const char* str, size_t sz)
 {
 	struct swarmkv_reply *reply=ALLOC(struct swarmkv_reply, 1);
@@ -86,7 +128,6 @@ struct swarmkv_reply *swarmkv_reply_new_node(struct swarmkv_node_addr *addr, int
 {
 	struct swarmkv_reply *reply=ALLOC(struct swarmkv_reply, 1);
 	reply->type=SWARMKV_REPLY_NODE;
-	reply->str=sdsnewlen(NULL, 64);
 	if(is_ask)
 	{
 		reply->str=sdscatfmt(sdsempty(), "-ASK %s:%u", addr->ip_addr, addr->p2p_port);
@@ -97,6 +138,21 @@ struct swarmkv_reply *swarmkv_reply_new_node(struct swarmkv_node_addr *addr, int
 	}
 	reply->len=strlen(reply->str);
 	return reply;
+}
+sds node_addr2sds(const struct swarmkv_node_addr *node)
+{
+	return sdscatfmt(sdsempty(), "%s:%u", node->ip_addr, node->p2p_port);
+}
+int sds2node_addr(const char *addr_str, struct swarmkv_node_addr *node)
+{
+	memset(node, 0, sizeof(struct swarmkv_node_addr));
+	int n_read=0;
+	n_read=sscanf(addr_str, "%[^:]:%u", node->ip_addr, &node->p2p_port);
+	if(n_read!=2)
+	{
+		return -1;
+	}
+	return 0;
 }
 int swarmkv_reply2node_addr(const struct swarmkv_reply *reply, struct swarmkv_node_addr *node)
 {
@@ -110,13 +166,7 @@ int swarmkv_reply2node_addr(const struct swarmkv_reply *reply, struct swarmkv_no
 	{
 		p+=5;
 	}
-	int n_read=0;
-	n_read=sscanf(p, "%[^:]:%u", node->ip_addr, &node->p2p_port);
-	if(n_read!=2)
-	{
-		return -1;
-	}
-	return 0;
+	return sds2node_addr(p, node);
 }
 int swarmkv_reply2nodelist(const struct swarmkv_reply *reply, struct swarmkv_node_addr **node_list, size_t *n_node)
 {
@@ -136,20 +186,6 @@ int swarmkv_reply2nodelist(const struct swarmkv_reply *reply, struct swarmkv_nod
 		swarmkv_reply2node_addr(reply->elements[i], *node_list+i);
 	}
 	return 0;
-}
-
-void node_addr2sds(const struct swarmkv_node_addr *node, sds argv[2])
-{
-	argv[0]=sdsnew(node->ip_addr);
-	argv[1]=sdsfromlonglong(node->p2p_port);
-	return;
-}
-void sds2node_addr(const sds argv[2], struct swarmkv_node_addr *node_addr)
-{
-	memset(node_addr, 0, sizeof(struct swarmkv_node_addr));
-	strncpy(node_addr->ip_addr, argv[0], sizeof(node_addr->ip_addr)-1);
-	node_addr->p2p_port=(unsigned int)atoll(argv[1]);
-	return;
 }
 int swarmkv_node_addr_compare(const struct swarmkv_node_addr *addr1, const struct swarmkv_node_addr *addr2)
 {
@@ -212,7 +248,7 @@ void swarmkv_node_copy(struct swarmkv_node *dst, const struct swarmkv_node *src)
 	return;
 }
 
-struct swarmkv_reply *swarmkv_reply_clone(const struct swarmkv_reply *origin)
+struct swarmkv_reply *swarmkv_reply_dup(const struct swarmkv_reply *origin)
 {
 	struct swarmkv_reply *copy=ALLOC(struct swarmkv_reply, 1);
 	copy->type=origin->type;
@@ -234,7 +270,7 @@ struct swarmkv_reply *swarmkv_reply_clone(const struct swarmkv_reply *origin)
 			copy->elements=ALLOC(struct swarmkv_reply*, origin->n_element);
 			for(i=0; i<origin->n_element; i++)
 			{
-				copy->elements[i]=swarmkv_reply_clone(origin->elements[i]);
+				copy->elements[i]=swarmkv_reply_dup(origin->elements[i]);
 			}
 			break;
 		default:

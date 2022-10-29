@@ -9,7 +9,7 @@
 
 #pragma once
 #include <stddef.h>
-
+#include <stdio.h>
 #ifdef __cplusplus
 extern "C"
 {
@@ -36,7 +36,7 @@ struct swarmkv_reply
 	struct swarmkv_reply **elements;/* elements vector for SWARMKV_REPLY_ARRAY */
 };
 void swarmkv_reply_free(struct swarmkv_reply *reply);
-
+void swarmkv_reply_print(const struct swarmkv_reply *reply, FILE* stream);
 
 struct swarmkv_options;
 struct swarmkv_options* swarmkv_options_new(void);
@@ -48,7 +48,7 @@ int swarmkv_options_set_bind_address(struct swarmkv_options *opts, const char* i
 int swarmkv_options_set_logger(struct swarmkv_options *opts, void *logger);
 int swarmkv_options_set_consul_port(struct swarmkv_options *opts, unsigned int consul_port);
 int swarmkv_options_set_dryrun(struct swarmkv_options *opts);
-int swarmkv_options_set_run_for_leader_flag(struct swarmkv_options *opts, int run_for_leader_flag);
+int swarmkv_options_set_disable_run_for_leader(struct swarmkv_options *opts);
 int swarmkv_options_set_worker_thread_number(struct swarmkv_options *opts, size_t nr_worker_threads);
 
 

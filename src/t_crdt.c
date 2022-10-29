@@ -93,7 +93,7 @@ enum cmd_exec_result crdt_join_command(struct swarmkv_module *mod_store, const s
 	assert(accessing_node!=NULL);//should never invoked by local
 
     struct swarmkv_node_addr replica_node;
-    sds2node_addr(cmd->argv+3, &replica_node);
+    sds2node_addr(cmd->argv[3], &replica_node);
 
 	obj=store_lookup(mod_store, key);
 	int added=0;

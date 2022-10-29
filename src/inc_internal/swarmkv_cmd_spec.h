@@ -37,6 +37,7 @@ struct swarmkv_cmd_spec
 	int arity; /* Number of arguments, it is possible to use -N to say >= N */
     int key_offset; /* The argument that's a key (-1 = no keys) */
 	enum cmd_key_flag flag; /* Command flag, see CMD_*. */	
+	int auto_route; /* The node that executes the command must be explicitly specifeid. */
 
 	command_proc_func *proc;
 	struct swarmkv_module *module;

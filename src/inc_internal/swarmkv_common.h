@@ -60,6 +60,7 @@ sds keyslots2json(void *slot_container_base, size_t sz_slot_container, size_t of
 void json2nodes(const char* resp_buff, struct swarmkv_node *nodes, size_t *n_node);
 void json2leader(const char *resp_body, struct swarmkv_node *leader);
 int key_hash_slot(const char* key, size_t keylen);
+int str2integer(const char *str, long long *integer);
 
 struct swarmkv_options
 {
@@ -100,7 +101,7 @@ struct swarmkv_reply *swarmkv_reply_new_node(struct swarmkv_node_addr *addr, int
 struct swarmkv_reply *swarmkv_reply_new_nil(void);
 struct swarmkv_reply *swarmkv_reply_new_status(const char *format, ...);
 struct swarmkv_reply *swarmkv_reply_new_error(const char *format, ...);
-struct swarmkv_reply *swarmkv_reply_clone(const struct swarmkv_reply *origin);
+struct swarmkv_reply *swarmkv_reply_dup(const struct swarmkv_reply *origin);
 void swarmkv_reply_merge_array(struct swarmkv_reply **dst, struct swarmkv_reply *src);
 void swarmkv_reply_append_string(struct swarmkv_reply **dst, struct swarmkv_reply *src);
 
@@ -111,8 +112,8 @@ int swarmkv_node_addr_list_exists(const struct swarmkv_node_addr *list, size_t n
 int swarmkv_node_addr_list_remove(struct swarmkv_node_addr *list, size_t n_list, const struct swarmkv_node_addr *addr);
 
 void node_addr2reply(const struct swarmkv_node_addr *node, struct swarmkv_reply* reply[2]);
-void sds2node_addr(const sds args[2], struct swarmkv_node_addr *node);
-void node_addr2sds(const struct swarmkv_node_addr *node, sds argv[2]);
+sds node_addr2sds(const struct swarmkv_node_addr *node);
+int sds2node_addr(const char *addr_str, struct swarmkv_node_addr *node);
 
 int swarmkv_node_compare(const struct swarmkv_node *node1, const struct swarmkv_node *node2);
 void swarmkv_node_copy(struct swarmkv_node *dst, const struct swarmkv_node *src);
