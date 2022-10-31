@@ -598,8 +598,8 @@ void exec_cmd_crdt_join(struct swarmkv* db, struct cluster_sanity_cmd_ctx *ctx, 
     HASH_ITER(hh, keyspace_list->replica_node_hash, keyspace_addr, tmp)
     {
         ctx->reply_cnt++;
-        snprintf(target, sizeof(target), "%s %u", keyspace_addr->addr.ip_addr, keyspace_addr->addr.p2p_port);
-        swarmkv_command_async(db, exec_cmd_generic_callback, ctx, target, "CRDT JOIN %s %s %d", key, crdt_addr->addr.ip_addr, crdt_addr->addr.p2p_port);
+        snprintf(target, sizeof(target), "%s:%u", keyspace_addr->addr.ip_addr, keyspace_addr->addr.p2p_port);
+        swarmkv_command_async(db, exec_cmd_generic_callback, ctx, target, "CRDT JOIN %s %s:%d", key, crdt_addr->addr.ip_addr, crdt_addr->addr.p2p_port);
     }
 }
 
@@ -774,6 +774,7 @@ struct swarmkv_reply *cluster_sanity_command(struct swarmkv* db, char *argv[], s
         sscanf(nodes_reply->elements[i]->str, "%s %s %s", uuid, target, membership);
         
         reply=swarmkv_command(db, target, "crdt keys *");
+        sscanf(target, "%[^:]:%s", ip, port);
         build_crdt_replica_list(reply, ctx, ip, port);
         swarmkv_reply_free(reply);
         reply=NULL;
@@ -1158,7 +1159,6 @@ int main(int argc, char * argv[])
 		usage();
 		return 0;
 	}
-	memset(&g_runtime, 0, sizeof(g_runtime));
 	snprintf(g_runtime.prompt, sizeof(g_runtime.prompt), "%s> ", g_config.db_name);
 
 	struct swarmkv_options *opts=swarmkv_options_new();

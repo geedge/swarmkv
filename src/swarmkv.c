@@ -610,8 +610,8 @@ void command_spec_init(struct swarmkv *db)
 	command_register(&(db->command_table), "CRDT PUSH", "key blob",
 					2, 2, CMD_KEY_NA, 0,
 					crdt_push_command, db->mod_store);
-	command_register(&(db->command_table), "CRDT JOIN", "key",
-					3, 2, CMD_KEY_NA, 0,
+	command_register(&(db->command_table), "CRDT JOIN", "key IP:port",
+					2, 2, CMD_KEY_NA, 0,
 					crdt_join_command, db->mod_store);
 
 	command_register(&(db->command_table), "CRDT DEL", "key",
@@ -642,7 +642,7 @@ void command_spec_init(struct swarmkv *db)
 					1, -1, CMD_KEY_RO, 0,
 					keyspace_keys_command, db->mod_keyspace);
     command_register(&(db->command_table), "KEYSPACE RDEL", "key IP:port",
-					3, 2, CMD_KEY_RO, 1,
+					1, 2, CMD_KEY_RO, 1,
 					keyspace_rdel_command, db->mod_keyspace);
 
 	/* low-level keyspace reorgnization commands */

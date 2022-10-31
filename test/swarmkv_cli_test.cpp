@@ -44,7 +44,7 @@ void swarmkv_cli_attach(const char *ip_addr, unsigned int p2p_port)
 	{
 		free(g_cli_system.attach_target_line);
 	}
-	asprintf(&(g_cli_system.attach_target_line), "--attach %s %u", ip_addr, p2p_port);
+	asprintf(&(g_cli_system.attach_target_line), "--attach %s:%u", ip_addr, p2p_port);
 }
 
 void swarmkv_cli_detach()
@@ -233,7 +233,7 @@ TEST_F(SwarmkvCliNodes, CMD_SANITY_CHECK)
 	cmd_exec_arg_clear(reply_arg);
 
 	cmd_exec_arg_expect_integer(reply_arg, 1);
-	swarmkv_cli_system_cmd(reply_arg, result, sizeof(result), swarmkv_expect_reply_integer, "KEYSPACE RDEL %s %s %s", "zhangsan", "127.0.0.1", "5210");
+	swarmkv_cli_system_cmd(reply_arg, result, sizeof(result), swarmkv_expect_reply_integer, "KEYSPACE RDEL %s %s:%s", "zhangsan", "127.0.0.1", "5210");
 	cmd_exec_arg_clear(reply_arg);
 
 	cmd_exec_arg_expect_NIL(reply_arg);
@@ -341,7 +341,7 @@ TEST_F(SwarmkvCliNodes, KEYSPACE_RDEL)
 	swarmkv_cli_get_addr_node(result, &node_addr);
 
 	cmd_exec_arg_expect_integer(reply_arg, 1);
-	swarmkv_cli_system_cmd(reply_arg, result, sizeof(result), swarmkv_expect_reply_integer, "KEYSPACE RDEL %s %s %u", "xiaoqin", node_addr.ip_addr, node_addr.p2p_port);
+	swarmkv_cli_system_cmd(reply_arg, result, sizeof(result), swarmkv_expect_reply_integer, "KEYSPACE RDEL %s %s:%u", "xiaoqin", node_addr.ip_addr, node_addr.p2p_port);
 	cmd_exec_arg_clear(reply_arg);
 
 	cmd_exec_arg_expect_NIL(reply_arg);
@@ -393,7 +393,7 @@ TEST_F(SwarmkvCliNodes, KEYSPACE_RADD)
 
 	sprintf(reply_string, "0) %s:%u,1) %s:%u", node_addr.ip_addr, node_addr.p2p_port, node_addr.ip_addr, p2p_port);
 	cmd_exec_arg_expect_cstring(reply_arg, reply_string);
-	swarmkv_cli_system_cmd(reply_arg, result, sizeof(result), swarmkv_expect_reply_string, "KEYSPACE RADD %s %s %d", "xiaolan", node_addr.ip_addr, p2p_port);
+	swarmkv_cli_system_cmd(reply_arg, result, sizeof(result), swarmkv_expect_reply_string, "KEYSPACE RADD %s %s:%d", "xiaolan", node_addr.ip_addr, p2p_port);
 	cmd_exec_arg_clear(reply_arg);
 
 	wait_for_check();
@@ -522,7 +522,7 @@ TEST_F(SwarmkvTwoNodes, CRDT_JOIN)
 
 	sprintf(reply_string, "0) %s:%u", node_addr, node1_p2p_port);
 	cmd_exec_arg_expect_cstring(reply_arg, reply_string);
-	swarmkv_cli_system_cmd(reply_arg, result, sizeof(result), swarmkv_expect_reply_string, "KEYSPACE RADD %s %s %u", "id01", node_addr, node1_p2p_port);
+	swarmkv_cli_system_cmd(reply_arg, result, sizeof(result), swarmkv_expect_reply_string, "KEYSPACE RADD %s %s:%u", "id01", node_addr, node1_p2p_port);
 	cmd_exec_arg_clear(reply_arg);
 
 	swarmkv_cli_attach(node_addr, node2_p2p_port);
