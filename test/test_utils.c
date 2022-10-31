@@ -183,7 +183,10 @@ void cmd_exec_generic_callback(const struct swarmkv_reply* reply, void * cb_arg)
 	}
 	else
 	{
-		swarmkv_reply_print(reply, stdout);
+		if(arg->print_reply_on_fail)
+		{
+			swarmkv_reply_print(reply, stdout);
+		}
 		cmd_exec_arg_failed(arg);
 	}
 	return;

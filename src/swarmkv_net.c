@@ -325,7 +325,7 @@ static void swarmkv_connection_kill(struct snet_conn* conn)
 }
 static void snet_conn_set_peer(struct snet_conn* conn, struct swarmkv_node_addr *peer)
 {
-	memcpy(&conn->peer_listen_addr, peer, sizeof(conn->peer_listen_addr));
+	swarmkv_node_addr_copy(&conn->peer_listen_addr, peer);
 	return;
 }
 
@@ -404,9 +404,8 @@ static void peer_conn_read_cb(struct bufferevent *bev, void *arg)
 			{
 				snet_conn_set_peer(conn, &hdr->source);
 				snet_conn_table_overwrite(thr, conn);			
-
 				log_info(thr->ref_logger, MODULE_SWAMRKV_NET,
-							"new peer connection from %s:%d has been set, which is connected from %s:%u.",
+							"new peer connection from %s:%u has been set, which is connected from %s:%u.",
 											conn->peer_listen_addr.ip_addr, conn->peer_listen_addr.p2p_port,
 											conn->peer_connected_from_addr.ip_addr, conn->peer_connected_from_addr.p2p_port);
 			}
@@ -444,6 +443,7 @@ static void peer_conn_event_cb(struct bufferevent *bev, short events, void *arg)
 		log_debug(thr->ref_logger, MODULE_SWAMRKV_NET, "%s:%u connection error, %d (%s).",
 								conn->peer_connected_from_addr.ip_addr, conn->peer_connected_from_addr.p2p_port,
 								err, evutil_socket_error_to_string(err));
+		//swarmkv-cli's connection has listen port number > 10000.
 	}
 	if(conn->is_in_conn_table)
 	{
@@ -500,7 +500,7 @@ struct snet_conn* snet_conn_new_by_connecting(struct snet_thread* thr, const str
 	
 	struct sockaddr_in sa4;
 	struct sockaddr_in6 sa6;
-	if(NULL==strstr(dest->ip_addr, ":"))//ipv6
+	if(NULL==strstr(dest->ip_addr, ":"))//ipv4
 	{		
 		memset(&sa4, 0, sizeof(sa4));
 		sa4.sin_family = AF_INET;
@@ -512,7 +512,7 @@ struct snet_conn* snet_conn_new_by_connecting(struct snet_thread* thr, const str
 	        goto error_out;
 	    }
 	}
-	else
+	else//ipv6
 	{
 		memset(&sa6, 0, sizeof(sa6));
 		sa6.sin6_family = AF_INET6;
@@ -620,7 +620,7 @@ void snet_send_in_evloop(struct snet_thread *thr, const struct swarmkv_node_addr
 	msghdr.msg_type=msg_type;
 	msghdr.sequence=sequence;
 	msghdr.payload_len=size;
-	memcpy(&(msghdr.source), &(thr->ref_net->self), sizeof(msghdr.source));
+	swarmkv_node_addr_copy(&msghdr.source, &thr->ref_net->self);
 	snet_conn_send(conn, &msghdr, sizeof(msghdr), data, size);
 	return;
 }
@@ -697,7 +697,7 @@ struct swarmkv_net* swarmkv_net_new(const struct swarmkv_options *opts, struct s
 	{
 		self->p2p_port=ntohs(((struct sockaddr_in*)&ss)->sin_port);
 	}
-	memcpy(&(net->self), self, sizeof(struct swarmkv_node_addr));
+	swarmkv_node_addr_copy(&net->self, self);
 	return net;
 }
 

@@ -173,7 +173,7 @@ void *background_running_thread(void *thread_arg)
 	while(g_running_flag)
 	{
 		ret=0;
-		snprintf(key, sizeof(key), "ephemeral-key-of-%s-%d", "uuid_str", seq);
+		snprintf(key, sizeof(key), "ephemeral-key-of-%s-%d", uuid_str, seq);
 		seq++;
 		cmd_exec_arg_clear(arg);		
 		cmd_exec_arg_expect_OK(arg);

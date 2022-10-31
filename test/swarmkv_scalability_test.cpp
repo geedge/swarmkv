@@ -166,7 +166,7 @@ TEST(Performance, Scalability)
 	const char *log_path="./scalability-test.log";
 	struct log_handle * logger=log_handle_create(log_path, 0);
 
-	const char *cluster_name="swarmkv-simple-node";
+	const char *cluster_name="demo";
 	struct swarmkv_options *opts=swarmkv_options_new();
 	swarmkv_options_set_dryrun(opts);
 	swarmkv_options_set_p2p_port(opts, 5212);

@@ -29,6 +29,7 @@ struct cmd_exec_arg
 	struct swarmkv_reply expected_reply;
 	proc_result_callback_t *cb;
 	void *cb_uarg;
+	int print_reply_on_fail;
 };
 struct cmd_exec_arg* cmd_exec_arg_new(void);
 void cmd_exec_arg_set_cb(struct cmd_exec_arg *arg, proc_result_callback_t *cb, void* cb_arg);
