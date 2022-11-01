@@ -12,7 +12,6 @@ enum cmd_exec_result tcfg_command(struct swarmkv_module *mod_store, const struct
 /*TCFG key rate capacity*/
 	struct sobj *obj=NULL;
 	const sds key=cmd->argv[1];
-	const sds value=cmd->argv[2];
 	
 	char *endptr=NULL;
 
@@ -60,7 +59,6 @@ enum cmd_exec_result tcfg_command(struct swarmkv_module *mod_store, const struct
 	}
 	else if(obj->type==OBJ_TYPE_TOKEN_BUCKET)
 	{
-		LWW_register_set(obj->string, value, sdslen(value));
 		OC_token_bucket_configure(obj->bucket, now, capacity, rate, 0);
 		sobj_need_sync(mod_store, obj);
 		
