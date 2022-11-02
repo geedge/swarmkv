@@ -212,7 +212,7 @@ void *background_running_thread(void *thread_arg)
 }
 TEST(Migration, AddKeyOwner)
 {
-	int NODE_NUMBER=1;
+	int NODE_NUMBER=2;
 	int CALLBACK_THREAD_NUMBER=1;
 	int WORKER_THREAD_NUMBER=1;
 	int i=0, j=0;
@@ -228,7 +228,7 @@ TEST(Migration, AddKeyOwner)
 	const char *cluster_name="swarmkv-migration";
 	swarmkv_cli_create_cluster(cluster_name, node_list_str);
 	struct log_handle * logger=log_handle_create(log_path, 0);
-	struct swarmkv_options *opts[NODE_NUMBER];
+	struct swarmkv_options *opts[NODE_NUMBER+1];
 	for(i=0; i<NODE_NUMBER+1; i++)
 	{
 		opts[i]=swarmkv_options_new();	

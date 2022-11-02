@@ -81,7 +81,14 @@ struct snet_rpc
 	struct snet_thread *thr;
 	UT_hash_handle hh;
 };
-
+struct snet_stat
+{
+	long long input_msgs, output_msgs;
+	long long input_replies, output_replies;
+	long long input_cmds, output_cmds;
+	long long input_bytes, output_bytes;
+	long long timed_out_rpcs;
+};
 struct snet_thread
 {
 	int thread_id;
@@ -96,6 +103,8 @@ struct snet_thread
 	void* ref_logger;
 	struct timeout_ctx *to_ctx;
 	struct swarmkv_net* ref_net;
+
+	struct snet_stat stat;
 };
 struct swarmkv_net
 {
@@ -111,6 +120,10 @@ struct swarmkv_net
 	void* logger;
 	on_cmd_callback_t* on_cmd_cb;
 	void* on_cmd_cb_arg;
+
+	long long last_input_bytes, last_output_bytes;
+	struct timespec last_stats;
+	double instantaneous_input_kbps, instantaneous_output_kbps;
 };
 static int get_net_thread_id(const char* peer_ip, size_t n_thread)
 {
@@ -128,6 +141,7 @@ void snet_rpc_free(struct snet_rpc *rpc)
 void snet_rpc_timeout_callback(evutil_socket_t fd, short events, void *arg)
 {	
 	struct snet_rpc *rpc=(struct snet_rpc *)arg;
+	rpc->thr->stat.timed_out_rpcs++;
 	rpc->cb(&rpc->peer, NULL, 0, rpc->cb_arg);
 	snet_rpc_free(rpc);
 }
@@ -155,8 +169,6 @@ struct snet_rpc * snet_rpc_new(struct snet_thread *thr, struct swarmkv_node_addr
 	HASH_ADD(hh, thr->rpc_table, sequence, sizeof(rpc->sequence), rpc);
 	return rpc;
 }
-
-
 
 enum TASK_TYPE
 {
@@ -200,11 +212,16 @@ void snet_task_deferred_run(evutil_socket_t fd, short events, void *arg)
 		{
 			struct snet_rpc *rpc=snet_rpc_new(thr, &task->peer, task->sequence, task->cb, task->cb_arg);
 			snet_send_in_evloop(task->thr, &task->peer, rpc->sequence, task->msg_type, task->data, task->size);
+			
+			thr->stat.output_cmds++;
 		}
 		else
 		{
 			snet_send_in_evloop(task->thr, &task->peer, task->sequence, task->msg_type, task->data, task->size);
+			thr->stat.output_replies++;
 		}
+		thr->stat.output_bytes += (task->size+sizeof(struct swarmkv_msg_hdr));
+		thr->stat.output_msgs++;
 	}
 	else//receive
 	{
@@ -224,14 +241,18 @@ void snet_task_deferred_run(evutil_socket_t fd, short events, void *arg)
 										task->sequence,
 										task->peer.ip_addr, task->peer.p2p_port);
 			}
-
+			thr->stat.input_replies++;
 		}
 		else
 		{
 			thr->ref_net->on_cmd_cb(&task->peer, task->sequence, task->data, task->size, thr->ref_net->on_cmd_cb_arg);
+			thr->stat.input_cmds++;
 		}
+		thr->stat.input_bytes += (task->size+sizeof(struct swarmkv_msg_hdr));
+		thr->stat.input_msgs++;
 	}
 	snet_task_free(task);
+	
 	return;
 }
 
@@ -257,10 +278,21 @@ struct snet_task *snet_task_new(struct snet_thread *thr, const struct swarmkv_no
 
 static void __dummy_event_handler(evutil_socket_t fd, short what, void * arg)
 {
-//	struct swarmkv_net *ctx = (struct swarmkv_net *)arg;
+	struct swarmkv_net *net= (struct swarmkv_net *)arg;
 	struct timespec now;
-
+	long long input_bytes=0, output_bytes=0;
+	for(size_t i=0; i<net->n_thread; i++)
+	{
+		input_bytes += net->threads[i]->stat.input_bytes;
+		output_bytes += net->threads[i]->stat.output_bytes;
+	}
 	clock_gettime(CLOCK_MONOTONIC, &now);
+	net->instantaneous_input_kbps=(input_bytes - net->last_input_bytes)/1000/MAX(now.tv_sec - net->last_stats.tv_sec, 1);
+	net->instantaneous_output_kbps=(output_bytes - net->last_output_bytes)/1000/MAX(now.tv_sec - net->last_stats.tv_sec, 1);
+
+	clock_gettime(CLOCK_MONOTONIC, &net->last_stats);
+	net->last_input_bytes=input_bytes;
+	net->last_output_bytes=output_bytes;
 	return;
 }
 static void sockaddr2string(struct sockaddr * sa, char* s, size_t len, unsigned int *port)
@@ -700,7 +732,28 @@ struct swarmkv_net* swarmkv_net_new(const struct swarmkv_options *opts, struct s
 	swarmkv_node_addr_copy(&net->self, self);
 	return net;
 }
+void swarmkv_net_info(struct swarmkv_net *net, struct snet_info *info)
+{
+	memset(info, 0, sizeof(struct snet_info));
+	for(size_t i=0; i<net->n_thread; i++)
+	{
+		info->connections += HASH_COUNT(net->threads[i]->conn_table);
+		info->pending_rpcs += HASH_COUNT(net->threads[i]->rpc_table);
+		info->timed_out_rpcs += net->threads[i]->stat.timed_out_rpcs;
+		info->input_bytes += net->threads[i]->stat.input_bytes;
+		info->input_cmds += net->threads[i]->stat.input_cmds;
+		info->input_replies += net->threads[i]->stat.input_replies;
+		info->input_msgs += net->threads[i]->stat.input_msgs;
 
+		info->output_bytes += net->threads[i]->stat.output_bytes;
+		info->output_cmds += net->threads[i]->stat.output_cmds;
+		info->output_replies += net->threads[i]->stat.output_replies;
+		info->output_msgs += net->threads[i]->stat.output_msgs;
+	}
+	info->instantaneous_input_kbps=net->instantaneous_input_kbps;
+	info->instantaneous_output_kbps=net->instantaneous_output_kbps;
+	return;
+}
 static void timeout_ctx_free(struct timeout_ctx *ctx)
 {
 	event_del(ctx->ev);

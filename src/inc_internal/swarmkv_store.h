@@ -40,7 +40,15 @@ struct swarmkv_module *swarmkv_store_new(const struct swarmkv_options *opts, exe
 void swarmkv_store_free(struct swarmkv_module* mod_store);
 void swarmkv_store_periodic(struct swarmkv_module *module);
 struct sobj * swarmkv_store_add_key(struct swarmkv_module *mod_store, const sds key, struct swarmkv_node_addr *replica_nodes, size_t n_replica_node);
-
+struct store_info
+{
+	long long keys;
+	long long shards;
+	long long keys_to_sync;
+	long long sync_ok;
+	long long sync_err;
+};
+void swarmkv_store_info(struct swarmkv_module *module, struct store_info *info);
 
 
 struct sobj *sobj_new(enum sobj_type type, const sds key);

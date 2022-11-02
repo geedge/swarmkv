@@ -31,7 +31,7 @@
 #include <pthread.h>
 
 
-int SWARMKV_VERSION_2_0_0_year_of_tiger=0;
+const char* SWARMKV_VERSION="3.0.0";
 #define	MODULE_SWAMRKV_CORE	module_name_str("swarmkv.core")
 
 struct swarmkv_thread_ctx
@@ -46,10 +46,12 @@ struct swarmkv_thread_ctx
 
 struct swarmkv
 {
+	struct swarmkv_module module;
 	char db_name[SWARMKV_SYMBOL_MAX];
 	uuid_t bin_uuid;
 	struct swarmkv_options *opts;
 	int nr_worker_threads;
+
 	struct swarmkv_node_addr self;
 	struct swarmkv_thread_ctx *worker_threads[SWARMKV_THREAD_MAX];
 	struct swarmkv_net *net;
@@ -58,7 +60,24 @@ struct swarmkv
 	struct swarmkv_module *mod_keyspace;
 	struct swarmkv_module *mod_store;
 	struct swarmkv_cmd_spec *command_table;
+	struct timespec boot_time;
 };
+struct swarmkv *module2db(struct swarmkv_module *module)
+{
+	assert(0==strcmp(module->name, "db"));
+	struct swarmkv *db=container_of(module, struct swarmkv, module);
+	assert(db==module->mod_ctx);
+	return db;
+}
+
+void db_lock(struct swarmkv_module *mod, sds key)
+{
+	return;
+}
+void  db_unlock(struct swarmkv_module *mod, sds key)
+{
+	return;
+}
 void __exec_cmd(struct swarmkv *db, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *target_node, struct future *future_of_caller);
 
 static void spec_lock_module(struct swarmkv_cmd_spec *spec, const struct swarmkv_cmd *cmd)
@@ -83,7 +102,131 @@ static void spec_unlock_module(struct swarmkv_cmd_spec *spec, const struct swarm
 		spec->module->unlock(spec->module, cmd->argv[spec->key_offset]);
 	}
 }
+enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)
+{
+	char node_info_buff[4096], store_info_buff[4096], ks_info_buff[4096], net_info_buff[4096];
+	char all_info_buff[4096*4];
+	struct swarmkv *db=module2db(mod_db);
+	struct timespec now_monotonic;
+	long long server_time_us;
+	server_time_us=ustime();
+	clock_gettime(CLOCK_MONOTONIC, &now_monotonic);
+	char uuid_str[37];
+	uuid_unparse(db->opts->bin_uuid, uuid_str);
+	snprintf(node_info_buff, sizeof(node_info_buff), "# Node\n"
+											"swarmkv_version: %s\n"
+											"address: %s:%u\n"
+											"uuid: %s\n"
+											"worker_threads: %zu\n"
+											"server_time_usec: %lld\n"
+											"up_time_in_seconds: %ld\n"
+											"up_time_in_days: %ld\n"
+											,
+											SWARMKV_VERSION,
+											db->self.ip_addr,
+											db->self.p2p_port,
+											uuid_str,
+											db->opts->nr_worker_threads,
+											server_time_us,
+											now_monotonic.tv_sec-db->boot_time.tv_sec,
+											(now_monotonic.tv_sec-db->boot_time.tv_sec)/(3600*24)
+											);
+	struct store_info sto_info;
+	swarmkv_store_info(db->mod_store, &sto_info);
+	snprintf(store_info_buff, sizeof(store_info_buff), "# Store\n"
+													"shards: %lld\n"
+													"keys: %lld\n"
+													"to_sync: %lld\n"
+													"sync_ok: %lld\n"
+													"sync_err: %lld\n"
+													"sync_interval_in_usec:%u\n"
+													,
+													sto_info.shards,
+													sto_info.keys,
+													sto_info.keys_to_sync,
+													sto_info.sync_ok,
+													sto_info.sync_err,
+													db->opts->sync_interval_us
+													);
+	struct keyspace_info ks_info;
+	swarmkv_keyspace_info(db->mod_keyspace, &ks_info);
+	snprintf(ks_info_buff, sizeof(ks_info_buff), "# Keyspace\n"
+															"health_check_port: %u\n"
+															"slots: %lld\n"
+															"keys: %lld\n"
+															"expires: %lld\n"
+															,
+															ks_info.health_check_port,
+															ks_info.slots,
+															ks_info.keys,
+															ks_info.expires);
+	struct snet_info net_info;
+	swarmkv_net_info(db->net, &net_info);
+	snprintf(net_info_buff, sizeof(net_info_buff), "#Network\n"
+												"connections: %lld\n"
+												"pending_rpcs: %lld\n"
+												"timed_out_rpcs: %lld\n"
+												"input_bytes: %lld\n"
+												"output_bytes: %lld\n"
+												"input_cmds: %lld\n"
+												"output_cmds: %lld\n"
+												"input_replies: %lld\n"
+												"output_replies: %lld\n"
+												"input_msgs: %lld\n"
+												"output_msgs: %lld\n"
+												"instantaneous_input_kbps: %.2f\n"
+												"instantaneous_output_kbps: %.2f\n"
+												,
+												net_info.connections,
+												net_info.pending_rpcs,
+												net_info.timed_out_rpcs,
+												net_info.input_bytes,
+												net_info.output_bytes,
+												net_info.input_cmds,
+												net_info.output_cmds,
+												net_info.input_replies,
+												net_info.output_replies,
+												net_info.input_msgs,
+												net_info.output_msgs,
+												net_info.instantaneous_input_kbps,
+												net_info.instantaneous_output_kbps
+												);
 
+	if(cmd->argc>1)
+	{
+		if(0==strcasecmp("Node", cmd->argv[1]))
+		{
+			*reply=swarmkv_reply_new_verbatim(node_info_buff, strlen(node_info_buff)+1, "txt");
+		}
+		else if(0==strcasecmp("Store", cmd->argv[1]))
+		{
+			*reply=swarmkv_reply_new_verbatim(store_info_buff, strlen(store_info_buff), "txt");			
+		}
+		else if(0==strcasecmp("Keyspace", cmd->argv[1]))
+		{
+			*reply=swarmkv_reply_new_verbatim(ks_info_buff, strlen(ks_info_buff), "txt");			
+		}
+		else if(0==strcasecmp("Network", cmd->argv[1]))
+		{
+			*reply=swarmkv_reply_new_verbatim(net_info_buff, strlen(net_info_buff), "txt");			
+		}
+		else
+		{
+			*reply=swarmkv_reply_new_verbatim("", 1, "txt");
+		}
+	}
+	else
+	{
+		snprintf(all_info_buff, sizeof(all_info_buff), "%s\n%s\n%s\n%s",
+											node_info_buff,
+											store_info_buff,
+											ks_info_buff,
+											net_info_buff);
+		*reply=swarmkv_reply_new_verbatim(all_info_buff, strlen(all_info_buff), "txt");
+	}
+
+	return FINISHED;
+}
 struct swarmkv_cmd_spec *get_spec_by_argv(struct swarmkv *db, size_t argc, char* const argv[])
 {
 	struct swarmkv_cmd_spec *spec=NULL;
@@ -549,114 +692,120 @@ void command_register(struct swarmkv_cmd_spec **table, const char *name, const c
 }
 void command_spec_init(struct swarmkv *db)
 {
+	int AUTO_ROUTE=1, NOT_AUTO_ROUTE=0;
+	/* String and Integer commands*/
 	command_register(&(db->command_table), "GET", "key",
-					1, 1, CMD_KEY_RO, 1,
+					1, 1, CMD_KEY_RO, AUTO_ROUTE,
 					get_command, db->mod_store);
 	command_register(&(db->command_table), "SET", "key value",
-					2, 1, CMD_KEY_OW, 1,
+					2, 1, CMD_KEY_OW, AUTO_ROUTE,
 					set_command, db->mod_store);
 	command_register(&(db->command_table), "INCRBY", "key increment",
-					2, 1, CMD_KEY_OW, 1,
+					2, 1, CMD_KEY_OW, AUTO_ROUTE,
 					incrby_command, db->mod_store);
 
-	/* Generic command*/
+	/* Generic commands*/
 					
 	command_register(&(db->command_table), "DEL", "key",
-					1, 1, CMD_KEY_RM, 1,
+					1, 1, CMD_KEY_RM, AUTO_ROUTE,
 					del_command, db->mod_keyspace);
 	command_register(&(db->command_table), "EXPIRE", "key seconds",
-					2, 1, CMD_KEY_RW, 1,
+					2, 1, CMD_KEY_RW, AUTO_ROUTE,
 					expire_command, db->mod_keyspace);
 	command_register(&(db->command_table), "TTL", "key",
-					1, 1, CMD_KEY_RO, 1,
+					1, 1, CMD_KEY_RO, AUTO_ROUTE,
 					ttl_command, db->mod_keyspace);
 	command_register(&(db->command_table), "PERSIST", "key",
-					1, 1, CMD_KEY_RW, 1,
+					1, 1, CMD_KEY_RW, AUTO_ROUTE,
 					persist_command, db->mod_keyspace);
 
-	/* Set Command */
+	/* Set commands */
 	command_register(&(db->command_table), "SADD", "key member [member ...]",
-					2, 1, CMD_KEY_OW, 1,
+					2, 1, CMD_KEY_OW, AUTO_ROUTE,
 					sadd_command, db->mod_store);
 	command_register(&(db->command_table), "SREM", "key member [member ...]",
-					2, 1, CMD_KEY_RW, 1,
+					2, 1, CMD_KEY_RW, AUTO_ROUTE,
 					srem_command, db->mod_store);
 	command_register(&(db->command_table), "SMEMBERS", "key",
-					1, 1, CMD_KEY_RO, 1,
+					1, 1, CMD_KEY_RO, AUTO_ROUTE,
 					smembers_command, db->mod_store);
 	command_register(&(db->command_table), "SISMEMBER", "key member",
-					2, 1, CMD_KEY_RO, 1,
+					2, 1, CMD_KEY_RO, AUTO_ROUTE,
 					sismember_command, db->mod_store);
 	command_register(&(db->command_table), "SCARD", "key",
-					1, 1, CMD_KEY_RO, 1,
+					1, 1, CMD_KEY_RO, AUTO_ROUTE,
 					scard_command, db->mod_store);
 
-	/* Token Bucket Command */
+	/* Token bucket commands */
 	command_register(&(db->command_table), "TCFG", "key capacity rate",
-					3, 1, CMD_KEY_OW, 1,
+					3, 1, CMD_KEY_OW, AUTO_ROUTE,
 					tcfg_command, db->mod_store);
 	command_register(&(db->command_table), "TCONSUME", "key tokens [NORMAL|FORCE|FLEXIBLE]",
-					2, 1, CMD_KEY_RW, 1,
+					2, 1, CMD_KEY_RW, AUTO_ROUTE,
 					tconsume_command, db->mod_store);
 	command_register(&(db->command_table), "TINFO", "key",
-					1, 1, CMD_KEY_RO, 1,
+					1, 1, CMD_KEY_RO, AUTO_ROUTE,
 					tinfo_command, db->mod_store);
 
+	/* Information Commands */
+	command_register(&(db->command_table), "INFO", "[section]",
+					0, -1, CMD_KEY_RO, NOT_AUTO_ROUTE,
+					info_command, &db->module);
 
-	/* low-level state-based CRDT synchronization command*/
+	/* low-level state-based CRDT synchronization commands*/
 	command_register(&(db->command_table), "CRDT PULL", "key",
-					1, 2, CMD_KEY_NA, 0,
+					1, 2, CMD_KEY_NA, NOT_AUTO_ROUTE,
 					crdt_pull_command, db->mod_store);
 	command_register(&(db->command_table), "CRDT PUSH", "key blob",
-					2, 2, CMD_KEY_NA, 0,
+					2, 2, CMD_KEY_NA, NOT_AUTO_ROUTE,
 					crdt_push_command, db->mod_store);
 	command_register(&(db->command_table), "CRDT JOIN", "key IP:port",
-					2, 2, CMD_KEY_NA, 0,
+					2, 2, CMD_KEY_NA, NOT_AUTO_ROUTE,
 					crdt_join_command, db->mod_store);
 
 	command_register(&(db->command_table), "CRDT DEL", "key",
-					1, 2, CMD_KEY_NA, 0,
+					1, 2, CMD_KEY_NA, NOT_AUTO_ROUTE,
 					crdt_del_command, db->mod_store);
     command_register(&(db->command_table), "CRDT KEYS", "pattern",
-					1, -1, CMD_KEY_RO, 0,
+					1, -1, CMD_KEY_RO, NOT_AUTO_ROUTE,
 					crdt_keys_command, db->mod_store);
     command_register(&(db->command_table), "CRDT EXISTS", "key",
-					1, 2, CMD_KEY_RO, 0,
+					1, 2, CMD_KEY_RO, NOT_AUTO_ROUTE,
 					crdt_exists_command, db->mod_store);
 
      command_register(&(db->command_table), "CRDT RLIST", "key",
-					1, 2, CMD_KEY_RO, 0,
+					1, 2, CMD_KEY_RO, NOT_AUTO_ROUTE,
 					crdt_rlist_command, db->mod_store);
 
-	/* low-level keyspace operation command*/
+	/* low-level keyspace operation commands */
 	command_register(&(db->command_table), "KEYSPACE RLIST", "key",
-					1, 2, CMD_KEY_RO, 1,
+					1, 2, CMD_KEY_RO, AUTO_ROUTE,
 					keyspace_rlist_command, db->mod_keyspace);
 	command_register(&(db->command_table), "KEYSPACE RADD", "key IP:port",
-					1, 2, CMD_KEY_OW, 1,
+					1, 2, CMD_KEY_OW, AUTO_ROUTE,
 					keyspace_radd_command, db->mod_keyspace);
 	command_register(&(db->command_table), "KEYSPACE XRADD", "key IP:port",
-					1, 2, CMD_KEY_OW, 1,
+					1, 2, CMD_KEY_OW, AUTO_ROUTE,
 					keyspace_xradd_command, db->mod_keyspace);
 	command_register(&(db->command_table), "KEYSPACE KEYS", "pattern",
-					1, -1, CMD_KEY_RO, 0,
+					1, -1, CMD_KEY_RO, NOT_AUTO_ROUTE,
 					keyspace_keys_command, db->mod_keyspace);
     command_register(&(db->command_table), "KEYSPACE RDEL", "key IP:port",
-					1, 2, CMD_KEY_RO, 1,
+					1, 2, CMD_KEY_RO, AUTO_ROUTE,
 					keyspace_rdel_command, db->mod_keyspace);
 
 	/* low-level keyspace reorgnization commands */
 	command_register(&(db->command_table), "KEYSPACE SETSLOT", "<slot> IMPORTING|MIGRATING|NODE|STABLE IP:port",
-					2, -1, CMD_KEY_NA, 0,
+					2, -1, CMD_KEY_NA, NOT_AUTO_ROUTE,
 					keyspace_setslot_command, db->mod_keyspace);
 	command_register(&(db->command_table), "KEYSPACE GETKEYSINSLOT", "slot",
-					1, -1, CMD_KEY_NA, 0,
+					1, -1, CMD_KEY_NA, NOT_AUTO_ROUTE,
 					keyspace_getkeysinslot_command, db->mod_keyspace);
 	command_register(&(db->command_table), "KEYSPACE ADDKEYSTOSLOT", "slot blob",
-					2, -1, CMD_KEY_NA, 0,
+					2, -1, CMD_KEY_NA, NOT_AUTO_ROUTE,
 					keyspace_addkeystoslot_command, db->mod_keyspace);
 	command_register(&(db->command_table), "KEYSPACE DELSLOTKEYS", "slot",
-					1, -1, CMD_KEY_NA, 0,
+					1, -1, CMD_KEY_NA, NOT_AUTO_ROUTE,
 					keyspace_delslotkeys_command, db->mod_keyspace);
 
 	/* cluster commands are defined in swarmkv-cli.c */
@@ -725,6 +874,12 @@ struct swarmkv *swarmkv_open(struct swarmkv_options* opts, const char * db_name,
 
 	db=ALLOC(struct swarmkv, 1);
 	strncpy(db->db_name, db_name, sizeof(db->db_name));
+
+	strncpy(db->module.name, "db", sizeof(db->module.name));
+	db->module.mod_ctx=db;
+	db->module.lock=db_lock;
+	db->module.unlock=db_unlock;
+
 	db->opts=opts;
 	if(opts->logger)
 	{
@@ -769,6 +924,7 @@ struct swarmkv *swarmkv_open(struct swarmkv_options* opts, const char * db_name,
 	char str_uuid[37]="";
 	uuid_unparse(db->opts->bin_uuid, str_uuid);
 	opts->is_assigned_to_db=1;
+	clock_gettime(CLOCK_MONOTONIC, &db->boot_time);
 	log_info(db->logger, MODULE_SWAMRKV_CORE, "swarmkv instance %s of cluster %s is opened.", str_uuid, db->db_name);
 	return db;
 error_out:

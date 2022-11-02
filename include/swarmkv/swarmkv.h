@@ -24,14 +24,17 @@ enum swarmkv_reply_type
 	SWARMKV_REPLY_NIL,
 	SWARMKV_REPLY_STATUS,
 	SWARMKV_REPLY_ERROR,
-	SWARMKV_REPLY_NODE
+	SWARMKV_REPLY_NODE,
+	SWARMKV_REPLY_VERBATIM
 };
 struct swarmkv_reply
 {
 	enum swarmkv_reply_type type;
 	long long integer;	/* The integer when type is SWARMKV_REPLY_INTEGER */
 	int len; 			/* Length of string */
-	char *str; 			/* Used for SWARMKV_REPLY_ERROR, SWARMKV_REPLY_STATUS, SWARMKV_NODE and SWARMKV_REPLY_STRING */
+	char *str; 			/* Used for SWARMKV_REPLY_ERROR, SWARMKV_REPLY_STATUS, SWARMKV_NODE, SWARMKV_REPLY_STRING and SWARMKV_REPLY_VERBATIM */
+	char vtype[4]; 		/* Used for SWARMKV_REPLY_VERBATIM, contains the null
+						terminated 3 character content type, such as "txt". */
 	size_t n_element;	/* number of elements, for SWARMKV_REPLY_ARRAY */
 	struct swarmkv_reply **elements;/* elements vector for SWARMKV_REPLY_ARRAY */
 };

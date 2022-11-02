@@ -1265,7 +1265,26 @@ void swarmkv_keyspace_free(struct swarmkv_module* module)
 	free(ks);
 	return;
 }
+void swarmkv_keyspace_info(struct swarmkv_module *mod_keyspace, struct keyspace_info *info)
+{
+	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
+	int i=0;
+	struct slot_runtime *slot_rt=NULL;
 
+	info->health_check_port=ks->health_check_port;
+	info->keys=0;
+	info->expires=0;
+	for(i=0; i<KEYSPACE_SLOT_NUM; i++)
+	{
+		slot_rt=ks->slot_rts+i;
+		if(!slot_rt->I_am_owner) continue;
+		info->slots++;
+		pthread_mutex_lock(&slot_rt->mutex);
+		info->keys+=HASH_COUNT(slot_rt->keyroute_table);
+		info->expires+=timeouts_count(slot_rt->expires);
+		pthread_mutex_unlock(&slot_rt->mutex);
+	}
+}
 
 enum cmd_exec_result keyspace_setslot_command(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)
 {

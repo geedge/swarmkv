@@ -30,5 +30,5 @@ const char* swarmkv_util_pthread_cond_timedwait_error_to_string(const int timed_
 char* toLower(char* s);
 char* toUpper(char* s);
 int stringmatchlen(const char *pattern, int patternLen, const char *string, int stringLen, int nocase);
-
+long long ustime(void);
 

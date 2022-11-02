@@ -19,6 +19,7 @@ int str2integer(const char *str, long long *integer)
 	}
 	return 0;
 }
+/*
 void swarmkv_reply_print(const struct swarmkv_reply *reply, FILE* stream)
 {
 	size_t i=0;
@@ -40,6 +41,9 @@ void swarmkv_reply_print(const struct swarmkv_reply *reply, FILE* stream)
 		case SWARMKV_REPLY_STRING:
 			fprintf(stream, "\"%.*s\"\n", reply->len, reply->str);
 			break;
+		case SWARMKV_REPLY_VERBATIM:
+			frpintf(stream, "%s", reply->len, reply->str);
+			break;
 		case SWARMKV_REPLY_ARRAY:
 			for(i=0; i<reply->n_element; i++)
 			{
@@ -51,8 +55,98 @@ void swarmkv_reply_print(const struct swarmkv_reply *reply, FILE* stream)
 			break;
 
 	}
+}*/
+sds swarmkv_reply_format(const struct swarmkv_reply *r, char *prefix) {
+    sds out = sdsempty();
+    switch (r->type) {
+    case SWARMKV_REPLY_ERROR:
+        out = sdscatprintf(out,"(error) %s\n", r->str);
+		break;
+    case SWARMKV_REPLY_STATUS:
+        out = sdscat(out, r->str);
+        out = sdscat(out, "\n");
+    	break;
+    case SWARMKV_REPLY_INTEGER:
+        out = sdscatprintf(out,"(integer) %lld\n", r->integer);
+    	break;
+    case SWARMKV_REPLY_STRING:
+    case SWARMKV_REPLY_VERBATIM:
+	case SWARMKV_REPLY_NODE:
+        /* If you are producing output for the standard output we want
+        * a more interesting output with quoted characters and so forth,
+        * unless it's a verbatim string type. */
+        if (r->type == SWARMKV_REPLY_STRING) {
+            out = sdscatrepr(out, r->str, r->len);
+            out = sdscat(out, "\n");
+        } else {
+            out = sdscatlen(out, r->str, r->len);
+            out = sdscat(out, "\n");
+        }
+    	break;
+    case SWARMKV_REPLY_NIL:
+		out = sdscat(out,"(nil)\n");
+		break;
+    case SWARMKV_REPLY_ARRAY:
+        if (r->elements == 0)
+		{
+			out = sdscat(out,"(empty array)\n");
+        } 
+		else
+		{
+            unsigned int i, idxlen = 0;
+            char _prefixlen[16];
+            char _prefixfmt[16];
+            sds _prefix;
+            sds tmp;
+
+            /* Calculate chars needed to represent the largest index */
+            i = r->n_element;
+            do
+			{
+                idxlen++;
+                i /= 10;
+            } while(i);
+
+            /* Prefix for nested multi bulks should grow with idxlen+2 spaces */
+            memset(_prefixlen,' ', idxlen+2);
+            _prefixlen[idxlen+2] = '\0';
+            _prefix = sdscat(sdsnew(prefix), _prefixlen);
+
+            /* Setup prefix format for every entry */
+            char numsep = ')';
+            snprintf(_prefixfmt,sizeof(_prefixfmt), "%%s%%%ud%c ", idxlen, numsep);
+
+            for (i = 0; i < r->n_element; i++) 
+			{
+                unsigned int human_idx = i;
+                human_idx++; /* Make it 1-based. */
+
+                /* Don't use the prefix for the first element, as the parent
+                 * caller already prepended the index number. */
+                out = sdscatprintf(out, _prefixfmt, i == 0 ? "" : prefix, human_idx);
+
+                /* Format the multi bulk entry */
+                tmp = swarmkv_reply_format(r->elements[i], _prefix);
+                out = sdscatlen(out, tmp, sdslen(tmp));
+                sdsfree(tmp);
+            }
+            sdsfree(_prefix);
+        }
+		break;
+    default:
+        sdscatprintf(out,"Unknown reply type: %d\n", r->type);
+        break;
+    }
+    return out;
 }
-struct swarmkv_reply* swarmkv_reply_new_string(const char* str, size_t sz)
+void swarmkv_reply_print(const struct swarmkv_reply *reply, FILE* stream)
+{
+	sds formated=swarmkv_reply_format(reply, "");
+	fwrite(formated, sdslen(formated), 1, stream);
+	sdsfree(formated);
+	return;
+}
+struct swarmkv_reply *swarmkv_reply_new_string(const char* str, size_t sz)
 {
 	struct swarmkv_reply *reply=ALLOC(struct swarmkv_reply, 1);
 	reply->type=SWARMKV_REPLY_STRING;
@@ -60,6 +154,23 @@ struct swarmkv_reply* swarmkv_reply_new_string(const char* str, size_t sz)
 	reply->str=sdsnewlen(str, sz);
 	return reply;
 }
+struct swarmkv_reply *swarmkv_reply_new_verbatim(const char *str, size_t sz, const char *ext)
+{
+	struct swarmkv_reply *reply=ALLOC(struct swarmkv_reply, 1);
+	reply->type=SWARMKV_REPLY_VERBATIM;
+	reply->len=sz;
+	reply->str=sdsnewlen(str, sz);
+	for (int i = 0; i < 3; i++)
+	{
+		if (*ext == '\0') {
+			reply->vtype[i] = ' ';
+		} else {
+			reply->vtype[i] = *ext++;
+		}
+	}
+	return reply;
+}
+
 struct swarmkv_reply *swarmkv_reply_new_string_from_integer(long long integer)
 {
 	struct swarmkv_reply *reply=ALLOC(struct swarmkv_reply, 1);
@@ -262,8 +373,10 @@ struct swarmkv_reply *swarmkv_reply_dup(const struct swarmkv_reply *origin)
 		case SWARMKV_REPLY_STATUS:
 		case SWARMKV_REPLY_ERROR:
 		case SWARMKV_REPLY_NODE:
+		case SWARMKV_REPLY_VERBATIM:
 			copy->len=origin->len;
 			copy->str=sdsdup(origin->str);
+			if(origin->type==SWARMKV_REPLY_VERBATIM) memcpy(copy->vtype, origin->vtype, 4);
 			break;
 		case SWARMKV_REPLY_ARRAY:
 			copy->n_element=origin->n_element;
@@ -330,6 +443,7 @@ void swarmkv_reply_free(struct swarmkv_reply *reply)
 		case SWARMKV_REPLY_STATUS:
 		case SWARMKV_REPLY_ERROR:
 		case SWARMKV_REPLY_NODE:
+		case SWARMKV_REPLY_VERBATIM:
 			sdsfree(reply->str);
 			reply->str=NULL;
 			break;

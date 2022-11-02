@@ -30,6 +30,8 @@ struct swarmkv_store
 	struct swarmkv *exec_cmd_handle;
 	uuid_t my_uuid;	
 
+	long long sync_err;
+	long long sync_ok;
 };
 
 
@@ -464,28 +466,41 @@ static void crdt_generic_on_succ(void* result, void* user)
 	switch(ctx->op)
 	{
 		case CRDT_PULL:
+			store_lock(&ctx->store->module, ctx->key);
 			obj=store_lookup(&(ctx->store->module), ctx->key);
 			if(obj && reply->type==SWARMKV_REPLY_STRING)
 			{
 				sobj_merge_blob(obj, reply->str, reply->len, uuid);
+				ctx->store->sync_ok++;
 			}
+			else
+			{
+				ctx->store->sync_err++;
+			}
+			store_unlock(&ctx->store->module, ctx->key);
 			break;
 		case CRDT_PUSH:
-			assert(reply->type==SWARMKV_REPLY_INTEGER);
-			if(reply->type==SWARMKV_REPLY_INTEGER)
+			if(reply->type==SWARMKV_REPLY_INTEGER && reply->integer==1)
 			{
-				assert(reply->integer==1);
+				ctx->store->sync_ok++;
+			}
+			else
+			{
+				ctx->store->sync_err++;
 			}
 			break;
 		case CRDT_JOIN:
-			assert(reply->type==SWARMKV_REPLY_INTEGER);
-			if(reply->type==SWARMKV_REPLY_INTEGER)
+			if(reply->type==SWARMKV_REPLY_INTEGER && reply->integer==1)
 			{
-				assert(reply->integer==1);
+				ctx->store->sync_ok++;
+			}
+			else
+			{
+				ctx->store->sync_err++;
 			}
 			break;
 		default:
-			assert(0);
+			ctx->store->sync_err++;
 			break;
 	}
 
@@ -495,6 +510,7 @@ static void crdt_generic_on_succ(void* result, void* user)
 static void crdt_generic_on_fail(enum e_future_error err, const char * what, void * user)
 {
 	struct crdt_generic_ctx *ctx=(struct crdt_generic_ctx *)user;
+	ctx->store->sync_err++;
 	crdt_generic_ctx_free(ctx);
 	return;
 }
@@ -587,6 +603,23 @@ void swarmkv_store_free(struct swarmkv_module *module)
 	}
 	free(store);
 	return;
+}
+void swarmkv_store_info(struct swarmkv_module *module, struct store_info *info)
+{
+	struct swarmkv_store *store=module2store(module);
+	struct scontainer *ctr=NULL;
+	info->shards=STORE_SHARD_NUMBER;
+	info->keys=0;
+	info->keys_to_sync=0;
+	for(size_t i=0; i<STORE_SHARD_NUMBER; i++)
+	{
+		pthread_mutex_lock(&store->mutex[i]);
+		DL_COUNT(store->sync_queue[i], ctr, info->keys_to_sync);
+		info->keys+=HASH_COUNT(store->obj_table[i]);
+		pthread_mutex_unlock(&store->mutex[i]);
+	}
+	info->sync_ok=store->sync_ok;
+	info->sync_err=store->sync_err;
 }
 struct sobj * swarmkv_store_add_key(struct swarmkv_module *mod_store, const sds key, struct swarmkv_node_addr *replica_nodes, size_t n_replica_node)
 {

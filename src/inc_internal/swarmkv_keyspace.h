@@ -9,7 +9,14 @@
 
 struct swarmkv_module* swarmkv_keyspace_new(const struct swarmkv_options *opts, const char* db_name, void *logger, char **err);
 void swarmkv_keyspace_free(struct swarmkv_module* mod_keyspace);
-
+struct keyspace_info
+{
+	unsigned int health_check_port;
+	long long slots;
+	long long keys;
+	long long expires;	
+};
+void swarmkv_keyspace_info(struct swarmkv_module *mod_keyspace, struct keyspace_info *info);
 void swarmkv_keyspace_set_exec_cmd_func(struct swarmkv_module *mod_keyspace, exec_cmd_func *func, void *func_handle);
 
 

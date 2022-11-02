@@ -168,6 +168,9 @@ TIMEOUT_PUBLIC struct timeouts *timeouts_open(timeout_t, timeout_error_t *);
 TIMEOUT_PUBLIC void timeouts_close(struct timeouts *);
 /* destroy timing wheel */
 
+TIMEOUT_PUBLIC long long timeouts_count(struct timeouts *);
+/* count timeout of timeouts*/
+
 TIMEOUT_PUBLIC timeout_t timeouts_hz(struct timeouts *);
 /* return HZ setting (for float conversions) */
 

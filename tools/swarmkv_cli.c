@@ -184,22 +184,38 @@ struct swarmkv_reply *cluster_nodes_command(struct swarmkv* db, char *argv[], si
 	size_t i=0;
 	char uuid_str[37];
 	int is_leader;
+	int brief=0;
+	if(argc>2 && 0==strcasecmp(argv[2], "brief"))
+	{
+		brief=1;
+	}
 	reply=swarmkv_reply_new_array(n_node);
 	for(i=0; i<n_node; i++)
 	{
-		uuid_unparse_lower(nodes[i].bin_uuid, uuid_str);
-		if(!no_leader && 0==swarmkv_node_compare(&leader, nodes+i))
+		if(brief)
 		{
-			is_leader=1;
+			reply->elements[i]=swarmkv_reply_new_string_fmt("%s:%u",
+															nodes[i].addr.ip_addr,
+															nodes[i].addr.p2p_port);
+
 		}
 		else
 		{
-			is_leader=0;
+			uuid_unparse_lower(nodes[i].bin_uuid, uuid_str);
+			if(!no_leader && 0==swarmkv_node_compare(&leader, nodes+i))
+			{
+				is_leader=1;
+			}
+			else
+			{
+				is_leader=0;
+			}
+			reply->elements[i]=swarmkv_reply_new_string_fmt("%s %s:%u %s", uuid_str,
+																	nodes[i].addr.ip_addr,
+																	nodes[i].addr.p2p_port,
+																	is_leader?"leader":"follower");
 		}
-		reply->elements[i]=swarmkv_reply_new_string_fmt("%s %s:%u %s", uuid_str,
-																nodes[i].addr.ip_addr,
-																nodes[i].addr.p2p_port,
-																is_leader?"leader":"follower");
+
 	}
 	return reply;
 }
@@ -216,7 +232,7 @@ struct swarmkv_reply *cluster_slots_command(struct swarmkv* db, char *argv[], si
 		reply=swarmkv_reply_new_error("read %s%s failed", g_config.consul_host, url);
 		return reply;
 	}
-	reply=swarmkv_reply_new_string(resp_body, sdslen(resp_body)+1);	
+	reply=swarmkv_reply_new_verbatim(resp_body, sdslen(resp_body)+1, "js");	
 	sdsfree(resp_body);
 	return reply;
 }
@@ -248,13 +264,11 @@ char *node_addrstring(struct swarmkv_node *node, char *buffer, size_t size)
 }
 int is_node_active(struct swarmkv_reply *nodes_reply, struct swarmkv_node_addr *node_addr)
 {
-	char uuid[38], membership[16], address[128];
 	struct swarmkv_node_addr tmp;
 	int node_is_active=0;
 	for(size_t i=0; i<nodes_reply->n_element; i++)
 	{
-		sscanf(nodes_reply->elements[i]->str, "%s %s %s", uuid, address, membership);
-		sds2node_addr(address, &tmp);
+		sds2node_addr(nodes_reply->elements[i]->str, &tmp);
 		if(0==swarmkv_node_addr_compare(node_addr, &tmp))
 		{
 			node_is_active=1;
@@ -274,8 +288,8 @@ struct swarmkv_reply *cluster_addnode_command(struct swarmkv* db, char *argv[], 
         reply = swarmkv_reply_new_error(error_wrong_number_of_arg, "CLUSTER ADDNODE");
         return reply;
     }
-
-	nodes_reply=cluster_nodes_command(db, NULL, 0);
+	char *cmd_cluster_nodes[]={"cluster", "nodes", "brief"};
+	nodes_reply=cluster_nodes_command(db, cmd_cluster_nodes, 3);
 	if(nodes_reply->type!=SWARMKV_REPLY_ARRAY)
 	{
 		return nodes_reply;
@@ -291,7 +305,7 @@ struct swarmkv_reply *cluster_addnode_command(struct swarmkv* db, char *argv[], 
 		goto error_out;
 	}
 	slots_reply=cluster_slots_command(db, NULL, 0);
-	if(slots_reply->type!=SWARMKV_REPLY_STRING)
+	if(slots_reply->type!=SWARMKV_REPLY_VERBATIM)
 	{
 		reply=slots_reply;
 		slots_reply=NULL;
@@ -488,24 +502,21 @@ struct swarmkv_reply *cluster_keyslot_command(struct swarmkv* db, char *argv[], 
 struct swarmkv_reply *cluster_keys_command(struct swarmkv* db, char *argv[], size_t argc)
 {
 	struct swarmkv_reply *nodes_reply=NULL, *keyspace_keys_reply=NULL, *reply=NULL;
-	char uuid[38], ip[64], port[16], membership[16];
 	size_t i=0;
     if(argc <= 2)
     {
         reply = swarmkv_reply_new_error(error_wrong_number_of_arg, "CLUSTER KEYS");
         return reply;
     }
-	nodes_reply=cluster_nodes_command(db, NULL, 0);
+	char *cmd_cluster_nodes[]={"cluster", "nodes", "brief"};
+	nodes_reply=cluster_nodes_command(db, cmd_cluster_nodes, 3);
 	if(nodes_reply->type!=SWARMKV_REPLY_ARRAY)
 	{
 		return nodes_reply;
 	}
 	for(i=0; i<nodes_reply->n_element; i++)
 	{
-        char target[256]={0};
-		sscanf(nodes_reply->elements[i]->str, "%s %s %s %s", uuid, ip, port, membership);
-        snprintf(target, sizeof(target), "%s %u", ip, (unsigned int)atoll(port));
-		keyspace_keys_reply=swarmkv_command(db, target, "keyspace keys %s", argv[2]);
+		keyspace_keys_reply=swarmkv_command(db, nodes_reply->elements[i]->str, "keyspace keys %s", argv[2]);
 		swarmkv_reply_merge_array(&reply, keyspace_keys_reply);
         if(keyspace_keys_reply->type==SWARMKV_REPLY_NIL)
         {
@@ -520,7 +531,39 @@ struct swarmkv_reply *cluster_keys_command(struct swarmkv* db, char *argv[], siz
 	}
 	return reply;
 }
-
+struct swarmkv_reply *cluster_info_command(struct swarmkv* db, char *argv[], size_t argc)
+{
+	struct swarmkv_reply *nodes_reply=NULL, *per_node_info_reply=NULL;
+	struct swarmkv_reply *reply;
+	char *cmd_cluster_nodes[]={"cluster", "nodes", "brief"};
+    nodes_reply=cluster_nodes_command(db, cmd_cluster_nodes, 3);
+    if(nodes_reply->type!=SWARMKV_REPLY_ARRAY)
+    {
+        return nodes_reply;
+    }
+	reply=swarmkv_reply_new_array(nodes_reply->n_element);
+	for(size_t i=0; i<nodes_reply->n_element; i++)
+	{
+		if(argc>2)
+		{
+			per_node_info_reply=swarmkv_command(db, nodes_reply->elements[i]->str, "info %s", argv[2]);
+		}
+		else
+		{
+			per_node_info_reply=swarmkv_command(db, nodes_reply->elements[i]->str, "info");			
+		}
+		reply->elements[i]=swarmkv_reply_new_array(2);
+		reply->elements[i]->elements[0]=swarmkv_reply_new_string_fmt(nodes_reply->elements[i]->str);
+		reply->elements[i]->elements[1]=per_node_info_reply;
+		per_node_info_reply=NULL;
+	}
+	swarmkv_reply_free(nodes_reply);
+	if(!reply)
+	{
+		reply=swarmkv_reply_new_nil();
+	}
+	return reply;
+}
 struct replica_node_addr
 {
     struct swarmkv_node_addr addr;
@@ -712,8 +755,8 @@ struct swarmkv_reply *cluster_sanity_command(struct swarmkv* db, char *argv[], s
         reply = swarmkv_reply_new_error(error_wrong_number_of_arg, "CLUSTER SANITY");
         return reply;
     }
-
-    nodes_reply=cluster_nodes_command(db, NULL, 0);
+	char *cmd_cluster_nodes[]={"cluster", "nodes", "brief"};
+    nodes_reply=cluster_nodes_command(db, cmd_cluster_nodes, 3);
     if(nodes_reply->type!=SWARMKV_REPLY_ARRAY)
     {
         return nodes_reply;
@@ -730,10 +773,7 @@ struct swarmkv_reply *cluster_sanity_command(struct swarmkv* db, char *argv[], s
     //Step1 Build the keyspace replica list
     for(i=0; i<nodes_reply->n_element; i++)
     {
-		memset(target, 0, sizeof(target));
-        sscanf(nodes_reply->elements[i]->str, "%s %s %s", uuid, target, membership);
-       
-        keyspace_keys_reply=swarmkv_command(db, target, "keyspace keys *");
+        keyspace_keys_reply=swarmkv_command(db, nodes_reply->elements[i]->str, "keyspace keys *");
         swarmkv_reply_merge_array(&reply, keyspace_keys_reply);
         if(keyspace_keys_reply->type==SWARMKV_REPLY_NIL)
         {
@@ -936,11 +976,12 @@ struct cluster_cmd_spec
 };
 struct cluster_cmd_spec cluster_cmds[]={
 	{"CLUSTER KEYS", "pattern", cluster_keys_command},
+	{"CLUSTER INFO", "[section]", cluster_info_command},
 	{"CLUSTER KEYSLOT", "key", cluster_keyslot_command},
-	{"CLUSTER NODES", "", cluster_nodes_command},
+	{"CLUSTER NODES", "[breif | verbose]", cluster_nodes_command},
 	{"CLUSTER SLOTS", "", cluster_slots_command},
 	{"CLUSTER ADDNODE", "IP:port", cluster_addnode_command},
-	{"CLUSTER CREATE", "cluster-name IP:port [IP:port]", cluster_create_command},
+	{"CLUSTER CREATE", "cluster-name IP:port [IP:port ...]", cluster_create_command},
     {"CLUSTER SANITY", "check | heal", cluster_sanity_command},
     {"ATTACH", "IP:port", attach_command},
     {"DETACH", "", detach_command}

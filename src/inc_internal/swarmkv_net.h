@@ -18,3 +18,23 @@ void swarmkv_net_timer_add(struct swarmkv_net *net, int thread_id, int usec, int
 void swarmkv_net_dispath(struct swarmkv_net* net, int thread_id);
 void swarmkv_net_stop(struct swarmkv_net* net);
 
+struct snet_info
+{
+	long long connections;
+	long long pending_rpcs;
+	long long timed_out_rpcs;
+
+	long long input_bytes;
+	long long input_cmds;
+	long long input_replies;
+	long long input_msgs;	//input_cmds + input_replies
+
+	long long output_bytes;
+	long long output_cmds;
+	long long output_replies;
+	long long output_msgs;	//output_cmds + output_replies
+	
+	double instantaneous_input_kbps;
+	double instantaneous_output_kbps;
+};
+void swarmkv_net_info(struct swarmkv_net *net, struct snet_info *info);

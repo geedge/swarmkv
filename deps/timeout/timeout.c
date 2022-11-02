@@ -212,6 +212,7 @@ struct timeouts {
 
 	timeout_t curtime;
 	timeout_t hertz;
+	long long count;
 }; /* struct timeouts */
 
 
@@ -232,11 +233,13 @@ static struct timeouts *timeouts_init(struct timeouts *T, timeout_t hz) {
 
 	T->curtime = 0;
 	T->hertz = (hz)? hz : TIMEOUT_mHZ;
-
+	T->count =0;
 	return T;
 } /* timeouts_init() */
-
-
+long long timeouts_count(struct timeouts *T)
+{
+	return T->count;
+}
 TIMEOUT_PUBLIC struct timeouts *timeouts_open(timeout_t hz, int *error) {
 	struct timeouts *T;
 
@@ -268,6 +271,7 @@ static void timeouts_reset(struct timeouts *T) {
 		to->pending = NULL;
 		TO_SET_TIMEOUTS(to, NULL);
 	}
+	T->count=0;
 } /* timeouts_reset() */
 
 
@@ -301,6 +305,7 @@ TIMEOUT_PUBLIC void timeouts_del(struct timeouts *T, struct timeout *to) {
 
 		to->pending = NULL;
 		TO_SET_TIMEOUTS(to, NULL);
+		T->count--;
 	}
 } /* timeouts_del() */
 
@@ -377,7 +382,7 @@ TIMEOUT_PUBLIC void timeouts_add(struct timeouts *T, struct timeout *to, timeout
 	if (to->flags & TIMEOUT_INT)
 		to->interval = MAX(1, timeout);
 #endif
-
+	T->count++;
 	if (to->flags & TIMEOUT_ABS)
 		timeouts_sched(T, to, timeout);
 	else
@@ -553,7 +558,7 @@ TIMEOUT_PUBLIC struct timeout *timeouts_get(struct timeouts *T) {
 		if ((to->flags & TIMEOUT_INT) && to->interval > 0)
 			timeouts_readd(T, to);
 #endif
-
+		T->count--;
 		return to;
 	} else {
 		return 0;

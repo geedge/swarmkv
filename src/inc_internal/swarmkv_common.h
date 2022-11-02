@@ -66,7 +66,6 @@ struct swarmkv_options
 {
 	unsigned int health_check_port;
 	unsigned int p2p_port;
-	int minimum_replica_num;
 	int dryrun;
 	int run_for_leader_flag;
 	unsigned int consul_port;
@@ -94,6 +93,7 @@ struct swarmkv_cmd* swarmkv_cmd_dup(const struct swarmkv_cmd* origin);
 struct swarmkv_reply *swarmkv_reply_new_string(const char* str, size_t sz);
 struct swarmkv_reply *swarmkv_reply_new_string_fmt(const char *format, ...);
 struct swarmkv_reply *swarmkv_reply_new_string_from_integer(long long integer);
+struct swarmkv_reply *swarmkv_reply_new_verbatim(const char *str, size_t sz, const char *ext);
 
 struct swarmkv_reply *swarmkv_reply_new_integer(long long integer);
 struct swarmkv_reply *swarmkv_reply_new_array(size_t n_element);

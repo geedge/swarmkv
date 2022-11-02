@@ -1,6 +1,7 @@
 #include "swarmkv_utils.h"
 #include <stdio.h>
 #include <unistd.h>
+#include <time.h>
 #include <sys/syscall.h>   /* For SYS_xxx definitions */
 #include <pthread.h>
 #include <asm/errno.h>
@@ -176,4 +177,13 @@ int stringmatchlen(const char *pattern, int patternLen,
     return 0;
 }
 
+/* Return the UNIX time in microseconds */
+long long ustime(void) {
+    struct timespec tv;
+    long long ust;
+    clock_gettime(CLOCK_REALTIME, &tv);
 
+    ust = ((long long)tv.tv_sec) * 1000000;
+    ust += tv.tv_nsec/1000;
+    return ust;
+}
