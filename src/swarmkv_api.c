@@ -9,7 +9,7 @@
 #include <pthread.h>
 #define	MODULE_SWAMRKV_API	module_name_str("swarmkv.api")
 
-void swarmkv_exec(struct swarmkv *db, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *target_node, swarmkv_cmd_callback_func_t * cb, void * cb_arg);
+void swarmkv_exec(struct swarmkv *db, const struct swarmkv_cmd *cmd, const node_t *target_node, swarmkv_cmd_callback_func_t * cb, void * cb_arg);
 
 struct swarmkv_readoptions
 {
@@ -262,8 +262,8 @@ struct swarmkv_reply *swarmkv_command_argv(struct swarmkv *db, const char *targe
 	struct swarmkv_reply *reply=NULL;
 	struct blocking_query_ctx ctx;
 	memset(&ctx, 0, sizeof(ctx));
-    struct swarmkv_node_addr target_node;
-	memset(&target_node, 0, sizeof(struct swarmkv_node_addr));
+    node_t target_node;
+	memset(&target_node, 0, sizeof(node_t));
 	pthread_cond_init(&ctx.cond, NULL);
 	pthread_mutex_init(&ctx.mutex, NULL);
 	cmd=swarmkv_cmd_new(argc);
@@ -278,7 +278,7 @@ struct swarmkv_reply *swarmkv_command_argv(struct swarmkv *db, const char *targe
     }
     else
     {
-		sds2node_addr(target, &target_node);
+		node_init_from_sds(target, &target_node);
         swarmkv_exec(db, cmd, &target_node, blocking_query_cb, &ctx);
     }
 
@@ -330,8 +330,8 @@ void swarmkv_command_async(struct swarmkv *db, swarmkv_cmd_callback_func_t * cb,
 {
 	int argc=0; sds *argv=NULL;
 	char *cmd_str=NULL;
-    struct swarmkv_node_addr target_node;
-    memset(&target_node, 0, sizeof(struct swarmkv_node_addr));
+    node_t target_node;
+    memset(&target_node, 0, sizeof(node_t));
 
     va_list ap;
     va_start(ap,format);
@@ -354,7 +354,7 @@ void swarmkv_command_async(struct swarmkv *db, swarmkv_cmd_callback_func_t * cb,
     }
     else
     {
-		sds2node_addr(target, &target_node);
+		node_init_from_sds(target, &target_node);
         swarmkv_exec(db, cmd, &target_node, cb, cb_arg);
     }
 

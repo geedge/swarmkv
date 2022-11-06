@@ -192,38 +192,11 @@ The command returns a JSON array.
 [
 	{
 		"slot": "0-1022",
-		"owner": {
-			"ip": "192.168.0.1",
-			"p2p_port": 35210,
-			"node_id": "921e25e4-85a4-11ec-a8a3-0242ac120002"
-		},
-		"replicas": [
-			{
-				"ip": "192.168.0.2",
-				"p2p_port": 35210,
-				"node_id": "ebe5a57c-cb33-4b2f-968f-44c4b87ea8d9"
-			},
-			{
-				"ip": "192.168.0.3",
-				"p2p_port": 35210,
-				"node_id": "a8ba5a68-65bd-4168-af15-1ddee7ecf5cd"
-			}
-		]
+		"owner": "192.168.0.1:5210"
 	},
 	{
 		"slot": "1023",
-		"owner": {
-			"ip": "192.168.0.2",
-			"p2p_port": 35210,
-			"node_id": "ebe5a57c-cb33-4b2f-968f-44c4b87ea8d9"
-		},
-		"replicas": [
-			{
-				"ip": "192.168.0.1",
-				"p2p_port": 35210,
-				"node_id": "921e25e4-85a4-11ec-a8a3-0242ac120002"
-			}
-		]
+    "owner": "192.168.0.1:5211"
 	}
 ]
 ```
@@ -238,8 +211,8 @@ curl http://localhost:8500/v1/kv/swarmkv/<cluster_name>/lead?raw=true
 
 ```json
 {
-    "ip":"192.168.0.1",
-    "p2p_port": 35210
+    "node":"192.168.0.1:5210",
+    "node_uuid": "0a8ce868-6b92-449a-a44c-7f5f476236c2"
 }
 ```
 

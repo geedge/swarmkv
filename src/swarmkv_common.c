@@ -9,6 +9,7 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <arpa/inet.h>
 int str2integer(const char *str, long long *integer)
 {
 	char *endptr=NULL;
@@ -235,51 +236,98 @@ struct swarmkv_reply *swarmkv_reply_new_error(const char *format, ...)
 	reply->len=strlen(reply->str);
 	return reply;
 }
-struct swarmkv_reply *swarmkv_reply_new_node(struct swarmkv_node_addr *addr, int is_ask)
+struct swarmkv_reply *swarmkv_reply_new_node(node_t *node, int is_ask)
 {
 	struct swarmkv_reply *reply=ALLOC(struct swarmkv_reply, 1);
 	reply->type=SWARMKV_REPLY_NODE;
 	if(is_ask)
 	{
-		reply->str=sdscatfmt(sdsempty(), "-ASK %s:%u", addr->ip_addr, addr->p2p_port);
+		reply->str=sdscatfmt(sdsempty(), "-ASK %s", node->addr);
 	}
 	else
 	{
-		reply->str=sdscatfmt(sdsempty(), "%s:%u", addr->ip_addr, addr->p2p_port);
+		reply->str=sdscatfmt(sdsempty(), "%s", node->addr);
 	}
 	reply->len=strlen(reply->str);
 	return reply;
 }
-sds node_addr2sds(const struct swarmkv_node_addr *node)
+sds node_addr2sds(const node_t *node)
 {
-	return sdscatfmt(sdsempty(), "%s:%u", node->ip_addr, node->p2p_port);
+	return sdsnew(node->addr);
 }
-int sds2node_addr(const char *addr_str, struct swarmkv_node_addr *node)
+int node_init_from_sds(const char *addr_str, node_t *node)
 {
-	memset(node, 0, sizeof(struct swarmkv_node_addr));
-	int n_read=0;
-	n_read=sscanf(addr_str, "%[^:]:%u", node->ip_addr, &node->p2p_port);
-	if(n_read!=2)
+	memset(node, 0, sizeof(node_t));
+	strncpy(node->addr, addr_str, sizeof(node->addr));
+	return 0;
+}
+int node_compare(const node_t *node1, const node_t *node2)
+{
+	return strcmp(node1->addr, node2->addr);
+}
+int node_list_exists(const node_t *list, size_t n_list, const node_t *addr)
+{
+	for(size_t i=0; i<n_list; i++)
 	{
-		return -1;
+		if(0==node_compare(list+i, addr))
+		{
+			return 1;
+		}
 	}
 	return 0;
 }
-int swarmkv_reply2node_addr(const struct swarmkv_reply *reply, struct swarmkv_node_addr *node)
+int node_list_remove(node_t *list, size_t n_list, const node_t *addr)
+{
+	int removed=0;
+	node_t copy[n_list];
+	memcpy(copy, list, sizeof(node_t)*n_list);
+	for(size_t i=0, j=0; i<n_list; i++)
+	{
+		if(0!=node_compare(copy+i, addr))
+		{
+			memcpy(list+j, copy+i, sizeof(node_t));
+			j++;
+		}
+		else
+		{
+			removed++;
+		}
+	}
+	return removed;
+}
+void node_copy(node_t *dst, const node_t *src)
+{
+	memcpy(dst, src, sizeof(node_t));
+	return;
+}
+void node_init(node_t *node, const char *ipv4, unsigned int port)
+{
+	snprintf(node->addr, sizeof(node->addr), "%s:%u", ipv4, port);
+	return;
+}
+void node_init_from_string(node_t *node, const char *addr_str)
+{
+	assert(strlen(addr_str)<sizeof(node_t));
+	assert(strchr(addr_str, ':'));
+	strncpy(node->addr, addr_str, sizeof(node->addr));
+	return;
+}
+int node_init_from_reply(node_t *node, const struct swarmkv_reply *reply)
 {
 	if(reply->type!=SWARMKV_REPLY_NODE)
 	{
 		return -1;
 	}
-	memset(node, 0, sizeof(struct swarmkv_node_addr));
+	memset(node, 0, sizeof(node_t));
 	const char *p=reply->str;
 	if(0==strncasecmp(reply->str, "-ASK ", 5))
 	{
 		p+=5;
 	}
-	return sds2node_addr(p, node);
+	node_init_from_string(node, p);
+	return 0;
 }
-int swarmkv_reply2nodelist(const struct swarmkv_reply *reply, struct swarmkv_node_addr **node_list, size_t *n_node)
+int node_list_new_from_reply(node_t **node_list, size_t *n_node, const struct swarmkv_reply *reply)
 {
 	if(reply->type==SWARMKV_REPLY_NIL)
 	{
@@ -291,72 +339,64 @@ int swarmkv_reply2nodelist(const struct swarmkv_reply *reply, struct swarmkv_nod
 		return -1;
 	}
 	*n_node=reply->n_element;
-	*node_list=ALLOC(struct swarmkv_node_addr, *n_node);
+	*node_list=ALLOC(node_t, *n_node);
 	for(size_t i=0; i<*n_node; i++)
 	{
-		swarmkv_reply2node_addr(reply->elements[i], *node_list+i);
+		node_init_from_reply(*node_list+i, reply->elements[i]);
 	}
 	return 0;
 }
-int swarmkv_node_addr_compare(const struct swarmkv_node_addr *addr1, const struct swarmkv_node_addr *addr2)
+int node_parse(const node_t *node, unsigned int *port, char *addr_str, size_t sz_addr)
 {
-	int ret=0;
-	ret=strcmp(addr1->ip_addr, addr2->ip_addr);
-	if(ret==0)
-	{
-		ret=addr1->p2p_port - addr2->p2p_port;
-	}
-	return ret;
+	int n_read=0;
+	n_read=sscanf(node->addr, "%[^:]:%u", addr_str, port);
+	return n_read==2?0:-1;
 }
-int swarmkv_node_addr_list_exists(const struct swarmkv_node_addr *list, size_t n_list, const struct swarmkv_node_addr *addr)
+void node_init_from_sockaddr(node_t *node, const struct sockaddr * sa)
 {
-	for(size_t i=0; i<n_list; i++)
+	char ip[MAX_IPV4_ADDR_LEN+1];
+	size_t ip_len=sizeof(ip);
+	unsigned int port;
+    switch(sa->sa_family)
 	{
-		if(0==swarmkv_node_addr_compare(list+i, addr))
-		{
-			return 1;
-		}
-	}
-	return 0;
-}
-int swarmkv_node_addr_list_remove(struct swarmkv_node_addr *list, size_t n_list, const struct swarmkv_node_addr *addr)
-{
-	int removed=0;
-	struct swarmkv_node_addr copy[n_list];
-	memcpy(copy, list, sizeof(struct swarmkv_node_addr)*n_list);
-	for(size_t i=0, j=0; i<n_list; i++)
-	{
-		if(0!=swarmkv_node_addr_compare(copy+i, addr))
-		{
-			memcpy(list+j, copy+i, sizeof(struct swarmkv_node_addr));
-			j++;
-		}
-		else
-		{
-			removed++;
-		}
-	}
-	return removed;
-}
-void swarmkv_node_addr_copy(struct swarmkv_node_addr *dst, const struct swarmkv_node_addr *src)
-{
-	memcpy(dst, src, sizeof(struct swarmkv_node_addr));
+        case AF_INET:
+            inet_ntop(AF_INET, &(((struct sockaddr_in *)sa)->sin_addr),
+                    ip, ip_len);
+			port=htons(((struct sockaddr_in *)sa)->sin_port);
+            break;
+        case AF_INET6:
+            inet_ntop(AF_INET6, &(((struct sockaddr_in6 *)sa)->sin6_addr),
+                   ip, ip_len);
+			port=htons(((struct sockaddr_in6 *)sa)->sin6_port);
+			assert(0);//node_t cann't hold IPv6 yet.
+            break;
+        default:
+			assert(0);
+            break;;
+    }
+	snprintf(node->addr, sizeof(node->addr), "%s:%u", ip, port);
 	return;
 }
-int swarmkv_node_compare(const struct swarmkv_node *node1, const struct swarmkv_node *node2)
+void node_to_sockaddr(const node_t *node, struct sockaddr *sockaddr)
 {
-	int ret=0;
-	ret=swarmkv_node_addr_compare(&node1->addr, &node2->addr);
-	if(ret==0)
-	{
-		ret=uuid_compare(node1->bin_uuid, node2->bin_uuid);
+	struct sockaddr_in *sa4=(struct sockaddr_in *) sockaddr;
+	struct sockaddr_in6 *sa6=(struct sockaddr_in6*) sockaddr;
+	char ip[16]={};
+	unsigned int port=0;
+	memset(sockaddr, 0, sizeof(struct sockaddr));
+	node_parse(node, &port, ip, sizeof(ip));
+	if(NULL==strstr(ip, ":"))//ipv4
+	{		
+		sa4->sin_family = AF_INET;
+		sa4->sin_addr.s_addr = inet_addr(ip);
+		sa4->sin_port = htons(port);
 	}
-	return ret;
-}
-void swarmkv_node_copy(struct swarmkv_node *dst, const struct swarmkv_node *src)
-{
-	memcpy(dst, src, sizeof(struct swarmkv_node));
-	return;
+	else//ipv6
+	{
+		sa6->sin6_family = AF_INET6;
+	    inet_pton(AF_INET6, ip, &sa6->sin6_addr);
+	    sa6->sin6_port  = htons(port);
+	}
 }
 
 struct swarmkv_reply *swarmkv_reply_dup(const struct swarmkv_reply *origin)
@@ -492,7 +532,7 @@ struct swarmkv_cmd* swarmkv_cmd_dup(const struct swarmkv_cmd *origin)
 sds keyslots2json(void *slot_container_base, size_t sz_slot_container, size_t offset_slot, size_t n_slot_container)
 {
 	cJSON *slot_array=cJSON_CreateArray();
-	cJSON *slot=NULL, *node=NULL;
+	cJSON *slot=NULL;
 	char range[256]="";
 	size_t i=0;
 	sds json_sds=NULL;
@@ -505,7 +545,7 @@ sds keyslots2json(void *slot_container_base, size_t sz_slot_container, size_t of
 	{
 		iterator=(struct key_slot *)(slot_container_base+sz_slot_container*i+offset_slot);
 		if(i<n_slot_container
-			&& 0==swarmkv_node_compare(&(iterator->owner), &(end_slot->owner)))
+			&& 0==node_compare(&(iterator->owner), &(end_slot->owner)))
 		{
 			end_slot=iterator;
 			continue;
@@ -519,11 +559,8 @@ sds keyslots2json(void *slot_container_base, size_t sz_slot_container, size_t of
 		{
 			snprintf(range, sizeof(range), "%d-%d", start_slot->slot_id, end_slot->slot_id);
 		}
-		cJSON_AddStringToObject(slot, "slot", range);		
-		node=cJSON_CreateObject();
-		cJSON_AddStringToObject(node, "ip", end_slot->owner.addr.ip_addr);
-		cJSON_AddNumberToObject(node, "p2p_port", end_slot->owner.addr.p2p_port);
-		cJSON_AddItemToObject(slot, "owner", node);
+		cJSON_AddStringToObject(slot, "slot", range);
+		cJSON_AddStringToObject(slot, "owner", end_slot->owner.addr);
 		cJSON_AddItemToArray(slot_array, slot);
 		start_slot=end_slot=iterator;
 	}
@@ -536,7 +573,7 @@ sds keyslots2json(void *slot_container_base, size_t sz_slot_container, size_t of
 }
 void json2keyslots(sds json_buffer, void *slot_container_base, size_t sz_slot_container, size_t offset_slot, size_t n_slot_container)
 {
-	cJSON *slot_table=NULL, *range=NULL, *slot=NULL, *owner=NULL, *ip=NULL, *p2p_port=NULL, *node_uuid=NULL;
+	cJSON *slot_table=NULL, *range=NULL, *slot=NULL, *owner=NULL;
 	int	i=0, j=0, k=0, n_record=0;
 	int range_start=0, range_end=0;
 	slot_table=cJSON_Parse(json_buffer);
@@ -556,18 +593,12 @@ void json2keyslots(sds json_buffer, void *slot_container_base, size_t sz_slot_co
 			sscanf(range->valuestring, "%d", &range_start);
 			range_end=range_start;
 		}
-		owner=cJSON_GetObjectItem(slot, "owner");	
-		ip=cJSON_GetObjectItem(owner, "ip");	
-		p2p_port=cJSON_GetObjectItem(owner, "p2p_port");
-		node_uuid=cJSON_GetObjectItem(owner, "node_uuid");
+		owner=cJSON_GetObjectItem(slot, "owner");
 		for(j=range_start; j<range_end+1; j++)
 		{
 			iterator=(struct key_slot*)(slot_container_base+sz_slot_container*j+offset_slot);
 			iterator->slot_id=j;
-			strncpy(iterator->owner.addr.ip_addr, ip->valuestring, sizeof(iterator->owner.addr.ip_addr));
-			iterator->owner.addr.p2p_port=(unsigned int)p2p_port->valueint;
-			if(node_uuid)
-				uuid_parse(node_uuid->valuestring, iterator->owner.bin_uuid);
+			node_init_from_string(&iterator->owner, owner->valuestring);
 			k++;
 		}
 	}
@@ -575,39 +606,57 @@ void json2keyslots(sds json_buffer, void *slot_container_base, size_t sz_slot_co
 	cJSON_Delete(slot_table);
 	return;
 }
-void json2nodes(const char *resp_buff, struct swarmkv_node *nodes, size_t *n_node)
+void health_response2active_nodes(const char *resp_buff, node_t *nodes, uuid_t *uuids, size_t *n_node)
 {
 	size_t n_record=0, i=0;
-	cJSON *health_reponse=NULL, *record=NULL, *item=NULL, *service=NULL, *meta=NULL, *meta_node_uuid=NULL;
-
+	cJSON *health_reponse=NULL, *record=NULL, *service=NULL;
+	cJSON *ip=NULL, *port=NULL, *meta=NULL, *meta_node_uuid=NULL;
 	health_reponse=cJSON_Parse(resp_buff);
 	n_record=cJSON_GetArraySize(health_reponse);
 	for(i=0; i<n_record && i<*n_node; i++)
 	{
 		record=cJSON_GetArrayItem(health_reponse, i);
 		service=cJSON_GetObjectItem(record, "Service");
-		item=cJSON_GetObjectItem(service, "Address");
-		strncpy(nodes[i].addr.ip_addr, item->valuestring, sizeof(nodes[i].addr.ip_addr));
-		item=cJSON_GetObjectItem(service, "Port");
-		nodes[i].addr.p2p_port=(unsigned int)item->valueint;
-		meta=cJSON_GetObjectItem(service, "Meta");
-		meta_node_uuid=cJSON_GetObjectItem(meta, "node_uuid");
-		uuid_parse(meta_node_uuid->valuestring, nodes[i].bin_uuid); 
+		ip=cJSON_GetObjectItem(service, "Address");
+		port=cJSON_GetObjectItem(service, "Port");
+		node_init(nodes+i, ip->valuestring, (unsigned int)port->valueint);
+		if(uuids)
+		{
+			meta=cJSON_GetObjectItem(service, "Meta");
+			meta_node_uuid=cJSON_GetObjectItem(meta, "node_uuid");
+			uuid_parse(meta_node_uuid->valuestring, uuids[i]); 
+		}
 	}
 	cJSON_Delete(health_reponse);
 	*n_node=i;
 }
-void json2leader(const char *resp_body, struct swarmkv_node *leader)
+sds node_print_json(const node_t *self, uuid_t uuid)
 {
-	cJSON *leader_json=NULL, *item=NULL;
-	leader_json=cJSON_Parse(resp_body);
-	item=cJSON_GetObjectItem(leader_json, "ip");
-	strncpy(leader->addr.ip_addr, item->valuestring, sizeof(leader->addr.ip_addr)-1);
-	item=cJSON_GetObjectItem(leader_json, "p2p_port");
-	leader->addr.p2p_port=(unsigned int)item->valueint;
-	item=cJSON_GetObjectItem(leader_json, "node_uuid");
-	uuid_parse(item->valuestring, leader->bin_uuid);
-	cJSON_Delete(leader_json);
+	cJSON* node_info=NULL;
+	char uuid_str[MAX_UUID_STR_LEN];
+	uuid_unparse_lower(uuid, uuid_str);
+	node_info=cJSON_CreateObject();
+
+	cJSON_AddStringToObject(node_info, "node", self->addr);
+	cJSON_AddStringToObject(node_info, "node_uuid", uuid_str);
+	char* payload=NULL;
+	payload=cJSON_Print(node_info);
+	cJSON_Delete(node_info);
+	node_info=NULL;
+	
+	sds self_json=NULL;
+	self_json=sdsnew(payload);
+	free(payload);
+	return self_json;
+}
+void leader_response2leader_node(const char *resp_body, node_t *leader)
+{
+	cJSON *root=NULL;
+	cJSON *item=NULL;
+	root=cJSON_Parse(resp_body);
+	item=cJSON_GetObjectItem(root, "node");
+	node_init_from_string(leader, item->valuestring);;
+	cJSON_Delete(root);
 }
 /* This is an modified version of keyHashSlot of Redis source code.
  * If the key contains the {...} pattern, only the part between

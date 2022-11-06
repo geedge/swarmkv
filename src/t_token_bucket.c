@@ -7,7 +7,7 @@
 #include <stdlib.h>
 #include <assert.h>
 
-enum cmd_exec_result tcfg_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result tcfg_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
 {
 /*TCFG key rate capacity*/
 	struct sobj *obj=NULL;
@@ -70,7 +70,7 @@ enum cmd_exec_result tcfg_command(struct swarmkv_module *mod_store, const struct
 	}	
 	return FINISHED;
 }
-enum cmd_exec_result tinfo_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result tinfo_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
 {
 /*TINFO key*/	
 	struct sobj *obj=NULL;
@@ -112,7 +112,7 @@ enum cmd_exec_result tinfo_command(struct swarmkv_module *mod_store, const struc
 	assert(i==10);
 	return FINISHED;
 }
-enum cmd_exec_result tconsume_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result tconsume_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
 {
 /*TCONSUME key tokens [NORMAL|FORCE|FLEXIBLE]*/
 	

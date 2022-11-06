@@ -8,7 +8,8 @@ message(STATUS "SwarmKV, Version: ${SWARMKV_VERSION}")
 add_definitions(-D_GNU_SOURCE) 
 add_definitions(-fPIC)
 set(SWARMKV_SRC swarmkv.c swarmkv_store.c swarmkv_api.c t_string.c t_set.c t_crdt.c t_token_bucket.c
-		swarmkv_common.c swarmkv_message.c swarmkv_net.c swarmkv_keyspace.c swarmkv_utils.c future_promise.cpp)
+		swarmkv_common.c swarmkv_message.c swarmkv_net.c swarmkv_keyspace.c swarmkv_utils.c 
+		swarmkv_monitor.c future_promise.cpp)
 
 set(LIB_SOURCE_FILES
 	${PROJECT_SOURCE_DIR}/deps/mpack/mpack.c
@@ -40,7 +41,7 @@ set_target_properties(swarmkv-static PROPERTIES CLEAN_DIRECT_OUTPUT 1)
 set_target_properties(swarmkv-static PROPERTIES LINK_FLAGS "-Wl,--version-script=${CMAKE_CURRENT_LIST_DIR}/version.map")
 target_include_directories(swarmkv-static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/inc_internal/)
 
-target_link_libraries(swarmkv-static CRDT libevent-static libevent-static-pthreads fieldstat2-static libevent-static)
+target_link_libraries(swarmkv-static CRDT libevent-static libevent-static-pthreads libevent-static libhdr-static)
 
 
 
@@ -54,4 +55,4 @@ set_target_properties(swarmkv-shared PROPERTIES SOVERSION ${SWARMKV_MAJOR_VERSIO
 set_target_properties(swarmkv-shared PROPERTIES LINK_FLAGS "-Wl,--version-script=${CMAKE_CURRENT_LIST_DIR}/version.map")
 target_include_directories(swarmkv-shared PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/inc_internal/)
 
-target_link_libraries(swarmkv-shared CRDT libevent-static libevent-static-pthreads fieldstat2-static ${SWARMKV_DEPEND_DYN_LIB})
+target_link_libraries(swarmkv-shared CRDT libevent-static libevent-static-pthreads libhdr-static ${SWARMKV_DEPEND_DYN_LIB})

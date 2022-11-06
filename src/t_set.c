@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <assert.h>
 
-enum cmd_exec_result sadd_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result sadd_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
 {
 	struct sobj *obj=NULL;
 	const sds key=cmd->argv[1];
@@ -54,7 +54,7 @@ enum cmd_exec_result sadd_command(struct swarmkv_module *mod_store, const struct
 	return FINISHED;
 
 }
-enum cmd_exec_result srem_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result srem_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
 {
 	struct sobj *obj=NULL;
 	const sds key=cmd->argv[1];
@@ -91,7 +91,7 @@ enum cmd_exec_result srem_command(struct swarmkv_module *mod_store, const struct
 	sobj_need_sync(mod_store, obj);
 	return FINISHED;
 }
-enum cmd_exec_result smembers_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result smembers_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
 {
 	struct sobj *obj=NULL;
 	const sds key=cmd->argv[1];
@@ -130,7 +130,7 @@ enum cmd_exec_result smembers_command(struct swarmkv_module *mod_store, const st
 	OR_set_member_list_free(mlist);
 	return FINISHED;
 }
-enum cmd_exec_result sismember_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result sismember_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
 {
 	struct sobj *obj=NULL;
 	const sds key=cmd->argv[1];
@@ -158,7 +158,7 @@ enum cmd_exec_result sismember_command(struct swarmkv_module *mod_store, const s
 	*reply=swarmkv_reply_new_integer(ret);
 	return FINISHED;
 }
-enum cmd_exec_result scard_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result scard_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
 {
 	struct sobj *obj=NULL;
 	const sds key=cmd->argv[1];

@@ -8,8 +8,8 @@ enum cmd_group
 	GROUP_KEYSPACE,
 	GROUP_STRING,
 	GROUP_HASH,
-	GROUP_THROTE,
-	GROUP_CACHE,
+	GROUP_TOKEN_BUCKET,
+	GROUP_CRDT,
 	GROUP_CLUSTER
 };
 	
@@ -28,7 +28,7 @@ enum cmd_key_flag
 				create the key if not-exisit. */
 	CMD_KEY_RM	/* Deletes the key. */
 };
-typedef enum cmd_exec_result command_proc_func(struct swarmkv_module *module, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply);
+typedef enum cmd_exec_result command_proc_func(struct swarmkv_module *module, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply);
 
 struct swarmkv_cmd_spec
 {

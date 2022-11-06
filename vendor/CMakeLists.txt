@@ -37,8 +37,6 @@ ExternalProject_Add(libevent PREFIX libevent
         URL ${CMAKE_CURRENT_SOURCE_DIR}/libevent-2.1.12-stable.tar.gz
 		CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${VENDOR_BUILD} -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DCMAKE_C_FLAGS="-fPIC")
 
-file(MAKE_DIRECTORY ${VENDOR_BUILD}/include)
-
 add_library(libevent-static STATIC IMPORTED GLOBAL)
 add_dependencies(libevent-static libevent)
 set_property(TARGET libevent-static PROPERTY IMPORTED_LOCATION ${VENDOR_BUILD}/lib/libevent.a)
@@ -50,6 +48,18 @@ add_dependencies(libevent-static-pthreads libevent)
 set_property(TARGET libevent-static-pthreads PROPERTY IMPORTED_LOCATION ${VENDOR_BUILD}/lib/libevent_pthreads.a)
 set_property(TARGET libevent-static-pthreads PROPERTY IMPORTED_INTERFACE_LINK_LIBRARIES pthread crypto)
 set_property(TARGET libevent-static-pthreads PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${VENDOR_BUILD}/include)
+
+### HdrHistogram
+ExternalProject_Add(libhdr PREFIX libhdr
+        URL ${CMAKE_CURRENT_SOURCE_DIR}/HdrHistogram_c-0.11.6.zip
+		CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${VENDOR_BUILD} -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DCMAKE_C_FLAGS="-fPIC")                
+file(MAKE_DIRECTORY ${VENDOR_BUILD}/include)
+
+add_library(libhdr-static STATIC IMPORTED GLOBAL)
+add_dependencies(libhdr-static libhdr)
+set_property(TARGET libhdr-static PROPERTY IMPORTED_LOCATION ${VENDOR_BUILD}/lib64/libhdr_histogram_static.a)
+set_property(TARGET libhdr-static PROPERTY IMPORTED_INTERFACE_LINK_LIBRARIES)
+set_property(TARGET libhdr-static PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${VENDOR_BUILD}/include)
 
 ## jemalloc
 ExternalProject_Add(libjemalloc PREFIX libjemalloc

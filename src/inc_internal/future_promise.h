@@ -18,7 +18,7 @@ typedef void (future_success_cb)(future_result_t* result, void * user);
 typedef void (future_failed_cb)(enum e_future_error err, const char * what, void * user);
 typedef void (promise_ctx_destroy_cb)(void* ctx);
 
-void future_promise_library_init(const char* profile);
+
 
 /*
 * Future APIs are used by Async RPC caller.

@@ -70,7 +70,7 @@ const char* get_attach_target(void)
     return g_runtime.is_attaching ? g_runtime.target : NULL;
 }
 
-static int consul_get_cluster_leader_block(const char *db_name, unsigned int consul_agent_port, struct swarmkv_node *leader)
+static int consul_get_cluster_leader_block(const char *db_name, unsigned int consul_agent_port, node_t *leader)
 {
 	sds resp_body=NULL;
 	int resp_code=0;
@@ -81,11 +81,11 @@ static int consul_get_cluster_leader_block(const char *db_name, unsigned int con
 	{
 		return -1;
 	}
-	json2leader(resp_body, leader);
+	leader_response2leader_node(resp_body, leader);
 	sdsfree(resp_body);
 	return 0;
 }
-static int consul_list_health_nodes_block(const char *db_name, unsigned int consul_agent_port, struct swarmkv_node *nodes, size_t *n_nodes)
+static int consul_list_health_nodes_block(const char *db_name, unsigned int consul_agent_port, node_t *nodes, uuid_t *uuids, size_t *n_nodes)
 {
 	char url[SWARMKV_URL_MAX]="";
 	sds resp_body=NULL;
@@ -97,7 +97,7 @@ static int consul_list_health_nodes_block(const char *db_name, unsigned int cons
 	{
 		return -1;
 	}
-	json2nodes(resp_body, nodes, n_nodes);
+	health_response2active_nodes(resp_body, nodes, uuids, n_nodes);
 	sdsfree(resp_body);
 	return 0;
 }
@@ -118,7 +118,7 @@ static int consul_kv_init_block(char *cluster_name, char *argv[], size_t argc)
 		nth_node=MIN(i/slots_per_node, node_number-1);
 
 		slots[i].slot_id=i;
-		ret=sds2node_addr(argv[nth_node], &(slots[i].owner.addr));
+		ret=node_init_from_sds(argv[nth_node], &(slots[i].owner));
 		if(ret!=0)
 		{
 			fprintf(stderr, "Invalid address %s.\n", argv[nth_node]);	
@@ -167,15 +167,16 @@ struct swarmkv_reply *cluster_nodes_command(struct swarmkv* db, char *argv[], si
 {
 	struct swarmkv_reply *reply=NULL;
 	int ret=0, no_leader=1;
-	struct swarmkv_node leader; 	
-	struct swarmkv_node nodes[SWARMKV_NODE_MAX];
+	node_t leader; 	
+	node_t nodes[SWARMKV_NODE_MAX];
 	size_t n_node=SWARMKV_NODE_MAX;
+	uuid_t uuids[SWARMKV_NODE_MAX];
 	ret=consul_get_cluster_leader_block(g_config.db_name, g_config.consul_port, &leader);
 	if(ret<0)
 	{
 		no_leader=1;
 	}
-	ret=consul_list_health_nodes_block(g_config.db_name, g_config.consul_port, nodes, &n_node);
+	ret=consul_list_health_nodes_block(g_config.db_name, g_config.consul_port, nodes, uuids, &n_node);
 	if(ret<0)
 	{
 		reply=swarmkv_reply_new_error(error_cluster_no_node);
@@ -194,15 +195,14 @@ struct swarmkv_reply *cluster_nodes_command(struct swarmkv* db, char *argv[], si
 	{
 		if(brief)
 		{
-			reply->elements[i]=swarmkv_reply_new_string_fmt("%s:%u",
-															nodes[i].addr.ip_addr,
-															nodes[i].addr.p2p_port);
+			reply->elements[i]=swarmkv_reply_new_string_fmt("%s",
+															nodes[i].addr);
 
 		}
 		else
 		{
-			uuid_unparse_lower(nodes[i].bin_uuid, uuid_str);
-			if(!no_leader && 0==swarmkv_node_compare(&leader, nodes+i))
+			uuid_unparse_lower(uuids[i], uuid_str);
+			if(!no_leader && 0==node_compare(&leader, nodes+i))
 			{
 				is_leader=1;
 			}
@@ -210,9 +210,8 @@ struct swarmkv_reply *cluster_nodes_command(struct swarmkv* db, char *argv[], si
 			{
 				is_leader=0;
 			}
-			reply->elements[i]=swarmkv_reply_new_string_fmt("%s %s:%u %s", uuid_str,
-																	nodes[i].addr.ip_addr,
-																	nodes[i].addr.p2p_port,
+			reply->elements[i]=swarmkv_reply_new_string_fmt("%s %s %s", uuid_str,
+																	nodes[i].addr,
 																	is_leader?"leader":"follower");
 		}
 
@@ -243,7 +242,7 @@ int slot_cmp_by_owner(const void * a, const void *b)
 	const struct key_slot *sa=(const struct key_slot*)a;
 	const struct key_slot *sb=(const struct key_slot*)b;
 	int ret=0;
-	ret=swarmkv_node_addr_compare(&(sa->owner.addr), &(sb->owner.addr));
+	ret=node_compare(&sa->owner, &sb->owner);
 	if(ret==0)
 	{
 		ret=sa->slot_id-sb->slot_id;
@@ -257,19 +256,15 @@ int slot_cmp_by_id(const void * a, const void *b)
 	
 	return sa->slot_id-sb->slot_id;
 }
-char *node_addrstring(struct swarmkv_node *node, char *buffer, size_t size)
+
+int is_node_active(struct swarmkv_reply *nodes_reply, node_t *node)
 {
-	snprintf(buffer, size, "%s:%u", node->addr.ip_addr, node->addr.p2p_port);
-	return buffer;
-}
-int is_node_active(struct swarmkv_reply *nodes_reply, struct swarmkv_node_addr *node_addr)
-{
-	struct swarmkv_node_addr tmp;
+	node_t tmp;
 	int node_is_active=0;
 	for(size_t i=0; i<nodes_reply->n_element; i++)
 	{
-		sds2node_addr(nodes_reply->elements[i]->str, &tmp);
-		if(0==swarmkv_node_addr_compare(node_addr, &tmp))
+		node_init_from_sds(nodes_reply->elements[i]->str, &tmp);
+		if(0==node_compare(node, &tmp))
 		{
 			node_is_active=1;
 			break;
@@ -279,7 +274,7 @@ int is_node_active(struct swarmkv_reply *nodes_reply, struct swarmkv_node_addr *
 }
 struct swarmkv_reply *cluster_addnode_command(struct swarmkv* db, char *argv[], size_t argc)
 {
-	struct swarmkv_node node;
+	node_t node;
 	struct swarmkv_reply *slots_reply=NULL, *nodes_reply=NULL, *reply=NULL;
 	size_t i=0, j=0, actual_rebalanced_slot_num=0;
 
@@ -294,12 +289,12 @@ struct swarmkv_reply *cluster_addnode_command(struct swarmkv* db, char *argv[], 
 	{
 		return nodes_reply;
 	}
-	if(0!=sds2node_addr(argv[2], &node.addr))
+	if(0!=node_init_from_sds(argv[2], &node))
 	{
 		reply=swarmkv_reply_new_error(error_arg_not_valid_address, argv[2]);
 		goto error_out;
 	}
-	if(!is_node_active(nodes_reply, &node.addr))
+	if(!is_node_active(nodes_reply, &node))
 	{
 		reply=swarmkv_reply_new_error(error_cluster_addnode_node_is_not_active);
 		goto error_out;
@@ -315,7 +310,7 @@ struct swarmkv_reply *cluster_addnode_command(struct swarmkv* db, char *argv[], 
 	json2keyslots(slots_reply->str, slots, sizeof(struct key_slot), 0, KEYSPACE_SLOT_NUM);
 	for(i=0; i<KEYSPACE_SLOT_NUM; i++)
 	{
-		if(0==swarmkv_node_addr_compare(&(slots[i].owner.addr), &(node.addr)))
+		if(0==node_compare(&(slots[i].owner), &node))
 		{
 			reply=swarmkv_reply_new_error(error_cluster_addnode_node_has_slot);
 			goto error_out;
@@ -331,7 +326,7 @@ struct swarmkv_reply *cluster_addnode_command(struct swarmkv* db, char *argv[], 
 	size_t n_active_node=1;
 	for(i=0; i<KEYSPACE_SLOT_NUM; i++)
 	{
-		if(0!=swarmkv_node_compare(&(tmp->owner), &(slots[i].owner)))
+		if(0!=node_compare(&(tmp->owner), &(slots[i].owner)))
 		{
 			n_active_node++;
 			tmp=slots+i;
@@ -345,13 +340,13 @@ struct swarmkv_reply *cluster_addnode_command(struct swarmkv* db, char *argv[], 
 	{
 		//Get max expected_rebalanced_slot_num_per_node slots from each active node
 		if(j==expected_rebalanced_slot_num_per_node &&
-			0==swarmkv_node_addr_compare(&(tmp->owner.addr), &(slots[i].owner.addr)))
+			0==node_compare(&(tmp->owner), &(slots[i].owner)))
 
 		{
 			continue;
 		}
 		//New active node
-		if(0!=swarmkv_node_addr_compare(&(tmp->owner.addr), &(slots[i].owner.addr)))
+		if(0!=node_compare(&tmp->owner, &(slots[i].owner)))
 		{
 			j=0;
 		}
@@ -369,7 +364,6 @@ struct swarmkv_reply *cluster_addnode_command(struct swarmkv* db, char *argv[], 
 	sds *migrate_argv=NULL;
 	printf("%zu slot to be migrated\n", actual_rebalanced_slot_num);
 	long long migrated_keys=0;
-	char buffer1[256], buffer2[256];
 	for(i=0; i<actual_rebalanced_slot_num; i++)
 	{
 		tmp=slots+rebalanced_slot_idx[i];
@@ -378,8 +372,8 @@ struct swarmkv_reply *cluster_addnode_command(struct swarmkv* db, char *argv[], 
 */
 		/*STEP 2.1 Set NEW node's slot to IMPORTING state. Slot will return to STABLE state after udpate the global slot table*/
 	
-		setslot_reply=swarmkv_command(db, node_addrstring(&node, buffer1, sizeof(buffer1)), "keyspace setslot %d IMPORTING %s", 
-													tmp->slot_id, node_addrstring(&tmp->owner, buffer2, sizeof(buffer2)));
+		setslot_reply=swarmkv_command(db, node.addr, "keyspace setslot %d IMPORTING %s", 
+													tmp->slot_id, tmp->owner.addr);
 		if(setslot_reply->type!=SWARMKV_REPLY_STATUS)
 		{
 			reply=setslot_reply;
@@ -389,8 +383,8 @@ struct swarmkv_reply *cluster_addnode_command(struct swarmkv* db, char *argv[], 
 
 		/*STEP 2.2 Set OLD node's slot to MIGRATING state*/
 
-		setslot_reply=swarmkv_command(db, node_addrstring(&tmp->owner, buffer1, sizeof(buffer1)), "keyspace setslot %d MIGRATING %s",
-													tmp->slot_id, node_addrstring(&node, buffer2, sizeof(buffer2)));
+		setslot_reply=swarmkv_command(db, tmp->owner.addr, "keyspace setslot %d MIGRATING %s",
+													tmp->slot_id, node.addr);
 		if(setslot_reply->type!=SWARMKV_REPLY_STATUS)
 		{
 			reply=setslot_reply;
@@ -402,7 +396,7 @@ struct swarmkv_reply *cluster_addnode_command(struct swarmkv* db, char *argv[], 
 
 		/*STEP 2.3 Get keys from OLD node's slot*/
 
-		getkeysinslot_reply=swarmkv_command(db, node_addrstring(&tmp->owner, buffer1, sizeof(buffer1)), "keyspace getkeysinslot %d", tmp->slot_id);
+		getkeysinslot_reply=swarmkv_command(db, tmp->owner.addr, "keyspace getkeysinslot %d", tmp->slot_id);
 		if(getkeysinslot_reply->type!=SWARMKV_REPLY_STRING)
 		{
 			reply=getkeysinslot_reply;
@@ -420,7 +414,7 @@ struct swarmkv_reply *cluster_addnode_command(struct swarmkv* db, char *argv[], 
 		swarmkv_reply_free(getkeysinslot_reply);
 		getkeysinslot_reply=NULL;
 
-		addkeystoslot_reply=swarmkv_command_argv(db, node_addrstring(&node, buffer1, sizeof(buffer1)), 4, migrate_argv);
+		addkeystoslot_reply=swarmkv_command_argv(db, node.addr, 4, migrate_argv);
 
 		for(j=0; j<4; j++)
 		{
@@ -443,13 +437,13 @@ struct swarmkv_reply *cluster_addnode_command(struct swarmkv* db, char *argv[], 
 		
 		/*STEP 2.5 Delete keys from OLD node's slot*/
 
-		reply=swarmkv_command(db, node_addrstring(&tmp->owner, buffer1, sizeof(buffer1)), "keyspace delslotkeys %d", tmp->slot_id);
+		reply=swarmkv_command(db, tmp->owner.addr, "keyspace delslotkeys %d", tmp->slot_id);
 		if(reply->type!=SWARMKV_REPLY_INTEGER)
 		{
 			goto error_out;
 		}
 
-		swarmkv_node_copy(&(tmp->owner), &node);
+		node_copy(&(tmp->owner), &node);
 		
 	}
 	//return swarmkv_reply_new_status("OK");
@@ -473,7 +467,7 @@ struct swarmkv_reply *cluster_addnode_command(struct swarmkv* db, char *argv[], 
 	{
 		reply=swarmkv_reply_new_status("global slot table is updated, %lld slots and %lld keys were migrated to %s",
 									actual_rebalanced_slot_num, migrated_keys,
-									node_addrstring(&node, buffer1, sizeof(buffer1)));
+									node.addr);
 	}
 	
 error_out:
@@ -564,9 +558,9 @@ struct swarmkv_reply *cluster_info_command(struct swarmkv* db, char *argv[], siz
 	}
 	return reply;
 }
-struct replica_node_addr
+struct replica_node
 {
-    struct swarmkv_node_addr addr;
+    node_t node;
 	UT_hash_handle hh;
 };
 
@@ -574,7 +568,7 @@ struct replica_list
 {
     int len;
     sds key;
-	struct replica_node_addr *replica_node_hash;
+	struct replica_node *replica_node_hash;
 	UT_hash_handle hh;
 };
 
@@ -633,66 +627,58 @@ void exec_cmd_generic_callback(const struct swarmkv_reply* reply, void * cb_arg)
     return;
 }
 
-void exec_cmd_crdt_join(struct swarmkv* db, struct cluster_sanity_cmd_ctx *ctx, struct replica_list *keyspace_list, struct replica_node_addr *crdt_addr, char *key)
+void exec_cmd_crdt_join(struct swarmkv* db, struct cluster_sanity_cmd_ctx *ctx, struct replica_list *keyspace_list, struct replica_node *crdt_addr, char *key)
 {
-    char target[256]={0};
-    struct replica_node_addr *tmp=NULL, *keyspace_addr=NULL;
+    struct replica_node *tmp=NULL, *keyspace_addr=NULL;
 
     HASH_ITER(hh, keyspace_list->replica_node_hash, keyspace_addr, tmp)
     {
         ctx->reply_cnt++;
-        snprintf(target, sizeof(target), "%s:%u", keyspace_addr->addr.ip_addr, keyspace_addr->addr.p2p_port);
-        swarmkv_command_async(db, exec_cmd_generic_callback, ctx, target, "CRDT JOIN %s %s:%d", key, crdt_addr->addr.ip_addr, crdt_addr->addr.p2p_port);
+        swarmkv_command_async(db, exec_cmd_generic_callback, ctx, keyspace_addr->node.addr, "CRDT JOIN %s %s", key, crdt_addr->node.addr);
     }
 }
 
-void build_crdt_replica_list(const struct swarmkv_reply* reply, struct cluster_sanity_cmd_ctx *ctx, char *ip, char *port)
+void build_crdt_replica_list(const struct swarmkv_reply* keys_reply, struct cluster_sanity_cmd_ctx *ctx, const node_t *node)
 {
     int i=0;
-    for(i=0; i<reply->n_element; i++)
+    for(i=0; i<keys_reply->n_element; i++)
     {
-        struct swarmkv_node_addr node_addr;
-        memset(&node_addr, 0, sizeof(struct swarmkv_node_addr));
-	    strncpy(node_addr.ip_addr, ip, strlen(ip));
-	    node_addr.p2p_port=(unsigned int)atoll(port);
 
         struct replica_list *crdt_replica_list=NULL;
-        HASH_FIND(hh, ctx->crdt_replica_hash, reply->elements[i]->str, reply->elements[i]->len, crdt_replica_list);
+        HASH_FIND(hh, ctx->crdt_replica_hash, keys_reply->elements[i]->str, keys_reply->elements[i]->len, crdt_replica_list);
         if(!crdt_replica_list)
         {
             crdt_replica_list=ALLOC(struct replica_list, 1);
-            crdt_replica_list->key=sdsnewlen(reply->elements[i]->str, reply->elements[i]->len);
-            crdt_replica_list->len=reply->elements[i]->len;
+            crdt_replica_list->key=sdsnewlen(keys_reply->elements[i]->str, keys_reply->elements[i]->len);
+            crdt_replica_list->len=keys_reply->elements[i]->len;
             HASH_ADD_KEYPTR(hh, ctx->crdt_replica_hash, crdt_replica_list->key, crdt_replica_list->len, crdt_replica_list);
         }
 
-        struct replica_node_addr *replica_node=NULL;
-        replica_node=ALLOC(struct replica_node_addr, 1);
-        swarmkv_node_addr_copy(&replica_node->addr, &node_addr);
-        HASH_ADD(hh, crdt_replica_list->replica_node_hash, addr, sizeof(struct swarmkv_node_addr), replica_node);
+        struct replica_node *replica_node=NULL;
+        replica_node=ALLOC(struct replica_node, 1);
+        node_copy(&replica_node->node, node);
+        HASH_ADD(hh, crdt_replica_list->replica_node_hash, node, sizeof(node_t), replica_node);
     }
     return;
 }
 
 void build_keyspace_replica_list(const struct swarmkv_reply* reply, void * cb_arg)
 {
-    int i=0;
+	node_t tmp;
     struct keyspace_cmd_ctx *cmd_ctx=(struct keyspace_cmd_ctx *)cb_arg;
-    for(i=0; i<reply->n_element; i++)
+    for(size_t i=0; i<reply->n_element; i++)
     {
-        struct swarmkv_node_addr node_addr;
-        swarmkv_reply2node_addr(reply->elements[i], &node_addr);
-
+		node_init_from_reply(&tmp, reply->elements[i]);
         struct replica_list *keysapce_replica_list=NULL;
         HASH_FIND(hh, cmd_ctx->ctx->keyspace_replica_hash, cmd_ctx->key, cmd_ctx->keylen, keysapce_replica_list);
         if(!keysapce_replica_list)
         {
             continue;
         }
-        struct replica_node_addr *replica_node=NULL;
-	    replica_node=ALLOC(struct replica_node_addr, 1);
-	    swarmkv_node_addr_copy(&replica_node->addr, &node_addr);
-        HASH_ADD(hh, keysapce_replica_list->replica_node_hash, addr, sizeof(struct swarmkv_node_addr), replica_node);
+        struct replica_node *replica_node=NULL;
+	    replica_node=ALLOC(struct replica_node, 1);
+	    node_copy(&replica_node->node, &tmp);
+        HASH_ADD(hh, keysapce_replica_list->replica_node_hash, node, sizeof(node_t), replica_node);
     }
 
     cmd_ctx->ctx->reply_cnt--;
@@ -711,7 +697,7 @@ void build_keyspace_replica_list(const struct swarmkv_reply* reply, void * cb_ar
 void destroy_relica_list_hash(struct cluster_sanity_cmd_ctx *ctx)
 {
     struct replica_list *keyspace_list=NULL, *crdt_list=NULL, *tmp_list=NULL;
-    struct replica_node_addr *keyspace_node_addr=NULL, *crdt_node_addr=NULL, *tmp_node_addr=NULL;
+    struct replica_node *keyspace_node_addr=NULL, *crdt_node_addr=NULL, *tmp_node_addr=NULL;
 
     HASH_ITER(hh, ctx->keyspace_replica_hash, keyspace_list, tmp_list)
     {
@@ -743,12 +729,11 @@ void destroy_relica_list_hash(struct cluster_sanity_cmd_ctx *ctx)
 
 struct swarmkv_reply *cluster_sanity_command(struct swarmkv* db, char *argv[], size_t argc)
 {
-    int i=0, need_fix=0;
+    int need_fix=0;
     int timed_wait_rv;
-    char target[256]={0};
+
     struct swarmkv_reply *keyspace_keys_reply=NULL;
     struct swarmkv_reply *nodes_reply=NULL, *reply=NULL;
-    char uuid[38], ip[64], port[16], membership[16];
 
     if(argc < 3)
     {
@@ -761,6 +746,12 @@ struct swarmkv_reply *cluster_sanity_command(struct swarmkv* db, char *argv[], s
     {
         return nodes_reply;
     }
+	node_t active_nodes[SWARMKV_MAX_NODE_NUM];
+	size_t n_active_node=nodes_reply->n_element;
+	for(size_t i=0; i<nodes_reply->n_element; i++)
+	{
+		node_init_from_string(active_nodes+i, nodes_reply->elements[i]->str);
+	}
     if(0==strcasecmp(argv[2], "heal"))
 	{
 		need_fix=1;
@@ -771,9 +762,9 @@ struct swarmkv_reply *cluster_sanity_command(struct swarmkv* db, char *argv[], s
 	pthread_mutex_init(&ctx->mutex, NULL);
 
     //Step1 Build the keyspace replica list
-    for(i=0; i<nodes_reply->n_element; i++)
+    for(size_t i=0; i<n_active_node; i++)
     {
-        keyspace_keys_reply=swarmkv_command(db, nodes_reply->elements[i]->str, "keyspace keys *");
+        keyspace_keys_reply=swarmkv_command(db, active_nodes[i].addr, "keyspace keys *");
         swarmkv_reply_merge_array(&reply, keyspace_keys_reply);
         if(keyspace_keys_reply->type==SWARMKV_REPLY_NIL)
         {
@@ -782,7 +773,7 @@ struct swarmkv_reply *cluster_sanity_command(struct swarmkv* db, char *argv[], s
         keyspace_keys_reply=NULL;
     }
 
-    for(i=0; reply && i<reply->n_element; i++)
+    for(size_t i=0; reply && i<reply->n_element; i++)
     {
         struct replica_list *keysapce_replica_list=NULL;
         HASH_FIND(hh, ctx->keyspace_replica_hash, reply->elements[i]->str, reply->elements[i]->len, keysapce_replica_list);
@@ -808,14 +799,10 @@ struct swarmkv_reply *cluster_sanity_command(struct swarmkv* db, char *argv[], s
     }
 
     //Step2 Build the crdt replica list
-    for(i=0; i<nodes_reply->n_element; i++)
+    for(size_t i=0; i<n_active_node; i++)
     {
-		memset(&target,0, sizeof(target));
-        sscanf(nodes_reply->elements[i]->str, "%s %s %s", uuid, target, membership);
-        
-        reply=swarmkv_command(db, target, "crdt keys *");
-        sscanf(target, "%[^:]:%s", ip, port);
-        build_crdt_replica_list(reply, ctx, ip, port);
+        reply=swarmkv_command(db, active_nodes[i].addr, "crdt keys *");
+        build_crdt_replica_list(reply, ctx, active_nodes+i);
         swarmkv_reply_free(reply);
         reply=NULL;
     }
@@ -832,7 +819,7 @@ struct swarmkv_reply *cluster_sanity_command(struct swarmkv* db, char *argv[], s
     //Step3 check/heal by keyspace list
     struct swarmkv_reply *r=NULL;
     struct replica_list *keyspace_list=NULL, *crdt_list=NULL, *tmp_list=NULL;
-    struct replica_node_addr *keyspace_node_addr=NULL, *crdt_node_addr=NULL, *tmp_node_addr=NULL;
+    struct replica_node *keyspace_node_addr=NULL, *crdt_node_addr=NULL, *tmp_node_addr=NULL;
 
     HASH_ITER(hh, ctx->keyspace_replica_hash, keyspace_list, tmp_list)
     {
@@ -848,7 +835,7 @@ struct swarmkv_reply *cluster_sanity_command(struct swarmkv* db, char *argv[], s
             {
                 ctx->reply_cnt++;
                 ctx->heal_replica_cnt++;
-                swarmkv_command_async(db,  exec_cmd_generic_callback, ctx, NULL, "keyspace rdel %s %s:%u", keyspace_list->key, keyspace_node_addr->addr.ip_addr, keyspace_node_addr->addr.p2p_port);
+                swarmkv_command_async(db,  exec_cmd_generic_callback, ctx, NULL, "keyspace rdel %s %s", keyspace_list->key, keyspace_node_addr->node.addr);
             }
         }
 
@@ -857,7 +844,7 @@ struct swarmkv_reply *cluster_sanity_command(struct swarmkv* db, char *argv[], s
             //Step3.1 foreach keysapce list, if keysapce node not in crdt list, keyspace rdel node
             HASH_ITER(hh, keyspace_list->replica_node_hash, keyspace_node_addr, tmp_node_addr)
             {
-                HASH_FIND(hh, crdt_list->replica_node_hash, &keyspace_node_addr->addr, sizeof(struct swarmkv_node_addr), crdt_node_addr);
+                HASH_FIND(hh, crdt_list->replica_node_hash, &keyspace_node_addr->node, sizeof(node_t), crdt_node_addr);
                 if(!crdt_node_addr && !need_fix)
                 {
                     r=swarmkv_reply_new_string(keyspace_list->key, sdslen(keyspace_list->key));
@@ -867,13 +854,13 @@ struct swarmkv_reply *cluster_sanity_command(struct swarmkv* db, char *argv[], s
                 {
                     ctx->reply_cnt++;
                     ctx->heal_replica_cnt++;
-                    swarmkv_command_async(db, exec_cmd_generic_callback, ctx, NULL, "keyspace rdel %s %s:%u", keyspace_list->key, keyspace_node_addr->addr.ip_addr, keyspace_node_addr->addr.p2p_port);
+                    swarmkv_command_async(db, exec_cmd_generic_callback, ctx, NULL, "keyspace rdel %s %s", keyspace_list->key, keyspace_node_addr->node.addr);
                 }
             }
             //Step3.2 foreach crdt list, if crdt node not in keyspace list, keyspace radd node
             HASH_ITER(hh, crdt_list->replica_node_hash, crdt_node_addr, tmp_node_addr)
             {
-                HASH_FIND(hh, keyspace_list->replica_node_hash, &crdt_node_addr->addr, sizeof(struct swarmkv_node_addr), keyspace_node_addr);
+                HASH_FIND(hh, keyspace_list->replica_node_hash, &crdt_node_addr->node, sizeof(node_t), keyspace_node_addr);
                 if(!keyspace_node_addr && !need_fix)
                 {
                     r=swarmkv_reply_new_string(keyspace_list->key, sdslen(keyspace_list->key));
@@ -883,7 +870,7 @@ struct swarmkv_reply *cluster_sanity_command(struct swarmkv* db, char *argv[], s
                 {
                     ctx->reply_cnt++;
                     ctx->heal_replica_cnt++;
-                    swarmkv_command_async(db, exec_cmd_generic_callback, ctx, NULL, "keyspace radd %s %s:%u", crdt_list->key, crdt_node_addr->addr.ip_addr, crdt_node_addr->addr.p2p_port);
+                    swarmkv_command_async(db, exec_cmd_generic_callback, ctx, NULL, "keyspace radd %s %s", crdt_list->key, crdt_node_addr->node.addr);
                     exec_cmd_crdt_join(db,ctx, keyspace_list, crdt_node_addr, crdt_list->key);
                 }
             }
@@ -905,7 +892,7 @@ struct swarmkv_reply *cluster_sanity_command(struct swarmkv* db, char *argv[], s
             {
                 ctx->reply_cnt++;
                 ctx->heal_replica_cnt++;
-                swarmkv_command_async(db, exec_cmd_generic_callback, ctx, NULL, "keyspace radd %s %s:%u", crdt_list->key, crdt_node_addr->addr.ip_addr, crdt_node_addr->addr.p2p_port);
+                swarmkv_command_async(db, exec_cmd_generic_callback, ctx, NULL, "keyspace radd %s %s", crdt_list->key, crdt_node_addr->node.addr);
             }
         }
     }

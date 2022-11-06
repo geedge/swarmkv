@@ -6,9 +6,12 @@
 #include "swarmkv_utils.h"
 #include "swarmkv_error.h"
 
+//header of modules
 #include "swarmkv_store.h"
 #include "swarmkv_keyspace.h"
+#include "swarmkv_monitor.h"
 
+//header of data types
 #include "t_string.h"
 #include "t_set.h"
 #include "t_token_bucket.h"
@@ -23,7 +26,6 @@
 #include "log.h"
 
 #include <stdio.h>
-#include <assert.h>
 #include <uuid/uuid.h>
 #include <time.h>
 #include <sys/syscall.h>
@@ -52,13 +54,14 @@ struct swarmkv
 	struct swarmkv_options *opts;
 	int nr_worker_threads;
 
-	struct swarmkv_node_addr self;
+	node_t self;
 	struct swarmkv_thread_ctx *worker_threads[SWARMKV_THREAD_MAX];
 	struct swarmkv_net *net;
 	pthread_mutex_t mutex;
 	struct log_handle * logger;
 	struct swarmkv_module *mod_keyspace;
 	struct swarmkv_module *mod_store;
+	struct swarmkv_module *mod_monitor;
 	struct swarmkv_cmd_spec *command_table;
 	struct timespec boot_time;
 };
@@ -69,19 +72,11 @@ struct swarmkv *module2db(struct swarmkv_module *module)
 	assert(db==module->mod_ctx);
 	return db;
 }
-
-void db_lock(struct swarmkv_module *mod, sds key)
-{
-	return;
-}
-void  db_unlock(struct swarmkv_module *mod, sds key)
-{
-	return;
-}
-void __exec_cmd(struct swarmkv *db, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *target_node, struct future *future_of_caller);
+void __exec_cmd(struct swarmkv *db, const struct swarmkv_cmd *cmd, const node_t *target_node, struct future *future_of_caller);
 
 static void spec_lock_module(struct swarmkv_cmd_spec *spec, const struct swarmkv_cmd *cmd)
 {
+	if(!spec->module->lock) return;
 	if(spec->key_offset<0)
 	{
 		spec->module->lock(spec->module, NULL);
@@ -93,6 +88,7 @@ static void spec_lock_module(struct swarmkv_cmd_spec *spec, const struct swarmkv
 }
 static void spec_unlock_module(struct swarmkv_cmd_spec *spec, const struct swarmkv_cmd *cmd)
 {
+	if(!spec->module->unlock) return;
 	if(spec->key_offset<0)
 	{
 		spec->module->unlock(spec->module, NULL);
@@ -102,7 +98,7 @@ static void spec_unlock_module(struct swarmkv_cmd_spec *spec, const struct swarm
 		spec->module->unlock(spec->module, cmd->argv[spec->key_offset]);
 	}
 }
-enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
 {
 	char node_info_buff[4096], store_info_buff[4096], ks_info_buff[4096], net_info_buff[4096];
 	char all_info_buff[4096*4];
@@ -115,7 +111,7 @@ enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct sw
 	uuid_unparse(db->opts->bin_uuid, uuid_str);
 	snprintf(node_info_buff, sizeof(node_info_buff), "# Node\n"
 											"swarmkv_version: %s\n"
-											"address: %s:%u\n"
+											"address: %s\n"
 											"uuid: %s\n"
 											"worker_threads: %zu\n"
 											"server_time_usec: %lld\n"
@@ -123,8 +119,7 @@ enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct sw
 											"up_time_in_days: %ld\n"
 											,
 											SWARMKV_VERSION,
-											db->self.ip_addr,
-											db->self.p2p_port,
+											db->self.addr,
 											uuid_str,
 											db->opts->nr_worker_threads,
 											server_time_us,
@@ -162,7 +157,7 @@ enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct sw
 															ks_info.expires);
 	struct snet_info net_info;
 	swarmkv_net_info(db->net, &net_info);
-	snprintf(net_info_buff, sizeof(net_info_buff), "#Network\n"
+	snprintf(net_info_buff, sizeof(net_info_buff), "# Network\n"
 												"connections: %lld\n"
 												"pending_rpcs: %lld\n"
 												"timed_out_rpcs: %lld\n"
@@ -227,6 +222,47 @@ enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct sw
 
 	return FINISHED;
 }
+enum cmd_exec_result ping_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+{
+	*reply=swarmkv_reply_new_string_fmt("PONG");
+	return FINISHED;
+}
+enum cmd_exec_result __attribute__((optimize("O0"))) debug_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+{
+    /*DEBUG SLEEP, ASSERT*/
+	if(0==strcasecmp(cmd->argv[1], "sleep") && cmd->argc>2)
+	{
+		if(cmd->argc<3)
+		{
+			*reply=swarmkv_reply_new_error(error_need_additional_arg, cmd->argv[1]);
+		}
+		else
+		{
+			double dtime = strtod(cmd->argv[2], NULL);
+			long long utime = dtime*1000000;
+			struct timespec tv;
+
+			tv.tv_sec = utime / 1000000;
+			tv.tv_nsec = (utime % 1000000) * 1000;
+			nanosleep(&tv, NULL);
+			*reply=swarmkv_reply_new_status("OK");
+    	}
+	}
+	else if(0==strcasecmp(cmd->argv[1], "assert"))
+	{
+		assert(0);
+	}
+	else
+	{
+		*reply=swarmkv_reply_new_error(error_arg_string_should_be, "sleep|assert");
+	}
+	return FINISHED;
+}
+
+enum cmd_exec_result config_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+{
+	return FINISHED;
+}
 struct swarmkv_cmd_spec *get_spec_by_argv(struct swarmkv *db, size_t argc, char* const argv[])
 {
 	struct swarmkv_cmd_spec *spec=NULL;
@@ -285,7 +321,7 @@ void swarmkv_threads_run(struct swarmkv *db)
 	return;
 }
 
-void cmd_exec_cb(const struct swarmkv_node_addr *peer, const void *data, size_t size, void *arg)
+void cmd_exec_cb(const node_t *peer, const void *data, size_t size, void *arg)
 {
 	struct swarmkv_reply *reply=NULL;
 	char error_str[256]={0};
@@ -299,17 +335,17 @@ void cmd_exec_cb(const struct swarmkv_node_addr *peer, const void *data, size_t 
 	}
 	else
 	{
-		snprintf(error_str, sizeof(error_str), "peer %s:%d timeout", peer->ip_addr, peer->p2p_port);		
+		snprintf(error_str, sizeof(error_str), "peer %s timeout", peer->addr);		
 		promise_failed(p, FUTURE_ERROR_TIMEOUT, error_str);
 	}
 }
 
-void exec_command_at_peer(struct swarmkv *db, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *peer_addr, struct future* f)
+void exec_command_at_peer(struct swarmkv *db, const struct swarmkv_cmd *cmd, const node_t *peer, struct future* f)
 {
 	char *blob=NULL;
 	size_t blob_sz=0;
 	swarmkv_msg_serialize_cmd(cmd, &blob, &blob_sz);
-	swarmkv_net_send_cmd(db->net, peer_addr, blob, blob_sz, cmd_exec_cb, f);
+	swarmkv_net_send_cmd(db->net, peer, blob, blob_sz, cmd_exec_cb, f);
 	free(blob);	
 	return;
 }
@@ -338,7 +374,7 @@ static struct swarmkv_reply *cmd_flag_to_keyspace_no_obj_owner_reply(unsigned lo
 	return reply;
 }
 
-static struct swarmkv_cmd *make_keyroute_cmd(enum cmd_key_flag flag, const sds key, const struct swarmkv_node_addr *obj_owner)
+static struct swarmkv_cmd *make_keyroute_cmd(enum cmd_key_flag flag, const sds key, const node_t *obj_owner)
 {
 	struct swarmkv_cmd *keyroute_cmd=NULL;
 	switch(flag)
@@ -427,13 +463,6 @@ struct cmd_ctx *cmd_ctx_new(struct swarmkv *db, const struct swarmkv_cmd *cmd, s
 	ctx->cmd=swarmkv_cmd_dup(cmd);
 	ctx->redirect_cnt=0;
 	ctx->future_of_caller=future_of_caller;
-/*
-	char my_future_name[SWARMKV_SYMBOL_MAX];
-	strncpy(my_future_name, spec->name, sizeof(my_future_name));
-	toLower(my_future_name);
-	replace_char(my_future_name, ' ', '_');
-	ctx->future_of_mine=future_create(my_future_name, key_route_on_success, generic_on_fail, ctx);
-*/
 	return ctx;
 }
 void cmd_ctx_free(struct cmd_ctx *ctx)
@@ -447,13 +476,13 @@ static void peer_exec_on_success(void* result, void* user)
 {	
 	struct cmd_ctx* ctx = (struct cmd_ctx*)user;
 	struct swarmkv_reply *reply = (struct swarmkv_reply*) result;
-	struct swarmkv_node_addr peer;
+	node_t peer;
 	if(reply->type==SWARMKV_REPLY_NODE && 0==strncasecmp(reply->str, "-ASK", 4))
 	{
 		ctx->redirect_cnt++;
 		if(ctx->redirect_cnt<=3)
 		{
-			swarmkv_reply2node_addr(reply, &peer);
+			node_init_from_reply(&peer, reply);
 			exec_command_at_peer(ctx->db, ctx->cmd, &peer, ctx->future_of_mine);
 		}
 		else
@@ -479,9 +508,9 @@ static void key_route_on_success(void* result, void* user)
 	struct swarmkv_reply *reply = (struct swarmkv_reply*) result;
 	struct swarmkv_reply *user_reply_for_keyspace_not_found=NULL;
 	size_t n_replica_node=0;
-	struct swarmkv_node_addr *replica_nodes=NULL;
+	node_t *replica_nodes=NULL;
 
-	swarmkv_reply2nodelist(reply, &replica_nodes, &n_replica_node);
+	node_list_new_from_reply(&replica_nodes, &n_replica_node, reply);
 	if(n_replica_node==0)
 	{
 		struct promise *p=future_to_promise(ctx->future_of_caller);
@@ -493,10 +522,10 @@ static void key_route_on_success(void* result, void* user)
 	else
 	{		
 		const sds key=ctx->cmd->argv[ctx->spec->key_offset];
-		int self_is_a_replica=swarmkv_node_addr_list_exists(replica_nodes, n_replica_node, &ctx->db->self);
+		int self_is_a_replica=node_list_exists(replica_nodes, n_replica_node, &ctx->db->self);
 		if(self_is_a_replica)
 		{
-			n_replica_node-=swarmkv_node_addr_list_remove(replica_nodes, n_replica_node, &ctx->db->self);
+			n_replica_node-=node_list_remove(replica_nodes, n_replica_node, &ctx->db->self);
 			swarmkv_store_add_key(ctx->db->mod_store, key, replica_nodes, n_replica_node);
 		}
 		if(self_is_a_replica && n_replica_node==0)
@@ -521,12 +550,12 @@ static void generic_on_fail(enum e_future_error err, const char * what, void * u
 	cmd_ctx_free(ctx);
 }
 
-void __exec_cmd(struct swarmkv *db, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *target_node, struct future *future_of_caller)
+void __exec_cmd(struct swarmkv *db, const struct swarmkv_cmd *cmd, const node_t *target_node, struct future *future_of_caller)
 {
 	struct swarmkv_cmd_spec *spec=NULL;
 	struct swarmkv_reply *reply=NULL;
 	enum cmd_exec_result exec_ret=FINISHED;
-	struct swarmkv_node_addr peer;
+	node_t peer;
 	struct cmd_ctx *ctx=NULL;
 	struct promise *p=NULL;
 	int ret=0;
@@ -558,15 +587,19 @@ void __exec_cmd(struct swarmkv *db, const struct swarmkv_cmd *cmd, const struct 
 		return;
 	}
 	ctx=cmd_ctx_new(db, cmd, spec, future_of_caller);
-	if(target_node && swarmkv_node_addr_compare(&db->self, target_node))
+	if(target_node && node_compare(&db->self, target_node))
 	{
 		ctx->future_of_mine=future_create("peer_exec", peer_exec_on_success, generic_on_fail, ctx);
 		exec_command_at_peer(ctx->db, ctx->cmd, target_node, ctx->future_of_mine);
 		return;
 	}
+	struct timespec start, end;
+	clock_gettime(CLOCK_MONOTONIC_COARSE, &start);
 	spec_lock_module(spec, cmd);
 	exec_ret=spec->proc(spec->module, cmd, NULL, &reply);
 	spec_unlock_module(spec, cmd);
+	clock_gettime(CLOCK_MONOTONIC_COARSE, &end);
+	swarmkv_monitor_record_command(db->mod_monitor, spec->name, timespec_diff_usec(&start, &end));
 	switch(exec_ret)
 	{
 		case FINISHED:
@@ -576,7 +609,7 @@ void __exec_cmd(struct swarmkv *db, const struct swarmkv_cmd *cmd, const struct 
 			ctx=NULL;
 			break;
 		case REDIRECT:
-			ret=swarmkv_reply2node_addr(reply, &peer);
+			ret=node_init_from_reply(&peer, reply);
 			assert(ret==0);
 			ctx->future_of_mine=future_create("peer_exec", peer_exec_on_success, generic_on_fail, ctx);
 			exec_command_at_peer(ctx->db, ctx->cmd, &peer, ctx->future_of_mine);
@@ -619,7 +652,7 @@ static void exec_cmd_on_fail(enum e_future_error err, const char * what, void * 
 	swarmkv_reply_free(reply);
 }
 
-void swarmkv_exec(struct swarmkv *db, const struct swarmkv_cmd *cmd, const struct swarmkv_node_addr *target_node, swarmkv_cmd_callback_func_t * cb, void * cb_arg)
+void swarmkv_exec(struct swarmkv *db, const struct swarmkv_cmd *cmd, const node_t *target_node, swarmkv_cmd_callback_func_t * cb, void * cb_arg)
 {
 	struct caller_ctx *ctx=NULL;
 	ctx=ALLOC(struct caller_ctx, 1);
@@ -631,7 +664,7 @@ void swarmkv_exec(struct swarmkv *db, const struct swarmkv_cmd *cmd, const struc
 	return;
 }
 
-void on_cmd_msg_callback(const struct swarmkv_node_addr * peer, unsigned long long sequence, const void* data, size_t size, void* arg)
+void on_cmd_msg_callback(const node_t *peer, unsigned long long sequence, const void *data, size_t size, void *arg)
 {
 	struct swarmkv* db=(struct swarmkv*)arg;
 	struct swarmkv_cmd *cmd=NULL;
@@ -644,9 +677,16 @@ void on_cmd_msg_callback(const struct swarmkv_node_addr * peer, unsigned long lo
 	{
 		if(is_sufficient_arg_num(spec, cmd))
 		{
+			struct timespec start, end;
+			clock_gettime(CLOCK_MONOTONIC_COARSE, &start);
+
 			spec_lock_module(spec, cmd);
 			spec->proc(spec->module, cmd, peer, &reply);
 			spec_unlock_module(spec, cmd);
+
+			clock_gettime(CLOCK_MONOTONIC_COARSE, &end);
+			swarmkv_monitor_record_command(db->mod_monitor, spec->name, timespec_diff_usec(&start, &end));
+
 		}
 		else
 		{
@@ -751,6 +791,22 @@ void command_spec_init(struct swarmkv *db)
 	command_register(&(db->command_table), "INFO", "[section]",
 					0, -1, CMD_KEY_RO, NOT_AUTO_ROUTE,
 					info_command, &db->module);
+	command_register(&(db->command_table), "DEBUG", "SLEEP|CRASH",
+					1, -1, CMD_KEY_RO, NOT_AUTO_ROUTE,
+					debug_command, &db->module);
+	command_register(&(db->command_table), "PING", "",
+					0, -1, CMD_KEY_RO, NOT_AUTO_ROUTE,
+					ping_command, &db->module);
+
+	command_register(&(db->command_table), "LATENCY COMMAND", "[command]",
+					0, -1, CMD_KEY_RO, NOT_AUTO_ROUTE,
+					latency_command_command, db->mod_monitor);
+	command_register(&(db->command_table), "LATENCY PEER", "[IP:port]",
+					0, -1, CMD_KEY_RO, NOT_AUTO_ROUTE,
+					latency_peer_command, db->mod_monitor);
+	command_register(&(db->command_table), "LATENCY EVENT", "[event_name]",
+					0, -1, CMD_KEY_RO, NOT_AUTO_ROUTE,
+					latency_event_command, db->mod_monitor);
 
 	/* low-level state-based CRDT synchronization commands*/
 	command_register(&(db->command_table), "CRDT PULL", "key",
@@ -870,15 +926,14 @@ const char *swarmkv_get_command_hint(struct swarmkv *db, const char* cmd_name)
 struct swarmkv *swarmkv_open(struct swarmkv_options* opts, const char * db_name, char **err)
 {
 	struct swarmkv *db = NULL;
-	future_promise_library_init(NULL);
 
 	db=ALLOC(struct swarmkv, 1);
 	strncpy(db->db_name, db_name, sizeof(db->db_name));
 
 	strncpy(db->module.name, "db", sizeof(db->module.name));
 	db->module.mod_ctx=db;
-	db->module.lock=db_lock;
-	db->module.unlock=db_unlock;
+	db->module.lock=NULL;
+	db->module.unlock=NULL;
 
 	db->opts=opts;
 	if(opts->logger)
@@ -897,8 +952,8 @@ struct swarmkv *swarmkv_open(struct swarmkv_options* opts, const char * db_name,
 	if(opts->dryrun)
 	{
 	}
-	db->self.p2p_port=opts->p2p_port;
-	strncpy(db->self.ip_addr, opts->bind_address, sizeof(db->self.ip_addr));
+	node_init(&db->self, opts->bind_address, opts->p2p_port);
+	db->mod_monitor=swarmkv_monitor_new(db->opts);
 
 	//Note: if the p2p_port is 0, swarmkv_net_new updates db->self.p2p_port.
 	db->net=swarmkv_net_new(opts, &db->self, db->logger, err);
@@ -907,19 +962,28 @@ struct swarmkv *swarmkv_open(struct swarmkv_options* opts, const char * db_name,
 		goto error_out;
 	}
 	swarmkv_net_set_on_cmd_cb(db->net, on_cmd_msg_callback, db);
-		
-//	struct event_base *evbase=swarmkv_net_get_eventbase(db->net, 0);
+	swarmkv_net_set_monitor_handle(db->net, db->mod_monitor);
+
 	db->mod_keyspace=swarmkv_keyspace_new(db->opts, db_name, db->logger, err);
 	if(*err)
 	{
 		goto error_out;
 	}
 	swarmkv_keyspace_set_exec_cmd_func(db->mod_keyspace, __exec_cmd, db);
+	swarmkv_keyspace_set_monitor_handle(db->mod_keyspace, db->mod_monitor);
 
 	db->mod_store=swarmkv_store_new(db->opts, __exec_cmd, db, opts->bin_uuid);
 	swarmkv_net_timer_add(db->net, 0, opts->sync_interval_us, 1, (timeout_cb*)swarmkv_store_periodic, db->mod_store);
+	swarmkv_store_set_monitor_handle(db->mod_store, db->mod_monitor);
 
 	command_spec_init(db);
+
+	struct swarmkv_cmd_spec *spec=NULL, *tmp_spec=NULL;
+	HASH_ITER(hh, db->command_table, spec, tmp_spec)
+	{
+		swarmkv_monitor_register_commands(db->mod_monitor, spec->name);
+	}
+	
 	swarmkv_threads_run(db);
 	char str_uuid[37]="";
 	uuid_unparse(db->opts->bin_uuid, str_uuid);
@@ -963,7 +1027,7 @@ void swarmkv_close(struct swarmkv * db)
 	
 	HASH_ITER(hh, db->command_table, spec, tmp_spec)
 	{
-		HASH_DELETE(hh, db->command_table, spec);
+		HASH_DEL(db->command_table, spec);
 		free(spec);
 	}
 
