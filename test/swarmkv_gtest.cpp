@@ -136,6 +136,7 @@ TEST_F(SwarmkvBasicTest, TypeSet)
 	//SMEMEBERS key
 	cmd_exec_arg_expect_array(arg, n_member);
 	swarmkv_smembers(db, key, strlen(key)+1, generic_callback, arg);
+	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
 	EXPECT_TRUE(exec_successful);
 	cmd_exec_arg_clear(arg);
 
@@ -143,18 +144,21 @@ TEST_F(SwarmkvBasicTest, TypeSet)
 	//SREM key m0 m1
 	cmd_exec_arg_expect_integer(arg, 2);
 	swarmkv_srem(db, key, strlen(key)+1, member, member_len, 2, generic_callback, arg);
+	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
 	EXPECT_TRUE(exec_successful);
 	cmd_exec_arg_clear(arg);
 
 	//SISMEMBER key m0
 	cmd_exec_arg_expect_integer(arg, 0);
 	swarmkv_sismember(db, key, strlen(key)+1, member[0], member_len[0], generic_callback, arg);
+	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
 	EXPECT_TRUE(exec_successful);
 	cmd_exec_arg_clear(arg);
 
 	//SISMEMBER key m2
 	cmd_exec_arg_expect_integer(arg, 1);
 	swarmkv_sismember(db, key, strlen(key)+1, member[2], member_len[2], generic_callback, arg);
+	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
 	EXPECT_TRUE(exec_successful);
 	cmd_exec_arg_clear(arg);
 
@@ -162,6 +166,7 @@ TEST_F(SwarmkvBasicTest, TypeSet)
 	//SCARD key
 	cmd_exec_arg_expect_integer(arg, 3);
 	swarmkv_scard(db, key, strlen(key)+1, generic_callback, arg);
+	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
 	EXPECT_TRUE(exec_successful);
 	cmd_exec_arg_clear(arg);
 
@@ -175,12 +180,14 @@ TEST_F(SwarmkvBasicTest, TypeSet)
 	//SISMEMBER key m2
 	cmd_exec_arg_expect_integer(arg, 0);
 	swarmkv_sismember(db, key, strlen(key)+1, member[2], member_len[2], generic_callback, arg);
+	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
 	EXPECT_TRUE(exec_successful);
 	cmd_exec_arg_clear(arg);
 
 	//SCARD key
 	cmd_exec_arg_expect_integer(arg, 0);
 	swarmkv_scard(db, key, strlen(key)+1, generic_callback, arg);
+	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
 	EXPECT_TRUE(exec_successful);
 	cmd_exec_arg_clear(arg);
 
@@ -967,7 +974,7 @@ TEST_F(SwarmkvTwoNodes, TypeTokenBucket)
 	EXPECT_GE(i/(int)(now.tv_sec-start.tv_sec), 100000);
 	long long upper_limit=(now.tv_sec-start.tv_sec)*rate+capacity;
 	double accuracy=(double)got_tokens/(upper_limit<requested_tokens?upper_limit:requested_tokens);
-	EXPECT_NEAR(accuracy, 1, 0.02);	
+	EXPECT_NEAR(accuracy, 1, 0.035);	
 
 	wait_for_sync();
 

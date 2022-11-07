@@ -93,7 +93,7 @@ enum cmd_exec_result crdt_join_command(struct swarmkv_module *mod_store, const s
 	assert(accessing_node!=NULL);//should never invoked by local
 
     node_t replica_node;
-    node_init_from_sds(cmd->argv[3], &replica_node);
+    node_init_from_sds(&replica_node, cmd->argv[3]);
 
 	obj=store_lookup(mod_store, key);
 	int added=0;

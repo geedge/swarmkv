@@ -13,15 +13,7 @@ enum cmd_exec_result sadd_command(struct swarmkv_module *mod_store, const struct
 	obj=store_lookup(mod_store, key);
 	if(!obj)
 	{
-		if(accessing_node)
-		{
-			obj=sobj_new(OBJ_TYPE_UNDEFINED, key);
-			store_add_obj(mod_store, obj);
-		}
-		else
-		{
-			return NEED_KEY_ROUTE;
-		}
+		return NEED_KEY_ROUTE;
 	}
 	
 	if(obj->type==OBJ_TYPE_UNDEFINED)
@@ -62,15 +54,7 @@ enum cmd_exec_result srem_command(struct swarmkv_module *mod_store, const struct
 	obj=store_lookup(mod_store, key);
 	if(!obj)
 	{
-		if(accessing_node)
-		{
-			*reply=swarmkv_reply_new_integer(0);
-			return FINISHED;
-		}
-		else
-		{
-			return NEED_KEY_ROUTE;
-		}
+		return NEED_KEY_ROUTE;
 	}
 	if(obj->type!=OBJ_TYPE_SET)
 	{
@@ -99,15 +83,7 @@ enum cmd_exec_result smembers_command(struct swarmkv_module *mod_store, const st
 	obj=store_lookup(mod_store, key);
 	if(!obj)
 	{
-		if(accessing_node)
-		{
-			*reply=swarmkv_reply_new_array(0);//return empty array
-			return FINISHED;
-		}
-		else
-		{
-			return NEED_KEY_ROUTE;
-		}
+		return NEED_KEY_ROUTE;
 	}
 	if(obj->type!=OBJ_TYPE_SET)
 	{
@@ -138,15 +114,7 @@ enum cmd_exec_result sismember_command(struct swarmkv_module *mod_store, const s
 	obj=store_lookup(mod_store, key);
 	if(!obj)
 	{
-		if(accessing_node)
-		{
-			*reply=swarmkv_reply_new_integer(0);
-			return FINISHED;
-		}
-		else
-		{
-			return NEED_KEY_ROUTE;
-		}
+		return NEED_KEY_ROUTE;
 	}
 	if(obj->type!=OBJ_TYPE_SET)
 	{
@@ -166,15 +134,7 @@ enum cmd_exec_result scard_command(struct swarmkv_module *mod_store, const struc
 	obj=store_lookup(mod_store, key);
 	if(!obj)
 	{
-		if(accessing_node)
-		{
-			*reply=swarmkv_reply_new_integer(0);
-			return FINISHED;
-		}
-		else
-		{
-			return NEED_KEY_ROUTE;
-		}
+		return NEED_KEY_ROUTE;
 	}
 	if(obj->type!=OBJ_TYPE_SET)
 	{

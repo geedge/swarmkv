@@ -255,7 +255,7 @@ sds node_addr2sds(const node_t *node)
 {
 	return sdsnew(node->addr);
 }
-int node_init_from_sds(const char *addr_str, node_t *node)
+int node_init_from_sds(node_t *node, const char *addr_str)
 {
 	memset(node, 0, sizeof(node_t));
 	strncpy(node->addr, addr_str, sizeof(node->addr));

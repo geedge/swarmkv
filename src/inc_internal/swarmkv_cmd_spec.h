@@ -28,6 +28,16 @@ enum cmd_key_flag
 				create the key if not-exisit. */
 	CMD_KEY_RM	/* Deletes the key. */
 };
+
+enum cmd_keyroute_failover
+{
+	REPLY_NA,	/*Not Applicable*/
+	REPLY_INT_0,
+	REPLY_INT_MINORS1,
+	REPLY_NIL,
+	REPLY_EMPTY_ARRAY,
+	REPLY_ERROR
+};
 typedef enum cmd_exec_result command_proc_func(struct swarmkv_module *module, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply);
 
 struct swarmkv_cmd_spec
@@ -36,7 +46,8 @@ struct swarmkv_cmd_spec
 	const char *hint;
 	int arity; /* Number of arguments, it is possible to use -N to say >= N */
     int key_offset; /* The argument that's a key (-1 = no keys) */
-	enum cmd_key_flag flag; /* Command flag, see CMD_*. */	
+	enum cmd_key_flag flag; /* Command flag, see CMD_*. */
+	enum cmd_keyroute_failover failover; 
 	int auto_route; /* The node that executes the command must be explicitly specifeid. */
 
 	command_proc_func *proc;

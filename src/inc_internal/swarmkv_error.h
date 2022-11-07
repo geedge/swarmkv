@@ -9,6 +9,8 @@
 #define error_arg_not_valid_address "ERR arg `%s` is not `IP:port` format"
 #define error_arg_string_should_be    "ERR arg `%s` should be `%s`"
 #define error_need_additional_arg   "ERR arg `%s` should be fllowed by more args"
+#define erorr_subcommand_syntax     "ERR unknown subcommand or wrong number of arguments for '%.128s'. Try %s HELP."
+#define error_tunnel_busy "ERR node is busy tunneling for %s"
 
 #define error_too_many_redirects     "ERR too many redirects, the lastest is `%s`"
 #define	error_cluster_leader_not_found	"ERR cluster leader not found"

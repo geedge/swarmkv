@@ -198,7 +198,7 @@ void key_entry_deletion_notification(struct key_route_entry *key_entry, exec_cmd
 		node_copy(&ctx->peer, &replica->node);
 		ctx->key=sdsdup(key_entry->key);
 		ctx->f=future_create("key_del", crdt_del_on_succ, crdt_del_on_fail, ctx);
-		exec_cmd(exec_cmd_handle, crdt_del_cmd, &replica->node, ctx->f);
+		exec_cmd(exec_cmd_handle, crdt_del_cmd, NULL, &replica->node, ctx->f);
 	}
 	swarmkv_cmd_free(crdt_del_cmd);
 	return;
@@ -1322,7 +1322,7 @@ enum cmd_exec_result keyspace_setslot_command(struct swarmkv_module *mod_keyspac
 			*reply=swarmkv_reply_new_error(error_need_additional_arg, str_state);
 			return FINISHED;
 		}
-		ret_string2node=node_init_from_sds(str_addr, &peer_node);
+		ret_string2node=node_init_from_sds(&peer_node, str_addr);
 		if(ret_string2node!=0)
 		{
 			*reply=swarmkv_reply_new_error(error_arg_not_valid_address, str_state);
@@ -1566,7 +1566,27 @@ enum cmd_exec_result keyspace_delslotkeys_command(struct swarmkv_module *mod_key
 	*reply=swarmkv_reply_new_integer(delete_num);
 	return FINISHED;
 }
+enum cmd_exec_result keyspace_countkeysinslot_command(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+{
+/*KEYSPACE COUNTKEYSINSLOT slot*/
+	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
 
+	long long slot_id=-1;
+	struct slot_runtime* slot_rt=NULL;
+	long long key_num=0;
+
+	if(0!=str2integer(cmd->argv[2], &slot_id) || slot_id>=KEYSPACE_SLOT_NUM)
+	{
+		*reply=swarmkv_reply_new_error(error_arg_not_valid_integer, cmd->argv[2]);
+		return FINISHED;
+	}
+	slot_rt=ks->slot_rts+slot_id;
+	pthread_mutex_lock(&slot_rt->mutex);
+	key_num=HASH_COUNT(slot_rt->keyroute_table);
+	pthread_mutex_unlock(&slot_rt->mutex);
+	*reply=swarmkv_reply_new_integer(key_num);
+	return FINISHED;
+}
 enum KEYSPACE_OP
 {
 	KEYSPACE_RLIST,
@@ -1740,7 +1760,7 @@ enum cmd_exec_result keyspace_radd_command(struct swarmkv_module *mod_keyspace, 
 	node_t new_replica;
 	if(cmd->argc==4)
 	{
-		if(0>node_init_from_sds(cmd->argv[3], &new_replica))
+		if(0>node_init_from_sds(&new_replica, cmd->argv[3]))
 		{
 			*reply=swarmkv_reply_new_error(error_arg_not_valid_address, cmd->argv+3);
 			return ret;
@@ -1761,7 +1781,7 @@ enum cmd_exec_result keyspace_xradd_command(struct swarmkv_module *mod_keyspace,
 	sds key=cmd->argv[2];
 	
 	node_t new_replica;
-	if(0>node_init_from_sds(cmd->argv[3], &new_replica))
+	if(0>node_init_from_sds(&new_replica, cmd->argv[3]))
 	{
 		*reply=swarmkv_reply_new_error(error_arg_not_valid_address, cmd->argv+3);
 		return ret;
@@ -1788,7 +1808,7 @@ enum cmd_exec_result keyspace_rdel_command(struct swarmkv_module *mod_keyspace, 
 	sds key=cmd->argv[2];
 
     node_t del_replica;
-	if(0>node_init_from_sds(cmd->argv[3], &del_replica))
+	if(0>node_init_from_sds(&del_replica, cmd->argv[3]))
 	{
 		*reply=swarmkv_reply_new_error(error_arg_not_valid_address, cmd->argv+3);
 		return ret;

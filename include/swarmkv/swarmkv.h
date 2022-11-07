@@ -63,8 +63,8 @@ void swarmkv_close(struct swarmkv * db);
 //Blocking function
 struct swarmkv_reply *swarmkv_command(struct swarmkv *db, const char *target, const char *format, ...);
 
-//Non-blockign function
-typedef void swarmkv_cmd_callback_func_t(const struct swarmkv_reply* reply, void * arg);
+//Non-blocking function
+typedef void swarmkv_cmd_callback_func_t(const struct swarmkv_reply *reply, void * arg);
 void swarmkv_command_async(struct swarmkv *db, swarmkv_cmd_callback_func_t * cb, void *cb_arg, const char *target, const char *format, ...);
 
 void swarmkv_get(struct swarmkv * db, 

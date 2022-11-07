@@ -19,7 +19,8 @@ enum cmd_exec_result
 {
 	NEED_KEY_ROUTE,
 	REDIRECT,
-	FINISHED
+	FINISHED,
+	ASYNC_WAIT
 };
 	
 struct swarmkv_module;
@@ -113,7 +114,7 @@ int node_list_remove(node_t *list, size_t n_list, const node_t *node);
 
 sds node_print_json(const node_t *self, uuid_t uuid);
 sds node_addr2sds(const node_t *node);
-int node_init_from_sds(const char *addr_str, node_t *node);
+int node_init_from_sds(node_t *node, const char *addr_str);
 int node_init_from_reply(node_t *node, const struct swarmkv_reply *reply);
 int node_compare(const node_t *node1, const node_t *node2);
 void node_copy(node_t *dst, const node_t *src);
@@ -124,4 +125,5 @@ void node_init_from_sockaddr(node_t *node, const struct sockaddr * sa);
 void node_to_sockaddr(const node_t *node, struct sockaddr *sockaddr);
 int http_blocking_request(enum evhttp_cmd_type type, const char* host, unsigned int port, const char* url, sds req_body, sds *resp_body);
 
-typedef void exec_cmd_func(struct swarmkv *handle, const struct swarmkv_cmd *cmd, const node_t *peer, struct future *f);
+typedef void exec_cmd_func(struct swarmkv *handle, const struct swarmkv_cmd *cmd, const node_t *accessing_node, const node_t *target_node, struct future *f);
+struct swarmkv_reply *swarmkv_command_argv(struct swarmkv *db, const char *target, int argc, sds *argv);

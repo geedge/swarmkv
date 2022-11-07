@@ -9,7 +9,7 @@
 #include <pthread.h>
 #define	MODULE_SWAMRKV_API	module_name_str("swarmkv.api")
 
-void swarmkv_exec(struct swarmkv *db, const struct swarmkv_cmd *cmd, const node_t *target_node, swarmkv_cmd_callback_func_t * cb, void * cb_arg);
+void exec_for_local(struct swarmkv *db, const struct swarmkv_cmd *cmd, const node_t *target_node, swarmkv_cmd_callback_func_t * cb, void * cb_arg);
 
 struct swarmkv_readoptions
 {
@@ -110,7 +110,7 @@ void swarmkv_set(struct swarmkv * db,
 	cmd->argv[1]=sdsnewlen(key, keylen);
 	cmd->argv[2]=sdsnewlen(value, vallen);
 
-	swarmkv_exec(db, cmd, NULL, cb, cb_arg);
+	exec_for_local(db, cmd, NULL, cb, cb_arg);
 	swarmkv_cmd_free(cmd);
 	return;
 	
@@ -123,7 +123,7 @@ void swarmkv_get(struct swarmkv * db,
 	cmd=swarmkv_cmd_new(2);
 	cmd->argv[0]=sdsnew("get");
 	cmd->argv[1]=sdsnewlen(key, keylen);
-	swarmkv_exec(db, cmd, NULL, cb, cb_arg);
+	exec_for_local(db, cmd, NULL, cb, cb_arg);
 	swarmkv_cmd_free(cmd);
 	return;
 }
@@ -134,7 +134,7 @@ void swarmkv_expire(struct swarmkv *db, const char *key, size_t keylen, int seco
 	cmd->argv[0]=sdsnew("expire");
 	cmd->argv[1]=sdsnewlen(key, keylen);
 	cmd->argv[2]=sdsfromlonglong(seconds);
-	swarmkv_exec(db, cmd, NULL, cb, cb_arg);
+	exec_for_local(db, cmd, NULL, cb, cb_arg);
 	swarmkv_cmd_free(cmd);
 	return;
 }
@@ -144,7 +144,7 @@ void swarmkv_ttl(struct swarmkv *db, const char *key, size_t keylen, swarmkv_cmd
 	cmd=swarmkv_cmd_new(2);
 	cmd->argv[0]=sdsnew("ttl");
 	cmd->argv[1]=sdsnewlen(key, keylen);
-	swarmkv_exec(db, cmd, NULL, cb, cb_arg);
+	exec_for_local(db, cmd, NULL, cb, cb_arg);
 	swarmkv_cmd_free(cmd);
 	return;
 }
@@ -155,7 +155,7 @@ void swarmkv_persist(struct swarmkv *db, const char *key, size_t keylen, swarmkv
 	cmd=swarmkv_cmd_new(2);
 	cmd->argv[0]=sdsnew("persist");
 	cmd->argv[1]=sdsnewlen(key, keylen);
-	swarmkv_exec(db, cmd, NULL, cb, cb_arg);
+	exec_for_local(db, cmd, NULL, cb, cb_arg);
 	swarmkv_cmd_free(cmd);
 	return;
 }
@@ -169,7 +169,7 @@ void swarmkv_sadd(struct swarmkv *db, const char* key, size_t keylen, const char
 	{
 		cmd->argv[2+i]=sdsnewlen(member[i], member_len[i]);
 	}
-	swarmkv_exec(db, cmd, NULL, cb, cb_arg);
+	exec_for_local(db, cmd, NULL, cb, cb_arg);
 	swarmkv_cmd_free(cmd);
 
 }
@@ -183,7 +183,7 @@ void swarmkv_srem(struct swarmkv *db, const char* key, size_t keylen, const char
 	{
 		cmd->argv[2+i]=sdsnewlen(member[i], member_len[i]);
 	}
-	swarmkv_exec(db, cmd, NULL, cb, cb_arg);
+	exec_for_local(db, cmd, NULL, cb, cb_arg);
 	swarmkv_cmd_free(cmd);
 
 }
@@ -194,7 +194,7 @@ void swarmkv_sismember(struct swarmkv *db, const char* key, size_t keylen, const
 	cmd->argv[0]=sdsnew("sismember");
 	cmd->argv[1]=sdsnewlen(key, keylen);
 	cmd->argv[2]=sdsnewlen(member, member_len);
-	swarmkv_exec(db, cmd, NULL, cb, cb_arg);
+	exec_for_local(db, cmd, NULL, cb, cb_arg);
 	swarmkv_cmd_free(cmd);
 }
 void swarmkv_smembers(struct swarmkv *db, const char* key, size_t keylen, swarmkv_cmd_callback_func_t *cb, void *cb_arg)
@@ -203,7 +203,7 @@ void swarmkv_smembers(struct swarmkv *db, const char* key, size_t keylen, swarmk
 	cmd=swarmkv_cmd_new(2);	
 	cmd->argv[0]=sdsnew("smembers");
 	cmd->argv[1]=sdsnewlen(key, keylen);
-	swarmkv_exec(db, cmd, NULL, cb, cb_arg);
+	exec_for_local(db, cmd, NULL, cb, cb_arg);
 	swarmkv_cmd_free(cmd);
 }
 void swarmkv_scard(struct swarmkv *db, const char* key, size_t keylen, swarmkv_cmd_callback_func_t *cb, void *cb_arg)
@@ -212,7 +212,7 @@ void swarmkv_scard(struct swarmkv *db, const char* key, size_t keylen, swarmkv_c
 	cmd=swarmkv_cmd_new(2);	
 	cmd->argv[0]=sdsnew("scard");
 	cmd->argv[1]=sdsnewlen(key, keylen);
-	swarmkv_exec(db, cmd, NULL, cb, cb_arg);
+	exec_for_local(db, cmd, NULL, cb, cb_arg);
 	swarmkv_cmd_free(cmd);
 }
 
@@ -227,7 +227,7 @@ void swarmkv_del(struct swarmkv * db, const char * key, size_t keylen, swarmkv_c
 	cmd=swarmkv_cmd_new(2);	
 	cmd->argv[0]=sdsnew("del");
 	cmd->argv[1]=sdsnewlen(key, keylen);
-	swarmkv_exec(db, cmd, NULL, cb, cb_arg);
+	exec_for_local(db, cmd, NULL, cb, cb_arg);
 	swarmkv_cmd_free(cmd);
 	return;
 }
@@ -238,7 +238,7 @@ void swarmkv_incrby(struct swarmkv * db, const char * key, size_t keylen, long l
 	cmd->argv[0]=sdsnew("incrby");
 	cmd->argv[1]=sdsnewlen(key, keylen);
 	cmd->argv[2]=sdsfromlonglong(increment);
-	swarmkv_exec(db, cmd, NULL, cb, cb_arg);
+	exec_for_local(db, cmd, NULL, cb, cb_arg);
 	swarmkv_cmd_free(cmd);
 	return;
 }
@@ -274,12 +274,12 @@ struct swarmkv_reply *swarmkv_command_argv(struct swarmkv *db, const char *targe
 
     if(!target)
     {
-        swarmkv_exec(db, cmd, NULL, blocking_query_cb, &ctx);
+        exec_for_local(db, cmd, NULL, blocking_query_cb, &ctx);
     }
     else
     {
-		node_init_from_sds(target, &target_node);
-        swarmkv_exec(db, cmd, &target_node, blocking_query_cb, &ctx);
+		node_init_from_sds(&target_node, target);
+        exec_for_local(db, cmd, &target_node, blocking_query_cb, &ctx);
     }
 
 	struct timespec max_wait = {0, 0};
@@ -349,13 +349,13 @@ void swarmkv_command_async(struct swarmkv *db, swarmkv_cmd_callback_func_t * cb,
 
 	if(!target)
     {
-        swarmkv_exec(db, cmd, NULL, cb, cb_arg);
+        exec_for_local(db, cmd, NULL, cb, cb_arg);
 
     }
     else
     {
-		node_init_from_sds(target, &target_node);
-        swarmkv_exec(db, cmd, &target_node, cb, cb_arg);
+		node_init_from_sds(&target_node, target);
+        exec_for_local(db, cmd, &target_node, cb, cb_arg);
     }
 
     if (argv)

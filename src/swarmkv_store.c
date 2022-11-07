@@ -524,7 +524,7 @@ void crdt_generic_call(struct swarmkv_store *store, enum CRDT_OP op, const struc
 	ctx->store=store;
 	ctx->key=sdsdup(cmd->argv[2]);
 	ctx->f=future_create(symbol[op], crdt_generic_on_succ, crdt_generic_on_fail, ctx);
-	store->exec_cmd(store->exec_cmd_handle, cmd, peer, ctx->f);
+	store->exec_cmd(store->exec_cmd_handle, cmd, NULL, peer, ctx->f);
 	return;
 }
 static void scontainer_sync(struct swarmkv_store *store, struct scontainer *ctr)

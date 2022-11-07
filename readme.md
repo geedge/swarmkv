@@ -16,7 +16,7 @@ Main Features
 
 - Embedded, **no** additional servers.
 - [CRDT](https://en.wikipedia.org/wiki/Conflict-free_replicated_data_type) native
-- Salable for trillions of operations per second, billions of keys, and thousands of parallel operators
+- Scalable for trillions of operations per second, billions of keys, and thousands of parallel operators
 
 **Why not SQLite, rqlite, or dqlite?** Because Swarm KV is not designed to be a relational database and extremely fast.
 
@@ -62,12 +62,12 @@ SwarmKV Data Types
 | INCRYBY                | key increment                        | Integer reply: the value of key after the increment          |
 | EXPIRE                 | key seconds                          | Integer reply, specifically: 1 if the timeout was set. 0 if the timeout was not set. e.g. key doesn't exist |
 | TTL                    | key                                  | Integer reply: TTL in seconds, in case of error:   -2 if the key does not exist;  -1 if the key exists but has no associated expire. |
-| PERSIST                | key                                  |                                                              |
+| PERSIST                | key                                  | Integer reply, specifically:<br/><br/>1 if the timeout was removed.<br/>0 if key does not exist or does not have an associated timeout.|
 | SADD                   | key member [member ...]              | Integer reply: the number of elements that were added to the set, not including all the elements already present in the set. |
-| SREM                   | key member [member ...]              | Integer reply: the number of members that were removed from the set, not including non existing members. The key will NOT be deleted if all members are removed. |
+| SREM                   | key member [member ...]              | Integer reply: the number of members that were removed from the set, not including non existing members. The key will NOT be deleted if all members are removed. If key does not exist, it is treated as an empty set and this command returns 0.|
 | SCARD                  | key                                  | Integer reply: the cardinality (number of elements) of the set, or 0 if key does not exist. |
 | SISMEMBER              | key member                           | Integer reply, specifically:<br/><br/>1 if the element is a member of the set.<br/>0 if the element is not a member of the set, or if key does not exist. |
-| SMEMBERS               | key                                  | Array reply: all elements of the set.                        |
+| SMEMBERS               | key                                  | Array reply: all elements of the set. Empty array if the key does not exist.|
 | TCFG                   | key capacity rate                    | Simple String Reply: OK if the token bucket was configured. Create the token bucket if key does not exist. |
 | TCONSUM                | key tokens [NORMAL\|FORCE\|FLEXIBLE] | Integer reply： the number of tokens that were allow to consume, or -1 if key does not exist. |
 | TINFO                  | key                                  | Array Reply: <br/>1) "Capacity"<br/>2) (integer) 1000000<br/>3) "Rate"<br/>4) (integer) 1000<br/>5) "Consumed"<br/>6) (integer) 5239123<br/>7) "Available"<br/>8) (integer) 3113<br/> |
@@ -88,7 +88,8 @@ SwarmKV Data Types
 | CLUSTER KEYSLOT        | keyslot                              | Integer reply: The hash slot the specified key hashes to.    |
 | CLUSTER NODES          |                                      |                                                              |
 | CLUSTER SLOTS          |                                      |                                                              |
-| CLUSTER ADDNODE        | IP port                              |                                                              |
+| CLUSTER ADDNODE        | IP:port                              |                                                              |
+| IMPERSONATE | IP:port |  |
 
 NOTE: 
 

@@ -99,7 +99,6 @@ struct snet_thread
 	struct snet_conn* conn_table;
 
     long long peer_timeout_us;
-	unsigned long long sequence_generator;
 	struct snet_rpc *rpc_table;
 
 	void* ref_logger;
@@ -163,7 +162,7 @@ void snet_rpc_process_reply(struct snet_rpc *rpc, void *data, size_t size)
 struct snet_rpc * snet_rpc_new(struct snet_thread *thr, node_t *peer, unsigned long long sequence, on_reply_callback_t * cb, void * cb_arg)
 {
 	struct snet_rpc *rpc=ALLOC(struct snet_rpc, 1);
-	rpc->sequence=thr->sequence_generator++;
+	rpc->sequence=thr->ref_net->sequence_generator++;
 	node_copy(&rpc->peer, peer);
 	rpc->cb=cb;
 	rpc->cb_arg=cb_arg;
@@ -649,6 +648,7 @@ struct swarmkv_net* swarmkv_net_new(const struct swarmkv_options *opts, node_t* 
 	net=ALLOC(struct swarmkv_net, 1);
 	net->logger=logger;
 	net->n_thread=opts->nr_worker_threads;
+	net->sequence_generator=1;
 	net->threads=ALLOC(struct snet_thread*, opts->nr_worker_threads);
 	for(i=0; i<opts->nr_worker_threads; i++)
 	{	
@@ -658,7 +658,6 @@ struct swarmkv_net* swarmkv_net_new(const struct swarmkv_options *opts, node_t* 
 		net->threads[i]->peer_timeout_us=opts->p2p_timeout_us;
 		net->threads[i]->ref_logger=logger;
 		net->threads[i]->ref_net=net;
-		net->threads[i]->sequence_generator=1;
 	}
 
 	//Refer to http://www.wangafu.net/~nickm/libevent-book/Ref8_listener.html

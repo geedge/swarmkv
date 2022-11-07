@@ -32,7 +32,7 @@ void *blocking_call_thread(void *thread_arg)
 	struct cmd_exec_arg *arg=NULL;
 	unsigned long long set_success_counter=0, get_success_counter=0, del_success_counter=0;
 	arg=cmd_exec_arg_new();
-	
+	arg->print_reply_on_fail=1;
 	for(i=0; i<n_key; i++)
 	{
 		snprintf(key, sizeof(key), "%s-key-%zu", uuid_str, i);
@@ -257,7 +257,7 @@ TEST(Migration, AddKeyOwner)
 	}
 	sleep(10);
 	swarmkv_cli_add_node(cluster_name, "127.0.0.1", p2p_port_start+NODE_NUMBER);
-	sleep(1000);
+	sleep(10);
 	g_running_flag=0;
 	int *successful_backgroud_running_thread=NULL;
 	for(i=0; i<NODE_NUMBER; i++)
@@ -272,7 +272,7 @@ TEST(Migration, AddKeyOwner)
 			successful_backgroud_running_thread=NULL;
 		}
 	}
-	sleep(3600);
+	sleep(20);
 	for(i=0; i<NODE_NUMBER+1; i++)
 	{
 		swarmkv_close(db[i]);

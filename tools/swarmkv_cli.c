@@ -118,7 +118,7 @@ static int consul_kv_init_block(char *cluster_name, char *argv[], size_t argc)
 		nth_node=MIN(i/slots_per_node, node_number-1);
 
 		slots[i].slot_id=i;
-		ret=node_init_from_sds(argv[nth_node], &(slots[i].owner));
+		ret=node_init_from_sds( &(slots[i].owner), argv[nth_node]);
 		if(ret!=0)
 		{
 			fprintf(stderr, "Invalid address %s.\n", argv[nth_node]);	
@@ -263,7 +263,7 @@ int is_node_active(struct swarmkv_reply *nodes_reply, node_t *node)
 	int node_is_active=0;
 	for(size_t i=0; i<nodes_reply->n_element; i++)
 	{
-		node_init_from_sds(nodes_reply->elements[i]->str, &tmp);
+		node_init_from_sds(&tmp, nodes_reply->elements[i]->str);
 		if(0==node_compare(node, &tmp))
 		{
 			node_is_active=1;
@@ -289,7 +289,7 @@ struct swarmkv_reply *cluster_addnode_command(struct swarmkv* db, char *argv[], 
 	{
 		return nodes_reply;
 	}
-	if(0!=node_init_from_sds(argv[2], &node))
+	if(0!=node_init_from_sds(&node, argv[2]))
 	{
 		reply=swarmkv_reply_new_error(error_arg_not_valid_address, argv[2]);
 		goto error_out;
@@ -1237,7 +1237,13 @@ int main(int argc, char * argv[])
 		}
 		
 		exec_argv=sdssplitargs(line, &exec_argc);
-		
+		if(!exec_argc)
+		{
+			reply=swarmkv_reply_new_error("invalid command format");
+			swarmkv_reply_print(reply, stdout);
+			swarmkv_reply_free(reply);
+			continue;
+		}
 		if(is_cluster_command(exec_argc, exec_argv))
 		{
 			reply=cluster_command_argv(g_config.db, exec_argc, exec_argv);

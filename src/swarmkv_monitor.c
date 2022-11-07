@@ -5,6 +5,7 @@
 #include "swarmkv_monitor.h"
 #include "swarmkv_common.h"
 #include "swarmkv_utils.h"
+#include "swarmkv_error.h"
 #include <hdr/hdr_histogram.h>
 #include <hdr/hdr_interval_recorder.h>
 
@@ -303,31 +304,46 @@ struct swarmkv_reply *lantency_generic(struct recorder **table, const char *key)
     }
     return reply;
 }
-enum cmd_exec_result latency_command_command(struct swarmkv_module *mod_monitor, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result latency_command(struct swarmkv_module *mod_monitor, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
 {
-    /*LATENCY COMMAND [command]*/
     struct swarmkv_monitor *monitor=module2monitor(mod_monitor);
-    *reply=lantency_generic(&monitor->commands, cmd->argc>2?cmd->argv[2]:NULL);
-    return FINISHED;
-}
-enum cmd_exec_result latency_event_command(struct swarmkv_module *mod_monitor, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
-{
-    /*LATENCY EVENT [event]*/
-    struct swarmkv_monitor *monitor=module2monitor(mod_monitor);
-    pthread_mutex_lock(&monitor->lock_event_recorder);
-    *reply=lantency_generic(&monitor->events, cmd->argc>2?cmd->argv[2]:NULL);
-    pthread_mutex_unlock(&monitor->lock_event_recorder);
-    return FINISHED;
-}
-enum cmd_exec_result latency_peer_command(struct swarmkv_module *mod_monitor, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
-{
-    /*LATENCY PEER [IP:port]*/
-    struct swarmkv_monitor *monitor=module2monitor(mod_monitor);
-    struct swarmkv_reply *tmp=NULL;
-    for(size_t i=0; i<monitor->nr_worker_threads; i++)
+	if(cmd->argc==2 && !strcasecmp(cmd->argv[1], "help") )
+	{
+		const char *help = {
+"LATENCY <subcommand> [<arg> [value] [opt] ...]. Subcommands are:\n"
+"COMMAND [command]\n"
+"    Return time-latency samples for a specified command name.\n"
+"PEER [IP:port]\n"
+"    Return time-latency samples for the specified peer.\n"
+"EVENT [event]\n"
+"    Return time-latency samples for the specified event.\n"
+"RESET [command|event|peer]\n"
+"    Reset data of a specified catalog or all the data if no catalog provided.\n"
+		};
+		*reply=swarmkv_reply_new_status(help);
+	}
+    else if(!strcasecmp(cmd->argv[1], "command"))
     {
-        tmp=lantency_generic(monitor->peers+i, cmd->argc>2?cmd->argv[2]:NULL);
-        swarmkv_reply_merge_array(reply, tmp);
+         *reply=lantency_generic(&monitor->commands, cmd->argc>2?cmd->argv[2]:NULL);
+    }
+    else if(!strcasecmp(cmd->argv[1], "event"))
+    {
+        pthread_mutex_lock(&monitor->lock_event_recorder);
+        *reply=lantency_generic(&monitor->events, cmd->argc>2?cmd->argv[2]:NULL);
+        pthread_mutex_unlock(&monitor->lock_event_recorder);        
+    }
+    else if(!strcasecmp(cmd->argv[1], "peer"))
+    {
+        struct swarmkv_reply *tmp=NULL;
+        for(size_t i=0; i<monitor->nr_worker_threads; i++)
+        {
+            tmp=lantency_generic(monitor->peers+i, cmd->argc>2?cmd->argv[2]:NULL);
+            swarmkv_reply_merge_array(reply, tmp);
+        }
+    }
+    else if(!strcasecmp(cmd->argv[1], "reset"))
+    {
+        *reply=swarmkv_reply_new_error(erorr_subcommand_syntax, cmd->argv[1], cmd->argv[0]);
     }
     return FINISHED;
 }
