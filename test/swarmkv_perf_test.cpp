@@ -257,7 +257,7 @@ TEST(Migration, AddKeyOwner)
 	}
 	sleep(10);
 	swarmkv_cli_add_node(cluster_name, "127.0.0.1", p2p_port_start+NODE_NUMBER);
-	sleep(10);
+	sleep(300);
 	g_running_flag=0;
 	int *successful_backgroud_running_thread=NULL;
 	for(i=0; i<NODE_NUMBER; i++)
@@ -272,7 +272,7 @@ TEST(Migration, AddKeyOwner)
 			successful_backgroud_running_thread=NULL;
 		}
 	}
-	sleep(20);
+	sleep(10);
 	for(i=0; i<NODE_NUMBER+1; i++)
 	{
 		swarmkv_close(db[i]);

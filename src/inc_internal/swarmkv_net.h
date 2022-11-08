@@ -36,5 +36,8 @@ struct snet_info
 	
 	double instantaneous_input_kbps;
 	double instantaneous_output_kbps;
+
+	double instantaneous_input_cps;
+	double instantaneous_output_cps;
 };
 void swarmkv_net_info(struct swarmkv_net *net, struct snet_info *info);

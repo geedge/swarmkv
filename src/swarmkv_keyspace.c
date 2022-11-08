@@ -1267,6 +1267,7 @@ void swarmkv_keyspace_info(struct swarmkv_module *mod_keyspace, struct keyspace_
 	info->health_check_port=ks->health_check_port;
 	info->keys=0;
 	info->expires=0;
+	info->slots=0;
 	for(i=0; i<KEYSPACE_SLOT_NUM; i++)
 	{
 		slot_rt=ks->slot_rts+i;

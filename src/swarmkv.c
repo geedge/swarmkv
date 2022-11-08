@@ -263,6 +263,8 @@ enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct sw
 												"output_msgs: %lld\n"
 												"instantaneous_input_kbps: %.2f\n"
 												"instantaneous_output_kbps: %.2f\n"
+												"instantaneous_output_cps: %.2f\n"
+												"instantaneous_output_cps: %.2f\n"
 												,
 												net_info.connections,
 												net_info.pending_rpcs,
@@ -276,7 +278,9 @@ enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct sw
 												net_info.input_msgs,
 												net_info.output_msgs,
 												net_info.instantaneous_input_kbps,
-												net_info.instantaneous_output_kbps
+												net_info.instantaneous_output_kbps,
+												net_info.instantaneous_output_cps,
+												net_info.instantaneous_output_cps
 												);
 
 	if(cmd->argc>1)

@@ -124,8 +124,10 @@ struct swarmkv_net
 	void* on_cmd_cb_arg;
 
 	long long last_input_bytes, last_output_bytes;
+	long long last_input_cmds, last_output_cmds;
 	struct timespec last_stats;
 	double instantaneous_input_kbps, instantaneous_output_kbps;
+	double instantaneous_input_cps, instantaneous_output_cps;
 };
 static int get_net_thread_id(const node_t *node, size_t n_thread)
 {
@@ -289,18 +291,25 @@ static void __dummy_event_handler(evutil_socket_t fd, short what, void * arg)
 	struct swarmkv_net *net= (struct swarmkv_net *)arg;
 	struct timespec now;
 	long long input_bytes=0, output_bytes=0;
+	long long input_cmds=0, output_cmds=0;
 	for(size_t i=0; i<net->n_thread; i++)
 	{
 		input_bytes += net->threads[i].stat.input_bytes;
 		output_bytes += net->threads[i].stat.output_bytes;
+		input_cmds += net->threads[i].stat.input_cmds;
+		output_cmds += net->threads[i].stat.output_cmds;
 	}
 	clock_gettime(CLOCK_MONOTONIC, &now);
 	net->instantaneous_input_kbps=(input_bytes - net->last_input_bytes)/1000/MAX(now.tv_sec - net->last_stats.tv_sec, 1);
 	net->instantaneous_output_kbps=(output_bytes - net->last_output_bytes)/1000/MAX(now.tv_sec - net->last_stats.tv_sec, 1);
+	net->instantaneous_input_cps=(input_cmds - net->last_input_cmds)/MAX(now.tv_sec - net->last_stats.tv_sec, 1);
+	net->instantaneous_output_cps=(output_cmds - net->last_output_cmds)/MAX(now.tv_sec - net->last_stats.tv_sec, 1);
 
 	clock_gettime(CLOCK_MONOTONIC, &net->last_stats);
 	net->last_input_bytes=input_bytes;
 	net->last_output_bytes=output_bytes;
+	net->last_input_cmds=input_cmds;
+	net->last_output_cmds=output_cmds;
 	return;
 }
 static void snet_conn_table_remove(struct snet_conn* conn)
@@ -721,6 +730,8 @@ void swarmkv_net_info(struct swarmkv_net *net, struct snet_info *info)
 	}
 	info->instantaneous_input_kbps=net->instantaneous_input_kbps;
 	info->instantaneous_output_kbps=net->instantaneous_output_kbps;
+	info->instantaneous_input_cps=net->instantaneous_input_cps;
+	info->instantaneous_output_cps=net->instantaneous_output_cps;
 	return;
 }
 static void timeout_ctx_free(struct timeout_ctx *ctx)
