@@ -9,7 +9,7 @@
 #include <pthread.h>
 #define	MODULE_SWAMRKV_API	module_name_str("swarmkv.api")
 
-void exec_for_local(struct swarmkv *db, const struct swarmkv_cmd *cmd, const node_t *target_node, swarmkv_cmd_callback_func_t * cb, void * cb_arg);
+void exec_for_local(struct swarmkv *db, const struct swarmkv_cmd *cmd, const node_t *target_node, swarmkv_on_reply_callback_t * cb, void * cb_arg);
 
 struct swarmkv_readoptions
 {
@@ -102,7 +102,7 @@ int swarmkv_options_set_worker_thread_number(struct swarmkv_options *opts, size_
 }
 
 void swarmkv_set(struct swarmkv * db,
-	const char * key, size_t keylen, const char * value, size_t vallen, swarmkv_cmd_callback_func_t * cb, void * cb_arg)
+	const char * key, size_t keylen, const char * value, size_t vallen, swarmkv_on_reply_callback_t * cb, void * cb_arg)
 {
 	struct swarmkv_cmd *cmd=NULL;
 	cmd=swarmkv_cmd_new(3);
@@ -117,7 +117,7 @@ void swarmkv_set(struct swarmkv * db,
 }
 
 void swarmkv_get(struct swarmkv * db,
-				const char *key, size_t keylen, swarmkv_cmd_callback_func_t *cb, void *cb_arg)
+				const char *key, size_t keylen, swarmkv_on_reply_callback_t *cb, void *cb_arg)
 {
 	struct swarmkv_cmd *cmd=NULL;
 	cmd=swarmkv_cmd_new(2);
@@ -127,7 +127,7 @@ void swarmkv_get(struct swarmkv * db,
 	swarmkv_cmd_free(cmd);
 	return;
 }
-void swarmkv_expire(struct swarmkv *db, const char *key, size_t keylen, int seconds, swarmkv_cmd_callback_func_t *cb, void *cb_arg)
+void swarmkv_expire(struct swarmkv *db, const char *key, size_t keylen, int seconds, swarmkv_on_reply_callback_t *cb, void *cb_arg)
 {
 	struct swarmkv_cmd *cmd=NULL;
 	cmd=swarmkv_cmd_new(3);
@@ -138,7 +138,7 @@ void swarmkv_expire(struct swarmkv *db, const char *key, size_t keylen, int seco
 	swarmkv_cmd_free(cmd);
 	return;
 }
-void swarmkv_ttl(struct swarmkv *db, const char *key, size_t keylen, swarmkv_cmd_callback_func_t *cb, void *cb_arg)
+void swarmkv_ttl(struct swarmkv *db, const char *key, size_t keylen, swarmkv_on_reply_callback_t *cb, void *cb_arg)
 {
 	struct swarmkv_cmd *cmd=NULL;
 	cmd=swarmkv_cmd_new(2);
@@ -149,7 +149,7 @@ void swarmkv_ttl(struct swarmkv *db, const char *key, size_t keylen, swarmkv_cmd
 	return;
 }
 
-void swarmkv_persist(struct swarmkv *db, const char *key, size_t keylen, swarmkv_cmd_callback_func_t *cb, void *cb_arg)
+void swarmkv_persist(struct swarmkv *db, const char *key, size_t keylen, swarmkv_on_reply_callback_t *cb, void *cb_arg)
 {
 	struct swarmkv_cmd *cmd=NULL;
 	cmd=swarmkv_cmd_new(2);
@@ -159,7 +159,7 @@ void swarmkv_persist(struct swarmkv *db, const char *key, size_t keylen, swarmkv
 	swarmkv_cmd_free(cmd);
 	return;
 }
-void swarmkv_sadd(struct swarmkv *db, const char* key, size_t keylen, const char *member[], const size_t member_len[], size_t n_member, swarmkv_cmd_callback_func_t *cb, void *cb_arg)
+void swarmkv_sadd(struct swarmkv *db, const char* key, size_t keylen, const char *member[], const size_t member_len[], size_t n_member, swarmkv_on_reply_callback_t *cb, void *cb_arg)
 {
 	struct swarmkv_cmd *cmd=NULL;
 	cmd=swarmkv_cmd_new(2+n_member);	
@@ -173,7 +173,7 @@ void swarmkv_sadd(struct swarmkv *db, const char* key, size_t keylen, const char
 	swarmkv_cmd_free(cmd);
 
 }
-void swarmkv_srem(struct swarmkv *db, const char* key, size_t keylen, const char *member[], const size_t member_len[], size_t n_member, swarmkv_cmd_callback_func_t *cb, void *cb_arg)
+void swarmkv_srem(struct swarmkv *db, const char* key, size_t keylen, const char *member[], const size_t member_len[], size_t n_member, swarmkv_on_reply_callback_t *cb, void *cb_arg)
 {
 	struct swarmkv_cmd *cmd=NULL;
 	cmd=swarmkv_cmd_new(2+n_member);	
@@ -187,7 +187,7 @@ void swarmkv_srem(struct swarmkv *db, const char* key, size_t keylen, const char
 	swarmkv_cmd_free(cmd);
 
 }
-void swarmkv_sismember(struct swarmkv *db, const char* key, size_t keylen, const char *member, size_t member_len, swarmkv_cmd_callback_func_t *cb, void *cb_arg)
+void swarmkv_sismember(struct swarmkv *db, const char* key, size_t keylen, const char *member, size_t member_len, swarmkv_on_reply_callback_t *cb, void *cb_arg)
 {
 	struct swarmkv_cmd *cmd=NULL;
 	cmd=swarmkv_cmd_new(3);	
@@ -197,7 +197,7 @@ void swarmkv_sismember(struct swarmkv *db, const char* key, size_t keylen, const
 	exec_for_local(db, cmd, NULL, cb, cb_arg);
 	swarmkv_cmd_free(cmd);
 }
-void swarmkv_smembers(struct swarmkv *db, const char* key, size_t keylen, swarmkv_cmd_callback_func_t *cb, void *cb_arg)
+void swarmkv_smembers(struct swarmkv *db, const char* key, size_t keylen, swarmkv_on_reply_callback_t *cb, void *cb_arg)
 {
 	struct swarmkv_cmd *cmd=NULL;
 	cmd=swarmkv_cmd_new(2);	
@@ -206,7 +206,7 @@ void swarmkv_smembers(struct swarmkv *db, const char* key, size_t keylen, swarmk
 	exec_for_local(db, cmd, NULL, cb, cb_arg);
 	swarmkv_cmd_free(cmd);
 }
-void swarmkv_scard(struct swarmkv *db, const char* key, size_t keylen, swarmkv_cmd_callback_func_t *cb, void *cb_arg)
+void swarmkv_scard(struct swarmkv *db, const char* key, size_t keylen, swarmkv_on_reply_callback_t *cb, void *cb_arg)
 {
 	struct swarmkv_cmd *cmd=NULL;
 	cmd=swarmkv_cmd_new(2);	
@@ -221,7 +221,7 @@ int swarmkv_hset_string(struct swarmkv *db,
 {
 	return 0;
 }				
-void swarmkv_del(struct swarmkv * db, const char * key, size_t keylen, swarmkv_cmd_callback_func_t *cb, void *cb_arg)
+void swarmkv_del(struct swarmkv * db, const char * key, size_t keylen, swarmkv_on_reply_callback_t *cb, void *cb_arg)
 {	
 	struct swarmkv_cmd *cmd=NULL;
 	cmd=swarmkv_cmd_new(2);	
@@ -231,7 +231,7 @@ void swarmkv_del(struct swarmkv * db, const char * key, size_t keylen, swarmkv_c
 	swarmkv_cmd_free(cmd);
 	return;
 }
-void swarmkv_incrby(struct swarmkv * db, const char * key, size_t keylen, long long increment, swarmkv_cmd_callback_func_t *cb, void *cb_arg)
+void swarmkv_incrby(struct swarmkv * db, const char * key, size_t keylen, long long increment, swarmkv_on_reply_callback_t *cb, void *cb_arg)
 {	
 	struct swarmkv_cmd *cmd=NULL;
 	cmd=swarmkv_cmd_new(3);	
@@ -326,7 +326,7 @@ struct swarmkv_reply *swarmkv_command(struct swarmkv *db, const char *target, co
 	return reply;
 }
 
-void swarmkv_command_async(struct swarmkv *db, swarmkv_cmd_callback_func_t * cb, void *cb_arg, const char *target, const char *format, ...)
+void swarmkv_command_async(struct swarmkv *db, swarmkv_on_reply_callback_t * cb, void *cb_arg, const char *target, const char *format, ...)
 {
 	int argc=0; sds *argv=NULL;
 	char *cmd_str=NULL;

@@ -8,6 +8,7 @@
 #include <ctype.h> //tolower, toupper
 #include <string.h> //memset
 
+
 pid_t gettid()
 {
 	return syscall(SYS_gettid);

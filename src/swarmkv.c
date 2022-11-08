@@ -79,7 +79,7 @@ struct swarmkv *module2db(struct swarmkv_module *module)
 void __exec_cmd(struct swarmkv *db, const struct swarmkv_cmd *cmd, const node_t *accessing_node, const node_t *target_node, struct future *future_of_caller);
 struct local_caller_ctx
 {
-	swarmkv_cmd_callback_func_t * cb;
+	swarmkv_on_reply_callback_t * cb;
 	void * cb_arg;
 	struct future *my_future;
 };
@@ -101,7 +101,7 @@ static void local_caller_on_fail(enum e_future_error err, const char * what, voi
 	swarmkv_reply_free(reply);
 }
 
-void exec_for_local(struct swarmkv *db, const struct swarmkv_cmd *cmd, const node_t *target_node, swarmkv_cmd_callback_func_t * cb, void * cb_arg)
+void exec_for_local(struct swarmkv *db, const struct swarmkv_cmd *cmd, const node_t *target_node, swarmkv_on_reply_callback_t * cb, void * cb_arg)
 {
 	struct local_caller_ctx *ctx=NULL;
 	ctx=ALLOC(struct local_caller_ctx, 1);
@@ -391,7 +391,7 @@ enum cmd_exec_result ping_command(struct swarmkv_module *mod_db, const struct sw
 	node_init_from_sds(&target, cmd->argv[1]);
 	if(0==node_compare(&target, &db->self))
 	{
-		*reply=swarmkv_reply_new_string_fmt("PONG from %s for %s", db->self.addr, accessing_node?accessing_node->addr:db->self.addr);
+		*reply=swarmkv_reply_new_string_fmt("PONG %s -> %s", db->self.addr, accessing_node?accessing_node->addr:db->self.addr);
 		return FINISHED;
 	}
 	else
@@ -1124,11 +1124,16 @@ void swarmkv_close(struct swarmkv * db)
 	for(size_t i=0; i<db->opts->nr_worker_threads; i++)
 	{
 		pthread_join(db->worker_threads[i]->thr, NULL);
+		free(db->worker_threads[i]);
+		db->worker_threads[i]=NULL;
+		
 	}
 	swarmkv_store_free(db->mod_store);
 	db->mod_store=NULL;
 	swarmkv_keyspace_free(db->mod_keyspace);
 	db->mod_keyspace=NULL;
+	swarmkv_monitor_free(db->mod_monitor);
+	db->mod_monitor=NULL;
 	
 	swarmkv_net_free(db->net);
 	db->net=NULL;

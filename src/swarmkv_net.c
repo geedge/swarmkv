@@ -8,6 +8,7 @@
 #include "xxhash.h"
 #include "log.h"
 
+//#include <valgrind/memcheck.h> //VALGRIND_CHECK_VALUE_IS_DEFINED
 
 #include <event2/listener.h>
 #include <event2/bufferevent.h>
@@ -103,7 +104,7 @@ struct snet_thread
 
 	void* ref_logger;
 	struct timeout_ctx *to_ctx;
-	struct swarmkv_net* ref_net;
+	struct swarmkv_net *ref_net;
 	struct swarmkv_module *mod_monitor;
 	struct snet_stat stat;
 };
@@ -114,7 +115,7 @@ struct swarmkv_net
 	unsigned long long sequence_generator;
 	int n_connection;
 	node_t self;
-	struct snet_thread **threads;
+	struct snet_thread *threads;
 	
 	struct evconnlistener *listener;	
 
@@ -128,7 +129,8 @@ struct swarmkv_net
 };
 static int get_net_thread_id(const node_t *node, size_t n_thread)
 {
-	int thread_id=XXH32(node, sizeof(node_t), 171)%n_thread;
+	size_t ip_len=strchr(node->addr, ':')-node->addr;
+	int thread_id=(int)(XXH32(node, ip_len, 171))%n_thread;
 	return thread_id;
 }
 
@@ -162,7 +164,7 @@ void snet_rpc_process_reply(struct snet_rpc *rpc, void *data, size_t size)
 struct snet_rpc * snet_rpc_new(struct snet_thread *thr, node_t *peer, unsigned long long sequence, on_reply_callback_t * cb, void * cb_arg)
 {
 	struct snet_rpc *rpc=ALLOC(struct snet_rpc, 1);
-	rpc->sequence=thr->ref_net->sequence_generator++;
+	rpc->sequence=atomic_inc(&thr->ref_net->sequence_generator);
 	node_copy(&rpc->peer, peer);
 	rpc->cb=cb;
 	rpc->cb_arg=cb_arg;
@@ -200,6 +202,7 @@ void snet_task_free(struct snet_task *task)
 	free(task->data);
 	task->data=NULL;
 	event_free(task->deferred_ev);
+	task->thr=NULL;
 	free(task);
 	return;
 }
@@ -288,8 +291,8 @@ static void __dummy_event_handler(evutil_socket_t fd, short what, void * arg)
 	long long input_bytes=0, output_bytes=0;
 	for(size_t i=0; i<net->n_thread; i++)
 	{
-		input_bytes += net->threads[i]->stat.input_bytes;
-		output_bytes += net->threads[i]->stat.output_bytes;
+		input_bytes += net->threads[i].stat.input_bytes;
+		output_bytes += net->threads[i].stat.output_bytes;
 	}
 	clock_gettime(CLOCK_MONOTONIC, &now);
 	net->instantaneous_input_kbps=(input_bytes - net->last_input_bytes)/1000/MAX(now.tv_sec - net->last_stats.tv_sec, 1);
@@ -374,7 +377,7 @@ static void peer_conn_read_cb(struct bufferevent *bev, void *arg)
     struct evbuffer *input = bufferevent_get_input(bev);
 	assert(bev==conn->bev);
 	
-	
+	assert(conn->ref_thr_ctx == conn->ref_thr_ctx->ref_net->threads+conn->thread_id);
 	if(conn->need_to_be_kill)
 	{
 		log_fatal(thr->ref_logger, MODULE_SWAMRKV_NET, "connection %s is killed",
@@ -532,6 +535,7 @@ struct snet_conn* snet_conn_new_by_fd(struct snet_thread *thr, evutil_socket_t f
 //	evbuffer_enable_locking(conn->buff_for_sending, NULL);
 	evutil_make_socket_nonblocking(fd);
 	node_init_from_sockaddr(&conn->connected_from, addr);
+
 	conn->bev=bufferevent_socket_new(thr->evbase, fd, BEV_OPT_DEFER_CALLBACKS|BEV_OPT_THREADSAFE);//BEV_OPT_UNLOCK_CALLBACKS|
 	//use BEV_OPT_THREADSAFE option for safely access from threads that calling swarmkv_net_send.
 	//? use BEV_OPT_UNLOCK_CALLBACKS option because swarmkv_net_send write buffer to output_buffer, and peer_conn_read_cb read input_buffer.
@@ -566,7 +570,7 @@ void snet_send(struct swarmkv_net *net, const node_t *peer, enum MSG_TYPE msg_ty
 {
 	int thread_id=0;
 	thread_id=get_net_thread_id(peer, net->n_thread);
-	struct snet_thread* thr=net->threads[thread_id];
+	struct snet_thread *thr=net->threads+thread_id;
 	snet_task_new(thr, peer, TASK_TYPE_SEND, msg_type, sequence, data, size, cb, cb_arg);
 	return;
 }
@@ -623,7 +627,7 @@ static void accept_peer_connection_cb(struct evconnlistener *listener, evutil_so
 	node_t peer;
 	node_init_from_sockaddr(&peer, addr);
 	int thread_id=get_net_thread_id(&peer, net->n_thread);
-	thr=net->threads[thread_id];
+	thr=net->threads+thread_id;
 	conn=snet_conn_new_by_fd(thr, fd, addr);
 
 	log_debug(net->logger, MODULE_SWAMRKV_NET, "accept connection form from %s.",
@@ -641,7 +645,6 @@ static void __accept_error_cb(struct evconnlistener *listener, void *arg)
 
 struct swarmkv_net* swarmkv_net_new(const struct swarmkv_options *opts, node_t* self, void* logger, char **err)
 {
-	size_t i=0;
 	struct swarmkv_net* net=NULL;	
     /* adds locking, only required if accessed from separate threads */
 	evthread_use_pthreads();
@@ -649,15 +652,18 @@ struct swarmkv_net* swarmkv_net_new(const struct swarmkv_options *opts, node_t* 
 	net->logger=logger;
 	net->n_thread=opts->nr_worker_threads;
 	net->sequence_generator=1;
-	net->threads=ALLOC(struct snet_thread*, opts->nr_worker_threads);
-	for(i=0; i<opts->nr_worker_threads; i++)
-	{	
-		net->threads[i]=ALLOC(struct snet_thread, 1);
-		net->threads[i]->evbase=event_base_new();
-		net->threads[i]->thread_id=i;
-		net->threads[i]->peer_timeout_us=opts->p2p_timeout_us;
-		net->threads[i]->ref_logger=logger;
-		net->threads[i]->ref_net=net;
+	net->threads=ALLOC(struct snet_thread, net->n_thread);
+	struct snet_thread *thr=NULL;
+	for(size_t i=0; i<net->n_thread; i++)
+	{
+		thr=net->threads+i;
+		thr->evbase=event_base_new();
+		thr->thread_id=i;
+		thr->peer_timeout_us=opts->p2p_timeout_us;
+		thr->ref_logger=logger;
+		thr->ref_net=net;
+		thr->conn_table=NULL;
+		thr->rpc_table=NULL;
 	}
 
 	//Refer to http://www.wangafu.net/~nickm/libevent-book/Ref8_listener.html
@@ -669,7 +675,7 @@ struct swarmkv_net* swarmkv_net_new(const struct swarmkv_options *opts, node_t* 
 	sin.sin_family = AF_INET;
 	sin.sin_addr.s_addr = htonl(0);	// Listen on 0.0.0.0
 	sin.sin_port = htons((unsigned short)port);
-	net->listener=evconnlistener_new_bind(net->threads[0]->evbase, accept_peer_connection_cb, net, 
+	net->listener=evconnlistener_new_bind(net->threads[0].evbase, accept_peer_connection_cb, net, 
 										LEV_OPT_CLOSE_ON_FREE|LEV_OPT_REUSEABLE, -1, (struct sockaddr*)&sin, sizeof(sin));
 	if(!net->listener)
 	{
@@ -695,21 +701,23 @@ struct swarmkv_net* swarmkv_net_new(const struct swarmkv_options *opts, node_t* 
 }
 void swarmkv_net_info(struct swarmkv_net *net, struct snet_info *info)
 {
+	struct snet_thread *thr=NULL;
 	memset(info, 0, sizeof(struct snet_info));
 	for(size_t i=0; i<net->n_thread; i++)
 	{
-		info->connections += HASH_COUNT(net->threads[i]->conn_table);
-		info->pending_rpcs += HASH_COUNT(net->threads[i]->rpc_table);
-		info->timed_out_rpcs += net->threads[i]->stat.timed_out_rpcs;
-		info->input_bytes += net->threads[i]->stat.input_bytes;
-		info->input_cmds += net->threads[i]->stat.input_cmds;
-		info->input_replies += net->threads[i]->stat.input_replies;
-		info->input_msgs += net->threads[i]->stat.input_msgs;
+		thr=net->threads+i;
+		info->connections += HASH_COUNT(thr->conn_table);
+		info->pending_rpcs += HASH_COUNT(thr->rpc_table);
+		info->timed_out_rpcs += thr->stat.timed_out_rpcs;
+		info->input_bytes += thr->stat.input_bytes;
+		info->input_cmds += thr->stat.input_cmds;
+		info->input_replies += thr->stat.input_replies;
+		info->input_msgs += thr->stat.input_msgs;
 
-		info->output_bytes += net->threads[i]->stat.output_bytes;
-		info->output_cmds += net->threads[i]->stat.output_cmds;
-		info->output_replies += net->threads[i]->stat.output_replies;
-		info->output_msgs += net->threads[i]->stat.output_msgs;
+		info->output_bytes += thr->stat.output_bytes;
+		info->output_cmds += thr->stat.output_cmds;
+		info->output_replies += thr->stat.output_replies;
+		info->output_msgs += thr->stat.output_msgs;
 	}
 	info->instantaneous_input_kbps=net->instantaneous_input_kbps;
 	info->instantaneous_output_kbps=net->instantaneous_output_kbps;
@@ -739,21 +747,20 @@ void swarmkv_net_timer_add(struct swarmkv_net *net, int thread_id, int usec, int
 	ctx->cb=cb;
 	ctx->is_persist=is_persist;
 	ctx->cb_arg=cb_arg;
-	ctx->ev=event_new(net->threads[thread_id]->evbase, -1, EV_PERSIST, wrap_timeout_handler, ctx);
+	ctx->ev=event_new(net->threads[thread_id].evbase, -1, EV_PERSIST, wrap_timeout_handler, ctx);
 
 	struct timeval timer_delay = {usec/(1000*1000), usec%(1000*1000)};
 	evtimer_add(ctx->ev, &timer_delay);
-	assert(net->threads[thread_id]->to_ctx==NULL);
-	net->threads[thread_id]->to_ctx=ctx;
+	assert(net->threads[thread_id].to_ctx==NULL);
+	net->threads[thread_id].to_ctx=ctx;
 }
 void swarmkv_net_stop(struct swarmkv_net* net)
 {
 	struct snet_thread *thr=NULL;
-	int i=0;
-	
-	for(i=0; i<net->n_thread; i++)
+
+	for(size_t i=0; i<net->n_thread; i++)
 	{
-		thr=net->threads[i];
+		thr=net->threads+i;
 		if(thr->is_dispatching)
 		{
 			event_base_loopexit(thr->evbase, NULL);
@@ -770,13 +777,12 @@ void swarmkv_net_free(struct swarmkv_net* net)
 	evconnlistener_free(net->listener);
 	for(i=0; i<net->n_thread; i++)
 	{	
-		thr=net->threads[i];
+		thr=net->threads+i;
 		if(thr->to_ctx)
 		{
 			timeout_ctx_free(thr->to_ctx);
 			thr->to_ctx=NULL;
 		}
-		net->threads[i]=NULL;
 		HASH_ITER(hh, thr->conn_table, conn, tmp)
 		{
 			snet_conn_table_remove(conn);
@@ -787,7 +793,6 @@ void swarmkv_net_free(struct swarmkv_net* net)
 			snet_rpc_free(rpc);
 		}
 		event_base_free(thr->evbase);
-		free(thr);
 	}
 	free(net->threads);
 
@@ -804,16 +809,16 @@ void swarmkv_net_set_monitor_handle(struct swarmkv_net* net, struct swarmkv_modu
 {
 	for(size_t i=0; i<net->n_thread; i++)
 	{
-		net->threads[i]->mod_monitor=mod_monitor;
+		net->threads[i].mod_monitor=mod_monitor;
 	}
 }
 void swarmkv_net_dispath(struct swarmkv_net* net, int thread_id)
 {
-	struct event * ev = event_new(net->threads[thread_id]->evbase, -1, EV_PERSIST, __dummy_event_handler, net);
+	struct event * ev = event_new(net->threads[thread_id].evbase, -1, EV_PERSIST, __dummy_event_handler, net);
 	struct timeval timer_delay = {2, 0};
-	net->threads[thread_id]->is_dispatching=1;
+	net->threads[thread_id].is_dispatching=1;
 	evtimer_add(ev, &timer_delay);
-	event_base_dispatch(net->threads[thread_id]->evbase);
+	event_base_dispatch(net->threads[thread_id].evbase);
 	
 	event_del(ev);
 	event_free(ev);

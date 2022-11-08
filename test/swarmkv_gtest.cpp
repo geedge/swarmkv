@@ -993,6 +993,7 @@ TEST_F(SwarmkvTwoNodes, TypeTokenBucket)
 }
 TEST_F(SwarmkvTwoNodes, Wait)
 {
+	return;
 	sleep(3600*2);
 }
 #define TEST_NODE_NUMBER	8
@@ -1019,6 +1020,7 @@ protected:
 			opts[i]=swarmkv_options_new();			
 			swarmkv_options_set_p2p_port(opts[i], 5210+i);
 			swarmkv_options_set_health_check_port(opts[i], 6210+i);
+			swarmkv_options_set_worker_thread_number(opts[i], 2);
 			swarmkv_options_set_logger(opts[i], logger);
 			db[i]=swarmkv_open(opts[i], cluster_name, &err);
 			if(err)
@@ -1053,7 +1055,7 @@ TEST_F(SwarmkvNNodes, SET_GET)
 	struct swarmkv **db=SwarmkvNNodes::db;
 
 	arg=cmd_exec_arg_new();
-	
+	arg->print_reply_on_fail=1;
 	cmd_exec_arg_expect_OK(arg);
 	swarmkv_set(db[0], key, strlen(key), val1, strlen(val1), generic_callback, arg);
 	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);

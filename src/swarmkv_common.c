@@ -302,11 +302,13 @@ void node_copy(node_t *dst, const node_t *src)
 }
 void node_init(node_t *node, const char *ipv4, unsigned int port)
 {
+	memset(node, 0, sizeof(node_t));
 	snprintf(node->addr, sizeof(node->addr), "%s:%u", ipv4, port);
 	return;
 }
 void node_init_from_string(node_t *node, const char *addr_str)
 {
+	memset(node, 0, sizeof(node_t));
 	assert(strlen(addr_str)<sizeof(node_t));
 	assert(strchr(addr_str, ':'));
 	strncpy(node->addr, addr_str, sizeof(node->addr));
@@ -374,6 +376,7 @@ void node_init_from_sockaddr(node_t *node, const struct sockaddr * sa)
 			assert(0);
             break;;
     }
+	memset(node, 0, sizeof(node_t));
 	snprintf(node->addr, sizeof(node->addr), "%s:%u", ip, port);
 	return;
 }

@@ -64,28 +64,28 @@ void swarmkv_close(struct swarmkv * db);
 struct swarmkv_reply *swarmkv_command(struct swarmkv *db, const char *target, const char *format, ...);
 
 //Non-blocking function
-typedef void swarmkv_cmd_callback_func_t(const struct swarmkv_reply *reply, void * arg);
-void swarmkv_command_async(struct swarmkv *db, swarmkv_cmd_callback_func_t * cb, void *cb_arg, const char *target, const char *format, ...);
+typedef void swarmkv_on_reply_callback_t(const struct swarmkv_reply *reply, void * arg);
+void swarmkv_command_async(struct swarmkv *db, swarmkv_on_reply_callback_t * cb, void *cb_arg, const char *target, const char *format, ...);
 
 void swarmkv_get(struct swarmkv * db, 
-	const char * key, size_t keylen, swarmkv_cmd_callback_func_t * cb, void * arg);
+	const char * key, size_t keylen, swarmkv_on_reply_callback_t * cb, void * arg);
 void swarmkv_set(struct swarmkv * db, 
-	const char * key, size_t keylen, const char * value, size_t vallen, swarmkv_cmd_callback_func_t * cb, void * arg);
+	const char * key, size_t keylen, const char * value, size_t vallen, swarmkv_on_reply_callback_t * cb, void * arg);
 
-void swarmkv_del(struct swarmkv * db, const char * key, size_t keylen, swarmkv_cmd_callback_func_t *cb, void *cb_arg);
-void swarmkv_incrby(struct swarmkv * db, const char * key, size_t keylen, long long delta, swarmkv_cmd_callback_func_t *cb, void *cb_arg);
-
-
-void swarmkv_expire(struct swarmkv *db, const char *key, size_t keylen, int seconds, swarmkv_cmd_callback_func_t *cb, void *cb_arg);
-void swarmkv_ttl(struct swarmkv *db, const char *key, size_t keylen, swarmkv_cmd_callback_func_t *cb, void *cb_arg);
-void swarmkv_persist(struct swarmkv *db, const char *key, size_t keylen, swarmkv_cmd_callback_func_t *cb, void *cb_arg);
+void swarmkv_del(struct swarmkv * db, const char * key, size_t keylen, swarmkv_on_reply_callback_t *cb, void *cb_arg);
+void swarmkv_incrby(struct swarmkv * db, const char * key, size_t keylen, long long delta, swarmkv_on_reply_callback_t *cb, void *cb_arg);
 
 
-void swarmkv_sadd(struct swarmkv *db, const char* key, size_t keylen, const char *member[], const size_t member_len[], size_t n_member, swarmkv_cmd_callback_func_t *cb, void *cb_arg);
-void swarmkv_srem(struct swarmkv *db, const char* key, size_t keylen, const char *member[], const size_t member_len[], size_t n_member, swarmkv_cmd_callback_func_t *cb, void *cb_arg);
-void swarmkv_sismember(struct swarmkv *db, const char* key, size_t keylen, const char *member, size_t member_len, swarmkv_cmd_callback_func_t *cb, void *cb_arg);
-void swarmkv_smembers(struct swarmkv *db, const char* key, size_t keylen, swarmkv_cmd_callback_func_t *cb, void *cb_arg);
-void swarmkv_scard(struct swarmkv *db, const char* key, size_t keylen, swarmkv_cmd_callback_func_t *cb, void *cb_arg);
+void swarmkv_expire(struct swarmkv *db, const char *key, size_t keylen, int seconds, swarmkv_on_reply_callback_t *cb, void *cb_arg);
+void swarmkv_ttl(struct swarmkv *db, const char *key, size_t keylen, swarmkv_on_reply_callback_t *cb, void *cb_arg);
+void swarmkv_persist(struct swarmkv *db, const char *key, size_t keylen, swarmkv_on_reply_callback_t *cb, void *cb_arg);
+
+
+void swarmkv_sadd(struct swarmkv *db, const char* key, size_t keylen, const char *member[], const size_t member_len[], size_t n_member, swarmkv_on_reply_callback_t *cb, void *cb_arg);
+void swarmkv_srem(struct swarmkv *db, const char* key, size_t keylen, const char *member[], const size_t member_len[], size_t n_member, swarmkv_on_reply_callback_t *cb, void *cb_arg);
+void swarmkv_sismember(struct swarmkv *db, const char* key, size_t keylen, const char *member, size_t member_len, swarmkv_on_reply_callback_t *cb, void *cb_arg);
+void swarmkv_smembers(struct swarmkv *db, const char* key, size_t keylen, swarmkv_on_reply_callback_t *cb, void *cb_arg);
+void swarmkv_scard(struct swarmkv *db, const char* key, size_t keylen, swarmkv_on_reply_callback_t *cb, void *cb_arg);
 
 
 //Used by swarmkv-cli
