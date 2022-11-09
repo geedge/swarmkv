@@ -213,7 +213,7 @@ void *background_running_thread(void *thread_arg)
 TEST(Migration, AddKeyOwner)
 {
 	int NODE_NUMBER=2;
-	int CALLBACK_THREAD_NUMBER=1;
+	int CALLER_THREAD_NUMBER=1;
 	int WORKER_THREAD_NUMBER=1;
 	int i=0, j=0;
 	struct swarmkv *db[NODE_NUMBER+1];
@@ -250,7 +250,7 @@ TEST(Migration, AddKeyOwner)
 	pthread_t threads[NODE_NUMBER][WORKER_THREAD_NUMBER];
 	for(i=0; i<NODE_NUMBER; i++)
 	{
-		for(j=0; j<CALLBACK_THREAD_NUMBER; j++)
+		for(j=0; j<CALLER_THREAD_NUMBER; j++)
 		{
 			pthread_create(&(threads[i][j]), NULL, background_running_thread, db[i]);
 		}
@@ -281,7 +281,123 @@ TEST(Migration, AddKeyOwner)
 	log_handle_destroy(logger);
 
 }
+int g_tconsume_running_flag=0;
+size_t g_token_bucket_number=10*1000;
 
+void *background_tconsume_thread(void *thread_arg)
+{
+	struct swarmkv *db=(struct swarmkv *)thread_arg;
+
+	struct cmd_exec_arg *arg=NULL;
+	arg=cmd_exec_arg_new();
+
+	char key[256];
+	int ret=0;
+	long long tokens=1;
+	size_t round=0, got_token_cnt=0;
+	while(g_tconsume_running_flag)
+	{
+		snprintf(key, sizeof(key), "tb-%zu", round%g_token_bucket_number);
+		cmd_exec_arg_expect_integer(arg, tokens);
+		swarmkv_tconsume(db, key, strlen(key), tokens, cmd_exec_generic_callback, arg);
+		ret=cmd_exec_arg_wait(arg, PERF_TEST_EXEC_TO_MS);
+		cmd_exec_arg_clear(arg);		
+		if(ret==1) got_token_cnt++;
+		round++;
+	}
+	cmd_exec_arg_free(arg);
+	int *success=ALLOC(int, 1);
+	EXPECT_EQ(got_token_cnt, round);
+	if(got_token_cnt==round)
+		*success=1;
+	else
+		*success=0;
+	return success;
+}
+TEST(Performance, Sync)
+{
+	size_t NODE_NUMBER=2;
+	size_t CALL_THREAD_PER_NODE=2;
+	size_t WORKER_THREAD_NUMBER=1;
+	
+	struct swarmkv *db[NODE_NUMBER];
+	char *err=NULL;
+	const char *log_path="./swarmkv-sync.log";
+	unsigned int p2p_port_start=7310, health_port_start=8310;
+	char node_list_str[1024]={0};
+	for(size_t i=0; i<NODE_NUMBER; i++)
+	{
+		snprintf(node_list_str+strlen(node_list_str), sizeof(node_list_str)-strlen(node_list_str), "127.0.0.1:%zu ", p2p_port_start+i);
+	}
+	const char *cluster_name="swarmkv-sync";
+	swarmkv_cli_create_cluster(cluster_name, node_list_str);
+	struct log_handle * logger=log_handle_create(log_path, 0);
+	struct swarmkv_options *opts[NODE_NUMBER];
+	for(size_t i=0; i<NODE_NUMBER; i++)
+	{
+		opts[i]=swarmkv_options_new();
+		swarmkv_options_set_p2p_port(opts[i], p2p_port_start+i);
+		swarmkv_options_set_health_check_port(opts[i], health_port_start+i);
+		swarmkv_options_set_logger(opts[i], logger);
+		swarmkv_options_set_worker_thread_number(opts[i], WORKER_THREAD_NUMBER);
+		swarmkv_options_set_p2p_timeout_us(opts[i], 1000*1000);
+		swarmkv_options_set_sync_interval_us(opts[i], 1*1000*1000);
+		swarmkv_options_set_disable_run_for_leader(opts[i]);
+		db[i]=swarmkv_open(opts[i], cluster_name, &err);
+		if(err)
+		{
+			printf("swarmkv_open %zu instance failed: %s\n", i, err);
+			free(err);
+			err=NULL;
+		}
+	}
+	char key[256]={0};
+	struct swarmkv_reply *reply=NULL;
+	for(size_t i=0; i<g_token_bucket_number; i++)
+	{
+		snprintf(key, sizeof(key), "tb-%zu", i);
+		reply=swarmkv_command(db[i%NODE_NUMBER], NULL, "TCFG %s 2000000 1000000", key);
+		EXPECT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+		if(reply->type != SWARMKV_REPLY_STATUS)
+		{
+			swarmkv_reply_print(reply, stdout);
+		}
+		swarmkv_reply_free(reply);
+	}
+	g_tconsume_running_flag=1;
+	pthread_t threads[NODE_NUMBER][CALL_THREAD_PER_NODE];
+	for(size_t i=0; i<NODE_NUMBER; i++)
+	{
+		for(size_t j=0; j<CALL_THREAD_PER_NODE; j++)
+		{
+			pthread_create(&(threads[i][j]), NULL, background_tconsume_thread, db[i]);
+		}
+	}
+
+	sleep(600);
+	g_tconsume_running_flag=0;
+	int *successful_backgroud_running_thread=NULL;
+	for(size_t i=0; i<NODE_NUMBER; i++)
+	{
+		for(size_t j=0; j<CALL_THREAD_PER_NODE; j++)
+		{
+			pthread_join(threads[i][j], (void**)&successful_backgroud_running_thread);	
+
+			EXPECT_EQ(*successful_backgroud_running_thread, 1);
+			*successful_backgroud_running_thread=0;
+			free(successful_backgroud_running_thread);
+			successful_backgroud_running_thread=NULL;
+		}
+	}
+	sleep(10);
+	for(size_t i=0; i<NODE_NUMBER; i++)
+	{
+		swarmkv_close(db[i]);
+	}
+
+	log_handle_destroy(logger);
+
+}
 int main(int argc, char ** argv)
 {
 	int ret=0;

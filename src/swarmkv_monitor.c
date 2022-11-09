@@ -30,7 +30,7 @@ struct recorder *recorder_new(const char *key, long long max_latency_usec)
     ret=hdr_interval_recorder_init_all(&recorder->hdr_interval, LOWEST_TRACKABLE_VALUE, max_latency_usec, SIGNIFICANT_FIGURES);
     assert(ret==0);
     hdr_init(1, max_latency_usec, 2, &recorder->hdr_all_time);
-    clock_gettime(CLOCK_MONOTONIC_COARSE, &recorder->last_sampled);
+    clock_gettime(CLOCK_MONOTONIC, &(recorder->last_sampled));
     return recorder;
 }
 void recorder_free(struct recorder *recorder)
@@ -84,6 +84,7 @@ void recorder_sample(struct recorder *recorder, struct recorder_metric *metric)
 {
     memset(metric, 0, sizeof(struct recorder_metric));
     recorder->hdr_previous=hdr_interval_recorder_sample_and_recycle(&recorder->hdr_interval, recorder->hdr_previous);
+    long long recent_total_count=recorder->hdr_previous->total_count;
     long long dropped=hdr_add(recorder->hdr_all_time, recorder->hdr_previous);
     assert(dropped==0);
     strncpy(metric->key, recorder->key, sizeof(metric->key));
@@ -100,11 +101,11 @@ void recorder_sample(struct recorder *recorder, struct recorder_metric *metric)
     metric->min=hdr_min(recorder->hdr_all_time);
     metric->stddev=hdr_stddev(recorder->hdr_all_time);
     struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
     double diff_time_ms=(now.tv_sec-recorder->last_sampled.tv_sec)*1000+(now.tv_nsec-recorder->last_sampled.tv_nsec)/1000/1000;
     diff_time_ms=MAX(diff_time_ms, 1);
-    clock_gettime(CLOCK_MONOTONIC_COARSE, &now);
-    metric->rate=(double)(recorder->hdr_previous->total_count)*1000/diff_time_ms;
-    clock_gettime(CLOCK_MONOTONIC_COARSE, &recorder->last_sampled);
+    metric->rate=(double)(recent_total_count)*1000/diff_time_ms;
+    clock_gettime(CLOCK_MONOTONIC, &(recorder->last_sampled));
     return;
 }
 void recorder_reset(struct recorder *recorder)
@@ -112,7 +113,7 @@ void recorder_reset(struct recorder *recorder)
     recorder->hdr_previous=hdr_interval_recorder_sample_and_recycle(&recorder->hdr_interval, recorder->hdr_previous);
     hdr_reset(recorder->hdr_previous);
     hdr_reset(recorder->hdr_all_time);
-    clock_gettime(CLOCK_MONOTONIC_COARSE, &recorder->last_sampled);
+    clock_gettime(CLOCK_MONOTONIC, &(recorder->last_sampled));
     return;
 }
 void recorder_record(struct recorder *recorder, long long latency_usec, long long corrected)

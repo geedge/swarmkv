@@ -903,10 +903,10 @@ void command_spec_init(struct swarmkv *db)
 
 	/* Debugging Commands */
 	command_register(&(db->command_table), "INFO", "[section]",
-					0, -1, CMD_KEY_NA, REPLY_NA, NOT_AUTO_ROUTE,
+					0, -1, CMD_KEY_NA, REPLY_NA, AUTO_ROUTE,
 					info_command, &db->module);
 	command_register(&(db->command_table), "DEBUG", "<subcommand>",
-					1, -1, CMD_KEY_NA, REPLY_NA, NOT_AUTO_ROUTE,
+					1, -1, CMD_KEY_NA, REPLY_NA, AUTO_ROUTE,
 					debug_command, &db->module);
 	command_register(&(db->command_table), "PING", "IP:port",
 					1, -1, CMD_KEY_NA, REPLY_NA, AUTO_ROUTE,

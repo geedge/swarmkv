@@ -61,7 +61,7 @@ struct snet_conn
 	pthread_mutex_t mutex;
 	struct bufferevent *bev;
 	evutil_socket_t fd;	
-	struct snet_thread* ref_thr_ctx;
+	struct snet_thread* ref_thr;
 	UT_hash_handle hh;
 };
 struct timeout_ctx
@@ -166,7 +166,7 @@ void snet_rpc_process_reply(struct snet_rpc *rpc, void *data, size_t size)
 struct snet_rpc * snet_rpc_new(struct snet_thread *thr, node_t *peer, unsigned long long sequence, on_reply_callback_t * cb, void * cb_arg)
 {
 	struct snet_rpc *rpc=ALLOC(struct snet_rpc, 1);
-	rpc->sequence=atomic_inc(&thr->ref_net->sequence_generator);
+	rpc->sequence=atomic_inc(&(thr->ref_net->sequence_generator));
 	node_copy(&rpc->peer, peer);
 	rpc->cb=cb;
 	rpc->cb_arg=cb_arg;
@@ -230,7 +230,7 @@ void snet_task_deferred_run(evutil_socket_t fd, short events, void *arg)
 			snet_send_in_evloop(task->thr, &task->peer, task->sequence, task->msg_type, task->data, task->size);
 			thr->stat.output_replies++;
 		}
-		thr->stat.output_bytes += (task->size+sizeof(struct swarmkv_msg_hdr));
+		
 		thr->stat.output_msgs++;
 	}
 	else//receive
@@ -258,7 +258,6 @@ void snet_task_deferred_run(evutil_socket_t fd, short events, void *arg)
 			thr->ref_net->on_cmd_cb(&task->peer, task->sequence, task->data, task->size, thr->ref_net->on_cmd_cb_arg);
 			thr->stat.input_cmds++;
 		}
-		thr->stat.input_bytes += (task->size+sizeof(struct swarmkv_msg_hdr));
 		thr->stat.input_msgs++;
 	}
 	snet_task_free(task);
@@ -314,7 +313,7 @@ static void __dummy_event_handler(evutil_socket_t fd, short what, void * arg)
 }
 static void snet_conn_table_remove(struct snet_conn* conn)
 {
-	struct snet_thread *thr=conn->ref_thr_ctx;
+	struct snet_thread *thr=conn->ref_thr;
 	assert(conn->is_in_conn_table==1);
 	HASH_DEL(thr->conn_table, conn);
 	conn->is_in_conn_table=0;
@@ -381,12 +380,12 @@ static void peer_conn_write_cb(struct bufferevent *bev, void *arg)
 static void peer_conn_read_cb(struct bufferevent *bev, void *arg)
 {
 	struct snet_conn *conn=(struct snet_conn*)arg;
-	struct snet_thread *thr=conn->ref_thr_ctx;
+	struct snet_thread *thr=conn->ref_thr;
 	assert(0==evbuffer_get_length(conn->buff_for_sending));
     struct evbuffer *input = bufferevent_get_input(bev);
 	assert(bev==conn->bev);
 	
-	assert(conn->ref_thr_ctx == conn->ref_thr_ctx->ref_net->threads+conn->thread_id);
+	assert(conn->ref_thr == conn->ref_thr->ref_net->threads+conn->thread_id);
 	if(conn->need_to_be_kill)
 	{
 		log_fatal(thr->ref_logger, MODULE_SWAMRKV_NET, "connection %s is killed",
@@ -409,6 +408,7 @@ static void peer_conn_read_cb(struct bufferevent *bev, void *arg)
 				conn->recv_state=RECEIVING_HDR;
 				break;
 			}
+			thr->stat.input_bytes+=sizeof(struct swarmkv_msg_hdr);
 			hdr=(struct swarmkv_msg_hdr*)recv_buff;
 			if(hdr->magic!=MSG_HDR_MAGIC)
 			{
@@ -447,6 +447,7 @@ static void peer_conn_read_cb(struct bufferevent *bev, void *arg)
 			evbuffer_drain(input, conn->receiving_hdr.payload_len);
 			conn->recv_state=RECEIVING_HDR;
 			memset(&conn->receiving_hdr, 0, sizeof(conn->receiving_hdr));
+			thr->stat.input_bytes+=conn->receiving_hdr.payload_len;
 		}
 	}
 	return;
@@ -455,7 +456,7 @@ static void peer_conn_read_cb(struct bufferevent *bev, void *arg)
 static void peer_conn_event_cb(struct bufferevent *bev, short events, void *arg)
 {
 	struct snet_conn *conn=(struct snet_conn*)arg;
-	struct snet_thread *thr=conn->ref_thr_ctx;
+	struct snet_thread *thr=conn->ref_thr;
 	
 	int err = EVUTIL_SOCKET_ERROR();
 
@@ -478,7 +479,7 @@ static void peer_conn_event_cb(struct bufferevent *bev, short events, void *arg)
 void connect_peer_eventcb(struct bufferevent *bev, short events, void *arg)
 {
 	struct snet_conn* conn= (struct snet_conn*) arg;
-	struct snet_thread* thr=conn->ref_thr_ctx;
+	struct snet_thread* thr=conn->ref_thr;
 	
 	assert(bev==conn->bev);
 	if (events & BEV_EVENT_CONNECTED)
@@ -516,7 +517,7 @@ struct snet_conn* snet_conn_new_by_connecting(struct snet_thread* thr, const nod
 	bufferevent_setcb(conn->bev, NULL, NULL, connect_peer_eventcb, conn);
 	node_copy(&conn->peer_listen_addr, dest);
 	conn->thread_id=thr->thread_id;
-	conn->ref_thr_ctx=thr;
+	conn->ref_thr=thr;
 	node_copy(&conn->connected_from, dest);
 	struct sockaddr sa;
 	node_to_sockaddr(dest, &sa);
@@ -550,7 +551,7 @@ struct snet_conn* snet_conn_new_by_fd(struct snet_thread *thr, evutil_socket_t f
 	//? use BEV_OPT_UNLOCK_CALLBACKS option because swarmkv_net_send write buffer to output_buffer, and peer_conn_read_cb read input_buffer.
 	conn->fd=fd;
 	conn->thread_id=thr->thread_id;
-	conn->ref_thr_ctx=thr;
+	conn->ref_thr=thr;
 	bufferevent_setcb(conn->bev, peer_conn_read_cb, peer_conn_write_cb, peer_conn_event_cb, conn);
 	bufferevent_enable(conn->bev, EV_READ | EV_WRITE);
 	return conn;
@@ -570,8 +571,8 @@ void snet_conn_send(struct snet_conn *conn, const void *hdr, size_t hdr_sz, cons
 	{
 		evbuffer_add(conn->buff_for_sending, hdr, hdr_sz);
 		evbuffer_add(conn->buff_for_sending, payload, payload_sz);
-
 	}
+	conn->ref_thr->stat.output_bytes += (hdr_sz+payload_sz);
 	return;
 }
 

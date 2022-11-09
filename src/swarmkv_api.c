@@ -242,7 +242,17 @@ void swarmkv_incrby(struct swarmkv * db, const char * key, size_t keylen, long l
 	swarmkv_cmd_free(cmd);
 	return;
 }
-
+void swarmkv_tconsume(struct swarmkv * db, const char * key, size_t keylen, long long tokens, swarmkv_on_reply_callback_t *cb, void *cb_arg)
+{	
+	struct swarmkv_cmd *cmd=NULL;
+	cmd=swarmkv_cmd_new(3);	
+	cmd->argv[0]=sdsnew("tconsume");
+	cmd->argv[1]=sdsnewlen(key, keylen);
+	cmd->argv[2]=sdsfromlonglong(tokens);
+	exec_for_local(db, cmd, NULL, cb, cb_arg);
+	swarmkv_cmd_free(cmd);
+	return;
+}
 struct blocking_query_ctx
 {
 	pthread_cond_t cond;

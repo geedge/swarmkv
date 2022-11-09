@@ -47,8 +47,7 @@ struct swarmkv_store *module2store(struct swarmkv_module *module)
 #define	STORE_XXHASH_SEED	5210
 int get_shard_id(sds key)
 {
-	XXH32_hash_t hash = XXH32(key, sdslen(key), STORE_XXHASH_SEED);
-	int shard_idx=hash%STORE_SHARD_NUMBER;
+	int shard_idx=key_hash_slot(key, sdslen(key))%STORE_SHARD_NUMBER;
 	return shard_idx;
 }
 
@@ -471,36 +470,36 @@ static void crdt_generic_on_succ(void* result, void* user)
 			if(obj && reply->type==SWARMKV_REPLY_STRING)
 			{
 				sobj_merge_blob(obj, reply->str, reply->len, uuid);
-				__sync_add_and_fetch(&ctx->store->sync_ok, 1);
+				atomic_inc(&ctx->store->sync_ok);
 			}
 			else
 			{
-				__sync_add_and_fetch(&ctx->store->sync_err, 1);
+				atomic_inc(&ctx->store->sync_err);
 			}
 			store_unlock(&ctx->store->module, ctx->key);
 			break;
 		case CRDT_PUSH:
 			if(reply->type==SWARMKV_REPLY_INTEGER && reply->integer==1)
 			{
-				__sync_add_and_fetch(&ctx->store->sync_ok, 1);
+				atomic_inc(&ctx->store->sync_ok);
 			}
 			else
 			{
-				__sync_add_and_fetch(&ctx->store->sync_err, 1);
+				atomic_inc(&ctx->store->sync_err);
 			}
 			break;
 		case CRDT_JOIN:
 			if(reply->type==SWARMKV_REPLY_INTEGER && reply->integer==1)
 			{
-				__sync_add_and_fetch(&ctx->store->sync_ok, 1);
+				atomic_inc(&ctx->store->sync_ok);
 			}
 			else
 			{
-				__sync_add_and_fetch(&ctx->store->sync_err, 1);
+				atomic_inc(&ctx->store->sync_err);
 			}
 			break;
 		default:
-			__sync_add_and_fetch(&ctx->store->sync_err, 1);
+			atomic_inc(&ctx->store->sync_err);
 			break;
 	}
 
@@ -510,7 +509,7 @@ static void crdt_generic_on_succ(void* result, void* user)
 static void crdt_generic_on_fail(enum e_future_error err, const char * what, void * user)
 {
 	struct crdt_generic_ctx *ctx=(struct crdt_generic_ctx *)user;
-	__sync_add_and_fetch(&ctx->store->sync_err, 1);
+	atomic_inc(&ctx->store->sync_err);
 	crdt_generic_ctx_free(ctx);
 	return;
 }
@@ -518,7 +517,7 @@ static void crdt_generic_on_fail(enum e_future_error err, const char * what, voi
 void crdt_generic_call(struct swarmkv_store *store, enum CRDT_OP op, const struct swarmkv_cmd *cmd, const node_t *peer)
 {
 	const char *symbol[]={"crdt_pull", "crdt_push", "crdt_join"};
-	struct crdt_generic_ctx* ctx=NULL;
+	struct crdt_generic_ctx *ctx=NULL;
 	ctx=ALLOC(struct crdt_generic_ctx, 1);
 	ctx->op=op;
 	ctx->store=store;
@@ -556,9 +555,11 @@ void swarmkv_store_periodic(struct swarmkv_module * mod_store)
 	struct scontainer *ctr=NULL, *tmp=NULL;
 	struct timespec start, end;
 	int has_key_synced=0;
+	size_t MAX_SYNC_PER_CYCLE=100;
 	clock_gettime(CLOCK_MONOTONIC_COARSE, &start);
 	for(size_t i=0; i<STORE_SHARD_NUMBER; i++)
 	{
+		size_t j=0;
 		pthread_mutex_lock(&store->mutex[i]);
 		DL_FOREACH_SAFE(store->sync_queue[i], ctr, tmp)
 		{
@@ -566,6 +567,8 @@ void swarmkv_store_periodic(struct swarmkv_module * mod_store)
 			DL_DELETE(store->sync_queue[i], ctr);
 			ctr->is_in_sync_q=0;
 			has_key_synced=1;
+			j++;
+			if(j>MAX_SYNC_PER_CYCLE) break;
 		}
 		pthread_mutex_unlock(&store->mutex[i]);
 	}
