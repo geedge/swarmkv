@@ -282,7 +282,7 @@ TEST(Migration, AddKeyOwner)
 
 }
 int g_tconsume_running_flag=0;
-size_t g_token_bucket_number=100*1000;
+size_t g_token_bucket_number=200*1000;
 
 void *background_tconsume_thread(void *thread_arg)
 {
@@ -295,9 +295,10 @@ void *background_tconsume_thread(void *thread_arg)
 	int ret=0;
 	long long tokens=1;
 	size_t round=0, got_token_cnt=0;
+	int start=random()%16;
 	while(g_tconsume_running_flag)
 	{
-		snprintf(key, sizeof(key), "tb-%zu", round%g_token_bucket_number);
+		snprintf(key, sizeof(key), "tb-%zu", (round+start)%g_token_bucket_number);
 		cmd_exec_arg_expect_integer(arg, tokens);
 		swarmkv_tconsume(db, key, strlen(key), tokens, cmd_exec_generic_callback, arg);
 		ret=cmd_exec_arg_wait(arg, PERF_TEST_EXEC_TO_MS);
@@ -364,6 +365,7 @@ TEST(Performance, Sync)
 		}
 		swarmkv_reply_free(reply);
 	}
+	srand(171);
 	g_tconsume_running_flag=1;
 	pthread_t threads[NODE_NUMBER][CALL_THREAD_PER_NODE];
 	for(size_t i=0; i<NODE_NUMBER; i++)

@@ -33,15 +33,7 @@ enum cmd_exec_result tcfg_command(struct swarmkv_module *mod_store, const struct
 	obj=store_lookup(mod_store, key);
 	if(!obj)
 	{
-		if(accessing_node)
-		{
-			obj=sobj_new(OBJ_TYPE_UNDEFINED, key);
-			store_add_obj(mod_store, obj);
-		}
-		else
-		{
-			return NEED_KEY_ROUTE;
-		}
+		return NEED_KEY_ROUTE;	
 	}
 	struct timeval now;
 	gettimeofday(&now, NULL);
