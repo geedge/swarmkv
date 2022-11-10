@@ -28,6 +28,7 @@ struct snet_info
 	long long input_cmds;
 	long long input_replies;
 	long long input_msgs;	//input_cmds + input_replies
+	long long unknown_sequence;
 
 	long long output_bytes;
 	long long output_cmds;

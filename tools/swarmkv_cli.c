@@ -1102,9 +1102,23 @@ char *hints(const char *cmd, int *color, int *bold)
 {
 	const char *p=NULL;
 	static char buff[512];
-	p=swarmkv_get_command_hint(g_config.db, cmd);
+	int offset=0;
+	/*
+	for(size_t i=0; i<strlen(cmd); i++)
+	{
+		if((cmd[i] >= '0' && cmd[i] <= '9')||cmd[i]==' ')
+		{
+            offset++;
+		}
+		else
+		{
+			break;
+		}
+	}
+	*/
+	p=swarmkv_get_command_hint(g_config.db, cmd+offset);
 	if(!p)
-		p=get_cluster_command_hint(cmd);
+		p=get_cluster_command_hint(cmd+offset);
 
 	if(p)
 	{
@@ -1231,7 +1245,9 @@ int main(int argc, char * argv[])
 	linenoiseSetHintsCallback(hints);
 
 	linenoiseHistoryLoad(history_file); /* Load the history at startup */
-
+	long long run_times=0;
+	double run_interval_sec=0;
+	int offset=0;
 	while((line = linenoise(g_runtime.prompt)) != NULL)
 	{
 		if(0==strlen(line))
@@ -1247,17 +1263,48 @@ int main(int argc, char * argv[])
 			swarmkv_reply_free(reply);
 			continue;
 		}
-		if(is_cluster_command(exec_argc, exec_argv))
+		run_times=1;
+		run_interval_sec=0;
+		offset=0;
+		if(is_number(exec_argv[0], &run_times))
 		{
-			reply=cluster_command_argv(g_config.db, exec_argc, exec_argv);
+			offset++;
+			if(exec_argc>1 && is_double(exec_argv[1], &run_interval_sec))
+			{
+				offset++;
+			}
+			else
+			{
+				run_interval_sec=0;
+			}
 		}
 		else
 		{
-			reply=swarmkv_command_argv(g_config.db, get_attach_target(), exec_argc, exec_argv);
+			run_times=1;
+			run_interval_sec=0;
 		}
-		swarmkv_reply_print(reply, stdout);
-		swarmkv_reply_free(reply);
-		reply=NULL;
+		for(int i=0; i<run_times; i++)
+		{
+			if(is_cluster_command(exec_argc-offset, exec_argv+offset))
+			{
+				reply=cluster_command_argv(g_config.db, exec_argc-offset, exec_argv+offset);
+			}
+			else
+			{
+				reply=swarmkv_command_argv(g_config.db, get_attach_target(), exec_argc-offset, exec_argv+offset);
+			}
+			swarmkv_reply_print(reply, stdout);
+			if(run_interval_sec && reply->type != SWARMKV_REPLY_ERROR)
+			{
+				long long utime = run_interval_sec*1000000;
+				struct timespec tv;
+				tv.tv_sec = utime / 1000000;
+				tv.tv_nsec = (utime % 1000000) * 1000;
+				nanosleep(&tv, NULL);
+			}
+			swarmkv_reply_free(reply);
+			reply=NULL;
+		}
 		linenoiseHistoryAdd(line); // Add to the history. 
 		linenoiseHistorySave(history_file); // Save the history on disk. 
 		

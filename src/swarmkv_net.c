@@ -91,6 +91,7 @@ struct snet_stat
 	long long input_cmds, output_cmds;
 	long long input_bytes, output_bytes;
 	long long timed_out_rpcs;
+	long long unknown_sequence;
 };
 struct snet_thread
 {
@@ -250,6 +251,7 @@ void snet_task_deferred_run(evutil_socket_t fd, short events, void *arg)
 				log_fatal(task->thr->ref_logger, MODULE_SWAMRKV_NET, "Unknown reply sequence %llu from %s.",
 										task->sequence,
 										task->peer.addr);
+				thr->stat.unknown_sequence++;
 			}
 			thr->stat.input_replies++;
 		}
@@ -728,6 +730,7 @@ void swarmkv_net_info(struct swarmkv_net *net, struct snet_info *info)
 		info->output_cmds += thr->stat.output_cmds;
 		info->output_replies += thr->stat.output_replies;
 		info->output_msgs += thr->stat.output_msgs;
+		info->unknown_sequence += thr->stat.unknown_sequence;
 	}
 	info->instantaneous_input_kbps=net->instantaneous_input_kbps;
 	info->instantaneous_output_kbps=net->instantaneous_output_kbps;

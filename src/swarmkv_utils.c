@@ -7,7 +7,7 @@
 #include <asm/errno.h>
 #include <ctype.h> //tolower, toupper
 #include <string.h> //memset
-
+#include <stdlib.h>
 
 pid_t gettid()
 {
@@ -187,4 +187,30 @@ long long ustime(void) {
     ust = ((long long)tv.tv_sec) * 1000000;
     ust += tv.tv_nsec/1000;
     return ust;
+}
+int is_number(const char *string, long long *number)
+{
+	char *endptr=NULL;
+	*number=strtol(string, &endptr, 10);
+	if(*endptr=='\0')
+	{
+		return 1;		
+	}
+    else
+    {
+        return 0;
+    }
+}
+int is_double(const char *string, double *number)
+{
+    char *endptr=NULL;
+    *number = strtod(string, &endptr);
+	if(*endptr=='\0')
+	{
+		return 1;		
+	}
+    else
+    {
+        return 0;
+    }
 }

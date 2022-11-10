@@ -657,24 +657,27 @@ struct sobj * swarmkv_store_add_key(struct swarmkv_module *mod_store, const sds 
 	for(size_t i=0; i<n_replica_node; i++)
 	{
 		sobj_add_replica_node(obj, replica_nodes+i);
+
+	}
+	store_unlock(mod_store, key);
+	for(size_t i=0; i<n_replica_node; i++)
+	{
 		if(i<max_pull_node_num)
 		{
 			crdt_generic_call(store, CRDT_PULL, crdt_pull_cmd, replica_nodes+i);
 		}
 		else
 		{
-            struct swarmkv_cmd *crdt_join_cmd=NULL;
-            crdt_join_cmd=swarmkv_cmd_new(4);
-            crdt_join_cmd->argv[0]=sdsnew("crdt");
-            crdt_join_cmd->argv[1]=sdsnew("join");
-            crdt_join_cmd->argv[2]=sdsdup(obj->key);
-            crdt_join_cmd->argv[3]=node_addr2sds(replica_nodes+i);
+			struct swarmkv_cmd *crdt_join_cmd=NULL;
+			crdt_join_cmd=swarmkv_cmd_new(4);
+			crdt_join_cmd->argv[0]=sdsnew("crdt");
+			crdt_join_cmd->argv[1]=sdsnew("join");
+			crdt_join_cmd->argv[2]=sdsdup(obj->key);
+			crdt_join_cmd->argv[3]=node_addr2sds(replica_nodes+i);
 			crdt_generic_call(store, CRDT_JOIN, crdt_join_cmd, replica_nodes+i);
-            swarmkv_cmd_free(crdt_join_cmd);
+			swarmkv_cmd_free(crdt_join_cmd);
 		}
 	}
-	store_unlock(mod_store, key);
-
 	swarmkv_cmd_free(crdt_pull_cmd);
 	crdt_pull_cmd=NULL;
 	return obj;

@@ -262,9 +262,10 @@ enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct sw
 												"output_replies: %lld\n"
 												"input_msgs: %lld\n"
 												"output_msgs: %lld\n"
+												"unknown_sequence: %lld\n"
 												"instantaneous_input_kbps: %.2f\n"
 												"instantaneous_output_kbps: %.2f\n"
-												"instantaneous_output_cps: %.2f\n"
+												"instantaneous_input_cps: %.2f\n"
 												"instantaneous_output_cps: %.2f\n"
 												,
 												net_info.connections,
@@ -278,9 +279,10 @@ enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct sw
 												net_info.output_replies,
 												net_info.input_msgs,
 												net_info.output_msgs,
+												net_info.unknown_sequence,
 												net_info.instantaneous_input_kbps,
 												net_info.instantaneous_output_kbps,
-												net_info.instantaneous_output_cps,
+												net_info.instantaneous_input_cps,
 												net_info.instantaneous_output_cps
 												);
 
@@ -750,7 +752,6 @@ void __exec_cmd(struct swarmkv *db, const struct swarmkv_cmd *cmd, const node_t 
 	node_t peer;
 	struct cmd_ctx *ctx=NULL;
 	struct promise *p=NULL;
-	int ret=0;
 	struct swarmkv_cmd *keyspace_cmd=NULL;
 	
 	spec=get_spec_by_argv(db, cmd->argc, cmd->argv);
@@ -802,8 +803,7 @@ void __exec_cmd(struct swarmkv *db, const struct swarmkv_cmd *cmd, const node_t 
 			ctx=NULL;
 			break;
 		case REDIRECT:
-			ret=node_init_from_reply(&peer, reply);
-			assert(ret==0);
+			node_init_from_reply(&peer, reply);
 			ctx->future_of_mine=future_create("peer_exec", peer_exec_on_success, generic_on_fail, ctx);
 			exec_command_at_peer(ctx->db, ctx->cmd, &peer, ctx->future_of_mine);
 			break;

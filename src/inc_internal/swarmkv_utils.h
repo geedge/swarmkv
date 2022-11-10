@@ -41,4 +41,5 @@ char *toLower(char* s);
 char *toUpper(char* s);
 int stringmatchlen(const char *pattern, int patternLen, const char *string, int stringLen, int nocase);
 long long ustime(void);
-
+int is_number(const char *string, long long *number);
+int is_double(const char *string, double *number);
