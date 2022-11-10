@@ -48,6 +48,7 @@ struct store_info
 	long long keys_to_sync;
 	long long sync_ok;
 	long long sync_err;
+	long long synced;
 };
 void swarmkv_store_info(struct swarmkv_module *module, struct store_info *info);
 

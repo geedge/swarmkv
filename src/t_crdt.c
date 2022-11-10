@@ -47,23 +47,26 @@ enum cmd_exec_result crdt_pull_command(struct swarmkv_module *mod_store, const s
 }
 enum cmd_exec_result crdt_push_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
 {
-/* CRDT PUSH key blob*/
+/* CRDT PUSH key blob [key blob ...]*/
 	struct sobj *obj=NULL;
-	const sds key=cmd->argv[2];
-	const sds blob=cmd->argv[3];	
+	sds key=NULL, blob=NULL;	
 	assert(accessing_node!=NULL);//should never invoked by local
-	obj=store_lookup(mod_store, key);
+	long long synced=0;
 	uuid_t uuid;
 	store_get_uuid(mod_store, uuid);
-	if(obj)
-	{	
-		sobj_merge_blob(obj, blob, sdslen(blob), uuid);
-		*reply=swarmkv_reply_new_integer(1);
-	}
-	else
+	for(size_t i=0; i<cmd->argc-2; i+=2)
 	{
-		*reply=swarmkv_reply_new_integer(0);
-	}	
+		key=cmd->argv[2+i];
+		blob=cmd->argv[2+i+1];
+		obj=store_lookup(mod_store, key);
+		if(obj)
+		{
+			sobj_merge_blob(obj, blob, sdslen(blob), uuid);
+			synced++;
+		}
+	}
+	*reply=swarmkv_reply_new_integer(synced);
+	obj=store_lookup(mod_store, key);
 	return FINISHED;
 }
 

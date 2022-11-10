@@ -64,7 +64,7 @@ void health_response2active_nodes(const char *resp_buff, node_t *nodes, uuid_t *
 void leader_response2leader_node(const char *resp_body, node_t *leader);
 int key_hash_slot(const char* key, size_t keylen);
 int str2integer(const char *str, long long *integer);
-
+char *str_replace(char *orig, char *rep, char *with);
 struct swarmkv_options
 {
 	unsigned int health_check_port;

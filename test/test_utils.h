@@ -1,7 +1,7 @@
 #pragma once
 #include "swarmkv/swarmkv.h"
 #include <pthread.h>
-
+#include <sys/types.h>
 
 #ifdef __cplusplus
 extern "C"
@@ -24,7 +24,7 @@ struct cmd_exec_arg
 	int is_callback_executed;
 	int success;
 	int api_invoking_tid;
-	int callback_invoking_tid;
+	pthread_t callback_invoking_tid;
 	int is_sync_callback;
 	struct swarmkv_reply expected_reply;
 	proc_result_callback_t *cb;

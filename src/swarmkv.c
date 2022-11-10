@@ -224,6 +224,7 @@ enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct sw
 													"shards: %lld\n"
 													"keys: %lld\n"
 													"to_sync: %lld\n"
+													"synced: %lld\n"
 													"sync_ok: %lld\n"
 													"sync_err: %lld\n"
 													"sync_interval_in_usec:%u\n"
@@ -231,6 +232,7 @@ enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct sw
 													sto_info.shards,
 													sto_info.keys,
 													sto_info.keys_to_sync,
+													sto_info.synced,
 													sto_info.sync_ok,
 													sto_info.sync_err,
 													db->opts->sync_interval_us
@@ -923,7 +925,7 @@ void command_spec_init(struct swarmkv *db)
 	command_register(&(db->command_table), "CRDT PULL", "key",
 					1, 2, CMD_KEY_NA, REPLY_NA, NOT_AUTO_ROUTE,
 					crdt_pull_command, db->mod_store);
-	command_register(&(db->command_table), "CRDT PUSH", "key blob",
+	command_register(&(db->command_table), "CRDT PUSH", "key blob [key blob ...]",
 					2, 2, CMD_KEY_NA, REPLY_NA, NOT_AUTO_ROUTE,
 					crdt_push_command, db->mod_store);
 	command_register(&(db->command_table), "CRDT JOIN", "key IP:port",

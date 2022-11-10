@@ -445,9 +445,9 @@ static void peer_conn_read_cb(struct bufferevent *bev, void *arg)
 			}
 			snet_task_new(thr, &(conn->peer_listen_addr), TASK_TYPE_RECEIVE, conn->receiving_hdr.msg_type, conn->receiving_hdr.sequence, recv_buff, conn->receiving_hdr.payload_len, NULL, NULL);
 			evbuffer_drain(input, conn->receiving_hdr.payload_len);
+			thr->stat.input_bytes+=conn->receiving_hdr.payload_len;
 			conn->recv_state=RECEIVING_HDR;
 			memset(&conn->receiving_hdr, 0, sizeof(conn->receiving_hdr));
-			thr->stat.input_bytes+=conn->receiving_hdr.payload_len;
 		}
 	}
 	return;

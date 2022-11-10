@@ -1,6 +1,7 @@
 #include "swarmkv_store.h"
 #include "swarmkv_utils.h"
 #include "swarmkv_monitor.h"
+#include "swarmkv_sync.h"
 
 #include "sds.h"
 #include "mpack.h"
@@ -32,6 +33,7 @@ struct swarmkv_store
 	struct swarmkv_module *mod_monitor;
 	long long sync_err;
 	long long sync_ok;
+	long long synced;
 };
 
 
@@ -479,7 +481,7 @@ static void crdt_generic_on_succ(void* result, void* user)
 			store_unlock(&ctx->store->module, ctx->key);
 			break;
 		case CRDT_PUSH:
-			if(reply->type==SWARMKV_REPLY_INTEGER && reply->integer==1)
+			if(reply->type==SWARMKV_REPLY_INTEGER && reply->integer>0)
 			{
 				atomic_inc(&ctx->store->sync_ok);
 			}
@@ -526,53 +528,49 @@ void crdt_generic_call(struct swarmkv_store *store, enum CRDT_OP op, const struc
 	store->exec_cmd(store->exec_cmd_handle, cmd, NULL, peer, ctx->f);
 	return;
 }
-static void scontainer_sync(struct swarmkv_store *store, struct scontainer *ctr)
-{
-	struct sobj *obj=&ctr->obj;
-	struct swarmkv_cmd *crdt_push_cmd=NULL;
-	char *blob=NULL;
-	size_t blob_sz=0;
 
-	sobj_serialize(obj, &blob, &blob_sz);
-	crdt_push_cmd=swarmkv_cmd_new(4);
-	crdt_push_cmd->argv[0]=sdsnew("crdt");
-	crdt_push_cmd->argv[1]=sdsnew("push");
-	crdt_push_cmd->argv[2]=sdsdup(obj->key);
-	crdt_push_cmd->argv[3]=sdsnewlen(blob, blob_sz);
-	free(blob);
-
-	int iterator=0;
-	node_t *replica_node=NULL;
-	while((replica_node=obj_container_iterate_replica_nodes(ctr, &iterator)) && replica_node)
-	{
-		crdt_generic_call(store, CRDT_PUSH, crdt_push_cmd, replica_node);
-	}
-	swarmkv_cmd_free(crdt_push_cmd);
-}
 void swarmkv_store_periodic(struct swarmkv_module * mod_store)
 {
 	struct swarmkv_store *store=module2store(mod_store);
 	struct scontainer *ctr=NULL, *tmp=NULL;
 	struct timespec start, end;
 	int has_key_synced=0;
-	size_t MAX_SYNC_PER_CYCLE=100;
-	clock_gettime(CLOCK_MONOTONIC_COARSE, &start);
-	for(size_t i=0; i<STORE_SHARD_NUMBER; i++)
+
+	clock_gettime(CLOCK_MONOTONIC, &start);
+	
+
+	for(int i=0; i<STORE_SHARD_NUMBER; i++)
 	{
-		size_t j=0;
+		struct sync_master *sync_master=sync_master_new();
 		pthread_mutex_lock(&store->mutex[i]);
 		DL_FOREACH_SAFE(store->sync_queue[i], ctr, tmp)
 		{
-			scontainer_sync(store, ctr);
+			char *blob=NULL;
+			size_t blob_sz=0;
+			sobj_serialize(&ctr->obj, &blob, &blob_sz);
+			sync_master_add_obj(sync_master, ctr->obj.key, blob, blob_sz,
+							utarray_front(ctr->replica_node_list), utarray_len(ctr->replica_node_list));
 			DL_DELETE(store->sync_queue[i], ctr);
 			ctr->is_in_sync_q=0;
+			store->synced++;
 			has_key_synced=1;
-			j++;
-			if(j>MAX_SYNC_PER_CYCLE) break;
 		}
 		pthread_mutex_unlock(&store->mutex[i]);
+		node_t peer;
+		struct swarmkv_cmd *cmd=NULL;
+		int ret=1;
+		while(1)
+		{
+			ret=sync_master_get_cmd(sync_master, &peer, &cmd);
+			if(!ret) break;	
+			crdt_generic_call(store, CRDT_PUSH, cmd, &peer);
+			swarmkv_cmd_free(cmd);
+			cmd=NULL;
+		}
+		sync_master_free(sync_master);
 	}
-	clock_gettime(CLOCK_MONOTONIC_COARSE, &end);
+
+	clock_gettime(CLOCK_MONOTONIC, &end);
 	if(has_key_synced)
 	{
 		swarmkv_monitor_record_event(store->mod_monitor, "crdt-sync-cycle", timespec_diff_usec(&start, &end));
@@ -636,6 +634,7 @@ void swarmkv_store_info(struct swarmkv_module *mod_store, struct store_info *inf
 	}
 	info->sync_ok=__sync_add_and_fetch(&store->sync_ok, 0);
 	info->sync_err=__sync_add_and_fetch(&store->sync_err, 0);
+	info->synced=store->synced;
 }
 struct sobj * swarmkv_store_add_key(struct swarmkv_module *mod_store, const sds key, node_t *replica_nodes, size_t n_replica_node)
 {

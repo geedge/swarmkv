@@ -31,7 +31,7 @@ struct cmd_exec_arg* cmd_exec_arg_new(void)
 	struct cmd_exec_arg* arg=(struct cmd_exec_arg*)calloc(sizeof(struct cmd_exec_arg), 1);
 	pthread_cond_init(&arg->cond, NULL);
 	pthread_mutex_init(&arg->mutex, NULL);
-	arg->api_invoking_tid = syscall(SYS_gettid);
+	arg->callback_invoking_tid=pthread_self();
 	return arg;
 }
 void cmd_exec_arg_set_cb(struct cmd_exec_arg *arg, proc_result_callback_t *cb, void* cb_arg)
@@ -56,7 +56,7 @@ void cmd_exec_arg_clear(struct cmd_exec_arg* arg)
 {
 	arg->success=0;
 	arg->is_callback_executed=0;
-	arg->api_invoking_tid = syscall(SYS_gettid);
+	arg->callback_invoking_tid=pthread_self();
 	arg->callback_invoking_tid=0;
 	arg->is_sync_callback=0;
 	return;
@@ -149,7 +149,7 @@ void cmd_exec_arg_success(struct cmd_exec_arg* arg)
 {
 	arg->is_callback_executed=1;
 	arg->success=1;
-	arg->callback_invoking_tid = syscall(SYS_gettid);
+	arg->callback_invoking_tid = pthread_self();
 	if(arg->callback_invoking_tid==arg->api_invoking_tid)
 	{
 		arg->is_sync_callback=1;
@@ -164,6 +164,7 @@ void cmd_exec_arg_failed(struct cmd_exec_arg* arg)
 {
 	arg->is_callback_executed=1;
 	arg->success=0;
+	arg->callback_invoking_tid=pthread_self();
 	if(arg->callback_invoking_tid==arg->api_invoking_tid)
 	{
 		arg->is_sync_callback=1;
