@@ -147,33 +147,18 @@ void OC_token_bucket_info(struct OC_token_bucket *bucket, struct OC_token_bucket
 
 void OC_token_bucket_serialize(struct OC_token_bucket *bucket, char **blob, size_t *blob_sz)
 {
-	mpack_writer_t writer;
-
-
-
 	char *pnc_blob=NULL;
 	size_t pnc_blob_sz=0;
 	PN_counter_serialize(bucket->consumed, &pnc_blob, &pnc_blob_sz);
 
-
-
-	size_t mpack_sz=128+pnc_blob_sz+sizeof(bucket->cfg)+sizeof(bucket->refill_timestamp)+sizeof(long long);
+	size_t offset=0;
+	size_t mpack_sz=sizeof(struct OC_token_bucket)-sizeof(struct PN_counter*)+pnc_blob_sz;
 	char *mpack_buff=(char*)malloc(mpack_sz);
+	memcpy(mpack_buff, bucket, sizeof(struct OC_token_bucket)-sizeof(struct PN_counter*));
+	offset+=sizeof(struct OC_token_bucket)-sizeof(struct PN_counter*);
+	memcpy(mpack_buff+offset, pnc_blob, pnc_blob_sz);
 
-	mpack_writer_init(&writer, mpack_buff, mpack_sz);
-	mpack_build_array(&writer);	
-	mpack_write_bin(&writer, (const char*)&(bucket->cfg), sizeof(bucket->cfg));
-	mpack_write_bin(&writer, (const char*)&(bucket->refill_timestamp), sizeof(bucket->refill_timestamp));
-	mpack_write_i64(&writer, bucket->refilled);
-	mpack_write_bin(&writer, pnc_blob, pnc_blob_sz);
-
-	
-	mpack_complete_array(&writer);
-	*blob_sz=mpack_writer_buffer_used(&writer);
-	if(mpack_ok!=mpack_writer_destroy(&writer))
-	{
-		assert(0);
-	}
+	*blob_sz=mpack_sz;
 	*blob=mpack_buff;
 
 	free(pnc_blob);
@@ -183,38 +168,10 @@ void OC_token_bucket_serialize(struct OC_token_bucket *bucket, char **blob, size
 struct OC_token_bucket *OC_token_bucket_deserialize(const char *blob, size_t blob_sz)
 {
 	struct OC_token_bucket *bucket=ALLOC(struct OC_token_bucket, 1);
-	mpack_tree_t tree;
-	mpack_tree_init_data(&tree, blob, blob_sz);
-	mpack_tree_parse(&tree);
-	mpack_node_t root=mpack_tree_root(&tree);
-
-	size_t array_sz=mpack_node_array_length(root);
-	assert(array_sz==4);
-
-	size_t i=0;
-	mpack_node_t tmp_node;
-	tmp_node=mpack_node_array_at(root, i);
-	assert(mpack_node_bin_size(tmp_node)==sizeof(bucket->cfg));
-	memcpy(&bucket->cfg, mpack_node_bin_data(tmp_node), mpack_node_bin_size(tmp_node));
-	i++;
-
-	tmp_node=mpack_node_array_at(root, i);
-	assert(mpack_node_bin_size(tmp_node)==sizeof(bucket->refill_timestamp));
-	memcpy(&bucket->refill_timestamp, mpack_node_bin_data(tmp_node), mpack_node_bin_size(tmp_node));
-	i++;
-
-	tmp_node=mpack_node_array_at(root, i);
-	bucket->refilled=mpack_node_i64(tmp_node);
-	i++;
-	
-	tmp_node=mpack_node_array_at(root, i);
-	bucket->consumed=PN_counter_deserialize(mpack_node_bin_data(tmp_node), mpack_node_bin_size(tmp_node));
-	i++;
-
-	if (mpack_tree_destroy(&tree) != mpack_ok) 
-	{
-		fprintf(stderr, "An error occurred decoding the OC_token_bucket!\n");
-	}	
+	size_t offset=0;
+	memcpy(bucket, blob, sizeof(struct OC_token_bucket)-sizeof(struct PN_counter*));
+	offset+=sizeof(struct OC_token_bucket)-sizeof(struct PN_counter*);
+	bucket->consumed=PN_counter_deserialize(blob+offset, blob_sz-offset);
 	return bucket;
 }
 void OC_token_bucket_merge(struct OC_token_bucket *dst, struct OC_token_bucket *src)

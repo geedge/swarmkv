@@ -290,23 +290,7 @@ void sobj_serialize(struct sobj *obj, char **blob, size_t *blob_sz)
 	struct scontainer *ctr=container_of(obj, struct scontainer, obj);
 	char *value_blob=NULL;
 	size_t value_blob_sz=0;
-	mpack_writer_t snapshot_mpack;
-	char *mpack_buff=NULL;
-	size_t mpack_sz=0;
-	
-	mpack_writer_init_growable(&snapshot_mpack, &mpack_buff, &mpack_sz);
-	mpack_build_map(&snapshot_mpack);
 
-	mpack_write_cstr(&snapshot_mpack, "t");
-	mpack_write_int(&snapshot_mpack, obj->type);
-
-	mpack_write_cstr(&snapshot_mpack, "k");
-	mpack_write_str(&snapshot_mpack, obj->key, sdslen(obj->key));
-
-	mpack_write_cstr(&snapshot_mpack, "ts");//timestamp
-	mpack_write_str(&snapshot_mpack, (const char*)&(ctr->op_timestamp), sizeof(ctr->op_timestamp));
-
-	mpack_write_cstr(&snapshot_mpack, "v");
 	switch(obj->type)
 	{
 		case OBJ_TYPE_STRING:
@@ -328,14 +312,28 @@ void sobj_serialize(struct sobj *obj, char **blob, size_t *blob_sz)
 			assert(0);
 			break;
 	}
-	mpack_write_str(&snapshot_mpack, value_blob, value_blob_sz);
-	free(value_blob);
-	value_blob=NULL;
+	char *mpack_buff=NULL;
+	size_t mpack_sz=0;	
+	mpack_sz=sizeof(obj->type)+sizeof(ctr->op_timestamp);
+	mpack_sz+=sizeof(size_t)+value_blob_sz;
+	mpack_buff=ALLOC(char, mpack_sz);
+	size_t offset=0;
 
-	mpack_complete_map(&snapshot_mpack);
-	mpack_writer_destroy(&snapshot_mpack);
+	memcpy(mpack_buff, &obj->type, sizeof(obj->type));
+	offset+=sizeof(obj->type);
+	memcpy(mpack_buff+offset, &ctr->op_timestamp, sizeof(ctr->op_timestamp));
+	offset+=sizeof(ctr->op_timestamp);
+
+	memcpy(mpack_buff+offset, &value_blob_sz, sizeof(size_t));
+	offset+=sizeof(size_t);
+
+	memcpy(mpack_buff+offset, value_blob, value_blob_sz);
+	offset+=value_blob_sz;
+	assert(offset==mpack_sz);
 	*blob=mpack_buff;
 	*blob_sz=mpack_sz;
+
+	free(value_blob);
 	return;
 }
 
@@ -344,26 +342,28 @@ void sobj_merge_blob(struct sobj *obj, const char *blob, size_t blob_sz, uuid_t 
 	struct scontainer *ctr=container_of(obj, struct scontainer, obj);
 
 	struct timeval op_timestamp, now;
-	mpack_tree_t tree;
-	mpack_tree_init_data(&tree, blob, blob_sz);
-	mpack_tree_parse(&tree);
-	mpack_node_t root=mpack_tree_root(&tree);
-	mpack_node_t item, v_node;
-	enum sobj_type type=mpack_node_int(mpack_node_map_cstr(root, "t"));
+
+	enum sobj_type type;
+	size_t offset=0;
+	memcpy(&type, blob+offset, sizeof(type));
+	offset+=sizeof(type);
 	assert(ctr->obj.type==type || ctr->obj.type==OBJ_TYPE_UNDEFINED);
 	ctr->obj.type=type;
-	item=mpack_node_map_cstr(root, "k");
-	assert(sdslen(ctr->obj.key)==mpack_node_strlen(item));
-	assert(0==memcmp(ctr->obj.key, mpack_node_str(item), sdslen(ctr->obj.key)));
-	item=mpack_node_map_cstr(root, "ts");
-	assert(mpack_node_strlen(item)==sizeof(op_timestamp));
-	memcpy(&op_timestamp, mpack_node_str(item), sizeof(op_timestamp));
+
+	memcpy(&op_timestamp, blob+offset, sizeof(op_timestamp));
+	offset+=sizeof(op_timestamp);
+
 	gettimeofday(&now, NULL);
 	if(timercmp(&op_timestamp, &now, >))
 	{
 		fprintf(stderr, "Key %s is merging a blob which has a operation time in the future!\n", obj->key);
 	}
-	v_node=mpack_node_map_cstr(root, "v");
+	size_t value_blob_sz=0;
+	memcpy(&value_blob_sz, blob+offset, sizeof(size_t));
+	offset+=sizeof(size_t);
+	assert(offset+value_blob_sz==blob_sz);
+	const char *value_blob=blob+offset;
+
 	switch(ctr->obj.type)
 	{
 		case OBJ_TYPE_STRING:
@@ -371,28 +371,28 @@ void sobj_merge_blob(struct sobj *obj, const char *blob, size_t blob_sz, uuid_t 
 			{				
 				obj->string=LWW_register_new((const char*)uuid, sizeof(uuid_t));
 			}
-			LWW_register_merge_blob(obj->string, mpack_node_str(v_node), mpack_node_strlen(v_node));
+			LWW_register_merge_blob(obj->string, value_blob, value_blob_sz);
 			break;
 		case OBJ_TYPE_COUNTER:
 			if(!obj->counter)
 			{
 				obj->counter=PN_counter_new(uuid);
 			}
-			PN_counter_merge_blob(obj->counter, mpack_node_str(v_node), mpack_node_strlen(v_node));
+			PN_counter_merge_blob(obj->counter, value_blob, value_blob_sz);
 			break;
 		case OBJ_TYPE_SET:
 			if(!obj->set)
 			{
 				obj->set=OR_set_new((const char*)uuid, sizeof(uuid_t));
 			}
-			OR_set_merge_blob(obj->set, mpack_node_str(v_node), mpack_node_strlen(v_node));
+			OR_set_merge_blob(obj->set, value_blob, value_blob_sz);
 			break;
 		case OBJ_TYPE_HASH:
 			if(!obj->hash)
 			{
 				obj->hash=OR_map_new((const char*)uuid, sizeof(uuid_t));
 			}
-			OR_map_merge_blob(obj->hash, mpack_node_str(v_node), mpack_node_strlen(v_node));
+			OR_map_merge_blob(obj->hash, value_blob, value_blob_sz);
 			break;
 		case OBJ_TYPE_TOKEN_BUCKET:
 			if(!obj->bucket)
@@ -401,15 +401,11 @@ void sobj_merge_blob(struct sobj *obj, const char *blob, size_t blob_sz, uuid_t 
 				memset(&beginning_of_history, 0, sizeof(beginning_of_history));
 				obj->bucket=OC_token_bucket_new(uuid, beginning_of_history, 0, 0);
 			}
-			OC_token_bucket_merge_blob(obj->bucket, mpack_node_str(v_node), mpack_node_strlen(v_node));
+			OC_token_bucket_merge_blob(obj->bucket, value_blob, value_blob_sz);
 			break;
 		default:
 			assert(0);
 			break;
-	}
-	if (mpack_tree_destroy(&tree) != mpack_ok) 
-	{
-		fprintf(stderr, "An error occurred while deserializing a sobj blob!\n");
 	}
 	return;
 
