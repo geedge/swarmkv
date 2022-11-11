@@ -6,7 +6,7 @@
 #pragma once
 #include <stddef.h>
 #include <sys/time.h>
-
+#include <uuid/uuid.h>
 #ifdef __cplusplus
 extern "C"
 {
@@ -15,7 +15,7 @@ struct OC_token_bucket;
 
 // CIR: Committed Information Rate
 // CBS: Committed Burst Size
-struct OC_token_bucket *OC_token_bucket_new(const char* id, size_t id_sz, struct timeval now, long long CIR, long long CBS);
+struct OC_token_bucket *OC_token_bucket_new(uuid_t my_id, struct timeval now, long long CIR, long long CBS);
 
 void OC_token_bucket_configure(struct OC_token_bucket *bucket, struct timeval now, long long CIR, long long CBS, long long refill_duration_ms);
 struct OC_token_bucket_info

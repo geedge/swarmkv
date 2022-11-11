@@ -58,7 +58,7 @@ enum cmd_exec_result set_command(struct swarmkv_module *mod_store, const struct 
 		if(*endptr=='\0' && int_value==0)
 		{
 			obj->type=OBJ_TYPE_COUNTER;
-			obj->counter=PN_counter_new((const char*)uuid, sizeof(uuid));
+			obj->counter=PN_counter_new(uuid);
 		}
 		else
 		{
@@ -108,7 +108,7 @@ enum cmd_exec_result incrby_command(struct swarmkv_module *mod_store, const stru
 		if(!obj->counter)
 		{
 			store_get_uuid(mod_store, uuid);
-			obj->counter=PN_counter_new((const char*)uuid, sizeof(uuid));
+			obj->counter=PN_counter_new(uuid);
 			obj->type=OBJ_TYPE_COUNTER;
 		}
 		value=PN_counter_incrby(obj->counter, increment);

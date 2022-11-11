@@ -59,7 +59,7 @@ struct OR_record * OR_record_new(const char *replica_id, size_t replica_id_sz, c
 			record->string=LWW_register_new(replica_id, replica_id_sz);
 			break;
 		case TYPE_COUNTER:
-			record->counter=PN_counter_new(replica_id, replica_id_sz);
+			record->counter=PN_counter_new(*(uuid_t*)replica_id);
 			break;
 		default:
 			record->none=NULL;
@@ -119,12 +119,6 @@ long long OR_record_incrby(struct OR_record *record, long long increment)
 	long long result=0;
 	result=PN_counter_incrby(record->counter, increment);
 	return result;
-}
-void OR_record_reset_counter(struct OR_record *record)
-{
-	assert(record->type==TYPE_COUNTER);
-	PN_counter_reset(record->counter);
-	return;
 }
 struct OR_map
 {
@@ -375,7 +369,7 @@ void OR_record_serialize(struct OR_record *record, mpack_writer_t *writer)
 {
 	struct OR_timestamp *ts=NULL, *tmp_ts=NULL;
 	char *value_blob=NULL;
-	size_t value_blob_sz=NULL;
+	size_t value_blob_sz=0;
 
 	mpack_start_map(writer, 4);//Start a member
 	mpack_write_cstr(writer, "k");

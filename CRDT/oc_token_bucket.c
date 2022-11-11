@@ -21,10 +21,10 @@ struct OC_token_bucket
 	struct timeval refill_timestamp;
 	struct PN_counter *consumed;
 };
-struct OC_token_bucket *OC_token_bucket_new(const char* id, size_t id_sz, struct timeval now, long long CIR, long long CBS)
+struct OC_token_bucket *OC_token_bucket_new(uuid_t my_id, struct timeval now, long long CIR, long long CBS)
 {
 	struct OC_token_bucket *bucket=ALLOC(struct OC_token_bucket, 1);
-	bucket->consumed=PN_counter_new(id, id_sz);
+	bucket->consumed=PN_counter_new(my_id);
 	gettimeofday(&bucket->cfg.write_timestamp, NULL);
 	memcpy(&bucket->cfg.write_timestamp, &now, sizeof(bucket->cfg.write_timestamp));
 	bucket->cfg.CIR=CIR;
@@ -148,27 +148,36 @@ void OC_token_bucket_info(struct OC_token_bucket *bucket, struct OC_token_bucket
 void OC_token_bucket_serialize(struct OC_token_bucket *bucket, char **blob, size_t *blob_sz)
 {
 	mpack_writer_t writer;
-	char *mpack_buff=NULL;
-	size_t mpack_sz=0;
 
-	mpack_writer_init_growable(&writer, &mpack_buff, &mpack_sz);
-	mpack_build_array(&writer);	
-	mpack_write_bin(&writer, (const char*)&(bucket->cfg), sizeof(bucket->cfg));
-	mpack_write_bin(&writer, (const char*)&(bucket->refill_timestamp), sizeof(bucket->refill_timestamp));
-	mpack_write_i64(&writer, bucket->refilled);
+
 
 	char *pnc_blob=NULL;
 	size_t pnc_blob_sz=0;
 	PN_counter_serialize(bucket->consumed, &pnc_blob, &pnc_blob_sz);
+
+
+
+	size_t mpack_sz=128+pnc_blob_sz+sizeof(bucket->cfg)+sizeof(bucket->refill_timestamp)+sizeof(long long);
+	char *mpack_buff=(char*)malloc(mpack_sz);
+
+	mpack_writer_init(&writer, mpack_buff, mpack_sz);
+	mpack_build_array(&writer);	
+	mpack_write_bin(&writer, (const char*)&(bucket->cfg), sizeof(bucket->cfg));
+	mpack_write_bin(&writer, (const char*)&(bucket->refill_timestamp), sizeof(bucket->refill_timestamp));
+	mpack_write_i64(&writer, bucket->refilled);
 	mpack_write_bin(&writer, pnc_blob, pnc_blob_sz);
-	free(pnc_blob);
-	pnc_blob=NULL;
+
 	
 	mpack_complete_array(&writer);
-	mpack_writer_destroy(&writer);
-	
+	*blob_sz=mpack_writer_buffer_used(&writer);
+	if(mpack_ok!=mpack_writer_destroy(&writer))
+	{
+		assert(0);
+	}
 	*blob=mpack_buff;
-	*blob_sz=mpack_sz;
+
+	free(pnc_blob);
+	pnc_blob=NULL;
 	return;
 }
 struct OC_token_bucket *OC_token_bucket_deserialize(const char *blob, size_t blob_sz)

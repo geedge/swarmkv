@@ -4,7 +4,7 @@
 */
 #pragma once
 #include <stddef.h>
-
+#include <uuid/uuid.h>
 #ifdef __cplusplus
 extern "C"
 {

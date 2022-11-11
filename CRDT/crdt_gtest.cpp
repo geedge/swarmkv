@@ -105,7 +105,7 @@ void traffic_distribution(traffic_type type)
 	for (i = 0; i < REPLICA_NUMBER; i++) 
 	{
 		uuid_generate(uuid);
-		buckets[i] = OC_token_bucket_new((const char *)uuid, sizeof(uuid), start, CIR, CBS);
+		buckets[i] = OC_token_bucket_new(uuid, start, CIR, CBS);
 	}
 	long long tokens = 0, flexible_tokens = 0;
 	long long consumed = 0, requested = 0, upper_limit = 0, refilled = 0;
@@ -160,7 +160,7 @@ TEST(OCTokenBucket, Basic)
 	struct timeval now;
 	gettimeofday(&now, NULL);
 
-	bucket=OC_token_bucket_new((const char*)uuid, sizeof(uuid), now, CIR, CBS);
+	bucket=OC_token_bucket_new(uuid, now, CIR, CBS);
 	long long tokens=0;
 
 	tokens=OC_token_bucket_control(bucket, now, OCTB_CMD_CONSUME_NORMAL, 140);
@@ -198,7 +198,7 @@ TEST(OCTokenBucket, Merge)
 	for(i=0; i<2; i++)
 	{
 		uuid_generate(uuid);
-		buckets[i]=OC_token_bucket_new((const char*)uuid, sizeof(uuid), now, CIR, CBS);
+		buckets[i]=OC_token_bucket_new(uuid, now, CIR, CBS);
 	}
 	long long tokens=0;
 	OC_token_bucket_sync(buckets, 2);
@@ -233,7 +233,7 @@ double OC_token_bucket_test(size_t replica_num, long long mimic_duration_s, long
 	for(i=0; i<replica_num; i++)
 	{
 		uuid_generate(uuid);
-		buckets[i]=OC_token_bucket_new((const char*)uuid, sizeof(uuid), start, CIR, CBS);
+		buckets[i]=OC_token_bucket_new(uuid, start, CIR, CBS);
 	}
 	srandom(17);
 	long long tokens=0;
@@ -277,7 +277,7 @@ TEST(OCTokenBucket, HeavyConsumer)
 	long long replica_num=0, test_duration_s=500, sync_interval_ms=0;
 
 	long long i=0, j=0;
-	for(i=8; i<16; i++)
+	for(i=8; i<9; i++)
 	{
 		replica_num=i+1;
 		for(j=0; j<10; j++)
@@ -318,7 +318,7 @@ TEST(OCTokenBucket, ConcurrentHeavyConsumer)
 	for(i=0; i<REPLICA_NUMBER; i++)
 	{
 		uuid_generate(uuid);
-		buckets[i]=OC_token_bucket_new((const char*)uuid, sizeof(uuid), start, CIR, CBS);
+		buckets[i]=OC_token_bucket_new(uuid, start, CIR, CBS);
 	}
 	srandom(17);
 	long long tokens=0;
@@ -369,7 +369,7 @@ TEST(OCTokenBucket, Reconfigure)
 	for(i=0; i<REPLICA_NUMBER; i++)
 	{
 		uuid_generate(uuid);
-		buckets[i]=OC_token_bucket_new((const char*)uuid, sizeof(uuid), start, CIR, CBS);
+		buckets[i]=OC_token_bucket_new(uuid, start, CIR, CBS);
 	}
 	srandom(17);
 	long long tokens=0;
@@ -449,7 +449,7 @@ TEST(OCTokenBucket, PartitionTolerance)
 	for(i=0; i<REPLICA_NUMBER; i++)
 	{
 		uuid_generate(uuid);
-		buckets[i]=OC_token_bucket_new((const char*)uuid, sizeof(uuid), start, CIR, CBS);
+		buckets[i]=OC_token_bucket_new(uuid, start, CIR, CBS);
 	}
 	srandom(17);
 	long long tokens=0;
@@ -624,7 +624,7 @@ TEST(PNCounter, Basic)
 	uuid_t uuid;
 	uuid_generate(uuid);
 	long long value=0;
-	pnc=PN_counter_new((const char*)uuid, sizeof(uuid));
+	pnc=PN_counter_new(uuid);
 	value=PN_counter_get(pnc);
 	EXPECT_EQ(value, 0);
 
@@ -633,9 +633,6 @@ TEST(PNCounter, Basic)
 
 	value=PN_counter_incrby(pnc, -20);
 	EXPECT_EQ(value, 80);
-
-	value=PN_counter_reset(pnc);
-	EXPECT_EQ(value, 0);
 
 	value=PN_counter_set(pnc, 2379);
 	EXPECT_EQ(value, 2379);
@@ -649,7 +646,7 @@ TEST(PNCounter, Merge)
 	for(size_t i=0; i<2; i++)
 	{
 		uuid_generate(uuid);
-		pnc[i]=PN_counter_new((const char*)uuid, sizeof(uuid));
+		pnc[i]=PN_counter_new(uuid);
 	}
 	long long value;
 	PN_counter_incrby(pnc[0], 200);
@@ -663,7 +660,7 @@ TEST(PNCounter, Merge)
 	value=PN_counter_get(pnc[1]);
 	EXPECT_EQ(value, 100);
 
-	PN_counter_reset(pnc[0]);
+	PN_counter_set(pnc[0], 0);
 	PN_counter_sync(pnc, 2);
 	value=PN_counter_get(pnc[1]);
 	EXPECT_EQ(value, 0);
@@ -694,7 +691,7 @@ TEST(PNCounter, ObservedSet)
 	for(size_t i=0; i<2; i++)
 	{
 		uuid_generate(uuid);
-		pnc[i]=PN_counter_new((const char*)uuid, sizeof(uuid));
+		pnc[i]=PN_counter_new(uuid);
 	}
 	long long value=0;
 	PN_counter_incrby(pnc[0], 2);
@@ -762,7 +759,7 @@ TEST(PNCounter, Replica100)
 	for(i=0; i<test_replica_num; i++)
 	{
 		uuid_generate(uuid);
-		pnc[i]=PN_counter_new((const char*)uuid, sizeof(uuid));
+		pnc[i]=PN_counter_new(uuid);
 	}
 	long long expect_value=0, actual_value=0, increment=0;
 	srand(171);

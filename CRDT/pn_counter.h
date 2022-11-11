@@ -7,6 +7,7 @@
 
 #pragma once
 #include <stddef.h>
+#include <uuid/uuid.h>
 
 #ifdef __cplusplus
 extern "C"
@@ -14,11 +15,10 @@ extern "C"
 #endif
 
 struct PN_counter;
-struct PN_counter *PN_counter_new(const char* id, size_t id_sz);
+struct PN_counter *PN_counter_new(uuid_t my_id);
 void PN_counter_free(struct PN_counter *pnc);
 
 long long PN_counter_get(struct PN_counter *pnc);
-long long PN_counter_reset(struct PN_counter *pnc);
 long long PN_counter_set(struct PN_counter *pnc, long long value);
 size_t PN_counter_replica_num(struct PN_counter *pnc);
 
