@@ -251,6 +251,7 @@ enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct sw
 	struct snet_info net_info;
 	swarmkv_net_info(db->net, &net_info);
 	snprintf(net_info_buff, sizeof(net_info_buff), "# Network\n"
+												"timeout_in_msec: %.2f\n"
 												"connections: %lld\n"
 												"pending_rpcs: %lld\n"
 												"timed_out_rpcs: %lld\n"
@@ -262,12 +263,15 @@ enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct sw
 												"output_replies: %lld\n"
 												"input_msgs: %lld\n"
 												"output_msgs: %lld\n"
+												"input_buffer_sz: %lld\n"
+												"output_buffer_sz: %lld\n"
 												"unknown_sequence: %lld\n"
 												"instantaneous_input_kbps: %.2f\n"
 												"instantaneous_output_kbps: %.2f\n"
 												"instantaneous_input_cps: %.2f\n"
 												"instantaneous_output_cps: %.2f\n"
 												,
+												(double)db->opts->p2p_timeout_us/1000,
 												net_info.connections,
 												net_info.pending_rpcs,
 												net_info.timed_out_rpcs,
@@ -279,6 +283,8 @@ enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct sw
 												net_info.output_replies,
 												net_info.input_msgs,
 												net_info.output_msgs,
+												net_info.input_buffer_sz,
+												net_info.output_buffer_sz,
 												net_info.unknown_sequence,
 												net_info.instantaneous_input_kbps,
 												net_info.instantaneous_output_kbps,

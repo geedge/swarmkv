@@ -479,7 +479,7 @@ static void crdt_generic_on_succ(void* result, void* user)
 		case CRDT_PUSH:
 			if(reply->type==SWARMKV_REPLY_INTEGER && reply->integer>0)
 			{
-				atomic_inc(&ctx->store->sync_ok);
+				atomic_add(&ctx->store->sync_ok, reply->integer);
 			}
 			else
 			{

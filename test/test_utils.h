@@ -30,6 +30,7 @@ struct cmd_exec_arg
 	proc_result_callback_t *cb;
 	void *cb_uarg;
 	int print_reply_on_fail;
+	int diable_sync_check;
 };
 struct cmd_exec_arg* cmd_exec_arg_new(void);
 void cmd_exec_arg_set_cb(struct cmd_exec_arg *arg, proc_result_callback_t *cb, void* cb_arg);
@@ -43,6 +44,7 @@ void cmd_exec_arg_expect_NIL(struct cmd_exec_arg* arg);
 int cmd_exec_arg_wait(struct cmd_exec_arg* arg, long timeout_ms);
 void cmd_exec_arg_success(struct cmd_exec_arg* arg);
 void cmd_exec_arg_failed(struct cmd_exec_arg* arg);
+void cmd_exec_arg_diable_sync_check(struct cmd_exec_arg* arg);
 void cmd_exec_generic_callback(const struct swarmkv_reply* reply, void * cb_arg);
 
 int reply_compare(const struct swarmkv_reply *r1, const struct swarmkv_reply *r2);

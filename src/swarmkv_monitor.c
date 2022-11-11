@@ -342,9 +342,10 @@ enum cmd_exec_result latency_command(struct swarmkv_module *mod_monitor, const s
             swarmkv_reply_merge_array(reply, tmp);
         }
     }
-    else if(!strcasecmp(cmd->argv[1], "reset"))
+    else
     {
         *reply=swarmkv_reply_new_error(erorr_subcommand_syntax, cmd->argv[1], cmd->argv[0]);
     }
+    //if(!strcasecmp(cmd->argv[1], "reset"))
     return FINISHED;
 }

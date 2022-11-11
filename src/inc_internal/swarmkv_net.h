@@ -35,6 +35,9 @@ struct snet_info
 	long long output_replies;
 	long long output_msgs;	//output_cmds + output_replies
 	
+	long long input_buffer_sz;
+	long long output_buffer_sz;
+	
 	double instantaneous_input_kbps;
 	double instantaneous_output_kbps;
 

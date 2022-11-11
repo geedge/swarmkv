@@ -92,6 +92,7 @@ struct snet_stat
 	long long input_bytes, output_bytes;
 	long long timed_out_rpcs;
 	long long unknown_sequence;
+	long long input_buffer_sz, output_buffer_sz;
 };
 struct snet_thread
 {
@@ -301,8 +302,8 @@ static void __dummy_event_handler(evutil_socket_t fd, short what, void * arg)
 		output_cmds += net->threads[i].stat.output_cmds;
 	}
 	clock_gettime(CLOCK_MONOTONIC, &now);
-	net->instantaneous_input_kbps=(input_bytes - net->last_input_bytes)/1000/MAX(now.tv_sec - net->last_stats.tv_sec, 1);
-	net->instantaneous_output_kbps=(output_bytes - net->last_output_bytes)/1000/MAX(now.tv_sec - net->last_stats.tv_sec, 1);
+	net->instantaneous_input_kbps=(input_bytes - net->last_input_bytes)*8/1000/MAX(now.tv_sec - net->last_stats.tv_sec, 1);
+	net->instantaneous_output_kbps=(output_bytes - net->last_output_bytes)*8/1000/MAX(now.tv_sec - net->last_stats.tv_sec, 1);
 	net->instantaneous_input_cps=(input_cmds - net->last_input_cmds)/MAX(now.tv_sec - net->last_stats.tv_sec, 1);
 	net->instantaneous_output_cps=(output_cmds - net->last_output_cmds)/MAX(now.tv_sec - net->last_stats.tv_sec, 1);
 
@@ -321,7 +322,24 @@ static void snet_conn_table_remove(struct snet_conn* conn)
 	conn->is_in_conn_table=0;
 	return;
 }
-static void snet_conn_free(struct snet_conn* conn)
+static void snet_conn_buffer_size(struct snet_conn *conn, long long *input_buff_sz, long long *output_buff_sz)
+{
+	struct evbuffer *tmp=NULL;
+	if(conn->bev)
+	{
+		tmp=bufferevent_get_input(conn->bev);
+		*input_buff_sz=evbuffer_get_length(tmp);
+		tmp=bufferevent_get_output(conn->bev);
+		*output_buff_sz=evbuffer_get_length(tmp);
+	}
+	else
+	{
+		*input_buff_sz=0;
+		*output_buff_sz=evbuffer_get_length(conn->buff_for_sending);
+	}
+	return;
+}
+static void snet_conn_free(struct snet_conn *conn)
 {
 	evbuffer_free(conn->buff_for_sending);
 	conn->buff_for_sending=NULL;
@@ -378,7 +396,21 @@ static void peer_conn_write_cb(struct bufferevent *bev, void *arg)
 	bufferevent_write_buffer(conn->bev, conn->buff_for_sending);
 	return;
 }
-
+void snet_thread_buffer_usage_stat(struct snet_thread *thr)
+{
+	long long total_input_sz=0, total_output_sz=0;
+	long long input_sz=0, output_sz=0;
+	struct snet_conn *conn=NULL, *tmp=NULL;
+	HASH_ITER(hh, thr->conn_table, conn, tmp)
+	{
+		snet_conn_buffer_size(conn, &input_sz, &output_sz);
+		total_input_sz+=input_sz;
+		total_output_sz+=output_sz;
+	}
+	thr->stat.output_buffer_sz=total_output_sz;
+	thr->stat.input_buffer_sz=total_input_sz;
+	return;
+}
 static void peer_conn_read_cb(struct bufferevent *bev, void *arg)
 {
 	struct snet_conn *conn=(struct snet_conn*)arg;
@@ -386,7 +418,7 @@ static void peer_conn_read_cb(struct bufferevent *bev, void *arg)
 	assert(0==evbuffer_get_length(conn->buff_for_sending));
     struct evbuffer *input = bufferevent_get_input(bev);
 	assert(bev==conn->bev);
-	
+	snet_thread_buffer_usage_stat(thr);
 	assert(conn->ref_thr == conn->ref_thr->ref_net->threads+conn->thread_id);
 	if(conn->need_to_be_kill)
 	{
@@ -730,6 +762,8 @@ void swarmkv_net_info(struct swarmkv_net *net, struct snet_info *info)
 		info->output_cmds += thr->stat.output_cmds;
 		info->output_replies += thr->stat.output_replies;
 		info->output_msgs += thr->stat.output_msgs;
+		info->input_buffer_sz += thr->stat.input_buffer_sz;
+		info->output_buffer_sz += thr->stat.output_buffer_sz;
 		info->unknown_sequence += thr->stat.unknown_sequence;
 	}
 	info->instantaneous_input_kbps=net->instantaneous_input_kbps;

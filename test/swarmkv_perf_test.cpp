@@ -282,7 +282,7 @@ TEST(Migration, AddKeyOwner)
 
 }
 int g_tconsume_running_flag=0;
-size_t g_token_bucket_number=200*1000;
+size_t g_token_bucket_number=2*1000;
 
 void *background_tconsume_thread(void *thread_arg)
 {
@@ -290,7 +290,7 @@ void *background_tconsume_thread(void *thread_arg)
 
 	struct cmd_exec_arg *arg=NULL;
 	arg=cmd_exec_arg_new();
-
+	cmd_exec_arg_diable_sync_check(arg);
 	char key[256];
 	int ret=0;
 	long long tokens=1;
@@ -317,7 +317,7 @@ void *background_tconsume_thread(void *thread_arg)
 }
 TEST(Performance, Sync)
 {
-	size_t NODE_NUMBER=2;
+	size_t NODE_NUMBER=4;
 	size_t CALL_THREAD_PER_NODE=2;
 	size_t WORKER_THREAD_NUMBER=1;
 	
