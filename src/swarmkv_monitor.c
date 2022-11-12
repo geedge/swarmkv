@@ -342,10 +342,48 @@ enum cmd_exec_result latency_command(struct swarmkv_module *mod_monitor, const s
             swarmkv_reply_merge_array(reply, tmp);
         }
     }
+    else if(!strcasecmp(cmd->argv[1], "reset"))
+    {
+        if(cmd->argc>2)
+        {
+            if(!strcasecmp(cmd->argv[2], "command"))
+            {
+                recorder_table_reset(&monitor->commands);
+                *reply=swarmkv_reply_new_status("Command metrics are reset");
+            }
+            else if(!strcasecmp(cmd->argv[2], "event"))
+            {
+                recorder_table_reset(&monitor->events);
+                *reply=swarmkv_reply_new_status("Event metrics are reset");
+            }
+            else if(!strcasecmp(cmd->argv[2], "peer"))
+            {
+                for(size_t i=0; i<monitor->nr_worker_threads; i++)
+                {
+                    recorder_table_reset(monitor->peers+i);
+                }
+                *reply=swarmkv_reply_new_status("Peer metrics are rest");
+            }
+            else
+            {
+                *reply=swarmkv_reply_new_error(erorr_subcommand_syntax, cmd->argv[1], cmd->argv[0]);
+            }
+        }
+        else
+        {
+            recorder_table_reset(&monitor->commands);
+            recorder_table_reset(&monitor->events);
+            for(size_t i=0; i<monitor->nr_worker_threads; i++)
+            {
+                recorder_table_reset(monitor->peers+i);
+            }
+            *reply=swarmkv_reply_new_status("All metrics are");
+        }
+    }
     else
     {
         *reply=swarmkv_reply_new_error(erorr_subcommand_syntax, cmd->argv[1], cmd->argv[0]);
     }
-    //if(!strcasecmp(cmd->argv[1], "reset"))
+    
     return FINISHED;
 }
