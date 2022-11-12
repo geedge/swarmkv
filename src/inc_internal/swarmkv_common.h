@@ -23,16 +23,7 @@ enum cmd_exec_result
 	ASYNC_WAIT
 };
 	
-struct swarmkv_module;
-typedef void swarmkv_module_lock_func_t(struct swarmkv_module *mod, sds key);
 
-struct swarmkv_module
-{
-	char name[SWARMKV_SYMBOL_MAX];
-	swarmkv_module_lock_func_t *lock;
-	swarmkv_module_lock_func_t *unlock;
-	void *mod_ctx;
-};
 /*
 struct swarmkv_node_addr
 {

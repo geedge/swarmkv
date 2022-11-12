@@ -1,7 +1,6 @@
 #include "swarmkv_keyspace.h"
 #include "swarmkv_utils.h"
 #include "swarmkv_limits.h"
-//#include "swarmkv_net.h"
 #include "swarmkv_monitor.h"
 #include "swarmkv_error.h"
 
@@ -1142,7 +1141,7 @@ void swarmkv_keyspace_set_monitor_handle(struct swarmkv_module *mod_keyspace, st
 	ks->mod_monitor=mod_monitor;
 	return;
 }
-void keyspace_lock(struct swarmkv_module *mod_keyspace, const sds key)
+void keyspace_lock(struct swarmkv_module *mod_keyspace, enum cmd_key_flag flag, const sds key)
 {
 	if(!key) return;
 	int slot_id=key_hash_slot(key, sdslen(key));
@@ -1151,7 +1150,7 @@ void keyspace_lock(struct swarmkv_module *mod_keyspace, const sds key)
 	pthread_mutex_lock(&slot_rt->mutex);
 	return;
 }
-void keyspace_unlock(struct swarmkv_module *mod_keyspace, const sds key)
+void keyspace_unlock(struct swarmkv_module *mod_keyspace, enum cmd_key_flag flag, const sds key)
 {
 	if(!key) return;
 	int slot_id=key_hash_slot(key, sdslen(key));

@@ -170,11 +170,11 @@ static void spec_lock_module(struct swarmkv_cmd_spec *spec, const struct swarmkv
 	if(!spec->module->lock) return;
 	if(spec->key_offset<0)
 	{
-		spec->module->lock(spec->module, NULL);
+		spec->module->lock(spec->module, spec->flag, NULL);
 	}
 	else
 	{
-		spec->module->lock(spec->module, cmd->argv[spec->key_offset]);
+		spec->module->lock(spec->module,  spec->flag, cmd->argv[spec->key_offset]);
 	}
 }
 static void spec_unlock_module(struct swarmkv_cmd_spec *spec, const struct swarmkv_cmd *cmd)
@@ -182,11 +182,11 @@ static void spec_unlock_module(struct swarmkv_cmd_spec *spec, const struct swarm
 	if(!spec->module->unlock) return;
 	if(spec->key_offset<0)
 	{
-		spec->module->unlock(spec->module, NULL);
+		spec->module->unlock(spec->module, spec->flag, NULL);
 	}
 	else
 	{
-		spec->module->unlock(spec->module, cmd->argv[spec->key_offset]);
+		spec->module->unlock(spec->module, spec->flag, cmd->argv[spec->key_offset]);
 	}
 }
 enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
@@ -263,8 +263,8 @@ enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct sw
 												"output_replies: %lld\n"
 												"input_msgs: %lld\n"
 												"output_msgs: %lld\n"
-												"input_buffer_sz: %lld\n"
-												"output_buffer_sz: %lld\n"
+												"input_buffer: %lld\n"
+												"output_buffer: %lld\n"
 												"unknown_sequence: %lld\n"
 												"instantaneous_input_kbps: %.2f\n"
 												"instantaneous_output_kbps: %.2f\n"
@@ -888,13 +888,13 @@ void command_spec_init(struct swarmkv *db)
 					2, 1, CMD_KEY_RW, REPLY_INT_0, AUTO_ROUTE,
 					srem_command, db->mod_store);
 	command_register(&(db->command_table), "SMEMBERS", "key",
-					1, 1, CMD_KEY_RW, REPLY_EMPTY_ARRAY, AUTO_ROUTE,
+					1, 1, CMD_KEY_RO, REPLY_EMPTY_ARRAY, AUTO_ROUTE,
 					smembers_command, db->mod_store);
 	command_register(&(db->command_table), "SISMEMBER", "key member",
-					2, 1, CMD_KEY_RW, REPLY_INT_0, AUTO_ROUTE,
+					2, 1, CMD_KEY_RO, REPLY_INT_0, AUTO_ROUTE,
 					sismember_command, db->mod_store);
 	command_register(&(db->command_table), "SCARD", "key",
-					1, 1, CMD_KEY_RW, REPLY_INT_0, AUTO_ROUTE,
+					1, 1, CMD_KEY_RO, REPLY_INT_0, AUTO_ROUTE,
 					scard_command, db->mod_store);
 
 	/* Token bucket commands */
@@ -1094,7 +1094,10 @@ struct swarmkv *swarmkv_open(struct swarmkv_options* opts, const char * db_name,
 	swarmkv_keyspace_set_monitor_handle(db->mod_keyspace, db->mod_monitor);
 
 	db->mod_store=swarmkv_store_new(db->opts, __exec_cmd, db, opts->bin_uuid);
-	swarmkv_net_timer_add(db->net, 0, opts->sync_interval_us, 1, (timeout_cb*)swarmkv_store_periodic, db->mod_store);
+	for(int i=0; i<db->opts->nr_worker_threads; i++)
+	{
+		swarmkv_net_timer_add(db->net, i, opts->sync_interval_us, 1, (timeout_cb*)swarmkv_store_periodic, db->mod_store);
+	}
 	swarmkv_store_set_monitor_handle(db->mod_store, db->mod_monitor);
 
 	command_spec_init(db);

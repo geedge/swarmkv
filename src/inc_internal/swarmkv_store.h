@@ -2,7 +2,9 @@
 
 #include "swarmkv/swarmkv.h"
 #include "swarmkv_common.h"
+#include "swarmkv_cmd_spec.h"
 #include "future_promise.h"
+
 
 #include "lww_register.h"
 #include "pn_counter.h"

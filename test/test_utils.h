@@ -13,7 +13,7 @@ extern "C"
 #define ALLOC(type, number) ((type *)calloc(sizeof(type), number))
 
 int swarmkv_cli_create_cluster(const char* cluster_name, const char *node_string);
-int swarmkv_cli_add_node(const char *cluster_name , const char *ip, unsigned int port);
+int swarmkv_cli_add_key_owner(const char *cluster_name , const char *ip, unsigned int port);
 
 struct cmd_exec_arg;
 typedef void proc_result_callback_t(struct cmd_exec_arg* exec_arg, void *uarg);

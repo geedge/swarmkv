@@ -32,7 +32,7 @@ void *blocking_call_thread(void *thread_arg)
 	struct cmd_exec_arg *arg=NULL;
 	unsigned long long set_success_counter=0, get_success_counter=0, del_success_counter=0;
 	arg=cmd_exec_arg_new();
-	arg->print_reply_on_fail=1;
+
 	for(i=0; i<n_key; i++)
 	{
 		snprintf(key, sizeof(key), "%s-key-%zu", uuid_str, i);
@@ -142,7 +142,7 @@ TEST(MultiThreads, Nthreads)
 
 }
 int g_running_flag=0;
-void *background_running_thread(void *thread_arg)
+void *migration_background_thread(void *thread_arg)
 {
 	struct swarmkv *db=(struct swarmkv *)thread_arg;
 	uuid_t uuid;
@@ -252,11 +252,11 @@ TEST(Migration, AddKeyOwner)
 	{
 		for(j=0; j<CALLER_THREAD_NUMBER; j++)
 		{
-			pthread_create(&(threads[i][j]), NULL, background_running_thread, db[i]);
+			pthread_create(&(threads[i][j]), NULL, migration_background_thread, db[i]);
 		}
 	}
 	sleep(10);
-	swarmkv_cli_add_node(cluster_name, "127.0.0.1", p2p_port_start+NODE_NUMBER);
+	swarmkv_cli_add_key_owner(cluster_name, "127.0.0.1", p2p_port_start+NODE_NUMBER);
 	sleep(300);
 	g_running_flag=0;
 	int *successful_backgroud_running_thread=NULL;
@@ -282,7 +282,7 @@ TEST(Migration, AddKeyOwner)
 
 }
 int g_tconsume_running_flag=0;
-size_t g_token_bucket_number=2*1000;
+size_t g_token_bucket_number=200*1000;
 
 void *background_tconsume_thread(void *thread_arg)
 {
@@ -317,14 +317,14 @@ void *background_tconsume_thread(void *thread_arg)
 }
 TEST(Performance, Sync)
 {
-	size_t NODE_NUMBER=4;
+	size_t NODE_NUMBER=2;
 	size_t CALL_THREAD_PER_NODE=2;
 	size_t WORKER_THREAD_NUMBER=1;
 	
 	struct swarmkv *db[NODE_NUMBER];
 	char *err=NULL;
 	const char *log_path="./swarmkv-sync.log";
-	unsigned int p2p_port_start=7310, health_port_start=8310;
+	unsigned int p2p_port_start=9310, health_port_start=10310;
 	char node_list_str[1024]={0};
 	for(size_t i=0; i<NODE_NUMBER; i++)
 	{
@@ -342,7 +342,7 @@ TEST(Performance, Sync)
 		swarmkv_options_set_logger(opts[i], logger);
 		swarmkv_options_set_worker_thread_number(opts[i], WORKER_THREAD_NUMBER);
 		swarmkv_options_set_p2p_timeout_us(opts[i], 1000*1000);
-		swarmkv_options_set_sync_interval_us(opts[i], 200*1000);
+		swarmkv_options_set_sync_interval_us(opts[i], 100*1000);
 		swarmkv_options_set_disable_run_for_leader(opts[i]);
 		db[i]=swarmkv_open(opts[i], cluster_name, &err);
 		if(err)

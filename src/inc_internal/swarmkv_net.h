@@ -1,5 +1,6 @@
 #pragma once
 #include "swarmkv_common.h"
+#include "swarmkv_cmd_spec.h"
 struct swarmkv_net;
 
 typedef void timeout_cb(void *arg);
@@ -13,7 +14,7 @@ struct swarmkv_net* swarmkv_net_new(const struct swarmkv_options *opts, node_t *
 void swarmkv_net_free(struct swarmkv_net *net);
 void swarmkv_net_set_on_cmd_cb(struct swarmkv_net *net, on_cmd_callback_t on_cmd_cb, void* arg);
 void swarmkv_net_timer_add(struct swarmkv_net *net, int thread_id, int usec, int is_persist, timeout_cb *cb, void *cb_arg);
-void swarmkv_net_set_monitor_handle(struct swarmkv_net* net, struct swarmkv_module *mod_monitor);
+void swarmkv_net_set_monitor_handle(struct swarmkv_net *net, struct swarmkv_module *mod_monitor);
 
 void swarmkv_net_dispath(struct swarmkv_net* net, int thread_id);
 void swarmkv_net_stop(struct swarmkv_net* net);

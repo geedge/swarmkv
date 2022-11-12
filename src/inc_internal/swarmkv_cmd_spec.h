@@ -3,6 +3,8 @@
 #include "swarmkv_common.h"
 #include "uthash.h"
 
+struct swarmkv_module;
+
 enum cmd_group
 {
 	GROUP_KEYSPACE,
@@ -28,6 +30,15 @@ enum cmd_key_flag
 				create the key if not-exisit. */
 	CMD_KEY_RM	/* Deletes the key. */
 };
+typedef void swarmkv_module_lock_func_t(struct swarmkv_module *mod, enum cmd_key_flag flag, sds key);
+
+struct swarmkv_module
+{
+	char name[SWARMKV_SYMBOL_MAX];
+	swarmkv_module_lock_func_t *lock;
+	swarmkv_module_lock_func_t *unlock;
+	void *mod_ctx;
+};
 
 enum cmd_keyroute_failover
 {
@@ -38,6 +49,7 @@ enum cmd_keyroute_failover
 	REPLY_EMPTY_ARRAY,
 	REPLY_ERROR
 };
+
 typedef enum cmd_exec_result command_proc_func(struct swarmkv_module *module, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply);
 
 struct swarmkv_cmd_spec

@@ -1,5 +1,6 @@
 #pragma once
 #include "swarmkv_common.h"
+#include "swarmkv_cmd_spec.h"
 #include "swarmkv/swarmkv.h"
 
 #include <unistd.h>

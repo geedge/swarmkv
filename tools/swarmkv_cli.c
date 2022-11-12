@@ -272,7 +272,7 @@ int is_node_active(struct swarmkv_reply *nodes_reply, node_t *node)
 	}
 	return node_is_active;
 }
-struct swarmkv_reply *cluster_addnode_command(struct swarmkv* db, char *argv[], size_t argc)
+struct swarmkv_reply *cluster_addkeyowner_command(struct swarmkv* db, char *argv[], size_t argc)
 {
 	node_t node;
 	struct swarmkv_reply *slots_reply=NULL, *nodes_reply=NULL, *reply=NULL;
@@ -280,7 +280,7 @@ struct swarmkv_reply *cluster_addnode_command(struct swarmkv* db, char *argv[], 
 
     if(argc <= 2)
     {
-        reply = swarmkv_reply_new_error(error_wrong_number_of_arg, "CLUSTER ADDNODE");
+        reply = swarmkv_reply_new_error(error_wrong_number_of_arg, "CLUSTER ADDKEYOWNER");
         return reply;
     }
 	char *cmd_cluster_nodes[]={"cluster", "nodes", "brief"};
@@ -970,7 +970,7 @@ struct cluster_cmd_spec cluster_cmds[]={
 	{"CLUSTER KEYSLOT", "key", cluster_keyslot_command},
 	{"CLUSTER NODES", "[breif | verbose]", cluster_nodes_command},
 	{"CLUSTER SLOTS", "", cluster_slots_command},
-	{"CLUSTER ADDNODE", "IP:port", cluster_addnode_command},
+	{"CLUSTER ADDKEYOWNER", "IP:port", cluster_addkeyowner_command},
 	{"CLUSTER CREATE", "cluster-name IP:port [IP:port ...]", cluster_create_command},
     {"CLUSTER SANITY", "check | heal", cluster_sanity_command},
     {"ATTACH", "IP:port", attach_command},
@@ -1133,7 +1133,7 @@ char *hints(const char *cmd, int *color, int *bold)
 
 int main(int argc, char * argv[])
 {
-	const char *history_file="swarmkv-cli-history.txt";
+	const char *history_file=".swarmkv-cli-history.txt";
 	char *line;
 	struct swarmkv_reply *reply=NULL;
 	memset(&g_config, 0, sizeof(g_config));
