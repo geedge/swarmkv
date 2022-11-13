@@ -40,7 +40,7 @@ add_subdirectory(CRDT)
 add_subdirectory(src)
 add_subdirectory(test)
 add_subdirectory(tools)
-
+add_subdirectory(examples)
 #LINK_DIRECTORIES(
 #    ${PROJECT_BINARY_DIR}/lib
 #    /usr/local/lib

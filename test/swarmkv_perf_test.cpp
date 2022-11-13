@@ -357,7 +357,7 @@ TEST(Performance, Sync)
 	for(size_t i=0; i<g_token_bucket_number; i++)
 	{
 		snprintf(key, sizeof(key), "tb-%zu", i);
-		reply=swarmkv_command_on(db[i%NODE_NUMBER], NULL, "TCFG %s 2000000 1000000", key);
+		reply=swarmkv_command_on(db[i%NODE_NUMBER], NULL, "TCFG %s 2000000 2000000", key);
 		EXPECT_EQ(reply->type, SWARMKV_REPLY_STATUS);
 		if(reply->type != SWARMKV_REPLY_STATUS)
 		{
