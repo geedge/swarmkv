@@ -4,14 +4,14 @@
 #include <stddef.h>	//size_t
 #include <string.h>
 #include <assert.h>
-
+#include <uuid/uuid.h>
 struct LWW_register
 {
 	struct timeval timestamp;
 	size_t size;
 	char *value;
 };
-struct LWW_register *LWW_register_new(const char* id, size_t id_sz)
+struct LWW_register *LWW_register_new(uuid_t uuid)
 {
 	struct LWW_register *reg=ALLOC(struct LWW_register, 1);
 	return reg;

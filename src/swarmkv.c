@@ -15,6 +15,7 @@
 #include "t_string.h"
 #include "t_set.h"
 #include "t_token_bucket.h"
+#include "t_hash.h"
 
 #include "swarmkv_message.h"
 #include "swarmkv_net.h"
@@ -901,6 +902,17 @@ void command_spec_init(struct swarmkv *db)
 	command_register(&(db->command_table), "SCARD", "key",
 					1, 1, CMD_KEY_RO, REPLY_INT_0, AUTO_ROUTE,
 					scard_command, db->mod_store);
+
+	/* Hash commands */
+	command_register(&(db->command_table), "HSET", "key field value [field value ...]",
+					3, 1, CMD_KEY_OW, REPLY_ERROR, AUTO_ROUTE,
+					hset_command, db->mod_store);
+	command_register(&(db->command_table), "HGET", "key field",
+					2, 1, CMD_KEY_RO, REPLY_NIL, AUTO_ROUTE,
+					hget_command, db->mod_store);
+	command_register(&(db->command_table), "HMGET", "key field [field ...]",
+					2, 1, CMD_KEY_RO, REPLY_NIL, AUTO_ROUTE,
+					hmget_command, db->mod_store);
 
 	/* Token bucket commands */
 	command_register(&(db->command_table), "TCFG", "key capacity rate",

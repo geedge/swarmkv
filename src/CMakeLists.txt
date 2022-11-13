@@ -7,7 +7,8 @@ message(STATUS "SwarmKV, Version: ${SWARMKV_VERSION}")
 
 add_definitions(-D_GNU_SOURCE) 
 add_definitions(-fPIC)
-set(SWARMKV_SRC swarmkv.c swarmkv_store.c swarmkv_sync.c swarmkv_api.c t_string.c t_set.c t_token_bucket.c
+set(SWARMKV_SRC swarmkv.c swarmkv_store.c swarmkv_sync.c swarmkv_api.c
+		t_string.c t_set.c t_token_bucket.c t_hash.c
 		swarmkv_common.c swarmkv_message.c swarmkv_net.c swarmkv_keyspace.c swarmkv_utils.c 
 		swarmkv_monitor.c future_promise.cpp)
 

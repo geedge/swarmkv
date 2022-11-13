@@ -81,6 +81,7 @@ SwarmKV Data Types
 | KEYSPACE ADDKEYSTOSLOT | IP port slot blob                    |                                                              |
 | KEYSPACE DELSLOTKEYS   | IP port slot                         |                                                              |
 | KEYSPACE KEYS          | IP port pattern                      |                                                              |
+| KEYSPACE COUNTKEYSINSLOT      | slot                      |                                                              |
 | CRDT DEL               | key                                  | Integer reply: The number of cached keys that were removed.  |
 | CRDT PUSH              | key blob                             | Simple string reply: OK if PUSH was executed correctly.      |
 | CRDT PULL              | key                                  | Blog reply: a blob of state-based CRDT                       |

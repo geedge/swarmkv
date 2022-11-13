@@ -9,10 +9,10 @@ struct OR_set
 {
 	struct OR_map *map;
 };
-struct OR_set *OR_set_new(const char* id, size_t id_sz)
+struct OR_set *OR_set_new(uuid_t uuid)
 {
 	struct OR_set *set=ALLOC(struct OR_set, 1);
-	set->map=OR_map_new(id, id_sz);
+	set->map=OR_map_new(uuid);
 	return set;
 }
 void OR_set_free(struct OR_set *set)

@@ -7,13 +7,14 @@
 
 #pragma once
 #include <stddef.h>
+#include <uuid/uuid.h>
 
 #ifdef __cplusplus
 extern "C"
 {
 #endif
 struct LWW_register;
-struct LWW_register *LWW_register_new(const char *value, size_t size);
+struct LWW_register *LWW_register_new(uuid_t uuid);
 void LWW_register_free(struct LWW_register *reg);
 
 void LWW_register_set(struct LWW_register *reg, const char *value, size_t size);

@@ -63,7 +63,7 @@ enum cmd_exec_result set_command(struct swarmkv_module *mod_store, const struct 
 		else
 		{
 			obj->type=OBJ_TYPE_STRING;			
-			obj->string=LWW_register_new((const char*)uuid, sizeof(uuid));
+			obj->string=LWW_register_new(uuid);
 		}
 	}
 	if(obj->type==OBJ_TYPE_STRING)

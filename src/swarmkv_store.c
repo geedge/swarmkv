@@ -378,7 +378,7 @@ void sobj_merge_blob(struct sobj *obj, const char *blob, size_t blob_sz, uuid_t 
 		case OBJ_TYPE_STRING:
 			if(!obj->string)
 			{				
-				obj->string=LWW_register_new((const char*)uuid, sizeof(uuid_t));
+				obj->string=LWW_register_new(uuid);
 			}
 			LWW_register_merge_blob(obj->string, value_blob, value_blob_sz);
 			break;
@@ -392,14 +392,14 @@ void sobj_merge_blob(struct sobj *obj, const char *blob, size_t blob_sz, uuid_t 
 		case OBJ_TYPE_SET:
 			if(!obj->set)
 			{
-				obj->set=OR_set_new((const char*)uuid, sizeof(uuid_t));
+				obj->set=OR_set_new(uuid);
 			}
 			OR_set_merge_blob(obj->set, value_blob, value_blob_sz);
 			break;
 		case OBJ_TYPE_HASH:
 			if(!obj->hash)
 			{
-				obj->hash=OR_map_new((const char*)uuid, sizeof(uuid_t));
+				obj->hash=OR_map_new(uuid);
 			}
 			OR_map_merge_blob(obj->hash, value_blob, value_blob_sz);
 			break;

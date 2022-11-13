@@ -1,39 +1,44 @@
 #include "swarmkv/swarmkv.h"
+#include "stdio.h"
 #include "stdlib.h"
+
 int main(int argc, char **argv)
 {
-    struct swarmkv_options *opts=swarmkv_options_new();
-    swarmkv_options_set_p2p_port(opts, 5210);
- 
-    struct swarmkv *db=NULL;
+    struct swarmkv_options *opts[2];
+    struct swarmkv *db[2];
     char *err=NULL;
     const char *cluster_name="simple-example";
-    db=swarmkv_open(opts, cluster_name, &err);
-    if(err)
+    for(size_t i=0; i<2; i++)
     {
-        printf("swarmkv_open failed: %s.\n", err);
-        free(err);
-        return -1;
+        opts[i]=swarmkv_options_new();
+        swarmkv_options_set_p2p_port(opts[i], 5210+i);
+        db[i]=swarmkv_open(opts[i], cluster_name, &err);
+        if(err)
+        {
+            printf("swarmkv_open failed: %s.\n", err);
+            free(err);
+            return -1;
+        }
     }
     const char *key="name";
     const char *value="zhangsan";
     struct swarmkv_reply *reply=NULL;
-    reply=swarmkv_command(db, "set %s %s", key, value);
+    reply=swarmkv_command(db[0], "set %s %s", key, value);
     swarmkv_reply_free(reply);
-    reply=swarmkv_command(db, "get %s", key);
+    reply=swarmkv_command(db[1], "get %s", key);
     if(reply->type==SWARMKV_REPLY_STRING)
     {
         printf("get name: %s\n", reply->str);
     }
-    else if(reply->type==SWARMKV_REPLY_NIL)
+    else
     {
-        printf("get name: NULL\n");
-    }
-    else if(reply->type==SWARMKV_REPLY_ERROR)
-    {
-         printf("get name error: %s\n", reply->str);
+        printf("get name failed, reply type: %d, str: %s\n",
+                    reply->type, reply->str);
     }
     swarmkv_reply_free(reply);
-	swarmkv_close(db);
+    for(size_t i=0; i<2; i++)
+    {
+	    swarmkv_close(db[i]);
+    }
     return 0;
 }

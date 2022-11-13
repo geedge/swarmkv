@@ -21,7 +21,7 @@ enum cmd_exec_result sadd_command(struct swarmkv_module *mod_store, const struct
 		uuid_t uuid;
 		assert(obj->raw==NULL);
 		store_get_uuid(mod_store, uuid);
-		obj->set=OR_set_new((const char*)uuid, sizeof(uuid_t));
+		obj->set=OR_set_new(uuid);
 		obj->type=OBJ_TYPE_SET;
 	}
 	size_t n_to_add=cmd->argc-2;

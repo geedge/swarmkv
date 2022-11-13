@@ -1,3 +1,5 @@
 include_directories(${PROJECT_SOURCE_DIR}include/)
 add_executable(simple_example simple_example.c)
+add_executable(async_example async_example.c)
 target_link_libraries(simple_example swarmkv-static pthread uuid)
+target_link_libraries(async_example swarmkv-static pthread uuid)

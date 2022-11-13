@@ -11,14 +11,14 @@
 
 #pragma once
 #include <stddef.h>
-
+#include <uuid/uuid.h>
 #ifdef __cplusplus
 extern "C"
 {
 #endif
 
 struct OR_set;
-struct OR_set *OR_set_new(const char* id, size_t id_sz);
+struct OR_set *OR_set_new(uuid_t my_uuid);
 void OR_set_free(struct OR_set *set);
 int OR_set_add(struct OR_set *set, const char *member, size_t member_sz);
 int OR_set_remove(struct OR_set *set, const char *member, size_t member_sz);

@@ -1239,8 +1239,8 @@ TEST(ORMap, Incrby)
 		snprintf(key_buffer, sizeof(key_buffer), "%s-%zu", key_prefix, i);
 		result=OR_map_get(map[i%2], key_buffer, strlen(key_buffer)+1);
 		if(result &&
-			result->type==TYPE_COUNTER && 
-			result->counter==(long long)i)
+			result->type==TYPE_INTEGER && 
+			result->integer==(long long)i)
 		{
 			success_cnt++;
 		}
@@ -1266,8 +1266,8 @@ TEST(ORMap, Incrby)
 		snprintf(key_buffer, sizeof(key_buffer), "%s-%zu", key_prefix, i);
 		result=OR_map_get(map[i%2], key_buffer, strlen(key_buffer)+1);
 		if(result &&
-			result->type==TYPE_COUNTER && 
-			result->counter==(long long)i+998)
+			result->type==TYPE_INTEGER && 
+			result->integer==(long long)i+998)
 		{
 			success_cnt++;
 		}
@@ -1465,8 +1465,8 @@ TEST(ORMap, Replica32)
 		switch(i%3)
 		{
 			case 0:			
-				EXPECT_EQ(kv_result->type, TYPE_COUNTER);
-				EXPECT_EQ(kv_result->counter, i);
+				EXPECT_EQ(kv_result->type, TYPE_INTEGER);
+				EXPECT_EQ(kv_result->integer, i);
 				break;
 			case 1:
 				snprintf(val_buffer, sizeof(val_buffer), "%s-%zu", val_prefix, i);
@@ -1518,7 +1518,7 @@ TEST(ORMap, Replica32)
 		switch(i%3)
 		{
 			case 0: 		
-				EXPECT_EQ(kv_result->counter, i*2);
+				EXPECT_EQ(kv_result->integer, i*2);
 				break;
 			case 1:
 				snprintf(val_buffer, sizeof(val_buffer), "%s-%zu-updated", val_prefix, i);			

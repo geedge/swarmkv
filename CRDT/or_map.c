@@ -10,23 +10,19 @@
 
 struct OR_timestamp
 {
-	char* replica_id;
-	size_t replica_id_sz;	
+	uuid_t uuid;
 	unsigned long long sequence;
 	UT_hash_handle hh;
 };
-struct OR_timestamp * OR_timestamp_new(const char* replica_id, size_t replica_id_sz, unsigned long long sequence)
+struct OR_timestamp * OR_timestamp_new(uuid_t uuid, unsigned long long sequence)
 {
 	struct OR_timestamp *ts=ALLOC(struct OR_timestamp, 1);
-	ts->replica_id_sz=replica_id_sz;
-	ts->replica_id=ALLOC(char, ts->replica_id_sz);
-	memcpy(ts->replica_id, replica_id, ts->replica_id_sz);
+	uuid_copy(ts->uuid, uuid);
 	ts->sequence=sequence;
 	return ts;
 }
 void OR_timestamp_free(struct OR_timestamp *ts)
 {
-	free(ts->replica_id);
 	free(ts);
 	return;
 }
@@ -34,6 +30,7 @@ struct OR_record
 {
 	char *key;
 	size_t key_len;
+	uuid_t replica_id;
 	enum value_type type;
 	union
 	{	
@@ -45,21 +42,22 @@ struct OR_record
 	int should_merge_flag;
 	UT_hash_handle hh;
 };
-struct OR_record * OR_record_new(const char *replica_id, size_t replica_id_sz, const char *member, size_t member_sz, enum value_type type)
+struct OR_record * OR_record_new(uuid_t replica_id, const char *member, size_t member_sz, enum value_type type)
 {
 	struct OR_record *record=NULL;
 	record=ALLOC(struct OR_record, 1);
 	record->key=ALLOC(char, member_sz);
 	record->key_len=member_sz;		
-	memcpy(record->key, member, member_sz);		
+	memcpy(record->key, member, member_sz);
+	uuid_copy(record->replica_id, replica_id);
 	record->type=type;
 	switch(record->type)
 	{
 		case TYPE_STRING:
-			record->string=LWW_register_new(replica_id, replica_id_sz);
+			record->string=LWW_register_new(replica_id);
 			break;
-		case TYPE_COUNTER:
-			record->counter=PN_counter_new(*(uuid_t*)replica_id);
+		case TYPE_INTEGER:
+			record->counter=PN_counter_new(replica_id);
 			break;
 		default:
 			record->none=NULL;
@@ -81,7 +79,7 @@ void OR_record_free(struct OR_record *record)
 			LWW_register_free(record->string);
 			record->string=NULL;
 			break;
-		case TYPE_COUNTER:
+		case TYPE_INTEGER:
 			PN_counter_free(record->counter);
 			record->counter=NULL;
 			break;
@@ -92,14 +90,14 @@ void OR_record_free(struct OR_record *record)
 	free(record);
 	return;
 }
-void OR_record_step(struct OR_record *record, const char* my_id, size_t id_sz, unsigned long long sequence)
+void OR_record_step(struct OR_record *record, uuid_t my_uuid, unsigned long long sequence)
 {
 	struct OR_timestamp *ts=NULL;
-	HASH_FIND(hh, record->hash_timestamp, my_id, id_sz, ts);
+	HASH_FIND(hh, record->hash_timestamp, my_uuid, sizeof(uuid_t), ts);
 	if(!ts)
 	{
-		ts=OR_timestamp_new(my_id, id_sz, sequence);
-		HASH_ADD_KEYPTR(hh, record->hash_timestamp, ts->replica_id, ts->replica_id_sz, ts);
+		ts=OR_timestamp_new(my_uuid, sequence);
+		HASH_ADD_KEYPTR(hh, record->hash_timestamp, ts->uuid, sizeof(ts->uuid), ts);
 	}
 	else
 	{
@@ -109,31 +107,46 @@ void OR_record_step(struct OR_record *record, const char* my_id, size_t id_sz, u
 }
 void OR_record_set_str(struct OR_record *record, const char *value, size_t value_sz)
 {
+	if(record->type==TYPE_NONE)
+	{
+		record->string=LWW_register_new(record->replica_id);
+	}
 	assert(record->type==TYPE_STRING);
 	LWW_register_set(record->string, value, value_sz);
+	record->type=TYPE_STRING;
 	return;
+}
+long long OR_record_set_int(struct OR_record *record, long long integer)
+{
+	long long result;
+	if(record->type==TYPE_NONE)
+	{
+		record->counter=PN_counter_new(record->replica_id);
+		record->type=TYPE_INTEGER;
+	}
+	assert(record->type==TYPE_INTEGER);
+	result=PN_counter_set(record->counter, integer);
+	return result;
 }
 long long OR_record_incrby(struct OR_record *record, long long increment)
 {
-	assert(record->type==TYPE_COUNTER);
+	assert(record->type==TYPE_INTEGER);
 	long long result=0;
 	result=PN_counter_incrby(record->counter, increment);
 	return result;
 }
 struct OR_map
 {
-	char* my_id;
-	size_t id_sz;
+
+	uuid_t my_id;
 	unsigned long long sequence_generator;
 	struct OR_record *hash_record;
 	struct OR_timestamp *hash_replica_vector;
 };
-struct OR_map *OR_map_new(const char* id, size_t id_sz)
+struct OR_map *OR_map_new(uuid_t my_uuid)
 {
 	struct OR_map *map=ALLOC(struct OR_map, 1);
-	map->id_sz=id_sz;
-	map->my_id=ALLOC(char, id_sz);
-	memcpy(map->my_id, id, map->id_sz);
+	uuid_copy(map->my_id, my_uuid);
 	return map;
 }
 void OR_map_free(struct OR_map *map)
@@ -150,20 +163,19 @@ void OR_map_free(struct OR_map *map)
 		HASH_DEL(map->hash_replica_vector, ts);
 		OR_timestamp_free(ts);
 	}
-	free(map->my_id);
 	free(map);
 	return;
 }
-static unsigned long long OR_map_step(struct OR_map *set)
+static unsigned long long OR_map_step(struct OR_map *map)
 {
 	struct OR_timestamp *ts=NULL;
-	unsigned long long new_sequence=set->sequence_generator++;
+	unsigned long long new_sequence=map->sequence_generator++;
 
-	HASH_FIND(hh, set->hash_replica_vector, set->my_id, set->id_sz, ts);
+	HASH_FIND(hh, map->hash_replica_vector, map->my_id, sizeof(map->my_id), ts);
 	if(!ts)
 	{
-		ts=OR_timestamp_new(set->my_id, set->id_sz, new_sequence);	
-		HASH_ADD_KEYPTR(hh, set->hash_replica_vector, ts->replica_id, ts->replica_id_sz, ts);
+		ts=OR_timestamp_new(map->my_id, new_sequence);	
+		HASH_ADD_KEYPTR(hh, map->hash_replica_vector, ts->uuid, sizeof(ts->uuid), ts);
 	}
 	else
 	{
@@ -178,12 +190,12 @@ int OR_map_add(struct OR_map *map, const char *key, size_t key_len)
 	HASH_FIND(hh, map->hash_record, key, key_len, record);
 	if(!record)
 	{
-		record=OR_record_new(map->my_id, map->id_sz, key, key_len, TYPE_NONE);
+		record=OR_record_new(map->my_id, key, key_len, TYPE_NONE);
 		HASH_ADD_KEYPTR(hh, map->hash_record, record->key, record->key_len, record);
 		ret=1;
 	}
 	unsigned long long new_sequence=OR_map_step(map);
-	OR_record_step(record, map->my_id, map->id_sz, new_sequence);
+	OR_record_step(record, map->my_id, new_sequence);
 	
 	return ret;
 }
@@ -194,18 +206,23 @@ int OR_map_set(struct OR_map *map, const char *key, size_t key_len, const char *
 	HASH_FIND(hh, map->hash_record, key, key_len, record);
 	if(!record)
 	{
-		record=OR_record_new(map->my_id, map->id_sz, key, key_len, TYPE_STRING);
+		record=OR_record_new(map->my_id, key, key_len, TYPE_NONE);
 		HASH_ADD_KEYPTR(hh, map->hash_record, record->key, record->key_len, record);
 		ret=1;
 	}
-	if(record->type!=TYPE_STRING)
+	char *endptr=NULL;
+	long long int_value=strtol(value, &endptr, 10);
+	if(*endptr=='\0' && int_value==0)
 	{
-		return -1;
-	}	
-	OR_record_set_str(record, value, value_sz);
+		OR_record_set_int(record, int_value);
+	}
+	else
+	{
+		OR_record_set_str(record, value, value_sz);
+	}
 	
 	unsigned long long new_sequence=OR_map_step(map);
-	OR_record_step(record, map->my_id, map->id_sz, new_sequence);
+	OR_record_step(record, map->my_id, new_sequence);
 	
 	return ret;
 }
@@ -217,18 +234,18 @@ int OR_map_incrby(struct OR_map *map, const char *key, size_t key_len, long long
 	HASH_FIND(hh, map->hash_record, key, key_len, record);
 	if(!record)
 	{		
-		record=OR_record_new(map->my_id, map->id_sz, key, key_len, TYPE_COUNTER);
+		record=OR_record_new(map->my_id, key, key_len, TYPE_INTEGER);
 		HASH_ADD_KEYPTR(hh, map->hash_record, record->key, record->key_len, record);
 		ret=1;
 	}
-	if(record->type!=TYPE_COUNTER)
+	if(record->type!=TYPE_INTEGER)
 	{
 		return -1;
 	}
 	
 	*result=OR_record_incrby(record, increment);
 	unsigned long long new_sequence=OR_map_step(map);
-	OR_record_step(record, map->my_id, map->id_sz, new_sequence);
+	OR_record_step(record, map->my_id, new_sequence);
 	
 	return ret;
 }
@@ -256,8 +273,8 @@ struct OR_map_kv *OR_map_kv_new(struct OR_record *record, enum record_copy_type 
 			case TYPE_STRING:
 				LWW_register_get1(record->string, &kv->string, &kv->str_len);
 				break;
-			case TYPE_COUNTER:
-				kv->counter=PN_counter_get(record->counter);
+			case TYPE_INTEGER:
+				kv->integer=PN_counter_get(record->counter);
 				break;
 			default:
 				break;
@@ -271,7 +288,7 @@ void OR_map_kv_free(struct OR_map_kv *kv)
 	free(kv->key);
 	free(kv->string);
 	kv->string=NULL;
-	kv->counter=0;
+	kv->integer=0;
 	free(kv);
 	return;
 }
@@ -286,7 +303,34 @@ struct OR_map_kv *OR_map_get(struct OR_map *map, const char *key, size_t key_len
 	struct OR_map_kv *kv=OR_map_kv_new(record, copy_value);
 	return kv;
 }
-
+size_t OR_map_filter_keys(struct OR_map *map, OR_map_key_filter_cb filter_func, void *cb_arg, struct OR_map_kv ***kv_list)
+{
+	if(0==HASH_CNT(hh, map->hash_record))
+	{
+		return 0;
+	}
+	size_t list_sz=4;
+	size_t n_kv=0;
+	*kv_list=ALLOC(struct OR_map_kv*, list_sz);
+	
+	struct OR_record *record=NULL, *tmp=NULL;
+	int ret=0;
+	HASH_ITER(hh, map->hash_record, record, tmp)
+	{
+		ret=filter_func(record->key, record->key_len, cb_arg);
+		if(ret)
+		{
+			if(n_kv==list_sz)
+			{
+				*kv_list=(struct OR_map_kv**)realloc(kv_list, sizeof(struct OR_map_kv*)*list_sz*2);
+				list_sz*=2;
+			}
+			(*kv_list)[n_kv]=OR_map_kv_new(record, copy_key);
+			n_kv++;
+		}
+	}
+	return n_kv;	
+}
 size_t OR_map_generic_traverse(struct OR_map *map, struct OR_map_kv ***kv_list, enum record_copy_type type)
 {
 	size_t n_kv=HASH_CNT(hh, map->hash_record);
@@ -347,7 +391,7 @@ static int is_removed_by_peer(struct OR_record *record, const struct OR_timestam
 	struct OR_timestamp *ts=NULL, *tmp=NULL, *remote_ts=NULL;
 	HASH_ITER(hh, record->hash_timestamp, ts, tmp)
 	{
-		HASH_FIND(hh, hash_peer_vector, ts->replica_id, ts->replica_id_sz, remote_ts);
+		HASH_FIND(hh, hash_peer_vector, ts->uuid, sizeof(ts->uuid), remote_ts);
 		if(!remote_ts || ts->sequence > remote_ts->sequence)
 		{
 			continue;
@@ -380,7 +424,7 @@ void OR_record_serialize(struct OR_record *record, mpack_writer_t *writer)
 	mpack_write_cstr(writer, "v");
 	switch(record->type)
 	{
-		case TYPE_COUNTER:
+		case TYPE_INTEGER:
 			PN_counter_serialize(record->counter, &value_blob, &value_blob_sz);
 			mpack_write_str(writer, value_blob, value_blob_sz);
 			free(value_blob);				
@@ -399,7 +443,7 @@ void OR_record_serialize(struct OR_record *record, mpack_writer_t *writer)
 	mpack_start_array(writer, HASH_CNT(hh, record->hash_timestamp)*2);//Start timestamps
 	HASH_ITER(hh, record->hash_timestamp, ts, tmp_ts)
 	{
-		mpack_write_str(writer, ts->replica_id, ts->replica_id_sz);
+		mpack_write_str(writer, (char*)ts->uuid, sizeof(uuid_t));
 		mpack_write_u64(writer, ts->sequence);
 	}
 	mpack_finish_array(writer);//End timestamps
@@ -424,7 +468,7 @@ struct OR_record* OR_record_deserialize(mpack_node_t mpnode_record)
 		case TYPE_STRING:
 			record->string=LWW_register_deserialize(mpack_node_str(mpnode_v), mpack_node_strlen(mpnode_v));
 			break;
-		case TYPE_COUNTER:
+		case TYPE_INTEGER:
 			record->counter=PN_counter_deserialize(mpack_node_str(mpnode_v), mpack_node_strlen(mpnode_v));
 			break;
 		default:
@@ -438,12 +482,15 @@ struct OR_record* OR_record_deserialize(mpack_node_t mpnode_record)
 
 	mpack_node_t mpnode_ts_replica, mpnode_ts_seq;
 	struct OR_timestamp *ts=NULL;
+	uuid_t ts_uuid;
 	for(size_t i=0; i<n_ts; i+=2)
 	{
 		mpnode_ts_replica=mpack_node_array_at(mpnode_ts_array, i);
 		mpnode_ts_seq=mpack_node_array_at(mpnode_ts_array, i+1);
-		ts=OR_timestamp_new(mpack_node_str(mpnode_ts_replica), mpack_node_strlen(mpnode_ts_replica), mpack_node_u64(mpnode_ts_seq));
-		HASH_ADD_KEYPTR(hh, record->hash_timestamp, ts->replica_id, ts->replica_id_sz, ts);
+		assert(mpack_node_strlen(mpnode_ts_replica)==sizeof(uuid_t));
+		memcpy(ts_uuid, mpack_node_str(mpnode_ts_replica), sizeof(uuid_t));
+		ts=OR_timestamp_new(ts_uuid, mpack_node_u64(mpnode_ts_seq));
+		HASH_ADD_KEYPTR(hh, record->hash_timestamp, ts->uuid, sizeof(ts->uuid), ts);
 	}
 	return record;
 }
@@ -452,15 +499,15 @@ static void OR_record_merge(struct OR_record *dst, const struct OR_record *src)
 	struct OR_timestamp *src_ts=NULL, *dst_ts=NULL, *tmp=NULL;
 	HASH_ITER(hh, src->hash_timestamp, src_ts, tmp)
 	{
-		HASH_FIND(hh, dst->hash_timestamp, src_ts->replica_id, src_ts->replica_id_sz, dst_ts);
+		HASH_FIND(hh, dst->hash_timestamp, src_ts->uuid, sizeof(uuid_t), dst_ts);
 		if(dst_ts)
 		{
 			dst_ts->sequence=MAX(dst_ts->sequence, src_ts->sequence);
 		}
 		else
 		{
-			dst_ts=OR_timestamp_new(src_ts->replica_id, src_ts->replica_id_sz, src_ts->sequence);
-			HASH_ADD_KEYPTR(hh, dst->hash_timestamp, dst_ts->replica_id, dst_ts->replica_id_sz, dst_ts);
+			dst_ts=OR_timestamp_new(src_ts->uuid, src_ts->sequence);
+			HASH_ADD_KEYPTR(hh, dst->hash_timestamp, dst_ts->uuid, sizeof(uuid_t), dst_ts);
 		}
 	}
 	assert(dst->type==src->type);
@@ -469,7 +516,7 @@ static void OR_record_merge(struct OR_record *dst, const struct OR_record *src)
 		case TYPE_STRING:
 			LWW_register_merge(dst->string, src->string);
 			break;
-		case TYPE_COUNTER:
+		case TYPE_INTEGER:
 			PN_counter_merge(dst->counter, src->counter);
 			break;
 		default:
@@ -502,7 +549,7 @@ void OR_map_serialize(struct OR_map *map, char **blob, size_t *blob_sz)
 	mpack_start_array(&writer, HASH_COUNT(map->hash_replica_vector)*2);//Start replica vector
 	HASH_ITER(hh, map->hash_replica_vector, ts, tmp_ts)
 	{
-		mpack_write_str(&writer, ts->replica_id, ts->replica_id_sz);
+		mpack_write_str(&writer, (char*) ts->uuid, sizeof(uuid_t));
 		mpack_write_i64(&writer, ts->sequence);
 	}
 	mpack_finish_array(&writer); //End replica vector
@@ -539,12 +586,15 @@ struct OR_map *OR_map_deserialize(const char *blob, size_t blob_sz)
 
 	mpnode_ts_array=mpack_node_map_cstr(root, "rv");
 	n_ts=mpack_node_array_length(mpnode_ts_array);
+	uuid_t ts_uuid;
 	for(size_t i=0; i<n_ts; i+=2)
 	{
 		mpnode_ts_replica=mpack_node_array_at(mpnode_ts_array, i);
 		mpnode_ts_seq=mpack_node_array_at(mpnode_ts_array, i+1);
-		ts=OR_timestamp_new(mpack_node_str(mpnode_ts_replica), mpack_node_strlen(mpnode_ts_replica), mpack_node_u64(mpnode_ts_seq));
-		HASH_ADD_KEYPTR(hh, map->hash_replica_vector, ts->replica_id, ts->replica_id_sz, ts);
+		assert(mpack_node_strlen(mpnode_ts_replica)==sizeof(uuid_t));
+		memcpy(ts_uuid, mpack_node_str(mpnode_ts_replica), sizeof(uuid_t));
+		ts=OR_timestamp_new(ts_uuid, mpack_node_u64(mpnode_ts_seq));
+		HASH_ADD_KEYPTR(hh, map->hash_replica_vector, ts->uuid, sizeof(uuid_t), ts);
 	}
 
 	if (mpack_tree_destroy(&tree) != mpack_ok) 
@@ -599,7 +649,7 @@ void OR_map_merge(struct OR_map *dst, struct OR_map *src)
 	struct OR_timestamp *ts=NULL, *to_merge_ts=NULL, *tmp_ts=NULL;
 	HASH_ITER(hh, src->hash_replica_vector, to_merge_ts, tmp_ts)
 	{
-		HASH_FIND(hh, dst->hash_replica_vector, to_merge_ts->replica_id, to_merge_ts->replica_id_sz, ts);
+		HASH_FIND(hh, dst->hash_replica_vector, to_merge_ts->uuid, sizeof(uuid_t), ts);
 		if(ts)
 		{
 			ts->sequence=MAX(ts->sequence, to_merge_ts->sequence);
@@ -607,7 +657,7 @@ void OR_map_merge(struct OR_map *dst, struct OR_map *src)
 		else
 		{
 			HASH_DEL(src->hash_replica_vector, to_merge_ts);
-			HASH_ADD_KEYPTR(hh, dst->hash_replica_vector, to_merge_ts->replica_id, to_merge_ts->replica_id_sz, to_merge_ts);
+			HASH_ADD_KEYPTR(hh, dst->hash_replica_vector, to_merge_ts->uuid, sizeof(uuid_t), to_merge_ts);
 		}
 	}
 	return;
