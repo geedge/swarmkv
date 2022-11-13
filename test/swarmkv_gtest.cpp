@@ -85,6 +85,41 @@ TEST_F(SwarmkvBasicTest, TypeString)
 	cmd_exec_arg_free(arg);
 	arg=NULL;
 }
+TEST_F(SwarmkvBasicTest, TypeInteger)
+{
+	struct swarmkv* db=SwarmkvBasicTest::db;
+	const char *key="int1";
+	struct swarmkv_reply * reply=NULL;
+	
+	reply=swarmkv_command(db, "INCR %s", key);
+	EXPECT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 1);
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db, "INCRBY %s 100", key);
+	EXPECT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 101);
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db, "INCRBY %s -100", key);
+	EXPECT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 1);
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db, "DECR %s", key);
+	EXPECT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 0);
+	swarmkv_reply_free(reply);
+
+	long long value=0;
+	for(size_t i=0; i<100; i++)
+	{
+		reply=swarmkv_command(db, "INCR %s", key);
+		value=reply->integer;
+		swarmkv_reply_free(reply);
+	}
+	EXPECT_EQ(value, 100);
+}
 TEST_F(SwarmkvBasicTest, DEL)
 {
 	struct cmd_exec_arg *arg=NULL;
@@ -218,7 +253,7 @@ TEST_F(SwarmkvBasicTest, TypeTokenBucket)
 	{
 		request_tokens=random()%(2*rate);
 		cmd_exec_arg_expect_integer(arg, 0);
-		reply=swarmkv_command(db, NULL, "TCONSUME %s %lld FLEXIBLE", key, request_tokens);
+		reply=swarmkv_command_on(db, NULL, "TCONSUME %s %lld FLEXIBLE", key, request_tokens);
 		if(reply->type==SWARMKV_REPLY_INTEGER)
 		{
 			got_tokens+=reply->integer;
@@ -644,7 +679,7 @@ TEST_F(SwarmkvTwoNodes, EXPIRE)
 		snprintf(key, sizeof(key), "expiring-key-%d", i);
 		tmp_db=i%2?db2:db1;
 		seconds=min_timeout_seconds+i%(max_timeout_seconds-min_timeout_seconds);
-		reply=swarmkv_command(tmp_db, NULL, "KEYSPACE RLIST %s", key);
+		reply=swarmkv_command_on(tmp_db, NULL, "KEYSPACE RLIST %s", key);
 		if(reply->type==SWARMKV_REPLY_NIL)
 		{
 			n_success++;
@@ -924,7 +959,7 @@ TEST_F(SwarmkvTwoNodes, TypeTokenBucket)
 	{
 		token=random()%(4*rate);
 		requested_tokens+=token;
-		reply=swarmkv_command(db[i%2], NULL, "TCONSUME %s %lld FLEXIBLE", key, token);
+		reply=swarmkv_command_on(db[i%2], NULL, "TCONSUME %s %lld FLEXIBLE", key, token);
 		if(reply->type==SWARMKV_REPLY_INTEGER)
 		{
 			got_tokens+=reply->integer;
@@ -947,7 +982,7 @@ TEST_F(SwarmkvTwoNodes, TypeTokenBucket)
 		}
 		token=token*6/10;
 		requested_tokens+=token;
-		reply=swarmkv_command(db[i%2], NULL, "TCONSUME %s %lld FLEXIBLE", key, token);
+		reply=swarmkv_command_on(db[i%2], NULL, "TCONSUME %s %lld FLEXIBLE", key, token);
 		if(reply->type==SWARMKV_REPLY_INTEGER)
 		{
 			got_tokens+=reply->integer;
@@ -961,7 +996,7 @@ TEST_F(SwarmkvTwoNodes, TypeTokenBucket)
 	{
 		token=rate*3/4+random()%(rate);
 		requested_tokens+=token;
-		reply=swarmkv_command(db[0], NULL, "TCONSUME %s %lld", key, token);
+		reply=swarmkv_command_on(db[0], NULL, "TCONSUME %s %lld", key, token);
 		if(reply->type==SWARMKV_REPLY_INTEGER)
 		{
 			got_tokens+=reply->integer;

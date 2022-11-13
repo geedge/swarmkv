@@ -91,7 +91,7 @@ int main(int argc, char ** argv)
 	
 		for(i=0; i<key_number; i++)
 		{
-			reply=swarmkv_command(db, NULL, "SET scalable-key-%d scalable-value-%d", i, i);
+			reply=swarmkv_command_on(db, NULL, "SET scalable-key-%d scalable-value-%d", i, i);
 			swarmkv_reply_free(reply);
 			if(i%(key_number/10)==0)
 			{

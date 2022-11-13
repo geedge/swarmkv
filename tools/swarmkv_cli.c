@@ -13,7 +13,7 @@
 #include "linenoise/linenoise.h"
 #include "swarmkv/swarmkv.h"
 
-struct swarmkv_reply *swarmkv_command_argv(struct swarmkv *db, const char *target, int argc, sds *argv);
+struct swarmkv_reply *swarmkv_command_on_argv(struct swarmkv *db, const char *target, int argc, sds *argv);
 
 struct cluster_manager_command
 {
@@ -372,7 +372,7 @@ struct swarmkv_reply *cluster_addkeyowner_command(struct swarmkv* db, char *argv
 */
 		/*STEP 2.1 Set NEW node's slot to IMPORTING state. Slot will return to STABLE state after udpate the global slot table*/
 	
-		setslot_reply=swarmkv_command(db, node.addr, "keyspace setslot %d IMPORTING %s", 
+		setslot_reply=swarmkv_command_on(db, node.addr, "keyspace setslot %d IMPORTING %s", 
 													tmp->slot_id, tmp->owner.addr);
 		if(setslot_reply->type!=SWARMKV_REPLY_STATUS)
 		{
@@ -383,7 +383,7 @@ struct swarmkv_reply *cluster_addkeyowner_command(struct swarmkv* db, char *argv
 
 		/*STEP 2.2 Set OLD node's slot to MIGRATING state*/
 
-		setslot_reply=swarmkv_command(db, tmp->owner.addr, "keyspace setslot %d MIGRATING %s",
+		setslot_reply=swarmkv_command_on(db, tmp->owner.addr, "keyspace setslot %d MIGRATING %s",
 													tmp->slot_id, node.addr);
 		if(setslot_reply->type!=SWARMKV_REPLY_STATUS)
 		{
@@ -396,7 +396,7 @@ struct swarmkv_reply *cluster_addkeyowner_command(struct swarmkv* db, char *argv
 
 		/*STEP 2.3 Get keys from OLD node's slot*/
 
-		getkeysinslot_reply=swarmkv_command(db, tmp->owner.addr, "keyspace getkeysinslot %d", tmp->slot_id);
+		getkeysinslot_reply=swarmkv_command_on(db, tmp->owner.addr, "keyspace getkeysinslot %d", tmp->slot_id);
 		if(getkeysinslot_reply->type!=SWARMKV_REPLY_STRING)
 		{
 			reply=getkeysinslot_reply;
@@ -414,7 +414,7 @@ struct swarmkv_reply *cluster_addkeyowner_command(struct swarmkv* db, char *argv
 		swarmkv_reply_free(getkeysinslot_reply);
 		getkeysinslot_reply=NULL;
 
-		addkeystoslot_reply=swarmkv_command_argv(db, node.addr, 4, migrate_argv);
+		addkeystoslot_reply=swarmkv_command_on_argv(db, node.addr, 4, migrate_argv);
 
 		for(j=0; j<4; j++)
 		{
@@ -437,7 +437,7 @@ struct swarmkv_reply *cluster_addkeyowner_command(struct swarmkv* db, char *argv
 		
 		/*STEP 2.5 Delete keys from OLD node's slot*/
 
-		reply=swarmkv_command(db, tmp->owner.addr, "keyspace delslotkeys %d", tmp->slot_id);
+		reply=swarmkv_command_on(db, tmp->owner.addr, "keyspace delslotkeys %d", tmp->slot_id);
 		if(reply->type!=SWARMKV_REPLY_INTEGER)
 		{
 			goto error_out;
@@ -510,7 +510,7 @@ struct swarmkv_reply *cluster_keys_command(struct swarmkv* db, char *argv[], siz
 	}
 	for(i=0; i<nodes_reply->n_element; i++)
 	{
-		keyspace_keys_reply=swarmkv_command(db, nodes_reply->elements[i]->str, "keyspace keys %s", argv[2]);
+		keyspace_keys_reply=swarmkv_command_on(db, nodes_reply->elements[i]->str, "keyspace keys %s", argv[2]);
 		swarmkv_reply_merge_array(&reply, keyspace_keys_reply);
         if(keyspace_keys_reply->type==SWARMKV_REPLY_NIL)
         {
@@ -541,11 +541,11 @@ struct swarmkv_reply *cluster_info_command(struct swarmkv* db, char *argv[], siz
 	{
 		if(argc>2)
 		{
-			per_node_info_reply=swarmkv_command(db, nodes_reply->elements[i]->str, "info %s", argv[2]);
+			per_node_info_reply=swarmkv_command_on(db, nodes_reply->elements[i]->str, "info %s", argv[2]);
 		}
 		else
 		{
-			per_node_info_reply=swarmkv_command(db, nodes_reply->elements[i]->str, "info");			
+			per_node_info_reply=swarmkv_command_on(db, nodes_reply->elements[i]->str, "info");			
 		}
 		reply->elements[i]=swarmkv_reply_new_array(2);
 		reply->elements[i]->elements[0]=swarmkv_reply_new_string_fmt(nodes_reply->elements[i]->str);
@@ -767,7 +767,7 @@ struct swarmkv_reply *cluster_sanity_command(struct swarmkv* db, char *argv[], s
     //Step1 Build the keyspace replica list
     for(size_t i=0; i<n_active_node; i++)
     {
-        keyspace_keys_reply=swarmkv_command(db, active_nodes[i].addr, "keyspace keys *");
+        keyspace_keys_reply=swarmkv_command_on(db, active_nodes[i].addr, "keyspace keys *");
         swarmkv_reply_merge_array(&reply, keyspace_keys_reply);
         if(keyspace_keys_reply->type==SWARMKV_REPLY_NIL)
         {
@@ -804,7 +804,7 @@ struct swarmkv_reply *cluster_sanity_command(struct swarmkv* db, char *argv[], s
     //Step2 Build the crdt replica list
     for(size_t i=0; i<n_active_node; i++)
     {
-        reply=swarmkv_command(db, active_nodes[i].addr, "crdt keys *");
+        reply=swarmkv_command_on(db, active_nodes[i].addr, "crdt keys *");
         build_crdt_replica_list(reply, ctx, active_nodes+i);
         swarmkv_reply_free(reply);
         reply=NULL;
@@ -1230,7 +1230,7 @@ int main(int argc, char * argv[])
 		}
 		else
 		{
-			reply=swarmkv_command_argv(g_config.db, get_attach_target(), exec_argc, exec_argv);
+			reply=swarmkv_command_on_argv(g_config.db, get_attach_target(), exec_argc, exec_argv);
 		}
 		swarmkv_reply_print(reply, stdout);
 		swarmkv_reply_free(reply);
@@ -1291,7 +1291,7 @@ int main(int argc, char * argv[])
 			}
 			else
 			{
-				reply=swarmkv_command_argv(g_config.db, get_attach_target(), exec_argc-offset, exec_argv+offset);
+				reply=swarmkv_command_on_argv(g_config.db, get_attach_target(), exec_argc-offset, exec_argv+offset);
 			}
 			swarmkv_reply_print(reply, stdout);
 			if(run_interval_sec && reply->type != SWARMKV_REPLY_ERROR)

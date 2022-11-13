@@ -117,4 +117,4 @@ void node_to_sockaddr(const node_t *node, struct sockaddr *sockaddr);
 int http_blocking_request(enum evhttp_cmd_type type, const char* host, unsigned int port, const char* url, sds req_body, sds *resp_body);
 
 typedef void exec_cmd_func(struct swarmkv *handle, const struct swarmkv_cmd *cmd, const node_t *accessing_node, const node_t *target_node, struct future *f);
-struct swarmkv_reply *swarmkv_command_argv(struct swarmkv *db, const char *target, int argc, sds *argv);
+struct swarmkv_reply *swarmkv_command_on_argv(struct swarmkv *db, const char *target, int argc, sds *argv);

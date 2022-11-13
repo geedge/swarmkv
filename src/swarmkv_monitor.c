@@ -377,7 +377,7 @@ enum cmd_exec_result latency_command(struct swarmkv_module *mod_monitor, const s
             {
                 recorder_table_reset(monitor->peers+i);
             }
-            *reply=swarmkv_reply_new_status("All metrics are");
+            *reply=swarmkv_reply_new_status("All metrics are reset");
         }
     }
     else

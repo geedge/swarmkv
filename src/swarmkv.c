@@ -864,7 +864,12 @@ void command_spec_init(struct swarmkv *db)
 	command_register(&(db->command_table), "INCRBY", "key increment",
 					2, 1, CMD_KEY_OW, REPLY_ERROR, AUTO_ROUTE,
 					incrby_command, db->mod_store);
-
+	command_register(&(db->command_table), "INCR", "key",
+					1, 1, CMD_KEY_OW, REPLY_ERROR, AUTO_ROUTE,
+					incr_command, db->mod_store);
+	command_register(&(db->command_table), "DECR", "key",
+					1, 1, CMD_KEY_OW, REPLY_ERROR, AUTO_ROUTE,
+					decr_command, db->mod_store);
 	/* Generic commands*/
 					
 	command_register(&(db->command_table), "DEL", "key",

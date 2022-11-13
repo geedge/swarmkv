@@ -84,20 +84,10 @@ enum cmd_exec_result set_command(struct swarmkv_module *mod_store, const struct 
 	}
 	return FINISHED;
 }
-enum cmd_exec_result incrby_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result integer_generic(struct swarmkv_module *mod_store, const sds key, long long increment, struct swarmkv_reply **reply)
 {
-/* INCRBY key increment*/
 	struct sobj *obj=NULL;
-	const sds key=cmd->argv[1];
-	long long increment=0, value=0;
-	char *endptr=NULL;
-	uuid_t uuid;
-	increment=strtol(cmd->argv[2], &endptr, 10);
-	if(*endptr!='\0')
-	{
-		*reply=swarmkv_reply_new_error(error_value_not_integer);
-		return FINISHED; 		
-	}
+	long long value=0;
 	obj=store_lookup(mod_store, key);
 	if(!obj)
 	{
@@ -107,6 +97,7 @@ enum cmd_exec_result incrby_command(struct swarmkv_module *mod_store, const stru
 	{
 		if(!obj->counter)
 		{
+			uuid_t uuid;
 			store_get_uuid(mod_store, uuid);
 			obj->counter=PN_counter_new(uuid);
 			obj->type=OBJ_TYPE_COUNTER;
@@ -118,7 +109,29 @@ enum cmd_exec_result incrby_command(struct swarmkv_module *mod_store, const stru
 	else
 	{
 		*reply=swarmkv_reply_new_error(error_wrong_type);		
-	}	
+	}
 	return FINISHED;
 }
-
+enum cmd_exec_result incrby_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+{
+/* INCRBY key increment*/
+	long long increment=0;
+	char *endptr=NULL;
+	increment=strtol(cmd->argv[2], &endptr, 10);
+	if(*endptr!='\0')
+	{
+		*reply=swarmkv_reply_new_error(error_value_not_integer);
+		return FINISHED; 		
+	}
+	return integer_generic(mod_store, cmd->argv[1], increment, reply);
+}
+enum cmd_exec_result incr_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+{
+/* INCR key*/
+	return integer_generic(mod_store, cmd->argv[1], 1, reply);
+}
+enum cmd_exec_result decr_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+{
+/* DECR key*/
+	return integer_generic(mod_store, cmd->argv[1], -1, reply);
+}

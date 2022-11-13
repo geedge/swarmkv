@@ -266,7 +266,7 @@ void blocking_query_cb(const struct swarmkv_reply* reply, void * arg)
 	pthread_cond_signal(&ctx->cond);
 	return;
 }
-struct swarmkv_reply *swarmkv_command_argv(struct swarmkv *db, const char *target, int argc, sds *argv)
+struct swarmkv_reply *swarmkv_command_on_argv(struct swarmkv *db, const char *target, int argc, sds *argv)
 {
 	struct swarmkv_cmd *cmd=NULL;
 	struct swarmkv_reply *reply=NULL;
@@ -313,7 +313,7 @@ struct swarmkv_reply *swarmkv_command_argv(struct swarmkv *db, const char *targe
 	return reply;
 }
 
-struct swarmkv_reply *swarmkv_command(struct swarmkv *db, const char *target, const char *format, ...)
+struct swarmkv_reply *swarmkv_command_on(struct swarmkv *db, const char *target, const char *format, ...)
 {
 	char *cmd_str=NULL;
     va_list ap;
@@ -325,7 +325,7 @@ struct swarmkv_reply *swarmkv_command(struct swarmkv *db, const char *target, co
 	sds *argv=NULL;
 	argv=sdssplitargs(cmd_str, &argc);
 	struct swarmkv_reply *reply=NULL;
-	reply=swarmkv_command_argv(db, target, argc, argv);
+	reply=swarmkv_command_on_argv(db, target, argc, argv);
 
     if (argv)
 	{
@@ -335,7 +335,28 @@ struct swarmkv_reply *swarmkv_command(struct swarmkv *db, const char *target, co
 
 	return reply;
 }
+struct swarmkv_reply *swarmkv_command(struct swarmkv *db,const char *format, ...)
+{
+	char *cmd_str=NULL;
+    va_list ap;
+    va_start(ap,format);
+	vasprintf(&cmd_str, format, ap);
+    va_end(ap);
 
+	int argc=0;
+	sds *argv=NULL;
+	argv=sdssplitargs(cmd_str, &argc);
+	struct swarmkv_reply *reply=NULL;
+	reply=swarmkv_command_on_argv(db, NULL, argc, argv);
+
+    if (argv)
+	{
+        sdsfreesplitres(argv, argc);
+	}
+	free(cmd_str);
+
+	return reply;
+}
 void swarmkv_command_async(struct swarmkv *db, swarmkv_on_reply_callback_t * cb, void *cb_arg, const char *target, const char *format, ...)
 {
 	int argc=0; sds *argv=NULL;
