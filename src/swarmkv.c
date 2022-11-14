@@ -201,14 +201,14 @@ enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct sw
 	clock_gettime(CLOCK_MONOTONIC, &now_monotonic);
 	char uuid_str[37];
 	uuid_unparse(db->opts->bin_uuid, uuid_str);
-	snprintf(node_info_buff, sizeof(node_info_buff), "# Node\n"
-											"swarmkv_version: %s\n"
-											"address: %s\n"
-											"uuid: %s\n"
-											"worker_threads: %zu\n"
-											"server_time_usec: %lld\n"
-											"up_time_in_seconds: %ld\n"
-											"up_time_in_days: %ld\n"
+	snprintf(node_info_buff, sizeof(node_info_buff), "# Node\r\n"
+											"swarmkv_version: %s\r\n"
+											"address: %s\r\n"
+											"uuid: %s\r\n"
+											"worker_threads: %zu\r\n"
+											"server_time_usec: %lld\r\n"
+											"up_time_in_seconds: %ld\r\n"
+											"up_time_in_days: %ld\r\n"
 											,
 											SWARMKV_VERSION,
 											db->self.addr,
@@ -220,14 +220,14 @@ enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct sw
 											);
 	struct store_info sto_info;
 	swarmkv_store_info(db->mod_store, &sto_info);
-	snprintf(store_info_buff, sizeof(store_info_buff), "# Store\n"
-													"shards: %lld\n"
-													"keys: %lld\n"
-													"to_sync: %lld\n"
-													"synced: %lld\n"
-													"sync_ok: %lld\n"
-													"sync_err: %lld\n"
-													"sync_interval_in_usec:%u\n"
+	snprintf(store_info_buff, sizeof(store_info_buff), "# Store\r\n"
+													"shards: %lld\r\n"
+													"keys: %lld\r\n"
+													"to_sync: %lld\r\n"
+													"synced: %lld\r\n"
+													"sync_ok: %lld\r\n"
+													"sync_err: %lld\r\n"
+													"sync_interval_in_usec:%u\r\n"
 													,
 													sto_info.shards,
 													sto_info.keys,
@@ -239,11 +239,11 @@ enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct sw
 													);
 	struct keyspace_info ks_info;
 	swarmkv_keyspace_info(db->mod_keyspace, &ks_info);
-	snprintf(ks_info_buff, sizeof(ks_info_buff), "# Keyspace\n"
-															"health_check_port: %u\n"
-															"slots: %lld\n"
-															"keys: %lld\n"
-															"expires: %lld\n"
+	snprintf(ks_info_buff, sizeof(ks_info_buff), "# Keyspace\r\n"
+															"health_check_port: %u\r\n"
+															"slots: %lld\r\n"
+															"keys: %lld\r\n"
+															"expires: %lld\r\n"
 															,
 															ks_info.health_check_port,
 															ks_info.slots,
@@ -251,26 +251,26 @@ enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct sw
 															ks_info.expires);
 	struct snet_info net_info;
 	swarmkv_net_info(db->net, &net_info);
-	snprintf(net_info_buff, sizeof(net_info_buff), "# Network\n"
-												"timeout_in_msec: %.2f\n"
-												"connections: %lld\n"
-												"pending_rpcs: %lld\n"
-												"timed_out_rpcs: %lld\n"
-												"input_bytes: %lld\n"
-												"output_bytes: %lld\n"
-												"input_cmds: %lld\n"
-												"output_cmds: %lld\n"
-												"input_replies: %lld\n"
-												"output_replies: %lld\n"
-												"input_msgs: %lld\n"
-												"output_msgs: %lld\n"
-												"input_buffer: %lld\n"
-												"output_buffer: %lld\n"
-												"unknown_sequence: %lld\n"
-												"instantaneous_input_kbps: %.2f\n"
-												"instantaneous_output_kbps: %.2f\n"
-												"instantaneous_input_cps: %.2f\n"
-												"instantaneous_output_cps: %.2f\n"
+	snprintf(net_info_buff, sizeof(net_info_buff), "# Network\r\n"
+												"timeout_in_msec: %.2f\r\n"
+												"connections: %lld\r\n"
+												"pending_rpcs: %lld\r\n"
+												"timed_out_rpcs: %lld\r\n"
+												"input_bytes: %lld\r\n"
+												"output_bytes: %lld\r\n"
+												"input_cmds: %lld\r\n"
+												"output_cmds: %lld\r\n"
+												"input_replies: %lld\r\n"
+												"output_replies: %lld\r\n"
+												"input_msgs: %lld\r\n"
+												"output_msgs: %lld\r\n"
+												"input_buffer: %lld\r\n"
+												"output_buffer: %lld\r\n"
+												"unknown_sequence: %lld\r\n"
+												"instantaneous_input_kbps: %.2f\r\n"
+												"instantaneous_output_kbps: %.2f\r\n"
+												"instantaneous_input_cps: %.2f\r\n"
+												"instantaneous_output_cps: %.2f\r\n"
 												,
 												(double)db->opts->p2p_timeout_us/1000,
 												net_info.connections,
