@@ -498,7 +498,7 @@ TEST(LWWRegister, Basic)
 	struct LWW_register *reg=NULL;
 	uuid_t uuid;
 	uuid_generate(uuid);
-	reg=LWW_register_new((const char*) uuid, sizeof(uuid));
+	reg=LWW_register_new(uuid);
 	
 	const char *value0=NULL;
 	size_t val_sz=0;
@@ -530,7 +530,7 @@ TEST(LWWRegister, Merge)
 	for(size_t i=0; i<2; i++)
 	{
 		uuid_generate(uuid);
-		reg[i]=LWW_register_new((const char*)uuid, sizeof(uuid));
+		reg[i]=LWW_register_new(uuid);
 	}
 	const char *value0=NULL;
 	size_t val_sz=0;
@@ -564,7 +564,7 @@ TEST(LWWRegister, Sequential)
 	for(size_t i=0; i<2; i++)
 	{
 		uuid_generate(uuid);
-		reg[i]=LWW_register_new((const char*)uuid, sizeof(uuid));
+		reg[i]=LWW_register_new(uuid);
 	}
 	char tmp[32];
 	snprintf(tmp, sizeof(tmp), "reg1:abc123");
@@ -797,7 +797,7 @@ TEST(ORSet, Basic)
 	uuid_generate(uuid);
 
 	const char *members[]={"zhangsan", "lisi", "Jack"};
-	struct OR_set *set=OR_set_new((const char*)uuid, sizeof(uuid));
+	struct OR_set *set=OR_set_new(uuid);
 	for(size_t i=0; i<3; i++)
 	{
 		ret=OR_set_add(set, members[i], strlen(members[i]));
@@ -831,7 +831,7 @@ TEST(ORSet,   Merge01)
 	for(i=0; i<2; i++)
 	{
 		uuid_generate(uuid);
-		set[i]=OR_set_new((const char*)uuid, sizeof(uuid));
+		set[i]=OR_set_new(uuid);
 	}
 	char buffer[256];
 	size_t n_test_member=100;
@@ -868,7 +868,7 @@ TEST(ORSet,   Merge11)
 	for(i=0; i<2; i++)
 	{
 		uuid_generate(uuid);
-		set[i]=OR_set_new((const char*)uuid, sizeof(uuid));
+		set[i]=OR_set_new(uuid);
 	}
 	size_t n_test_member=100;
 	for(i=0; i<n_test_member; i++)
@@ -911,7 +911,7 @@ TEST(ORSet,   Remove)
 	for(i=0; i<2; i++)
 	{
 		uuid_generate(uuid);
-		set[i]=OR_set_new((const char*)uuid, sizeof(uuid));
+		set[i]=OR_set_new(uuid);
 	}
 	char buffer[256];
 	size_t n_test_member=100;
@@ -955,7 +955,7 @@ TEST(ORSet,   ObservedRemove)
 	for(i=0; i<2; i++)
 	{
 		uuid_generate(uuid);
-		set[i]=OR_set_new((const char*)uuid, sizeof(uuid));
+		set[i]=OR_set_new(uuid);
 	}
 	
 	char buffer[256];
@@ -1004,7 +1004,7 @@ TEST(ORSet, Replica32)
 	for(i=0; i<replica_num; i++)
 	{
 		uuid_generate(uuid);
-		set[i]=OR_set_new((const char*)uuid, sizeof(uuid));
+		set[i]=OR_set_new(uuid);
 	}
 	char buffer[256];
 	for(i=0; i<member_num; i++)
@@ -1055,7 +1055,7 @@ TEST(ORMap, Basic)
 	uuid_t uuid;
 	uuid_generate(uuid);
 
-	struct OR_map *map=OR_map_new((const char *)uuid, sizeof(uuid));
+	struct OR_map *map=OR_map_new(uuid);
 
 	const char *key1="zhangsan";
 	int ret=0;
@@ -1121,6 +1121,56 @@ TEST(ORMap, Basic)
 	OR_map_free(map);
 	
 }
+int my_key_filter(const char *key, size_t key_len, void *cb_arg)
+{
+	const char *prefix=(const char *)cb_arg;
+	if(0==strncmp(key, prefix, strlen(prefix)))
+	{
+		return 1;
+	}
+	else
+	{
+		return 0;
+	}
+}
+TEST(ORMap, Filter)
+{
+	uuid_t uuid;
+	uuid_generate(uuid);
+
+	struct OR_map *map=OR_map_new(uuid);
+	int ret=0;
+	char key[32], value[32];
+	size_t n_prefixed_key=8;
+	const char *prefix="a_";
+	for(size_t i=0; i<n_prefixed_key; i++)
+	{
+		snprintf(key, sizeof(key), "%s%zu", prefix, i);
+		snprintf(value, sizeof(value), "%zu", i);
+		ret=OR_map_set(map, key, strlen(key)+1, value, strlen(value)+1);
+	}
+	for(size_t i=0; i<12; i++)
+	{
+		snprintf(key, sizeof(key), "b_%zu", i);
+		snprintf(value, sizeof(value), "%zu", i);
+		ret=OR_map_set(map, key, strlen(key)+1, value, strlen(value)+1);
+	}
+
+	struct OR_map_kv **kv_list=NULL;
+	size_t n_kv=0;
+	n_kv=OR_map_filter_keys(map, my_key_filter, (void*)prefix, &kv_list);
+	EXPECT_EQ(n_kv, n_prefixed_key);
+	for(size_t i=0; i<n_kv; i++)
+	{
+		ret=strncmp(kv_list[i]->key, prefix, strlen(prefix));
+		EXPECT_EQ(ret, 0);
+		OR_map_kv_free(kv_list[i]);
+		kv_list[i]=NULL;
+	}
+	free(kv_list);
+
+	OR_map_free(map);
+}
 TEST(ORMap, Merge)
 {
 	uuid_t uuid;
@@ -1130,7 +1180,7 @@ TEST(ORMap, Merge)
 	for(i=0; i<2; i++)
 	{
 		uuid_generate(uuid);
-		map[i]=OR_map_new((const char *)uuid, sizeof(uuid));
+		map[i]=OR_map_new(uuid);
 	}
 	const char *key="Tom";
 	long long result=0;
@@ -1168,7 +1218,7 @@ TEST(ORMap, SetGet)
 	for(i=0; i<2; i++)
 	{
 		uuid_generate(uuid);
-		map[i]=OR_map_new((const char *)uuid, sizeof(uuid));
+		map[i]=OR_map_new(uuid);
 	}
 	size_t round=100;
 	char key_buffer[256], val_buffer[256];
@@ -1214,7 +1264,7 @@ TEST(ORMap, Incrby)
 	for(i=0; i<2; i++)
 	{
 		uuid_generate(uuid);
-		map[i]=OR_map_new((const char *)uuid, sizeof(uuid));
+		map[i]=OR_map_new(uuid);
 	}
 	size_t round=100;
 	char key_buffer[256];
@@ -1291,7 +1341,7 @@ TEST(ORMap, Remove)
 	for(i=0; i<2; i++)
 	{
 		uuid_generate(uuid);
-		map[i]=OR_map_new((const char *)uuid, sizeof(uuid));
+		map[i]=OR_map_new(uuid);
 	}
 	size_t round=100;
 	char key_buffer[256], val_buffer[256];
@@ -1364,7 +1414,7 @@ TEST(ORMap, ObservedRemove)
 	for(i=0; i<2; i++)
 	{
 		uuid_generate(uuid);
-		map[i]=OR_map_new((const char *)uuid, sizeof(uuid));
+		map[i]=OR_map_new(uuid);
 	}
 	size_t round=100;
 	char key_buffer[256], val_buffer[256];
@@ -1422,7 +1472,7 @@ TEST(ORMap, Replica32)
 	for(i=0; i<replica_number; i++)
 	{
 		uuid_generate(uuid);
-		map[i]=OR_map_new((const char *)uuid, sizeof(uuid));
+		map[i]=OR_map_new(uuid);
 	}
 	
 	char key_buffer[256], val_buffer[256];

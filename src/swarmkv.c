@@ -913,10 +913,25 @@ void command_spec_init(struct swarmkv *db)
 	command_register(&(db->command_table), "HMGET", "key field [field ...]",
 					2, 1, CMD_KEY_RO, REPLY_NIL, AUTO_ROUTE,
 					hmget_command, db->mod_store);
+	command_register(&(db->command_table), "HDEL", "key field [field ...]",
+					2, 1, CMD_KEY_RW, REPLY_INT_0, AUTO_ROUTE,
+					hdel_command, db->mod_store);
+	command_register(&(db->command_table), "HGETALL", "key",
+					1, 1, CMD_KEY_RO, REPLY_EMPTY_ARRAY, AUTO_ROUTE,
+					hgetall_command, db->mod_store);
+	command_register(&(db->command_table), "HLEN", "key",
+					1, 1, CMD_KEY_RO, REPLY_INT_0, AUTO_ROUTE,
+					hlen_command, db->mod_store);
+	command_register(&(db->command_table), "HKEYS", "key",
+					1, 1, CMD_KEY_RO, REPLY_EMPTY_ARRAY, AUTO_ROUTE,
+					hkeys_command, db->mod_store);
+	command_register(&(db->command_table), "HINCRBY", "key field increment",
+					3, 1, CMD_KEY_OW, REPLY_ERROR, AUTO_ROUTE,
+					hincrby_command, db->mod_store);
 
 	/* Token bucket commands */
 	command_register(&(db->command_table), "TCFG", "key capacity rate",
-					3, 1, CMD_KEY_OW, REPLY_ERROR, AUTO_ROUTE,
+					3, 1, CMD_KEY_OW, REPLY_ERROR, AUTO_ROUTE, 
 					tcfg_command, db->mod_store);
 	command_register(&(db->command_table), "TCONSUME", "key tokens [NORMAL|FORCE|FLEXIBLE]",
 					2, 1, CMD_KEY_RW, REPLY_INT_MINORS1, AUTO_ROUTE,

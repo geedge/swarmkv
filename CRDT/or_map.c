@@ -110,6 +110,7 @@ void OR_record_set_str(struct OR_record *record, const char *value, size_t value
 	if(record->type==TYPE_NONE)
 	{
 		record->string=LWW_register_new(record->replica_id);
+		record->type=TYPE_STRING;
 	}
 	assert(record->type==TYPE_STRING);
 	LWW_register_set(record->string, value, value_sz);
@@ -130,6 +131,11 @@ long long OR_record_set_int(struct OR_record *record, long long integer)
 }
 long long OR_record_incrby(struct OR_record *record, long long increment)
 {
+	if(record->type==TYPE_NONE)
+	{
+		record->counter=PN_counter_new(record->replica_id);
+		record->type=TYPE_INTEGER;
+	}
 	assert(record->type==TYPE_INTEGER);
 	long long result=0;
 	result=PN_counter_incrby(record->counter, increment);
@@ -212,7 +218,7 @@ int OR_map_set(struct OR_map *map, const char *key, size_t key_len, const char *
 	}
 	char *endptr=NULL;
 	long long int_value=strtol(value, &endptr, 10);
-	if(*endptr=='\0' && int_value==0)
+	if(*endptr=='\0')
 	{
 		OR_record_set_int(record, int_value);
 	}
@@ -322,7 +328,7 @@ size_t OR_map_filter_keys(struct OR_map *map, OR_map_key_filter_cb filter_func, 
 		{
 			if(n_kv==list_sz)
 			{
-				*kv_list=(struct OR_map_kv**)realloc(kv_list, sizeof(struct OR_map_kv*)*list_sz*2);
+				*kv_list=(struct OR_map_kv**)realloc(*kv_list, sizeof(struct OR_map_kv*)*list_sz*2);
 				list_sz*=2;
 			}
 			(*kv_list)[n_kv]=OR_map_kv_new(record, copy_key);

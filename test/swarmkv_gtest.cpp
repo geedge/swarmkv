@@ -233,7 +233,7 @@ TEST_F(SwarmkvBasicTest, TypeSet)
 TEST_F(SwarmkvBasicTest, TypeTokenBucket)
 {
 	struct cmd_exec_arg *arg=NULL;
-	struct swarmkv* db=SwarmkvBasicTest::db;
+	struct swarmkv *db=SwarmkvBasicTest::db;
 	const char *key="tb-192.168.0.1";
 	int exec_successful=0;
 	arg=cmd_exec_arg_new();
@@ -253,7 +253,7 @@ TEST_F(SwarmkvBasicTest, TypeTokenBucket)
 	{
 		request_tokens=random()%(2*rate);
 		cmd_exec_arg_expect_integer(arg, 0);
-		reply=swarmkv_command_on(db, NULL, "TCONSUME %s %lld FLEXIBLE", key, request_tokens);
+		reply=swarmkv_command(db, "TCONSUME %s %lld FLEXIBLE", key, request_tokens);
 		if(reply->type==SWARMKV_REPLY_INTEGER)
 		{
 			got_tokens+=reply->integer;
@@ -265,7 +265,69 @@ TEST_F(SwarmkvBasicTest, TypeTokenBucket)
 	EXPECT_LE(got_tokens, (now.tv_sec -start.tv_sec)*rate+capacity);	
 	cmd_exec_arg_free(arg);
 }
+TEST_F(SwarmkvBasicTest, TypeHash)
+{
+	struct swarmkv *db=SwarmkvBasicTest::db;
+	const char *key="uid001";
+	struct swarmkv_reply *reply=NULL;
 
+	reply=swarmkv_command(db, "HSET %s name zhangsan gender male age 18 gender male", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 3);
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db, "HGET %s name", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STRING);
+	EXPECT_STREQ(reply->str, "zhangsan");
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db, "HMGET %s name gender not-exist", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
+	ASSERT_EQ(reply->n_element, 3);
+	EXPECT_STREQ(reply->elements[0]->str, "zhangsan");
+	EXPECT_STREQ(reply->elements[1]->str, "male");
+	EXPECT_EQ(reply->elements[2]->type, SWARMKV_REPLY_NIL);
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db, "HINCRBY %s age 1", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 19);
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db, "HGET %s age", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STRING);
+	EXPECT_STREQ(reply->str, "19");
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db, "HKEYS %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
+	ASSERT_EQ(reply->n_element, 3);
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db, "HGETALL %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
+	ASSERT_EQ(reply->n_element, 6);
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db, "HDEL %s gender", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	ASSERT_EQ(reply->integer, 1);
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db, "HLEN %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	ASSERT_EQ(reply->integer, 2);
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db, "DEL %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	ASSERT_EQ(reply->integer, 1);
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db, "HGET %s name", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_NIL);
+	swarmkv_reply_free(reply);
+}
 TEST_F(SwarmkvBasicTest, EXPIRE_TTL)
 {
 	struct cmd_exec_arg *arg=NULL;
@@ -1025,6 +1087,61 @@ TEST_F(SwarmkvTwoNodes, TypeTokenBucket)
 	cmd_exec_arg_clear(arg);
 
 	cmd_exec_arg_free(arg);
+}
+TEST_F(SwarmkvTwoNodes, TypeHash)
+{
+	struct swarmkv* db[2];
+	db[0]=SwarmkvTwoNodes::db1;
+	db[1]=SwarmkvTwoNodes::db2;
+
+	size_t n_test_key=100;
+	struct swarmkv_reply *reply=NULL;
+	for(size_t i=0; i<n_test_key; i++)
+	{
+		reply=swarmkv_command(db[i%2], "HSET uid-%zu name zhangsan gender male age 18 gender male", i);
+		ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+		ASSERT_EQ(reply->integer, 3);
+		swarmkv_reply_free(reply);
+	}
+	wait_for_sync();
+	for(size_t i=0; i<n_test_key; i++)
+	{
+		reply=swarmkv_command(db[(i+1)%2], "HGET uid-%zu name", i);
+		ASSERT_EQ(reply->type, SWARMKV_REPLY_STRING);
+		EXPECT_STREQ(reply->str, "zhangsan");
+		swarmkv_reply_free(reply);
+	}
+	for(size_t i=0; i<n_test_key; i++)
+	{
+		reply=swarmkv_command(db[(i+1)%2], "HINCRBY uid-%zu age 1", i);
+		ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+		EXPECT_EQ(reply->integer, 19);
+		swarmkv_reply_free(reply);
+	}
+	wait_for_sync();
+	for(size_t i=0; i<n_test_key; i++)
+	{
+		reply=swarmkv_command(db[(i+1)%2], "HGET uid-%zu age", i);
+		ASSERT_EQ(reply->type, SWARMKV_REPLY_STRING);
+		EXPECT_STREQ(reply->str, "19");
+		swarmkv_reply_free(reply);
+	}
+	for(size_t i=0; i<n_test_key; i++)
+	{
+		reply=swarmkv_command(db[(i+1)%2], "HSET uid-%zu gender female", i);
+		ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+		EXPECT_EQ(reply->integer, 0);
+		swarmkv_reply_free(reply);
+	}
+	wait_for_sync();
+	for(size_t i=0; i<n_test_key; i++)
+	{
+		reply=swarmkv_command(db[(i+1)%2], "HGET uid-%zu gender", i);
+		ASSERT_EQ(reply->type, SWARMKV_REPLY_STRING);
+		ASSERT_STREQ(reply->str, "female");
+		swarmkv_reply_free(reply);
+	}
+
 }
 TEST_F(SwarmkvTwoNodes, Wait)
 {
