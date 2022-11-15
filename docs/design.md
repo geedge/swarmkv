@@ -98,7 +98,7 @@ Examples:
 
 The keyspace is sharding to slots and each slot is owned by one node. This information is recorded in the global shared slot table. If any node's health check failed, the cluster leader will choose a randome health node as the new slot owner.
 
-You can use  `CLUSTER ADDNODE` in swarmkv-cli for adding nodes.
+You can use  `CLUSTER ADDKEYOWNER` in swarmkv-cli for adding nodes.
 
 When adding a new node, the operation is **Assign slot_id from `original_node`  to `new_node`**, the  `swarmkv-cli` executes the following commands:
 

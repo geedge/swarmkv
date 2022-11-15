@@ -257,9 +257,9 @@ struct blocking_query_ctx
 {
 	pthread_cond_t cond;
 	pthread_mutex_t mutex;
-	struct swarmkv_reply* reply;
+	struct swarmkv_reply *reply;
 };
-void blocking_query_cb(const struct swarmkv_reply* reply, void * arg)
+void blocking_query_cb(const struct swarmkv_reply *reply, void * arg)
 {
 	struct blocking_query_ctx *ctx=(struct blocking_query_ctx*) arg;
 	ctx->reply=swarmkv_reply_dup(reply);

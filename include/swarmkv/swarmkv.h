@@ -57,7 +57,7 @@ int swarmkv_options_set_worker_thread_number(struct swarmkv_options *opts, size_
 
 struct swarmkv;
 
-struct swarmkv *swarmkv_open(struct swarmkv_options *opts, const char * db_name, char **err);
+struct swarmkv *swarmkv_open(struct swarmkv_options *opts, const char * cluster_name, char **err);
 void swarmkv_close(struct swarmkv * db);
 
 //Blocking function

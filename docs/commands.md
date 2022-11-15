@@ -404,7 +404,7 @@ swarmkv-sync> tinfo tb-192.168.0.1
 10) (integer) 20000
 ```
 
-## Node Management
+## Cluster Management
 
 ### INFO
 
@@ -477,6 +477,26 @@ instantaneous_input_cps: 0.00
 instantaneous_output_cps: 0.00
 ```
 
+## Cluster Management
+
+### CLUSTER KEYS
+
+Syntax
+
+```
+CLUSTER KEYS pattern
+```
+Supported glob-style patterns:
+
+- `h?llo` matches `hello`, `hallo` and `hxllo`
+- `h*llo` matches `hllo` and `heeeello`
+- `h[ae]llo` matches `hello` and `hallo,` but not `hillo`
+- `h[^e]llo` matches `hallo`, `hbllo`, ... but not `hello`
+- `h[a-b]llo` matches `hallo` and `hbllo`
+
+Use `\` to escape special characters if you want to match them verbatim.
+The pattern is exactly same as Redis https://redis.io/commands/keys/ .
+
 
 
 ## Quick List
@@ -523,18 +543,4 @@ NOTE:
 
 - Most of SwarmKV commands are identical the  [Redis Commands](https://redis.io/commands/).
 - CLUSTER commands are used for maintainance and debugging purpose, and only available in *swarmkv-cli*.
-
-## CLUSTER KEYS
-
-Supported glob-style patterns:
-
-- `h?llo` matches `hello`, `hallo` and `hxllo`
-- `h*llo` matches `hllo` and `heeeello`
-- `h[ae]llo` matches `hello` and `hallo,` but not `hillo`
-- `h[^e]llo` matches `hallo`, `hbllo`, ... but not `hello`
-- `h[a-b]llo` matches `hallo` and `hbllo`
-
-Use `\` to escape special characters if you want to match them verbatim.
-
-The pattern is exactly same as Redis https://redis.io/commands/keys/ .
 
