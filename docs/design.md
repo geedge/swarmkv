@@ -2,7 +2,6 @@
 
 I list design choices here.
 
-SwarmKV uses [HashiCorp Consul](https://www.consul.io/) for cluster management, which includes leader election, health checking, and slot table management.
 
 Following are terminologies used in Swarm KV.
 
@@ -19,7 +18,7 @@ Following are terminologies used in Swarm KV.
 
 Key-value pairs are distributed over nodes. As shown in the following picture, the key layer keeps track of the current location of every key-value pair, and the value layer stores the actual binary of key-value. This design is inspired by the NSDI'18 paper [*Elastic scaling of stateful network functions*](https://www.usenix.org/conference/nsdi18/presentation/woo).
 
-<img src="/Users/zhengchao/Code/swarmkv/docs/imgs/nsdi18-s6-dht-based-dso-space.png" alt="nsdi18-s6-dht-based-dso-space" style="zoom: 67%;" />
+<img src="./imgs/nsdi18-s6-dht-based-dso-space.png" alt="nsdi18-s6-dht-based-dso-space" style="zoom: 67%;" />
 
 As shown in the above picture, a KV operation is done by following steps:
 

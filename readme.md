@@ -33,7 +33,7 @@ SwarmKV Data Types
 
 
 
-# GET STARTED
+# Getting started
 
 ## Building SwarmKV
 
@@ -48,7 +48,7 @@ Download and unzip swarmkv-xx.zip
 
 ## Run Hashicorp Consul
 
-Install Hashicorp Consul from https://developer.hashicorp.com/consul/downloads
+SwarmKV uses [HashiCorp Consul](https://www.consul.io/) for cluster management, which includes leader election, health checking, and slot table management. You can download Hashicorp Consul from https://developer.hashicorp.com/consul/downloads.
 
 Then, run consul agent in debug mode. If you are not familiar with Consul, there is a consul configuration file in swarmkv source directory, copy it to a somewhere you desire.
 
@@ -72,13 +72,15 @@ OK
 ```
 
 ## Run test cases
+```shell
+cd test/
+./swarmkv_gtest
+```
 
--  `cd test/`
--  `./swarmkv_gtest`
 
 ## Playing  with `swarmkv-cli`
 
-```
+```shell
 [zhengchao@centos7-vm-dev tools]$ ./swarmkv-cli -n swarmkv-2-nodes
 swarmkv-2-nodes> get id001
 "lisi"
@@ -140,10 +142,9 @@ int main(int argc, char **argv)
 
 
 
-# More 
+# Further documentation
 
-[Commands](./docs/commands.md)
-
-[Design](./docs/design.md)
-
-[CLI](./docs/cli.md)
+Here are some specific details about the SwarmKV.
+* [Commands](./docs/commands.md)
+* [Design](./docs/design.md)
+* [CLI](./docs/cli.md)
