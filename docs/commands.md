@@ -537,7 +537,7 @@ The pattern is exactly same as Redis https://redis.io/commands/keys/ .
 | CLUSTER NODES            |                                      |                                                              |
 | CLUSTER SLOTS            |                                      |                                                              |
 | CLUSTER ADDNODE          | IP:port                              |                                                              |
-| IMPERSONATE              | IP:port                              |                                                              |
+| TUNNEL              | IP:port                              |                                                              |
 
 NOTE: 
 
