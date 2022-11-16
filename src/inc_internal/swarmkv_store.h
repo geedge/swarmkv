@@ -22,7 +22,7 @@ enum sobj_type
 	OBJ_TYPE_UNDEFINED,
 	__SWARMKV_OBJ_TYPE_MAX
 };
-struct scontainer;
+
 struct sobj
 {
 	enum sobj_type type;
@@ -42,7 +42,7 @@ struct swarmkv_module *swarmkv_store_new(const struct swarmkv_options *opts, exe
 void swarmkv_store_free(struct swarmkv_module* mod_store);
 void swarmkv_store_periodic(struct swarmkv_module *module);
 void swarmkv_store_set_monitor_handle(struct swarmkv_module *mod_store, struct swarmkv_module *mod_monitor);
-struct sobj * swarmkv_store_add_key(struct swarmkv_module *mod_store, const sds key, node_t *replica_nodes, size_t n_replica_node);
+void swarmkv_store_add_key(struct swarmkv_module *mod_store, const sds key, node_t *replica_nodes, size_t n_replica_node);
 struct store_info
 {
 	long long keys;
@@ -54,21 +54,12 @@ struct store_info
 };
 void swarmkv_store_info(struct swarmkv_module *module, struct store_info *info);
 
-
-struct sobj *sobj_new(enum sobj_type type, const sds key);
-void sobj_free(struct sobj *obj);
 void sobj_need_sync(struct swarmkv_module *mod_store, struct sobj *obj);
-void sobj_serialize(struct sobj *obj, char **blob, size_t *blob_sz);
-void sobj_merge_blob(struct sobj *obj, const char *blob, size_t blob_sz, uuid_t uuid);
-int sobj_add_replica_node(struct sobj *obj, const node_t *node);
+
 
 void store_get_uuid(struct swarmkv_module* mod_store, uuid_t uuid);
 struct sobj *store_lookup(struct swarmkv_module* mod_store, sds key);
-void store_add_obj(struct swarmkv_module *mod_store, struct sobj *obj);
-void store_remove_obj(struct swarmkv_module *mod_store, struct sobj *obj);
-typedef void sobj_callback_func_t(struct sobj * obj, void *cb_arg);
-void store_iterate_sobj(struct swarmkv_module *mod_store, sobj_callback_func_t *cb, void *cb_arg);
-node_t* store_iterate_replica_node(struct sobj *obj, int *iterator);
+
 
 enum cmd_exec_result crdt_pull_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply);
 enum cmd_exec_result crdt_push_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply);

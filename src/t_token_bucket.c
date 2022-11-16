@@ -69,17 +69,9 @@ enum cmd_exec_result tinfo_command(struct swarmkv_module *mod_store, const struc
 	const sds key=cmd->argv[1];
 	
 	obj=store_lookup(mod_store, key);
-	if(!obj)
+	if(!obj || obj->type==OBJ_TYPE_UNDEFINED)
 	{
-		if(accessing_node)
-		{
-			*reply=swarmkv_reply_new_nil();
-			return FINISHED;
-		}
-		else
-		{
-			return NEED_KEY_ROUTE;
-		}
+		return NEED_KEY_ROUTE;		
 	}
 	if(obj->type!=OBJ_TYPE_TOKEN_BUCKET)
 	{
@@ -111,17 +103,9 @@ enum cmd_exec_result tconsume_command(struct swarmkv_module *mod_store, const st
 	struct sobj *obj=NULL;
 	const sds key=cmd->argv[1];
 	obj=store_lookup(mod_store, key);
-	if(!obj)
+	if(!obj || obj->type==OBJ_TYPE_UNDEFINED)
 	{
-		if(accessing_node)
-		{
-			*reply=swarmkv_reply_new_integer(0);
-			return FINISHED;
-		}
-		else
-		{
-			return NEED_KEY_ROUTE;
-		}
+		return NEED_KEY_ROUTE;		
 	}
 	if(obj->type!=OBJ_TYPE_TOKEN_BUCKET)
 	{
