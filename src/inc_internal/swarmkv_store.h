@@ -15,7 +15,7 @@
 enum sobj_type
 {
 	OBJ_TYPE_STRING,
-	OBJ_TYPE_COUNTER,
+	OBJ_TYPE_INTEGER,
 	OBJ_TYPE_SET,
 	OBJ_TYPE_HASH,
 	OBJ_TYPE_TOKEN_BUCKET,
@@ -77,3 +77,5 @@ enum cmd_exec_result crdt_join_command(struct swarmkv_module *mod_store, const s
 enum cmd_exec_result crdt_keys_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply);
 enum cmd_exec_result crdt_exists_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply);
 enum cmd_exec_result crdt_rlist_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply);
+
+enum cmd_exec_result type_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply);

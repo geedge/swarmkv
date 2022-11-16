@@ -120,7 +120,7 @@ TEST_F(SwarmkvBasicTest, TypeInteger)
 	}
 	EXPECT_EQ(value, 100);
 }
-TEST_F(SwarmkvBasicTest, DEL)
+TEST_F(SwarmkvBasicTest, GenericDEL)
 {
 	struct cmd_exec_arg *arg=NULL;
 	struct swarmkv* db=SwarmkvBasicTest::db;
@@ -142,6 +142,78 @@ TEST_F(SwarmkvBasicTest, DEL)
 	EXPECT_TRUE(exec_successful);
 	cmd_exec_arg_free(arg);
 	arg=NULL;
+}
+TEST_F(SwarmkvBasicTest, GenericTYPE)
+{
+	struct swarmkv* db=SwarmkvBasicTest::db;
+	struct swarmkv_reply *reply=NULL;
+
+	//TYPE string
+	const char *string_key="string-key";
+	reply=swarmkv_command(db, "SET %s abc", string_key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	EXPECT_STREQ(reply->str, "OK");
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db, "type %s", string_key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STRING);
+	EXPECT_STREQ(reply->str, "string");
+	swarmkv_reply_free(reply);
+
+	//type integer
+	const char *integer_key="integer-key";
+	reply=swarmkv_command(db, "SET %s 123", integer_key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	EXPECT_STREQ(reply->str, "OK");
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db, "type %s", integer_key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STRING);
+	EXPECT_STREQ(reply->str, "integer");
+	swarmkv_reply_free(reply);
+
+	//type set
+	const char *set_key="set-key";
+	reply=swarmkv_command(db, "SADD %s a b c d", set_key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 4);
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db, "type %s", set_key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STRING);
+	EXPECT_STREQ(reply->str, "set");
+	swarmkv_reply_free(reply);
+
+	//type token-bucket
+	const char *tb_key="tb-key";
+	reply=swarmkv_command(db, "TCFG %s 4000 2000", tb_key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	EXPECT_STREQ(reply->str, "OK");
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db, "type %s", tb_key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STRING);
+	EXPECT_STREQ(reply->str, "token-bucket");
+	swarmkv_reply_free(reply);
+
+	//type hash
+	const char *hash_key="hash-key";
+	reply=swarmkv_command(db, "HSET %s name zhangsan gender male age 18 gender male", hash_key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 3);
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db, "type %s", hash_key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STRING);
+	EXPECT_STREQ(reply->str, "hash");
+	swarmkv_reply_free(reply);
+
+	//type non-exist key
+	const char *nonexist_key="non-exist-key";
+	reply=swarmkv_command(db, "type %s", nonexist_key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STRING);
+	EXPECT_STREQ(reply->str, "none");
+	swarmkv_reply_free(reply);
 }
 TEST_F(SwarmkvBasicTest, TypeSet)
 {

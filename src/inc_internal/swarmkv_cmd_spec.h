@@ -47,6 +47,7 @@ enum cmd_keyroute_failover
 	REPLY_INT_MINORS1,
 	REPLY_NIL,
 	REPLY_EMPTY_ARRAY,
+	REPLY_STR_NONE,
 	REPLY_ERROR
 };
 

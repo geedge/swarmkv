@@ -18,6 +18,20 @@ Return
 
 - Integer reply: The number of keys that were removed.
 
+### TYPE
+
+Syntax
+
+```
+TYPE key
+```
+
+Returns the string representation of the type of the value stored at key. The different types that can be returned are: string, integer, set, hash and undefined.
+
+Return
+
+- String reply: type of key, or none when key does not exist.
+
 ### EXPIRE
 
 Syntax
@@ -95,7 +109,7 @@ Set `key` to hold the string `value`. If `value` is a numeric string, it's consi
 
 Return
 
-- Simple string reply: OK if SET was executed correctly.
+- String reply: OK if SET was executed correctly.
 
 ### INCRBY
 

@@ -113,7 +113,7 @@ static void obj_container_free(struct scontainer *ctr)
 			LWW_register_free(ctr->obj.string);
 			ctr->obj.string=NULL;
 			break;
-		case OBJ_TYPE_COUNTER:
+		case OBJ_TYPE_INTEGER:
 			PN_counter_free(ctr->obj.counter);
 			ctr->obj.counter=NULL;
 			break;
@@ -305,7 +305,7 @@ void sobj_serialize(struct sobj *obj, char **blob, size_t *blob_sz)
 		case OBJ_TYPE_STRING:
 			LWW_register_serialize(obj->string, &value_blob, &value_blob_sz);
 			break;
-		case OBJ_TYPE_COUNTER:
+		case OBJ_TYPE_INTEGER:
 			PN_counter_serialize(obj->counter, &value_blob, &value_blob_sz);
 			break;
 		case OBJ_TYPE_SET:
@@ -382,7 +382,7 @@ void sobj_merge_blob(struct sobj *obj, const char *blob, size_t blob_sz, uuid_t 
 			}
 			LWW_register_merge_blob(obj->string, value_blob, value_blob_sz);
 			break;
-		case OBJ_TYPE_COUNTER:
+		case OBJ_TYPE_INTEGER:
 			if(!obj->counter)
 			{
 				obj->counter=PN_counter_new(uuid);
@@ -694,7 +694,42 @@ struct pattern_match_arg
 	sds pattern;
     UT_array *matched_replies;
 };
-
+enum cmd_exec_result type_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+{
+/*TYPE key*/
+	struct sobj *obj=NULL;
+	const sds key=cmd->argv[1];
+	obj=store_lookup(mod_store, key);
+	if(!obj)
+	{
+		return NEED_KEY_ROUTE;
+	}
+	switch(obj->type)
+	{
+		case OBJ_TYPE_STRING:
+			*reply=swarmkv_reply_new_string_fmt("string");
+			break;
+		case OBJ_TYPE_INTEGER:
+			*reply=swarmkv_reply_new_string_fmt("integer");
+			break;
+		case OBJ_TYPE_SET:
+			*reply=swarmkv_reply_new_string_fmt("set");
+			break;
+		case OBJ_TYPE_HASH:
+			*reply=swarmkv_reply_new_string_fmt("hash");
+			break;
+		case OBJ_TYPE_TOKEN_BUCKET:
+			*reply=swarmkv_reply_new_string_fmt("token-bucket");
+			break;
+		case OBJ_TYPE_UNDEFINED:
+			*reply=swarmkv_reply_new_string_fmt("undefined");
+			break;
+		default:
+			assert(0);
+			break;
+	}
+	return FINISHED;
+}
 enum cmd_exec_result crdt_pull_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
 {
 /* CRDT PULL key */

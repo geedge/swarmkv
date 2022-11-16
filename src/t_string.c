@@ -22,7 +22,7 @@ enum cmd_exec_result get_command(struct swarmkv_module *mod_store, const struct 
 		LWW_register_get0(obj->string, &string_val, &string_sz);
 		*reply=swarmkv_reply_new_string(string_val, string_sz);
 	}
-	else if(obj->type==OBJ_TYPE_COUNTER)
+	else if(obj->type==OBJ_TYPE_INTEGER)
 	{
 		long long integer_val=PN_counter_get(obj->counter);
 		*reply=swarmkv_reply_new_string_from_integer(integer_val);
@@ -55,9 +55,9 @@ enum cmd_exec_result set_command(struct swarmkv_module *mod_store, const struct 
 		uuid_t uuid;
 		assert(obj->raw==NULL);
 		store_get_uuid(mod_store, uuid);
-		if(*endptr=='\0' && int_value==0)
+		if(*endptr=='\0')
 		{
-			obj->type=OBJ_TYPE_COUNTER;
+			obj->type=OBJ_TYPE_INTEGER;
 			obj->counter=PN_counter_new(uuid);
 		}
 		else
@@ -72,7 +72,7 @@ enum cmd_exec_result set_command(struct swarmkv_module *mod_store, const struct 
 		*reply=swarmkv_reply_new_status("OK");
 		sobj_need_sync(mod_store, obj);
 	}
-	else if(obj->type==OBJ_TYPE_COUNTER)
+	else if(obj->type==OBJ_TYPE_INTEGER)
 	{
 		PN_counter_set(obj->counter, int_value);		
 		*reply=swarmkv_reply_new_status("OK");
@@ -93,14 +93,14 @@ enum cmd_exec_result integer_generic(struct swarmkv_module *mod_store, const sds
 	{
 		return NEED_KEY_ROUTE;
 	}
-	if(obj->type==OBJ_TYPE_UNDEFINED||obj->type==OBJ_TYPE_COUNTER)
+	if(obj->type==OBJ_TYPE_UNDEFINED||obj->type==OBJ_TYPE_INTEGER)
 	{
 		if(!obj->counter)
 		{
 			uuid_t uuid;
 			store_get_uuid(mod_store, uuid);
 			obj->counter=PN_counter_new(uuid);
-			obj->type=OBJ_TYPE_COUNTER;
+			obj->type=OBJ_TYPE_INTEGER;
 		}
 		value=PN_counter_incrby(obj->counter, increment);
 		*reply=swarmkv_reply_new_integer(value);		

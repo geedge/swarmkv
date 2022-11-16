@@ -565,6 +565,9 @@ static struct swarmkv_reply *keyroute_fail_reply(enum cmd_keyroute_failover fail
 		case REPLY_EMPTY_ARRAY:
 			reply=swarmkv_reply_new_array(0);
 			break;
+		case REPLY_STR_NONE:
+			reply=swarmkv_reply_new_string_fmt("none");
+			break;
 		case REPLY_ERROR:
 			reply=swarmkv_reply_new_error(error_keyspace_obj_owner_not_found);
 			break;
@@ -885,6 +888,9 @@ void command_spec_init(struct swarmkv *db)
 	command_register(&(db->command_table), "PERSIST", "key",
 					1, 1, CMD_KEY_RW, REPLY_INT_0, AUTO_ROUTE,
 					persist_command, db->mod_keyspace);
+	command_register(&(db->command_table), "TYPE", "key",
+					1, 1, CMD_KEY_RW, REPLY_STR_NONE, AUTO_ROUTE,
+					type_command, db->mod_store);
 
 	/* Set commands */
 	command_register(&(db->command_table), "SADD", "key member [member ...]",
