@@ -28,7 +28,7 @@ int main(int argc, char ** argv)
 {
 	int ret=0;
 	long long i=0;
-	char *host;
+	char host[32]={0};
 	long long key_number=0;
 	int worker_thread_number=1;
 	unsigned int p2p_port;
@@ -44,11 +44,7 @@ int main(int argc, char ** argv)
 		}
 		else if (!strcmp(argv[i], "-h") && !lastarg)
 		{
-			 host=argv[++i];
-		}
-		else if (!strcmp(argv[i], "-p") && !lastarg)
-		{
-			sscanf(argv[++i], "%u", &p2p_port);
+			sscanf(argv[++i], "%[^:]:%u", host, &p2p_port);
 		}
 		else if(!strcmp(argv[i], "-t") && !lastarg)
 		{
@@ -57,7 +53,7 @@ int main(int argc, char ** argv)
 		else if(!strcmp(argv[i], "-k") && !lastarg)
 		{
 			sscanf(argv[++i], "%lld", &key_number);
-		}		
+		}
 		else
 		{
 			help();
@@ -71,7 +67,7 @@ int main(int argc, char ** argv)
 	swarmkv_options_set_bind_address(opts, host);
 	swarmkv_options_set_worker_thread_number(opts, worker_thread_number);
 	swarmkv_options_set_p2p_timeout_us(opts,500000);
-	swarmkv_options_set_disable_run_for_leader(opts);
+	//swarmkv_options_set_disable_run_for_leader(opts);
 	struct swarmkv *db=swarmkv_open(opts, cluster_name, &err);
 	if(err)
 	{
@@ -88,7 +84,7 @@ int main(int argc, char ** argv)
 	{
 		printf("Adding %lld keys:", key_number);
 		fflush(stdout);
-	
+
 		for(i=0; i<key_number; i++)
 		{
 			reply=swarmkv_command_on(db, NULL, "SET scalable-key-%d scalable-value-%d", i, i);

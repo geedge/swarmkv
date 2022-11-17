@@ -100,8 +100,8 @@ int swarmkv_cli_system_cmd(struct cmd_exec_arg* reply_arg, char *result, size_t 
 	if(reply_funt_t)
 		reply_funt_t(reply_arg, result);
 
-	printf("EXEC : %s\n", cmd_str);
-	printf("Reply: %s\n", result);
+	//printf("EXEC : %s\n", cmd_str);
+	//printf("Reply: %s\n", result);
 
 	free(cmd_str);
 	return 1;
@@ -195,6 +195,7 @@ protected:
 };
 struct swarmkv *SwarmkvCliNodes::db;
 struct log_handle *SwarmkvCliNodes::logger;
+
 TEST_F(SwarmkvCliNodes, Basic)
 {
 	char result[2048]={0};
@@ -414,7 +415,7 @@ TEST_F(SwarmkvCliNodes, KeyspaceRadd)
 TEST_F(SwarmkvCliNodes, MultipleKey)
 {
 	int i=0;
-	long long key_number=300000;
+	long long key_number=200000;
 	char result[2048]={0};
 	struct cmd_exec_arg* reply_arg=NULL;
 	reply_arg=cmd_exec_arg_new();
@@ -458,6 +459,57 @@ TEST_F(SwarmkvCliNodes, MultipleKey)
 	swarmkv_cli_system_cmd(reply_arg, result, sizeof(result), swarmkv_expect_reply_integer, "CLUSTER SANITY heal");
 	cmd_exec_arg_clear(reply_arg);
 	cmd_exec_arg_free(reply_arg);
+}
+
+void *swarmkv_simple_node(void *args)
+{
+	char *command=(char *)args;
+	system(command);
+	free(command);
+	return NULL;
+}
+
+TEST_F(SwarmkvCliNodes, DebugAssert)
+{
+	pthread_t pid=0;
+	size_t node_number=3;
+	char result[2048]={0},target[26]={0};
+	struct cmd_exec_arg* reply_arg=NULL;
+	unsigned int p2p_port_start=9210;
+
+	const char *cluster_name="swarmkv-assert";
+	swarmkv_cli_create_cluster(cluster_name, "127.0.0.1:9210");
+	wait_for_sync();
+
+	for(size_t i=0; i<node_number; i++)
+	{
+		char *cmd_string=ALLOC(char, 128);
+		snprintf(cmd_string, 128, "../tools/simple_node -n %s -h 127.0.0.1:%zu -t 1 -k %d", cluster_name, p2p_port_start+i, 10);
+		pthread_create(&pid, NULL, swarmkv_simple_node, cmd_string);
+	}
+
+	sleep(5);
+	swarmkv_cli_set_db("swarmkv-assert");
+	for(size_t i=0; i<node_number; i++)
+	{
+		swarmkv_cli_system_cmd(NULL, result, sizeof(result), NULL, "CLUSTER ADDKEYOWNER 127.0.0.1:%zu", p2p_port_start+i);
+	}
+
+	reply_arg=cmd_exec_arg_new();
+	for(size_t i=0; i<node_number; i++)
+	{
+		swarmkv_cli_attach("127.0.0.1", p2p_port_start+i);
+		swarmkv_cli_system_cmd(NULL, result, sizeof(result), NULL, "DEBUG ASSERT");
+
+		sleep(8);
+		swarmkv_cli_system_cmd(NULL, result, sizeof(result), NULL, "CLUSTER SLOTS");
+		snprintf(target, sizeof(target), "127.0.0.1:%zu", p2p_port_start+i);
+		swarmkv_cli_system_cmd(NULL, result, sizeof(result), NULL, "CLUSTER SANITY heal");
+		wait_for_sync();
+		cmd_exec_arg_expect_integer(reply_arg, 0);
+		swarmkv_cli_system_cmd(reply_arg, result, sizeof(result), swarmkv_expect_reply_integer, "CLUSTER SANITY check");
+		cmd_exec_arg_clear(reply_arg);
+	}
 }
 
 class SwarmkvTwoNodes : public testing::Test

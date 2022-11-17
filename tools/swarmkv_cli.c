@@ -748,6 +748,11 @@ struct swarmkv_reply *cluster_sanity_command(struct swarmkv* db, char *argv[], s
         }
         keyspace_keys_reply=NULL;
     }
+    if(reply==NULL)
+    {
+        reply=swarmkv_reply_new_integer(0);
+        return reply;
+    }
     ctx->reply=reply->n_element;
     for(size_t i=0; reply && i<reply->n_element; i++)
     {
