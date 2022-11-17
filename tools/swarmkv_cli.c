@@ -35,13 +35,6 @@ struct runtime
 	int is_attaching;
 	char target[128];
 };
-struct attach_target
-{
-    int attached;
-    char target[256];
-};
-
-//struct attach_target g_attach_target;
 
 struct config g_config;
 struct runtime g_runtime;
@@ -575,38 +568,33 @@ struct replica_list
 	UT_hash_handle hh;
 };
 
-struct cluster_sanity_cmd_ctx
+struct cluster_sanity_ctx
 {
-    int reply_cnt;
-    int heal_replica_cnt;
+    int reply;
+    int heal_replica;
     pthread_mutex_t mutex;
     pthread_cond_t cond;
 	struct replica_list *keyspace_replica_hash;
     struct replica_list *crdt_replica_hash;
 };
 
-struct keyspace_cmd_ctx
-{
-    sds key;
-    size_t keylen;
-    struct cluster_sanity_cmd_ctx *ctx;
-};
+struct cluster_sanity_ctx *g_sanity_ctx;
 
 void cluster_sanity_cond_signal(void * arg)
 {
-	struct cluster_sanity_cmd_ctx *ctx=(struct cluster_sanity_cmd_ctx*) arg;
+	struct cluster_sanity_ctx *ctx=(struct cluster_sanity_ctx*) arg;
 	pthread_cond_signal(&ctx->cond);
 	return;
 }
 
-int cluster_sanity_cond_timedwait(struct cluster_sanity_cmd_ctx *ctx)
+int cluster_sanity_cond_timedwait(struct cluster_sanity_ctx *ctx)
 {
 	struct timespec max_wait = {0, 0};
 	clock_gettime(CLOCK_REALTIME, &max_wait);
-	max_wait.tv_sec+=1800;
+	max_wait.tv_sec+=100;
 	int timed_wait_rv=0;
 
-    if(ctx->reply_cnt==0)
+    if(ctx->reply==0)
 	{
         return 0;
 	}
@@ -619,34 +607,31 @@ int cluster_sanity_cond_timedwait(struct cluster_sanity_cmd_ctx *ctx)
 
 void exec_cmd_generic_callback(const struct swarmkv_reply* reply, void * cb_arg)
 {
-   struct cluster_sanity_cmd_ctx *ctx=(struct cluster_sanity_cmd_ctx *)cb_arg;
-
-    ctx->reply_cnt--;
-
-    if(ctx->reply_cnt==0)
+    struct cluster_sanity_ctx *ctx=(struct cluster_sanity_ctx *)cb_arg;
+    atomic_dec(&ctx->reply);
+    if(ctx->reply<=0)
     {
         cluster_sanity_cond_signal(ctx);
     }
     return;
 }
 
-void exec_cmd_crdt_join(struct swarmkv* db, struct cluster_sanity_cmd_ctx *ctx, struct replica_list *keyspace_list, struct replica_node *crdt_addr, char *key)
+void exec_cmd_crdt_join(struct swarmkv* db, struct cluster_sanity_ctx *ctx, struct replica_list *keyspace_list, struct replica_node *crdt_addr, char *key)
 {
     struct replica_node *tmp=NULL, *keyspace_addr=NULL;
 
     HASH_ITER(hh, keyspace_list->replica_node_hash, keyspace_addr, tmp)
     {
-        ctx->reply_cnt++;
+        ctx->reply++;
         swarmkv_command_async(db, exec_cmd_generic_callback, ctx, keyspace_addr->node.addr, "CRDT JOIN %s %s", key, crdt_addr->node.addr);
     }
 }
 
-void build_crdt_replica_list(const struct swarmkv_reply* keys_reply, struct cluster_sanity_cmd_ctx *ctx, const node_t *node)
+void build_crdt_replica_list(const struct swarmkv_reply* keys_reply, struct cluster_sanity_ctx *ctx, const node_t *node)
 {
     int i=0;
     for(i=0; i<keys_reply->n_element; i++)
     {
-
         struct replica_list *crdt_replica_list=NULL;
         HASH_FIND(hh, ctx->crdt_replica_hash, keys_reply->elements[i]->str, keys_reply->elements[i]->len, crdt_replica_list);
         if(!crdt_replica_list)
@@ -667,37 +652,25 @@ void build_crdt_replica_list(const struct swarmkv_reply* keys_reply, struct clus
 
 void build_keyspace_replica_list(const struct swarmkv_reply* reply, void * cb_arg)
 {
-	node_t tmp;
-    struct keyspace_cmd_ctx *cmd_ctx=(struct keyspace_cmd_ctx *)cb_arg;
+    struct replica_list *keysapce_replica_list=(struct replica_list *)cb_arg;
+
     for(size_t i=0; i<reply->n_element; i++)
     {
-		node_init_from_reply(&tmp, reply->elements[i]);
-        struct replica_list *keysapce_replica_list=NULL;
-        HASH_FIND(hh, cmd_ctx->ctx->keyspace_replica_hash, cmd_ctx->key, cmd_ctx->keylen, keysapce_replica_list);
-        if(!keysapce_replica_list)
-        {
-            continue;
-        }
         struct replica_node *replica_node=NULL;
 	    replica_node=ALLOC(struct replica_node, 1);
-	    node_copy(&replica_node->node, &tmp);
+		node_init_from_reply(&replica_node->node, reply->elements[i]);
         HASH_ADD(hh, keysapce_replica_list->replica_node_hash, node, sizeof(node_t), replica_node);
     }
 
-    cmd_ctx->ctx->reply_cnt--;
-
-    if(cmd_ctx->ctx->reply_cnt==0)
+    g_sanity_ctx->reply--;
+    if(g_sanity_ctx->reply==0)
     {
-        cluster_sanity_cond_signal(cmd_ctx->ctx);
+        cluster_sanity_cond_signal(g_sanity_ctx);
     }
-
-    sdsfree(cmd_ctx->key);
-    FREE(&cmd_ctx);
-
     return;
 }
 
-void destroy_relica_list_hash(struct cluster_sanity_cmd_ctx *ctx)
+void destroy_relica_list_hash(struct cluster_sanity_ctx *ctx)
 {
     struct replica_list *keyspace_list=NULL, *crdt_list=NULL, *tmp_list=NULL;
     struct replica_node *keyspace_node_addr=NULL, *crdt_node_addr=NULL, *tmp_node_addr=NULL;
@@ -760,7 +733,7 @@ struct swarmkv_reply *cluster_sanity_command(struct swarmkv* db, char *argv[], s
 		need_fix=1;
 	}
 
-    struct cluster_sanity_cmd_ctx *ctx=ALLOC(struct cluster_sanity_cmd_ctx, 1);
+    struct cluster_sanity_ctx *ctx=g_sanity_ctx=ALLOC(struct cluster_sanity_ctx, 1);
     pthread_cond_init(&ctx->cond, NULL);
 	pthread_mutex_init(&ctx->mutex, NULL);
 
@@ -775,7 +748,7 @@ struct swarmkv_reply *cluster_sanity_command(struct swarmkv* db, char *argv[], s
         }
         keyspace_keys_reply=NULL;
     }
-
+    ctx->reply=reply->n_element;
     for(size_t i=0; reply && i<reply->n_element; i++)
     {
         struct replica_list *keysapce_replica_list=NULL;
@@ -787,13 +760,11 @@ struct swarmkv_reply *cluster_sanity_command(struct swarmkv* db, char *argv[], s
             keysapce_replica_list->len=reply->elements[i]->len;
             HASH_ADD_KEYPTR(hh, ctx->keyspace_replica_hash, keysapce_replica_list->key, keysapce_replica_list->len, keysapce_replica_list);
         }
-
-        struct keyspace_cmd_ctx *cmd_ctx=ALLOC(struct keyspace_cmd_ctx, 1);
-        cmd_ctx->key=sdsnewlen(reply->elements[i]->str, reply->elements[i]->len);
-        cmd_ctx->keylen=reply->elements[i]->len;
-        ctx->reply_cnt=reply->n_element;
-        cmd_ctx->ctx=ctx;
-        swarmkv_command_async(db, build_keyspace_replica_list, cmd_ctx, NULL, "keyspace rlist %s", reply->elements[i]->str);
+    }
+    struct replica_list *item_replica_list,*tmp=NULL;
+    HASH_ITER(hh, ctx->keyspace_replica_hash, item_replica_list, tmp)
+    {
+        swarmkv_command_async(db, build_keyspace_replica_list, item_replica_list, NULL, "keyspace rlist %s", item_replica_list->key);
     }
 
     if(reply)
@@ -836,8 +807,8 @@ struct swarmkv_reply *cluster_sanity_command(struct swarmkv* db, char *argv[], s
         {
             HASH_ITER(hh, keyspace_list->replica_node_hash, keyspace_node_addr, tmp_node_addr)
             {
-                ctx->reply_cnt++;
-                ctx->heal_replica_cnt++;
+                atomic_inc(&ctx->reply);
+                ctx->heal_replica++;
                 swarmkv_command_async(db,  exec_cmd_generic_callback, ctx, NULL, "keyspace rdel %s %s", keyspace_list->key, keyspace_node_addr->node.addr);
             }
         }
@@ -855,8 +826,8 @@ struct swarmkv_reply *cluster_sanity_command(struct swarmkv* db, char *argv[], s
                 }
                 if(!crdt_node_addr && need_fix)
                 {
-                    ctx->reply_cnt++;
-                    ctx->heal_replica_cnt++;
+                    atomic_inc(&ctx->reply);
+                    ctx->heal_replica++;
                     swarmkv_command_async(db, exec_cmd_generic_callback, ctx, NULL, "keyspace rdel %s %s", keyspace_list->key, keyspace_node_addr->node.addr);
                 }
             }
@@ -871,8 +842,8 @@ struct swarmkv_reply *cluster_sanity_command(struct swarmkv* db, char *argv[], s
                 }
                 if(!keyspace_node_addr && need_fix)
                 {
-                    ctx->reply_cnt++;
-                    ctx->heal_replica_cnt++;
+                    atomic_inc(&ctx->reply);
+                    ctx->heal_replica++;
                     swarmkv_command_async(db, exec_cmd_generic_callback, ctx, NULL, "keyspace radd %s %s", crdt_list->key, crdt_node_addr->node.addr);
                     exec_cmd_crdt_join(db,ctx, keyspace_list, crdt_node_addr, crdt_list->key);
                 }
@@ -893,8 +864,8 @@ struct swarmkv_reply *cluster_sanity_command(struct swarmkv* db, char *argv[], s
         {
             HASH_ITER(hh, crdt_list->replica_node_hash, crdt_node_addr, tmp_node_addr)
             {
-                ctx->reply_cnt++;
-                ctx->heal_replica_cnt++;
+                atomic_inc(&ctx->reply);
+                ctx->heal_replica++;
                 swarmkv_command_async(db, exec_cmd_generic_callback, ctx, NULL, "keyspace radd %s %s", crdt_list->key, crdt_node_addr->node.addr);
             }
         }
@@ -910,7 +881,7 @@ struct swarmkv_reply *cluster_sanity_command(struct swarmkv* db, char *argv[], s
 
     if(need_fix)
     {
-        reply=swarmkv_reply_new_integer(ctx->heal_replica_cnt);
+        reply=swarmkv_reply_new_integer(ctx->heal_replica);
         goto finish;
     }
 
@@ -920,6 +891,7 @@ struct swarmkv_reply *cluster_sanity_command(struct swarmkv* db, char *argv[], s
     }
 finish:
     destroy_relica_list_hash(ctx);
+    g_sanity_ctx=NULL;
 	return reply;
 }
 

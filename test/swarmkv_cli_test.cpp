@@ -82,7 +82,6 @@ int swarmkv_cli_system_cmd(struct cmd_exec_arg* reply_arg, char *result, size_t 
         printf("popen error!\n");
         return 0;
     }
-
 	memset(result, 0, result_len);
     while (fgets(line, sizeof(line), fp))
 	{
@@ -144,7 +143,7 @@ int swarmkv_cli_get_addr_node(char *result, struct swarmkv_cli_node_addr *node_a
 		}
 
 		const char *p=sub_token;
-		if(0==strncasecmp(sub_token, "0) ", 3))
+		if(0==strncasecmp(sub_token, "1) ", 3))
 		{
 			p+=3;
 		}
@@ -166,38 +165,37 @@ class SwarmkvCliNodes : public testing::Test
 protected:
 	static void SetUpTestCase()
 	{
-
+		const char* log_path="./swarmkv-cli-nodes.log";
 		char *err=NULL;
-		const char *log_path="./swarmkv-cli-nodes.log";
-
 		const char *cluster_name="swarmkv-cli-nodes";
 		swarmkv_cli_create_cluster(cluster_name, "127.0.0.1:5210");
-
 		logger=log_handle_create(log_path, 0);
-		struct swarmkv_options* opts1=swarmkv_options_new();
-		swarmkv_options_set_p2p_port(opts1, 5210);
-		swarmkv_options_set_health_check_port(opts1, 6210);
-		swarmkv_options_set_logger(opts1, logger);
-		db1=swarmkv_open(opts1, cluster_name, &err);
+		struct swarmkv_options* opts=swarmkv_options_new();
+		swarmkv_options_set_p2p_port(opts, 5210);
+		swarmkv_options_set_p2p_timeout_us(opts, 100*1000);
+		swarmkv_options_set_health_check_port(opts, 6210);
+		swarmkv_options_set_logger(opts, logger);
+		swarmkv_options_set_disable_run_for_leader(opts);
+		db=swarmkv_open(opts, cluster_name, &err);
 		if(err)
 		{
-			printf("swarmkv_open failed: %s\n", err);
+			printf("swarmkv_open failed: %s.\n", err);
 			free(err);
-			err=NULL;
 		}
 	}
 	static void TearDownTestCase()
 	{
-		swarmkv_close(db1);
+		swarmkv_close(db);
 		log_handle_destroy(logger);
 	}
- 	static struct log_handle *logger;
-	static struct swarmkv *db1;
-};
-struct log_handle* SwarmkvCliNodes::logger;
-struct swarmkv* SwarmkvCliNodes::db1;
+ 	// Some expensive resource shared by all tests.
 
-TEST_F(SwarmkvCliNodes, CMD_SANITY_CHECK)
+	static struct log_handle *logger;
+	static struct swarmkv* db;
+};
+struct swarmkv *SwarmkvCliNodes::db;
+struct log_handle *SwarmkvCliNodes::logger;
+TEST_F(SwarmkvCliNodes, Basic)
 {
 	char result[2048]={0};
 	struct cmd_exec_arg* reply_arg=NULL;
@@ -226,7 +224,7 @@ TEST_F(SwarmkvCliNodes, CMD_SANITY_CHECK)
 	cmd_exec_arg_clear(reply_arg);
 
 	struct swarmkv_cli_node_addr node_addr[2]={0};
-	cmd_exec_arg_expect_cstring(reply_arg, "0) 127.0.0.1:5210");
+	cmd_exec_arg_expect_cstring(reply_arg, "1) 127.0.0.1:5210");
 	swarmkv_cli_system_cmd(reply_arg, result, sizeof(result), swarmkv_expect_reply_string, "KEYSPACE RLIST %s", "zhangsan");
 	swarmkv_cli_get_addr_node(result, node_addr);
 
@@ -241,7 +239,7 @@ TEST_F(SwarmkvCliNodes, CMD_SANITY_CHECK)
 	cmd_exec_arg_clear(reply_arg);
 
 	swarmkv_cli_attach("127.0.0.1", 5210);
-	cmd_exec_arg_expect_cstring(reply_arg, "0) \"zhangsan\"");
+	cmd_exec_arg_expect_cstring(reply_arg, "1) \"zhangsan\"");
 	swarmkv_cli_system_cmd(reply_arg, result, sizeof(result), swarmkv_expect_reply_string, "CRDT KEYS %s", "zhangsan");
 	cmd_exec_arg_clear(reply_arg);
 
@@ -255,7 +253,7 @@ TEST_F(SwarmkvCliNodes, CMD_SANITY_CHECK)
 	swarmkv_cli_detach();
 
 	wait_for_check();
-	cmd_exec_arg_expect_cstring(reply_arg, "0) \"lisi\",1) \"zhangsan\"");
+	cmd_exec_arg_expect_cstring(reply_arg, "1) \"lisi\",2) \"zhangsan\"");
 	swarmkv_cli_system_cmd(reply_arg, result, sizeof(result), swarmkv_expect_reply_string, "CLUSTER SANITY check");
 	cmd_exec_arg_clear(reply_arg);
 
@@ -274,7 +272,7 @@ TEST_F(SwarmkvCliNodes, CMD_SANITY_CHECK)
 	CLUSTER SANITY heal
 	GET xiaolv
 */
-TEST_F(SwarmkvCliNodes, CRDT_DEL)
+TEST_F(SwarmkvCliNodes, ReplicaDel)
 {
 	char result[2048]={0};
 	struct cmd_exec_arg* reply_arg=NULL;
@@ -295,7 +293,7 @@ TEST_F(SwarmkvCliNodes, CRDT_DEL)
 	swarmkv_cli_detach();
 
 	wait_for_check();
-	cmd_exec_arg_expect_cstring(reply_arg, "0) \"xiaolv\"");
+	cmd_exec_arg_expect_cstring(reply_arg, "1) \"xiaolv\"");
 	swarmkv_cli_system_cmd(reply_arg, result, sizeof(result), swarmkv_expect_reply_string, "CLUSTER SANITY check");
 	cmd_exec_arg_clear(reply_arg);
 
@@ -320,7 +318,7 @@ TEST_F(SwarmkvCliNodes, CRDT_DEL)
 	CLUSTER SANITY heal
 	GET xiaoqin
 */
-TEST_F(SwarmkvCliNodes, KEYSPACE_RDEL)
+TEST_F(SwarmkvCliNodes, KeyspaceRdel)
 {
 	char result[2048]={0};
 	struct cmd_exec_arg* reply_arg=NULL;
@@ -349,7 +347,7 @@ TEST_F(SwarmkvCliNodes, KEYSPACE_RDEL)
 	cmd_exec_arg_clear(reply_arg);
 
 	wait_for_check();
-	cmd_exec_arg_expect_cstring(reply_arg, "0) \"xiaoqin\"");
+	cmd_exec_arg_expect_cstring(reply_arg, "1) \"xiaoqin\"");
 	swarmkv_cli_system_cmd(reply_arg, result, sizeof(result), swarmkv_expect_reply_string, "CLUSTER SANITY check");
 	cmd_exec_arg_clear(reply_arg);
 
@@ -373,7 +371,7 @@ TEST_F(SwarmkvCliNodes, KEYSPACE_RDEL)
 	CLUSTER SANITY heal
 	KEYSPACE RLIST xiaolan
 */
-TEST_F(SwarmkvCliNodes, KEYSPACE_RADD)
+TEST_F(SwarmkvCliNodes, KeyspaceRadd)
 {
 	char result[2048]={0}, reply_string[128]={0};
 	struct cmd_exec_arg* reply_arg=NULL;
@@ -391,13 +389,13 @@ TEST_F(SwarmkvCliNodes, KEYSPACE_RADD)
 
 	unsigned int p2p_port = (node_addr.p2p_port == 5210) ? 5211: 5210;
 
-	sprintf(reply_string, "0) %s:%u,1) %s:%u", node_addr.ip_addr, node_addr.p2p_port, node_addr.ip_addr, p2p_port);
+	sprintf(reply_string, "1) %s:%u,2) %s:%u", node_addr.ip_addr, node_addr.p2p_port, node_addr.ip_addr, p2p_port);
 	cmd_exec_arg_expect_cstring(reply_arg, reply_string);
 	swarmkv_cli_system_cmd(reply_arg, result, sizeof(result), swarmkv_expect_reply_string, "KEYSPACE RADD %s %s:%d", "xiaolan", node_addr.ip_addr, p2p_port);
 	cmd_exec_arg_clear(reply_arg);
 
 	wait_for_check();
-	cmd_exec_arg_expect_cstring(reply_arg, "0) \"xiaolan\"");
+	cmd_exec_arg_expect_cstring(reply_arg, "1) \"xiaolan\"");
 	swarmkv_cli_system_cmd(reply_arg, result, sizeof(result), swarmkv_expect_reply_string, "CLUSTER SANITY check");
 	cmd_exec_arg_clear(reply_arg);
 
@@ -405,7 +403,7 @@ TEST_F(SwarmkvCliNodes, KEYSPACE_RADD)
 	swarmkv_cli_system_cmd(reply_arg, result, sizeof(result), swarmkv_expect_reply_integer, "CLUSTER SANITY heal");
 	cmd_exec_arg_clear(reply_arg);
 
-	sprintf(reply_string, "0) %s:%d", node_addr.ip_addr, node_addr.p2p_port);
+	sprintf(reply_string, "1) %s:%d", node_addr.ip_addr, node_addr.p2p_port);
 	cmd_exec_arg_expect_cstring(reply_arg, reply_string);
 	swarmkv_cli_system_cmd(reply_arg, result, sizeof(result), swarmkv_expect_reply_string, "KEYSPACE RLIST %s", "xiaolan");
 
@@ -413,9 +411,57 @@ TEST_F(SwarmkvCliNodes, KEYSPACE_RADD)
 	cmd_exec_arg_free(reply_arg);
 }
 
+TEST_F(SwarmkvCliNodes, MultipleKey)
+{
+	int i=0;
+	long long key_number=300000;
+	char result[2048]={0};
+	struct cmd_exec_arg* reply_arg=NULL;
+	reply_arg=cmd_exec_arg_new();
+
+	swarmkv_cli_set_db("swarmkv-cli-nodes");
+	struct swarmkv_reply *reply=NULL;
+	struct swarmkv* db=SwarmkvCliNodes::db;
+	for(i=0; i<key_number; i++)
+	{
+		reply=swarmkv_command_on(db, NULL, "SET background-key-%d background-value-%d", i, i);
+		swarmkv_reply_free(reply);
+	}
+	printf("Set %lld cmd.\n", key_number);
+
+	wait_for_sync();
+	cmd_exec_arg_expect_integer(reply_arg, 0);
+	swarmkv_cli_system_cmd(reply_arg, result, sizeof(result), swarmkv_expect_reply_integer, "CLUSTER SANITY check");
+	cmd_exec_arg_clear(reply_arg);
+
+	for(i=0; i<key_number/2; i++)
+	{
+		reply=swarmkv_command_on(db, NULL, "KEYSPACE RDEL background-key-%d %s:%u",i, "127.0.0.1", 5210);
+		swarmkv_reply_free(reply);
+	}
+	printf("Keyspace Rdel %lld cmd.\n", key_number/2);
+
+	wait_for_sync();
+	cmd_exec_arg_expect_integer(reply_arg, key_number/2);
+	swarmkv_cli_system_cmd(reply_arg, result, sizeof(result), swarmkv_expect_reply_integer, "CLUSTER SANITY heal");
+	cmd_exec_arg_clear(reply_arg);
+
+	for(i=0; i<key_number/2; i++)
+	{
+		reply=swarmkv_command_on(db, "127.0.0.1:5210", "CRDT DEL background-key-%d",i);
+		swarmkv_reply_free(reply);
+	}
+	printf("Replica Del %lld cmd.\n", key_number/2);
+
+	wait_for_sync();
+	cmd_exec_arg_expect_integer(reply_arg, key_number/2);
+	swarmkv_cli_system_cmd(reply_arg, result, sizeof(result), swarmkv_expect_reply_integer, "CLUSTER SANITY heal");
+	cmd_exec_arg_clear(reply_arg);
+	cmd_exec_arg_free(reply_arg);
+}
+
 class SwarmkvTwoNodes : public testing::Test
 {
-
 protected:
 	static void SetUpTestCase()
 	{
@@ -497,7 +543,8 @@ struct swarmkv* SwarmkvTwoNodes::db2;
 	CRDT RLIST id01
 	Reply:0) 127.0.0.1:15210
 */
-TEST_F(SwarmkvTwoNodes, CRDT_JOIN)
+#if 0
+TEST_F(SwarmkvTwoNodes, Crdt_Join)
 {
 	char result[2048]={0}, reply_string[64]={0};
 	struct cmd_exec_arg* reply_arg=NULL;
@@ -505,7 +552,6 @@ TEST_F(SwarmkvTwoNodes, CRDT_JOIN)
 	unsigned int node1_p2p_port=5210, node2_p2p_port=5211;
 
 	swarmkv_cli_set_db("swarmkv-2-nodes");
-
 	reply_arg=cmd_exec_arg_new();
 
 	swarmkv_cli_attach(node_addr, node1_p2p_port);
@@ -520,7 +566,7 @@ TEST_F(SwarmkvTwoNodes, CRDT_JOIN)
 	cmd_exec_arg_clear(reply_arg);
 	swarmkv_cli_detach();
 
-	sprintf(reply_string, "0) %s:%u", node_addr, node1_p2p_port);
+	sprintf(reply_string, "1) %s:%u", node_addr, node1_p2p_port);
 	cmd_exec_arg_expect_cstring(reply_arg, reply_string);
 	swarmkv_cli_system_cmd(reply_arg, result, sizeof(result), swarmkv_expect_reply_string, "KEYSPACE RADD %s %s:%u", "id01", node_addr, node1_p2p_port);
 	cmd_exec_arg_clear(reply_arg);
@@ -538,14 +584,14 @@ TEST_F(SwarmkvTwoNodes, CRDT_JOIN)
 
 	swarmkv_cli_attach(node_addr, node2_p2p_port);
 	/*Because the ports are random, they cannot be compared**/
-	sprintf(reply_string, "0) %s", "127.0.0.1");
+	sprintf(reply_string, "1) %s", "127.0.0.1");
 	cmd_exec_arg_expect_cstring(reply_arg, reply_string);
 	swarmkv_cli_system_cmd(reply_arg, result, sizeof(result), NULL, "CRDT RLIST id01");
 	cmd_exec_arg_clear(reply_arg);
 	swarmkv_cli_detach();
 
 	wait_for_check();
-	cmd_exec_arg_expect_cstring(reply_arg, "0) \"id01\"");
+	cmd_exec_arg_expect_cstring(reply_arg, "1) \"id01\"");
 	swarmkv_cli_system_cmd(reply_arg, result, sizeof(result), swarmkv_expect_reply_string, "CLUSTER SANITY check");
 	cmd_exec_arg_clear(reply_arg);
 
@@ -553,12 +599,12 @@ TEST_F(SwarmkvTwoNodes, CRDT_JOIN)
 	swarmkv_cli_system_cmd(reply_arg, result, sizeof(result), swarmkv_expect_reply_integer, "CLUSTER SANITY heal");
 	cmd_exec_arg_clear(reply_arg);
 
-	sprintf(reply_string, "0) %s:%d,1) %s:%d", node_addr, node1_p2p_port, node_addr, node2_p2p_port);
+	sprintf(reply_string, "1) %s:%d,2) %s:%d", node_addr, node1_p2p_port, node_addr, node2_p2p_port);
 	cmd_exec_arg_expect_cstring(reply_arg, reply_string);
 	swarmkv_cli_system_cmd(reply_arg, result, sizeof(result), swarmkv_expect_reply_string, "KEYSPACE RLIST %s", "id01");
 
 	swarmkv_cli_attach(node_addr, node1_p2p_port);
-	sprintf(reply_string, "0) %s:%s", "127.0.0.1", "5211");
+	sprintf(reply_string, "1) %s:%s", "127.0.0.1", "5211");
 	cmd_exec_arg_expect_cstring(reply_arg, reply_string);
 	swarmkv_cli_system_cmd(reply_arg, result, sizeof(result), swarmkv_expect_reply_string, "CRDT RLIST id01");
 	cmd_exec_arg_clear(reply_arg);
@@ -566,7 +612,7 @@ TEST_F(SwarmkvTwoNodes, CRDT_JOIN)
 
 	swarmkv_cli_attach(node_addr, node2_p2p_port);
 	/*Because the ports are random, they cannot be compared**/
-	sprintf(reply_string, "0) %s", "127.0.0.1");
+	sprintf(reply_string, "1) %s", "127.0.0.1");
 	cmd_exec_arg_expect_cstring(reply_arg, reply_string);
 	swarmkv_cli_system_cmd(reply_arg, result, sizeof(result), NULL, "CRDT RLIST id01");
 	cmd_exec_arg_clear(reply_arg);
@@ -594,7 +640,7 @@ TEST_F(SwarmkvTwoNodes, Set_Key)
 	cmd_exec_arg_clear(reply_arg);
 
 	wait_for_check();
-	cmd_exec_arg_expect_cstring(reply_arg, "0) \"id001\"");
+	cmd_exec_arg_expect_cstring(reply_arg, "1) \"id001\"");
 	swarmkv_cli_system_cmd(reply_arg, result, sizeof(result), swarmkv_expect_reply_string, "CLUSTER SANITY check");
 	cmd_exec_arg_clear(reply_arg);
 
@@ -609,7 +655,7 @@ TEST_F(SwarmkvTwoNodes, Set_Key)
 	wait_for_sync();
 	cmd_exec_arg_free(reply_arg);
 }
-
+#endif
 int main(int argc, char ** argv)
 {
 	int ret=0;
