@@ -1393,6 +1393,7 @@ static void key_entry_merge(struct key_route_entry *key_entry, const char *blob,
 	for(size_t i=0; i<n_replica; i++)
 	{
 		mpnode_a_replica=mpack_node_array_at(mpnode_replicas, i);
+        memset(&replica, 0, sizeof(node_t));
 		mpack_node_copy_cstr(mpnode_a_replica, replica.addr, sizeof(replica.addr));
 		key_entry_add_replica_node(key_entry, &replica);
 	}

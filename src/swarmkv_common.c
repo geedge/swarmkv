@@ -297,7 +297,8 @@ int node_list_remove(node_t *list, size_t n_list, const node_t *addr)
 }
 void node_copy(node_t *dst, const node_t *src)
 {
-	memcpy(dst, src, sizeof(node_t));
+    memset(dst, 0, sizeof(node_t));
+    memcpy(dst, src, sizeof(node_t));
 	return;
 }
 void node_init(node_t *node, const char *ipv4, unsigned int port)
