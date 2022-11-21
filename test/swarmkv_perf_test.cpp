@@ -83,7 +83,7 @@ TEST(MultiThreads, Nthreads)
 	struct swarmkv *db[NODE_NUMBER];
 	char *err=NULL;
 	const char *log_path="./swarmkv-n-threads.log";
-	return;
+
 	char node_list_str[1024]={0};
 	for(i=0; i<NODE_NUMBER; i++)
 	{
