@@ -119,7 +119,7 @@ void *scalable_worker_thread(void *thread_arg)
 		scalable_ctx=scalable_result_ctx_new();
 		gettimeofday(&scalable_ctx->request_start_time, NULL);
 		swarmkv_scalable_expect_cstring(scalable_ctx, value);
-		swarmkv_command_async(db, scalable_gather_result_callback, scalable_ctx, NULL,
+		swarmkv_async_command(db, scalable_gather_result_callback, scalable_ctx,
 							"GET scalable-key-%lld", cmd_cnt%SCALABLE_MAX_KEY);
 		cmd_cnt++;
 		cmd_cnt_of_this_second++;

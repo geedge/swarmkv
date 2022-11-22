@@ -357,12 +357,32 @@ struct swarmkv_reply *swarmkv_command(struct swarmkv *db,const char *format, ...
 
 	return reply;
 }
-void swarmkv_command_async(struct swarmkv *db, swarmkv_on_reply_callback_t * cb, void *cb_arg, const char *target, const char *format, ...)
+void swarmkv_async_command_on_argv(struct swarmkv *db, swarmkv_on_reply_callback_t * cb, void *cb_arg, const char *target, int argc, sds *argv)
+{
+	struct swarmkv_cmd *cmd=NULL;
+	cmd=swarmkv_cmd_new(argc);
+	for(size_t i=0; i<argc; i++)
+	{
+		cmd->argv[i]=sdsdup(argv[i]);
+	}
+	 
+	if(!target)
+    {
+        exec_for_local(db, cmd, NULL, cb, cb_arg);
+    }
+    else
+    {
+		node_t target_node;
+		memset(&target_node, 0, sizeof(node_t));
+		node_init_from_sds(&target_node, target);
+        exec_for_local(db, cmd, &target_node, cb, cb_arg);
+    }
+    swarmkv_cmd_free(cmd);	
+}
+void swarmkv_async_command_on(struct swarmkv *db, swarmkv_on_reply_callback_t * cb, void *cb_arg, const char *target, const char *format, ...)
 {
 	int argc=0; sds *argv=NULL;
 	char *cmd_str=NULL;
-    node_t target_node;
-    memset(&target_node, 0, sizeof(node_t));
 
     va_list ap;
     va_start(ap,format);
@@ -371,29 +391,31 @@ void swarmkv_command_async(struct swarmkv *db, swarmkv_on_reply_callback_t * cb,
 
 	argv=sdssplitargs(cmd_str, &argc);
 
-    struct swarmkv_cmd *cmd=NULL;
-	cmd=swarmkv_cmd_new(argc);
-	for(size_t i=0; i<argc; i++)
-	{
-		cmd->argv[i]=sdsdup(argv[i]);
-	}
-
-	if(!target)
-    {
-        exec_for_local(db, cmd, NULL, cb, cb_arg);
-
-    }
-    else
-    {
-		node_init_from_sds(&target_node, target);
-        exec_for_local(db, cmd, &target_node, cb, cb_arg);
-    }
+	swarmkv_async_command_on_argv(db, cb, cb_arg, target, argc, argv);
 
     if (argv)
 	{
         sdsfreesplitres(argv, argc);
 	}
 	free(cmd_str);
-    swarmkv_cmd_free(cmd);
 }
+void swarmkv_async_command(struct swarmkv *db, swarmkv_on_reply_callback_t * cb, void *cb_arg, const char *format, ...)
+{
+	int argc=0; sds *argv=NULL;
+	char *cmd_str=NULL;
 
+    va_list ap;
+    va_start(ap,format);
+	vasprintf(&cmd_str, format, ap);
+    va_end(ap);
+
+	argv=sdssplitargs(cmd_str, &argc);
+
+	swarmkv_async_command_on_argv(db, cb, cb_arg, NULL, argc, argv);
+
+    if (argv)
+	{
+        sdsfreesplitres(argv, argc);
+	}
+	free(cmd_str);
+}

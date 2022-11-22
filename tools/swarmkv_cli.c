@@ -623,7 +623,7 @@ void exec_cmd_crdt_join(struct swarmkv* db, struct cluster_sanity_ctx *ctx, stru
     HASH_ITER(hh, keyspace_list->replica_node_hash, keyspace_addr, tmp)
     {
         ctx->reply_num++;
-        swarmkv_command_async(db, exec_cmd_generic_callback, ctx, keyspace_addr->node.addr, "CRDT JOIN %s %s", key, crdt_addr->node.addr);
+        swarmkv_async_command_on(db, exec_cmd_generic_callback, ctx, keyspace_addr->node.addr, "CRDT JOIN %s %s", key, crdt_addr->node.addr);
     }
 }
 
@@ -765,7 +765,7 @@ struct swarmkv_reply *cluster_sanity_command(struct swarmkv* db, char *argv[], s
     ctx->reply_num=HASH_COUNT(ctx->keyspace_replica_hash);
     HASH_ITER(hh, ctx->keyspace_replica_hash, item_replica_list, tmp)
     {
-        swarmkv_command_async(db, build_keyspace_replica_list, item_replica_list, NULL, "keyspace rlist %s", item_replica_list->key);
+        swarmkv_async_command_on(db, build_keyspace_replica_list, item_replica_list, NULL, "keyspace rlist %s", item_replica_list->key);
     }
 
     if(reply)
@@ -810,7 +810,7 @@ struct swarmkv_reply *cluster_sanity_command(struct swarmkv* db, char *argv[], s
             {
                 atomic_inc(&ctx->reply_num);
                 ctx->heal_replica++;
-                swarmkv_command_async(db,  exec_cmd_generic_callback, ctx, NULL, "keyspace rdel %s %s", keyspace_list->key, keyspace_node_addr->node.addr);
+                swarmkv_async_command_on(db,  exec_cmd_generic_callback, ctx, NULL, "keyspace rdel %s %s", keyspace_list->key, keyspace_node_addr->node.addr);
             }
         }
 
@@ -829,7 +829,7 @@ struct swarmkv_reply *cluster_sanity_command(struct swarmkv* db, char *argv[], s
                 {
                     atomic_inc(&ctx->reply_num);
                     ctx->heal_replica++;
-                    swarmkv_command_async(db, exec_cmd_generic_callback, ctx, NULL, "keyspace rdel %s %s", keyspace_list->key, keyspace_node_addr->node.addr);
+                    swarmkv_async_command_on(db, exec_cmd_generic_callback, ctx, NULL, "keyspace rdel %s %s", keyspace_list->key, keyspace_node_addr->node.addr);
                 }
             }
             //Step3.2 foreach crdt list, if crdt node not in keyspace list, keyspace radd node
@@ -845,7 +845,7 @@ struct swarmkv_reply *cluster_sanity_command(struct swarmkv* db, char *argv[], s
                 {
                     atomic_inc(&ctx->reply_num);
                     ctx->heal_replica++;
-                    swarmkv_command_async(db, exec_cmd_generic_callback, ctx, NULL, "keyspace radd %s %s", crdt_list->key, crdt_node_addr->node.addr);
+                    swarmkv_async_command_on(db, exec_cmd_generic_callback, ctx, NULL, "keyspace radd %s %s", crdt_list->key, crdt_node_addr->node.addr);
                     exec_cmd_crdt_join(db,ctx, keyspace_list, crdt_node_addr, crdt_list->key);
                 }
             }
@@ -867,7 +867,7 @@ struct swarmkv_reply *cluster_sanity_command(struct swarmkv* db, char *argv[], s
             {
                 atomic_inc(&ctx->reply_num);
                 ctx->heal_replica++;
-                swarmkv_command_async(db, exec_cmd_generic_callback, ctx, NULL, "keyspace radd %s %s", crdt_list->key, crdt_node_addr->node.addr);
+                swarmkv_async_command_on(db, exec_cmd_generic_callback, ctx, NULL, "keyspace radd %s %s", crdt_list->key, crdt_node_addr->node.addr);
             }
         }
     }

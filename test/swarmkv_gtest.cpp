@@ -311,7 +311,7 @@ TEST_F(SwarmkvBasicTest, TypeTokenBucket)
 	arg=cmd_exec_arg_new();
 	long long capacity=1024*4, rate=1024*2, request_tokens=0, got_tokens=0;
 	cmd_exec_arg_expect_OK(arg);	
-	swarmkv_command_async(db, generic_callback, arg, NULL, "TCFG %s %lld %lld", key, capacity, rate);	
+	swarmkv_async_command(db, generic_callback, arg, "TCFG %s %lld %lld", key, capacity, rate);	
 	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
 	cmd_exec_arg_clear(arg);
 	EXPECT_TRUE(exec_successful);
@@ -1077,7 +1077,7 @@ TEST_F(SwarmkvTwoNodes, TypeTokenBucket)
 	arg=cmd_exec_arg_new();
 	long long capacity=1024*4, rate=1024*2;
 	cmd_exec_arg_expect_OK(arg);	
-	swarmkv_command_async(db[0], generic_callback, arg, NULL, "TCFG %s %lld %lld", key, capacity, rate);	
+	swarmkv_async_command(db[0], generic_callback, arg, "TCFG %s %lld %lld", key, capacity, rate);	
 	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
 	cmd_exec_arg_clear(arg);
 	EXPECT_TRUE(exec_successful);
@@ -1154,7 +1154,7 @@ TEST_F(SwarmkvTwoNodes, TypeTokenBucket)
 	wait_for_sync();
 
 	cmd_exec_arg_expect_integer(arg, 0);
-	swarmkv_command_async(db[1], generic_callback, arg, "TCONSUME %s %lld FLEXIBLE", key, 4096);
+	swarmkv_async_command(db[1], generic_callback, arg, "TCONSUME %s %lld FLEXIBLE", key, 4096);
 	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
 	cmd_exec_arg_clear(arg);
 
