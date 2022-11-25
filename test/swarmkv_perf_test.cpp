@@ -215,10 +215,11 @@ void *migration_background_thread(void *thread_arg)
 TEST(Migration, AddKeyOwner)
 {
 	int NODE_NUMBER=2;
+	int CANDINATE_NUMBER=2;
 	int CALLER_THREAD_NUMBER=1;
 	int WORKER_THREAD_NUMBER=1;
 	int i=0, j=0;
-	struct swarmkv *db[NODE_NUMBER+1];
+	struct swarmkv *db[NODE_NUMBER+CANDINATE_NUMBER];
 	char *err=NULL;
 	const char *log_path="./swarmkv-migration.log";
 	unsigned int p2p_port_start=7310, health_port_start=8310;
@@ -230,8 +231,8 @@ TEST(Migration, AddKeyOwner)
 	const char *cluster_name="swarmkv-migration";
 	swarmkv_cli_create_cluster(cluster_name, node_list_str);
 	struct log_handle * logger=log_handle_create(log_path, 0);
-	struct swarmkv_options *opts[NODE_NUMBER+1];
-	for(i=0; i<NODE_NUMBER+1; i++)
+	struct swarmkv_options *opts[NODE_NUMBER+CANDINATE_NUMBER];
+	for(i=0; i<NODE_NUMBER+CANDINATE_NUMBER; i++)
 	{
 		opts[i]=swarmkv_options_new();	
 		swarmkv_options_set_p2p_port(opts[i], p2p_port_start+i);
@@ -258,8 +259,14 @@ TEST(Migration, AddKeyOwner)
 		}
 	}
 	sleep(10);
-	swarmkv_cli_add_key_owner(cluster_name, "127.0.0.1", p2p_port_start+NODE_NUMBER);
-	sleep(30);
+	char candinate_string[1024];
+	int offset=0;
+	for(i=0; i<CANDINATE_NUMBER; i++)
+	{
+		offset+=snprintf(candinate_string+offset, sizeof(candinate_string)-offset, "127.0.0.1:%u ",p2p_port_start+NODE_NUMBER+i);
+	}
+	swarmkv_cli_add_key_owner(cluster_name, candinate_string);
+	sleep(300);
 	g_running_flag=0;
 	int *successful_backgroud_running_thread=NULL;
 	for(i=0; i<NODE_NUMBER; i++)
@@ -275,7 +282,7 @@ TEST(Migration, AddKeyOwner)
 		}
 	}
 	sleep(10);
-	for(i=0; i<NODE_NUMBER+1; i++)
+	for(i=0; i<NODE_NUMBER+CANDINATE_NUMBER; i++)
 	{
 		swarmkv_close(db[i]);
 	}

@@ -1087,6 +1087,7 @@ const char *swarmkv_get_command_hint(struct swarmkv *db, const char* cmd_name)
 	}
 	return NULL;
 }
+/*
 static void libevent_log_cb(int severity, const char *msg)
 {
     const char *s;
@@ -1096,15 +1097,16 @@ static void libevent_log_cb(int severity, const char *msg)
         case _EVENT_LOG_MSG:   s = "msg";   break;
         case _EVENT_LOG_WARN:  s = "warn";  break;
         case _EVENT_LOG_ERR:   s = "error"; break;
-        default:               s = "?";     break; /* never reached */
+        default:               s = "?";     break; // never reached
     }
     fprintf(logfile, "[%s] %s\n", s, msg);
 	fclose(logfile);
 }
+*/
 struct swarmkv *swarmkv_open(struct swarmkv_options* opts, const char * db_name, char **err)
 {
 	struct swarmkv *db = NULL;
-	event_set_log_callback(libevent_log_cb);
+//	event_set_log_callback(libevent_log_cb);
 	db=ALLOC(struct swarmkv, 1);
 	strncpy(db->db_name, db_name, sizeof(db->db_name));
 

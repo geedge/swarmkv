@@ -267,7 +267,8 @@ int is_node_active(struct swarmkv_reply *nodes_reply, node_t *node)
 }
 struct swarmkv_reply *cluster_addkeyowner_command(struct swarmkv* db, char *argv[], size_t argc)
 {
-	node_t node;
+	size_t n_new_node=argc-2;
+	node_t new_nodes[n_new_node];
 	struct swarmkv_reply *slots_reply=NULL, *nodes_reply=NULL, *reply=NULL;
 	size_t i=0, j=0, actual_rebalanced_slot_num=0;
 
@@ -282,16 +283,20 @@ struct swarmkv_reply *cluster_addkeyowner_command(struct swarmkv* db, char *argv
 	{
 		return nodes_reply;
 	}
-	if(0!=node_init_from_sds(&node, argv[2]))
+	for(i=0; i<n_new_node; i++)
 	{
-		reply=swarmkv_reply_new_error(error_arg_not_valid_address, argv[2]);
-		goto error_out;
+		if(0!=node_init_from_sds(new_nodes+i, argv[2+i]))
+		{
+			reply=swarmkv_reply_new_error(error_arg_not_valid_address, argv[2+i]);
+			goto error_out;
+		}
+		if(!is_node_active(nodes_reply, new_nodes+i))
+		{
+			reply=swarmkv_reply_new_error(error_cluster_addkeyowner_node_is_not_active, (new_nodes+i)->addr);
+			goto error_out;
+		}
 	}
-	if(!is_node_active(nodes_reply, &node))
-	{
-		reply=swarmkv_reply_new_error(error_cluster_addnode_node_is_not_active);
-		goto error_out;
-	}
+	
 	slots_reply=cluster_slots_command(db, NULL, 0);
 	
 	if(slots_reply->type!=SWARMKV_REPLY_VERBATIM)
@@ -300,56 +305,68 @@ struct swarmkv_reply *cluster_addkeyowner_command(struct swarmkv* db, char *argv
 		slots_reply=NULL;
 		goto error_out;
 	}
-	struct key_slot *slots=ALLOC(struct key_slot, KEYSPACE_SLOT_NUM);
-	json2keyslots(slots_reply->str, slots, sizeof(struct key_slot), 0, KEYSPACE_SLOT_NUM);
-	for(i=0; i<KEYSPACE_SLOT_NUM; i++)
+	struct key_slot *old_slots=ALLOC(struct key_slot, KEYSPACE_SLOT_NUM);
+	struct key_slot *new_slots=ALLOC(struct key_slot, KEYSPACE_SLOT_NUM);
+	json2keyslots(slots_reply->str, old_slots, sizeof(struct key_slot), 0, KEYSPACE_SLOT_NUM);
+	for(i=0; i<n_new_node; i++)
 	{
-		if(0==node_compare(&(slots[i].owner), &node))
+		for(j=0; j<KEYSPACE_SLOT_NUM; j++)
 		{
-			reply=swarmkv_reply_new_error(error_cluster_addnode_node_has_slot);
-			goto error_out;
+			if(0==node_compare(&(old_slots[j].owner), new_nodes+i))
+			{
+				reply=swarmkv_reply_new_error(error_cluster_addkeyowner_node_has_slot, (new_nodes+i)->addr);
+				goto error_out;
+			}
 		}
 	}
-
 	
 	/* STEP 1 Calculate rebalanced slots. */
 
 	
-	qsort(slots, KEYSPACE_SLOT_NUM, sizeof(struct key_slot), slot_cmp_by_owner);
-	struct key_slot *tmp=slots;
+	qsort(old_slots, KEYSPACE_SLOT_NUM, sizeof(struct key_slot), slot_cmp_by_owner);
+	struct key_slot *tmp=old_slots;
 	size_t n_active_node=1;
 	for(i=0; i<KEYSPACE_SLOT_NUM; i++)
 	{
-		if(0!=node_compare(&(tmp->owner), &(slots[i].owner)))
+		if(0!=node_compare(&(tmp->owner), &(old_slots[i].owner)))
 		{
 			n_active_node++;
-			tmp=slots+i;
+			tmp=old_slots+i;
 		}
 	}
-	int expected_rebalanced_slot_num=KEYSPACE_SLOT_NUM/(n_active_node+1);
-	int expected_rebalanced_slot_num_per_node=expected_rebalanced_slot_num/n_active_node;
-	int rebalanced_slot_idx[KEYSPACE_SLOT_NUM]={0};
-	tmp=slots;
-	for(i=0, j=0, actual_rebalanced_slot_num=0; i<KEYSPACE_SLOT_NUM && actual_rebalanced_slot_num<expected_rebalanced_slot_num; i++)
+	int expected_rebalanced_slot_num=KEYSPACE_SLOT_NUM*n_new_node/(n_active_node+n_new_node);
+	int expected_rebalanced_slot_num_per_old_node=expected_rebalanced_slot_num/n_active_node;
+	int expected_repbalanced_slot_num_per_new_node=expected_rebalanced_slot_num/n_new_node;
+
+	struct key_slot *previous_slot=old_slots;
+	size_t n_slot_from_current_old_node=0, n_slot_to_current_new_node=0;
+	for(i=0, j=0; i<KEYSPACE_SLOT_NUM; i++)
 	{
-		//Get max expected_rebalanced_slot_num_per_node slots from each active node
-		if(j==expected_rebalanced_slot_num_per_node &&
-			0==node_compare(&(tmp->owner), &(slots[i].owner)))
-
+		new_slots[i].slot_id=old_slots[i].slot_id;
+		if(0!=node_compare(&(previous_slot->owner), &(old_slots[i].owner)))
 		{
-			continue;
+			n_slot_from_current_old_node=0;
 		}
-		//New active node
-		if(0!=node_compare(&tmp->owner, &(slots[i].owner)))
+		
+		if(n_slot_from_current_old_node==expected_rebalanced_slot_num_per_old_node)
 		{
-			j=0;
+			node_copy(&new_slots[i].owner, &old_slots[i].owner);
 		}
-		j++;
-		rebalanced_slot_idx[actual_rebalanced_slot_num]=i;
-		actual_rebalanced_slot_num++;
-		tmp=slots+i;
+		else
+		{
+			if(n_slot_to_current_new_node==expected_repbalanced_slot_num_per_new_node &&
+				j<n_new_node-1)
+			{
+				j++;
+				n_slot_to_current_new_node=0;
+			}
+			node_copy(&new_slots[i].owner, new_nodes+j);
+			n_slot_to_current_new_node++;
+			n_slot_from_current_old_node++;
+			actual_rebalanced_slot_num++;
+		}
+		previous_slot=old_slots+i;
 	}
-
 
 	/*STEP 2 Do the migration*/
 	
@@ -358,15 +375,24 @@ struct swarmkv_reply *cluster_addkeyowner_command(struct swarmkv* db, char *argv
 	sds *migrate_argv=NULL;
 	printf("%zu slot to be migrated\n", actual_rebalanced_slot_num);
 	long long migrated_keys=0;
-	for(i=0; i<actual_rebalanced_slot_num; i++)
+	node_t *new_node=NULL, *old_node=NULL;
+	int slot_id=0;
+	for(i=0; i<KEYSPACE_SLOT_NUM; i++)
 	{
-		tmp=slots+rebalanced_slot_idx[i];
+		new_node=&new_slots[i].owner;
+		old_node=&old_slots[i].owner;
+		slot_id=new_slots[i].slot_id;
+		assert(new_slots[i].slot_id == old_slots[i].slot_id);
+		if(0==node_compare(new_node, old_node))
+		{
+			continue;
+		}
 /*		printf("Migrating slot %d from %s %u to %s %u ... ", tmp->slot_id, tmp->owner.addr.ip_addr, tmp->owner.addr.p2p_port,
 														node.addr.ip_addr, node.addr.p2p_port);
 */
 		/*STEP 2.1 Set NEW node's slot to IMPORTING state. Slot will return to STABLE state after udpate the global slot table*/
-		setslot_reply=swarmkv_command_on(db, node.addr, "keyspace setslot %d IMPORTING %s", 
-													tmp->slot_id, tmp->owner.addr);
+		setslot_reply=swarmkv_command_on(db, new_node->addr, "keyspace setslot %d IMPORTING %s", 
+													slot_id, old_node->addr);
 		if(setslot_reply->type!=SWARMKV_REPLY_STATUS)
 		{
 			reply=setslot_reply;
@@ -376,8 +402,8 @@ struct swarmkv_reply *cluster_addkeyowner_command(struct swarmkv* db, char *argv
 
 		/*STEP 2.2 Set OLD node's slot to MIGRATING state*/
 
-		setslot_reply=swarmkv_command_on(db, tmp->owner.addr, "keyspace setslot %d MIGRATING %s",
-													tmp->slot_id, node.addr);
+		setslot_reply=swarmkv_command_on(db, old_node->addr, "keyspace setslot %d MIGRATING %s",
+													slot_id, new_node->addr);
 		if(setslot_reply->type!=SWARMKV_REPLY_STATUS)
 		{
 			reply=setslot_reply;
@@ -389,7 +415,7 @@ struct swarmkv_reply *cluster_addkeyowner_command(struct swarmkv* db, char *argv
 
 		/*STEP 2.3 Get keys from OLD node's slot*/
 
-		getkeysinslot_reply=swarmkv_command_on(db, tmp->owner.addr, "keyspace getkeysinslot %d", tmp->slot_id);
+		getkeysinslot_reply=swarmkv_command_on(db, old_node->addr, "keyspace getkeysinslot %d", slot_id);
 		if(getkeysinslot_reply->type!=SWARMKV_REPLY_STRING)
 		{
 			reply=getkeysinslot_reply;
@@ -403,12 +429,12 @@ struct swarmkv_reply *cluster_addkeyowner_command(struct swarmkv* db, char *argv
 		migrate_argv=ALLOC(sds, 4);
 		migrate_argv[0]=sdsnew("keyspace");
 		migrate_argv[1]=sdsnew("addkeystoslot");
-		migrate_argv[2]=sdsfromlonglong(tmp->slot_id);
+		migrate_argv[2]=sdsfromlonglong(slot_id);
 		migrate_argv[3]=sdsnewlen(getkeysinslot_reply->str, getkeysinslot_reply->len);	
 		swarmkv_reply_free(getkeysinslot_reply);
 		getkeysinslot_reply=NULL;
 
-		addkeystoslot_reply=swarmkv_command_on_argv(db, node.addr, 4, migrate_argv);
+		addkeystoslot_reply=swarmkv_command_on_argv(db, new_node->addr, 4, migrate_argv);
 
 		for(j=0; j<4; j++)
 		{
@@ -431,13 +457,11 @@ struct swarmkv_reply *cluster_addkeyowner_command(struct swarmkv* db, char *argv
 		
 		/*STEP 2.5 Delete keys from OLD node's slot*/
 
-		reply=swarmkv_command_on(db, tmp->owner.addr, "keyspace delslotkeys %d", tmp->slot_id);
+		reply=swarmkv_command_on(db, old_node->addr, "keyspace delslotkeys %d", slot_id);
 		if(reply->type!=SWARMKV_REPLY_INTEGER)
 		{
 			goto error_out;
 		}
-
-		node_copy(&(tmp->owner), &node);
 		swarmkv_reply_free(reply);
 		reply=NULL;
 	}
@@ -447,9 +471,9 @@ struct swarmkv_reply *cluster_addkeyowner_command(struct swarmkv* db, char *argv
 
 	char url[SWARMKV_URL_MAX]="";
 	int resp_code_put=0;
-	qsort(slots, KEYSPACE_SLOT_NUM, sizeof(struct key_slot), slot_cmp_by_id);
+	qsort(new_slots, KEYSPACE_SLOT_NUM, sizeof(struct key_slot), slot_cmp_by_id);
 	sds slot_json=NULL;
-	slot_json=keyslots2json(slots, sizeof(struct key_slot), 0, KEYSPACE_SLOT_NUM);
+	slot_json=keyslots2json(new_slots, sizeof(struct key_slot), 0, KEYSPACE_SLOT_NUM);
 
 	snprintf(url, sizeof(url), "/v1/kv/swarmkv/%s/slots", g_config.db_name);
 	
@@ -460,16 +484,17 @@ struct swarmkv_reply *cluster_addkeyowner_command(struct swarmkv* db, char *argv
 	}
 	else
 	{
-		reply=swarmkv_reply_new_status("global slot table is updated, %lld slots and %lld keys were migrated to %s",
+		reply=swarmkv_reply_new_status("global slot table is updated, %lld slots and %lld keys were migrated to %zu nodes.",
 									actual_rebalanced_slot_num, migrated_keys,
-									node.addr);
+									n_new_node);
 	}
 	sdsfree(slot_json);
 error_out:
 
 	if(nodes_reply)	swarmkv_reply_free(nodes_reply);
 	if(slots_reply) swarmkv_reply_free(slots_reply);
-	if(slots) free(slots);
+	if(old_slots) free(old_slots);
+	if(new_slots) free(new_slots);
 	return reply;
 }
 
@@ -945,7 +970,7 @@ struct cluster_cmd_spec cluster_cmds[]={
 	{"CLUSTER KEYSLOT", "key", cluster_keyslot_command},
 	{"CLUSTER NODES", "[breif | verbose]", cluster_nodes_command},
 	{"CLUSTER SLOTS", "", cluster_slots_command},
-	{"CLUSTER ADDKEYOWNER", "IP:port", cluster_addkeyowner_command},
+	{"CLUSTER ADDKEYOWNER", "IP:port [IP:port ...]", cluster_addkeyowner_command},
 	{"CLUSTER CREATE", "cluster-name IP:port [IP:port ...]", cluster_create_command},
     {"CLUSTER SANITY", "check | heal", cluster_sanity_command},
     {"ATTACH", "IP:port", attach_command},

@@ -91,7 +91,7 @@ swarmkv-2-nodes>
 
 ## C API
 
-Here is an example that two nodes (db[0] and db[1]) that commnicates via SwarmKV.
+Here is an example that two nodes (db[0] and db[1]) that commnicate via SwarmKV.
 
 ```c
 #include "swarmkv/swarmkv.h"
