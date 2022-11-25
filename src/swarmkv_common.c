@@ -263,6 +263,8 @@ int node_init_from_sds(node_t *node, const char *addr_str)
 }
 int node_compare(const node_t *node1, const node_t *node2)
 {
+	assert(strchr(node1->addr, ':'));
+	assert(strchr(node2->addr, ':'));
 	return strcmp(node1->addr, node2->addr);
 }
 int node_list_exists(const node_t *list, size_t n_list, const node_t *addr)

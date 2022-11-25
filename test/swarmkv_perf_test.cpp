@@ -135,6 +135,8 @@ TEST(MultiThreads, Nthreads)
 //		sleep(60*100);
 	for(i=0; i<NODE_NUMBER; i++)
 	{
+		//close slowly to cover more code branches.
+		sleep(2);
 		swarmkv_close(db[i]);
 	}
 	log_handle_destroy(logger);
@@ -257,7 +259,7 @@ TEST(Migration, AddKeyOwner)
 	}
 	sleep(10);
 	swarmkv_cli_add_key_owner(cluster_name, "127.0.0.1", p2p_port_start+NODE_NUMBER);
-	sleep(300);
+	sleep(30);
 	g_running_flag=0;
 	int *successful_backgroud_running_thread=NULL;
 	for(i=0; i<NODE_NUMBER; i++)
@@ -376,7 +378,7 @@ TEST(Performance, Sync)
 		}
 	}
 
-	sleep(600);
+	sleep(10);
 	g_tconsume_running_flag=0;
 	int *successful_backgroud_running_thread=NULL;
 	for(size_t i=0; i<NODE_NUMBER; i++)

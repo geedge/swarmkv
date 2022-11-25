@@ -506,15 +506,20 @@ void *swarmkv_worker_thread(void *arg)
 	prctl(PR_SET_NAME, (unsigned long long) thread_name, NULL, NULL, NULL);
 
 	swarmkv_net_dispath(ctx->db->net, ctx->thread_id);
+	log_info(ctx->db->logger, MODULE_SWAMRKV_CORE, "%s worker thread %d exited", ctx->db->db_name, ctx->readable_tid);
 	return NULL;
 }
 
 void swarmkv_threads_run(struct swarmkv *db)
 {
-	int i = 0;
+	int i = 0, ret=0;
 	for (i = 0; i < db->opts->nr_worker_threads; i++)
 	{
-		pthread_create(&db->worker_threads[i]->thr, NULL, swarmkv_worker_thread, (void *) (db->worker_threads[i]));
+		ret=pthread_create(&db->worker_threads[i]->thr, NULL, swarmkv_worker_thread, (void *) (db->worker_threads[i]));
+		if(ret !=0 )//error
+		{
+			log_fatal(db->logger, MODULE_SWAMRKV_CORE, "pthread_create error %d", ret);
+		}
 	}
 	return;
 }
@@ -1082,10 +1087,24 @@ const char *swarmkv_get_command_hint(struct swarmkv *db, const char* cmd_name)
 	}
 	return NULL;
 }
+static void libevent_log_cb(int severity, const char *msg)
+{
+    const char *s;
+    FILE *logfile=fopen("libevent_run.log", "a");
+    switch (severity) {
+        case _EVENT_LOG_DEBUG: s = "debug"; break;
+        case _EVENT_LOG_MSG:   s = "msg";   break;
+        case _EVENT_LOG_WARN:  s = "warn";  break;
+        case _EVENT_LOG_ERR:   s = "error"; break;
+        default:               s = "?";     break; /* never reached */
+    }
+    fprintf(logfile, "[%s] %s\n", s, msg);
+	fclose(logfile);
+}
 struct swarmkv *swarmkv_open(struct swarmkv_options* opts, const char * db_name, char **err)
 {
 	struct swarmkv *db = NULL;
-
+	event_set_log_callback(libevent_log_cb);
 	db=ALLOC(struct swarmkv, 1);
 	strncpy(db->db_name, db_name, sizeof(db->db_name));
 
@@ -1114,6 +1133,14 @@ struct swarmkv *swarmkv_open(struct swarmkv_options* opts, const char * db_name,
 	node_init(&db->self, opts->bind_address, opts->p2p_port);
 	db->mod_monitor=swarmkv_monitor_new(db->opts);
 
+	db->mod_keyspace=swarmkv_keyspace_new(db->opts, db_name, db->logger, err);
+	if(*err)
+	{
+		goto error_out;
+	}
+	swarmkv_keyspace_set_exec_cmd_func(db->mod_keyspace, __exec_cmd, db);
+	swarmkv_keyspace_set_monitor_handle(db->mod_keyspace, db->mod_monitor);
+
 	//Note: if the p2p_port is 0, swarmkv_net_new updates db->self.p2p_port.
 	db->net=swarmkv_net_new(opts, &db->self, db->logger, err);
 	if(*err)
@@ -1122,14 +1149,6 @@ struct swarmkv *swarmkv_open(struct swarmkv_options* opts, const char * db_name,
 	}
 	swarmkv_net_set_on_cmd_cb(db->net, exec_for_remote, db);
 	swarmkv_net_set_monitor_handle(db->net, db->mod_monitor);
-
-	db->mod_keyspace=swarmkv_keyspace_new(db->opts, db_name, db->logger, err);
-	if(*err)
-	{
-		goto error_out;
-	}
-	swarmkv_keyspace_set_exec_cmd_func(db->mod_keyspace, __exec_cmd, db);
-	swarmkv_keyspace_set_monitor_handle(db->mod_keyspace, db->mod_monitor);
 
 	db->mod_store=swarmkv_store_new(db->opts, __exec_cmd, db, opts->bin_uuid);
 	for(int i=0; i<db->opts->nr_worker_threads; i++)
@@ -1197,8 +1216,10 @@ void swarmkv_close(struct swarmkv * db)
 		HASH_DEL(db->command_table, spec);
 		free(spec);
 	}
+	char str_uuid[37]="";
+	uuid_unparse(db->opts->bin_uuid, str_uuid);
+	log_info(db->logger, MODULE_SWAMRKV_CORE, "swarmkv instance %s of cluster %s is closed.", str_uuid, db->db_name);
 
-	log_info(db->logger, MODULE_SWAMRKV_CORE, "swarmkv cluster %s closed.", db->db_name);
 	if(db->opts->logger != db->logger)
 	{
 		log_handle_destroy(db->logger);

@@ -954,7 +954,7 @@ void propagate_slot_table_async(struct swarmkv_keyspace *ks, struct key_slot new
 	new_slots_json=NULL;
 
 }
-void handle_failed_nodes(struct swarmkv_keyspace* ks, node_t *health_nodes, size_t n_node)
+void handle_failed_nodes(struct swarmkv_keyspace *ks, node_t *health_nodes, size_t n_node)
 {
 	size_t i=0, j=0, k=0;
 	size_t slots_number_effect_by_failed_node=0;
@@ -1006,21 +1006,14 @@ void handle_failed_nodes(struct swarmkv_keyspace* ks, node_t *health_nodes, size
 		if(j==n_node)
 		{
 
-			if(k==slots_rebalanced_per_node && health_node_offset<n_node)
+			if(k==slots_rebalanced_per_node && health_node_offset<n_node-1)
 			{
 				k=0;
 				health_node_offset++;
-			}			
+			}
 			new_owner=health_nodes+health_node_offset;
-			/*
-			uuid_unparse_lower(old_owner->bin_uuid, uuid_str1);
-			uuid_unparse_lower(new_owner->bin_uuid, uuid_str2);
-			MESA_handle_runtime_log(ks->logger, RLOG_LV_INFO, MODULE_SWARMKV_KEYSPACE, "key slots %d owner is changed from %s %s:%u to %s %s:%u.",
-									i, 
-									uuid_str1, old_owner->addr.ip_addr, old_owner->addr.p2p_port, 
-									uuid_str2, new_owner->addr.ip_addr, new_owner->addr.p2p_port);
-			*/
 			node_copy(old_owner, new_owner);
+			log_info(ks->logger, "leader %s changes slot %zu owner from %s to %s.", ks->self.addr, i, old_owner->addr, new_owner->addr);
 			k++;
 		}
 	}

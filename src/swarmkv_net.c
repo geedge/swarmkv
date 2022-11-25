@@ -125,6 +125,7 @@ struct swarmkv_net
 	on_cmd_callback_t* on_cmd_cb;
 	void* on_cmd_cb_arg;
 
+	pthread_mutex_t stat_lock;
 	long long last_input_bytes, last_output_bytes;
 	long long last_input_cmds, last_output_cmds;
 	struct timespec last_stats;
@@ -294,6 +295,10 @@ static void __dummy_event_handler(evutil_socket_t fd, short what, void * arg)
 	struct timespec now;
 	long long input_bytes=0, output_bytes=0;
 	long long input_cmds=0, output_cmds=0;
+	if(0 != pthread_mutex_trylock(&net->stat_lock))
+	{
+		return;
+	}
 	for(size_t i=0; i<net->n_thread; i++)
 	{
 		input_bytes += net->threads[i].stat.input_bytes;
@@ -312,6 +317,7 @@ static void __dummy_event_handler(evutil_socket_t fd, short what, void * arg)
 	net->last_output_bytes=output_bytes;
 	net->last_input_cmds=input_cmds;
 	net->last_output_cmds=output_cmds;
+	pthread_mutex_unlock(&net->stat_lock);
 	return;
 }
 static void snet_conn_table_remove(struct snet_conn* conn)
@@ -741,6 +747,7 @@ struct swarmkv_net* swarmkv_net_new(const struct swarmkv_options *opts, node_t* 
 	}
 	node_init(self, addr_str, port);
 	node_copy(&net->self, self);
+	pthread_mutex_init(&net->stat_lock, NULL);
 	return net;
 }
 void swarmkv_net_info(struct swarmkv_net *net, struct snet_info *info)
@@ -813,6 +820,7 @@ void swarmkv_net_stop(struct swarmkv_net* net)
 		if(thr->is_dispatching)
 		{
 			event_base_loopexit(thr->evbase, NULL);
+			thr->is_dispatching=0;
 		}
 	}
 	return;
@@ -843,6 +851,7 @@ void swarmkv_net_free(struct swarmkv_net* net)
 		}
 		event_base_free(thr->evbase);
 	}
+	pthread_mutex_destroy(&net->stat_lock);
 	free(net->threads);
 
 	free(net);
@@ -861,14 +870,17 @@ void swarmkv_net_set_monitor_handle(struct swarmkv_net* net, struct swarmkv_modu
 		net->threads[i].mod_monitor=mod_monitor;
 	}
 }
-void swarmkv_net_dispath(struct swarmkv_net* net, int thread_id)
+void swarmkv_net_dispath(struct swarmkv_net *net, int thread_id)
 {
 	struct event * ev = event_new(net->threads[thread_id].evbase, -1, EV_PERSIST, __dummy_event_handler, net);
 	struct timeval timer_delay = {2, 0};
 	net->threads[thread_id].is_dispatching=1;
 	evtimer_add(ev, &timer_delay);
-	event_base_dispatch(net->threads[thread_id].evbase);
-	
+	int ret=event_base_dispatch(net->threads[thread_id].evbase);
+	if(net->threads[thread_id].is_dispatching){
+		log_fatal(net->logger, MODULE_SWAMRKV_NET, "event_base_dispatch() returns %d abnormally", ret);
+		sleep(1000);
+	}
 	event_del(ev);
 	event_free(ev);
 	return;

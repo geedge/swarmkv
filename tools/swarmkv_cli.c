@@ -293,6 +293,7 @@ struct swarmkv_reply *cluster_addkeyowner_command(struct swarmkv* db, char *argv
 		goto error_out;
 	}
 	slots_reply=cluster_slots_command(db, NULL, 0);
+	
 	if(slots_reply->type!=SWARMKV_REPLY_VERBATIM)
 	{
 		reply=slots_reply;
@@ -364,7 +365,6 @@ struct swarmkv_reply *cluster_addkeyowner_command(struct swarmkv* db, char *argv
 														node.addr.ip_addr, node.addr.p2p_port);
 */
 		/*STEP 2.1 Set NEW node's slot to IMPORTING state. Slot will return to STABLE state after udpate the global slot table*/
-	
 		setslot_reply=swarmkv_command_on(db, node.addr, "keyspace setslot %d IMPORTING %s", 
 													tmp->slot_id, tmp->owner.addr);
 		if(setslot_reply->type!=SWARMKV_REPLY_STATUS)
@@ -396,7 +396,8 @@ struct swarmkv_reply *cluster_addkeyowner_command(struct swarmkv* db, char *argv
 			getkeysinslot_reply=NULL;
 			goto error_out;
 		}
-		
+
+
 		/*STEP 2.4 Add those keys to NEW node's slot*/
 		
 		migrate_argv=ALLOC(sds, 4);
@@ -437,7 +438,8 @@ struct swarmkv_reply *cluster_addkeyowner_command(struct swarmkv* db, char *argv
 		}
 
 		node_copy(&(tmp->owner), &node);
-		
+		swarmkv_reply_free(reply);
+		reply=NULL;
 	}
 	//return swarmkv_reply_new_status("OK");
 
@@ -462,7 +464,7 @@ struct swarmkv_reply *cluster_addkeyowner_command(struct swarmkv* db, char *argv
 									actual_rebalanced_slot_num, migrated_keys,
 									node.addr);
 	}
-	
+	sdsfree(slot_json);
 error_out:
 
 	if(nodes_reply)	swarmkv_reply_free(nodes_reply);
@@ -1178,11 +1180,12 @@ int main(int argc, char * argv[])
 		return 0;
 	}
 	snprintf(g_runtime.prompt, sizeof(g_runtime.prompt), "%s> ", g_config.db_name);
-
+	void * logger=log_handle_create("swarmkv-cli.log", 0);
 	struct swarmkv_options *opts=swarmkv_options_new();
 	swarmkv_options_set_dryrun(opts);
 	swarmkv_options_set_p2p_port(opts, 0);//listen on random port
 	swarmkv_options_set_worker_thread_number(opts, 1);
+	swarmkv_options_set_logger(opts, logger);
 	char *err=NULL;
 	g_config.db=swarmkv_open(opts, g_config.db_name, &err);
 	if(err)
@@ -1194,7 +1197,7 @@ int main(int argc, char * argv[])
 		return 0;
 	}
 
-	//command is part of swarmkv-cli arguments.
+	//Run swarmkv-cli --exec commands.
 	if(exec_argc)
 	{
 		if(is_cluster_command(exec_argc, exec_argv))
@@ -1209,7 +1212,7 @@ int main(int argc, char * argv[])
 		swarmkv_reply_free(reply);
 		for(i=0; i<exec_argc; i++) sdsfree(exec_argv[i]);
 		free(exec_argv);
-		return 1;
+		goto clean;
 	}
 	
 	/* Set the completion callback. This will be called every time the
@@ -1286,8 +1289,10 @@ int main(int argc, char * argv[])
 	    if (exec_argv)
 	        sdsfreesplitres(exec_argv, exec_argc);
 	}
+clean:
+	swarmkv_close(g_config.db);
+	log_handle_destroy(logger);
 	return 0;
-
 }
 
 
