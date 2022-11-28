@@ -178,19 +178,19 @@ Swarm KV implements Observe-Consumed Token Bucket (OC Token Bucket), which has a
 - CIR: Committed Information Rate
 - CBS: Committed Burst Size
 
-After the initialization, the bucket is full, which means it has *CBS* tokens. You can reconfigure token bucket at anytime. Note that the reconfiguration will not refill token bucket to full.
+At the very beginning, the bucket is full, which means it has *CBS* tokens. You can reconfigure the token bucket at any time. Note that the reconfiguration will not refill the token bucket to full.
 
-When network partitions and token bucket out-of-sync, each replica have the entire CIR. And after the network heals, replicas share the CIR again. The OC Token Bucket is robust to over consuming, as long as the sync interval is reasonable.
+If a network partition happens, the token bucket will be out-of-sync, and each replica has the entire CIR. And after the partition heals, replicas share the CIR again. The OC Token Bucket is robust to overuse as long as the sync interval is reasonable, i.e., 200ms.
 
 ## Fault tolerance
 
 ### High availability
 
-Replication is not implemented yet.
+Keyspace replication is not implemented yet.
 
 ### Health check
 
-Each node registers an HTTP service to the Consul, and the Consul agent is responsible for checking node health periodically via HTTP GET.
+Each node registers an HTTP service to the Consul, and the local Consul agent checks node health periodically via HTTP GET.
 If a node fails, the cluster leader gets notification and removes the failed node by reassigning its slots to other nodes.
 
 ## Wire protocol
@@ -201,10 +201,11 @@ Take the following command as an example:
 
 ```json
 [
-  "SADD",
-  "zhangsan's friends",
-  "李四",
-  "Jack"
+  "HMGET",
+  "zhangsan's information",
+  "phone number",
+  "address",
+  "avatar"
 ]
 ```
 

@@ -62,6 +62,7 @@ void *blocking_call_thread(void *thread_arg)
 		swarmkv_del(db, key, strlen(key), cmd_exec_generic_callback, arg);
 		del_success_counter+=cmd_exec_arg_wait(arg, PERF_TEST_EXEC_TO_MS);
 	}
+	cmd_exec_arg_free(arg);
 	
 	sleep(10);
 	*success=0;
@@ -71,6 +72,7 @@ void *blocking_call_thread(void *thread_arg)
 	{
 		*success=1;
 	}
+
 	return success;
 }
 
@@ -266,7 +268,7 @@ TEST(Migration, AddKeyOwner)
 		offset+=snprintf(candinate_string+offset, sizeof(candinate_string)-offset, "127.0.0.1:%u ",p2p_port_start+NODE_NUMBER+i);
 	}
 	swarmkv_cli_add_key_owner(cluster_name, candinate_string);
-	sleep(300);
+	sleep(30);
 	g_running_flag=0;
 	int *successful_backgroud_running_thread=NULL;
 	for(i=0; i<NODE_NUMBER; i++)

@@ -991,7 +991,7 @@ void handle_failed_nodes(struct swarmkv_keyspace *ks, node_t *health_nodes, size
 	//See https://www.consul.io/docs/agent/options.html#kv_max_value_size.
 	int slots_rebalanced_per_node=slots_number_effect_by_failed_node/n_node;
 	int health_node_offset=0;
-	
+
 	for(i=0; i<KEYSPACE_SLOT_NUM; i++)
 	{
 		old_owner=&(slots_copy[i].owner);
@@ -1005,7 +1005,6 @@ void handle_failed_nodes(struct swarmkv_keyspace *ks, node_t *health_nodes, size
 		//slot owner has left the cluster.
 		if(j==n_node)
 		{
-
 			if(k==slots_rebalanced_per_node && health_node_offset<n_node-1)
 			{
 				k=0;
@@ -1013,12 +1012,34 @@ void handle_failed_nodes(struct swarmkv_keyspace *ks, node_t *health_nodes, size
 			}
 			new_owner=health_nodes+health_node_offset;
 			node_copy(old_owner, new_owner);
-			log_info(ks->logger, "leader %s changes slot %zu owner from %s to %s.", ks->self.addr, i, old_owner->addr, new_owner->addr);
 			k++;
 		}
 	}
+	int changed_slot_start=-1, changed_slot_end=-1;
+	node_t tmp_new_node, tmp_old_node;
 	if(slots_number_effect_by_failed_node)
 	{
+		for(i=0; i<KEYSPACE_SLOT_NUM; i++)
+		{
+			if(0!=node_compare(&ks->slot_rts[i].slot.owner, &slots_copy[i].owner))
+			{
+				if(changed_slot_start<0)
+				{
+					node_copy(&tmp_old_node, &ks->slot_rts[i].slot.owner);
+					changed_slot_start=i;
+				}
+				changed_slot_end=i;
+				node_copy(&tmp_new_node, &slots_copy[i].owner);
+			}
+			else if(changed_slot_end>0)
+			{
+				log_info(ks->logger, MODULE_SWARMKV_KEYSPACE,
+				 		"leader %s changes slot %d-%d owner from %s to %s.",
+						ks->self.addr, changed_slot_start, changed_slot_end, 
+						tmp_old_node.addr, tmp_new_node.addr);
+				changed_slot_start=changed_slot_end=-1;
+			}
+		}
 		propagate_slot_table_async(ks, slots_copy, KEYSPACE_SLOT_NUM);
 	}
 	free(slots_copy);
