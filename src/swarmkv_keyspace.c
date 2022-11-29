@@ -764,7 +764,7 @@ void consul_watch_leadership_changes_async(struct swarmkv_keyspace* ks)
 }
 void __watch_slots_changes_cb(struct evhttp_request *req, void *arg)
 {
-	struct swarmkv_keyspace* ks=(struct swarmkv_keyspace*)arg;
+	struct swarmkv_keyspace *ks=(struct swarmkv_keyspace*)arg;
 	cJSON *metadata_array=NULL, *metadata=NULL, *value=NULL, *modify_idx=NULL;
 	int resp_code=0;
 	int	i=0;

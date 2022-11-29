@@ -770,7 +770,7 @@ void swarmkv_net_info(struct swarmkv_net *net, struct snet_info *info)
 	for(size_t i=0; i<net->n_thread; i++)
 	{
 		thr=net->threads+i;
-		info->connections += HASH_COUNT(thr->conn_table);
+		info->connections += (HASH_COUNT(thr->conn_table) + HASH_COUNT(thr->duplicated_conn_table));
 		info->pending_rpcs += HASH_COUNT(thr->rpc_table);
 		info->timed_out_rpcs += thr->stat.timed_out_rpcs;
 		info->input_bytes += thr->stat.input_bytes;
