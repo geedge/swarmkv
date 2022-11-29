@@ -57,11 +57,12 @@ struct snet_conn
 	enum receive_state recv_state;	
 	struct swarmkv_msg_hdr receiving_hdr;
 	int is_in_conn_table;
+	int is_duplicated;
 	struct evbuffer* buff_for_sending;
 	pthread_mutex_t mutex;
 	struct bufferevent *bev;
 	evutil_socket_t fd;	
-	struct snet_thread* ref_thr;
+	struct snet_thread *ref_thr;
 	UT_hash_handle hh;
 };
 struct timeout_ctx
@@ -99,12 +100,13 @@ struct snet_thread
 	int thread_id;
 	int is_dispatching;
 	struct event_base *evbase;
-	struct snet_conn* conn_table;
+	struct snet_conn *conn_table;
+	struct snet_conn *duplicated_conn_table;
 
     long long peer_timeout_us;
 	struct snet_rpc *rpc_table;
 
-	void* ref_logger;
+	void *ref_logger;
 	struct timeout_ctx *to_ctx;
 	struct swarmkv_net *ref_net;
 	struct swarmkv_module *mod_monitor;
@@ -117,6 +119,7 @@ struct swarmkv_net
 	unsigned long long sequence_generator;
 	int n_connection;
 	node_t self;
+	unsigned short listen_port;
 	struct snet_thread *threads;
 	
 	struct evconnlistener *listener;	
@@ -323,9 +326,16 @@ static void __dummy_event_handler(evutil_socket_t fd, short what, void * arg)
 static void snet_conn_table_remove(struct snet_conn* conn)
 {
 	struct snet_thread *thr=conn->ref_thr;
-	assert(conn->is_in_conn_table==1);
-	HASH_DEL(thr->conn_table, conn);
-	conn->is_in_conn_table=0;
+	if(conn->is_in_conn_table)
+	{
+		HASH_DEL(thr->conn_table, conn);
+		conn->is_in_conn_table=0;
+	}
+	else if(conn->is_duplicated)
+	{
+		HASH_DEL(thr->duplicated_conn_table, conn);
+		conn->is_duplicated=0;
+	}
 	return;
 }
 static void snet_conn_buffer_size(struct snet_conn *conn, long long *input_buff_sz, long long *output_buff_sz)
@@ -359,40 +369,50 @@ static void snet_conn_free(struct snet_conn *conn)
 		evutil_closesocket(conn->fd);
 		conn->fd=-1;
 	}
-	assert(!conn->is_in_conn_table);
+	assert(!conn->is_in_conn_table && !conn->is_duplicated);
 	free(conn);
 	return;
 }
-static void swarmkv_connection_kill(struct snet_conn* conn)
+/*
+static void swarmkv_connection_kill(struct snet_conn *conn)
 {
 	conn->need_to_be_kill=1;
 	bufferevent_trigger(conn->bev, EV_READ, BEV_TRIG_IGNORE_WATERMARKS);
 	return;
 }
-static void snet_conn_set_peer(struct snet_conn* conn, node_t *peer)
+*/
+static void snet_conn_set_peer(struct snet_conn *conn, node_t *peer)
 {
 	node_copy(&conn->peer_listen_addr, peer);
 	return;
 }
 
-static void snet_conn_table_overwrite(struct snet_thread* thr, struct snet_conn* conn)
+static void snet_conn_table_add(struct snet_thread *thr, struct snet_conn *conn)
 {
-	struct snet_conn* tmp_conn=NULL;
+	struct snet_conn *tmp_conn=NULL;
 	assert(conn->is_in_conn_table==0);
 	HASH_FIND(hh, thr->conn_table, &(conn->peer_listen_addr), sizeof(node_t), tmp_conn);
 	if(tmp_conn)
 	{
+		//Simultaneous open
 		log_fatal(thr->ref_logger, MODULE_SWAMRKV_NET,
-			"accept duplicated connection form peer %s, previous connection is %s.",
+			"accept duplicated connection from peer %s, existed connection is %s.",
 							conn->connected_from.addr,
 							tmp_conn->connected_from.addr);
-		snet_conn_table_remove(tmp_conn);
-		swarmkv_connection_kill(tmp_conn);
-		//The old connection (tmp_conn) will be freed in its peer_conn_read_cb 		
+		conn->is_duplicated=1;
+		HASH_ADD(hh, thr->duplicated_conn_table, peer_listen_addr, sizeof(conn->peer_listen_addr), conn);
+		//snet_conn_table_remove(tmp_conn);
+		//swarmkv_connection_kill(tmp_conn);
 	}
-	HASH_ADD(hh, thr->conn_table, peer_listen_addr, sizeof(conn->peer_listen_addr), conn);
-	conn->is_in_conn_table=1;
-
+	else
+	{
+		HASH_ADD(hh, thr->conn_table, peer_listen_addr, sizeof(conn->peer_listen_addr), conn);
+		conn->is_in_conn_table=1;
+		log_info(thr->ref_logger, MODULE_SWAMRKV_NET,
+				"new peer connection from %s has been set, which is connected from %s.",
+				conn->peer_listen_addr.addr,
+				conn->connected_from.addr);
+	}
 	return;
 }
 
@@ -461,14 +481,10 @@ static void peer_conn_read_cb(struct bufferevent *bev, void *arg)
 				snet_conn_free(conn);
 				break;
 			}
-			if(!conn->is_in_conn_table)
+			if(!conn->is_in_conn_table && !conn->is_duplicated)
 			{
 				snet_conn_set_peer(conn, &hdr->source);
-				snet_conn_table_overwrite(thr, conn);			
-				log_info(thr->ref_logger, MODULE_SWAMRKV_NET,
-							"new peer connection from %s has been set, which is connected from %s.",
-											conn->peer_listen_addr.addr,
-											conn->connected_from.addr);
+				snet_conn_table_add(thr, conn);			
 			}
 			conn->recv_state=RECEIVING_PAYLOAD;
 			memcpy(&conn->receiving_hdr, hdr, sizeof(conn->receiving_hdr));
@@ -507,10 +523,7 @@ static void peer_conn_event_cb(struct bufferevent *bev, short events, void *arg)
 								err, evutil_socket_error_to_string(err));
 		//swarmkv-cli's connection has listen port number > 10000.
 	}
-	if(conn->is_in_conn_table)
-	{
-		snet_conn_table_remove(conn);
-	}
+	snet_conn_table_remove(conn);
 	snet_conn_free(conn);
 	return;
 }
@@ -544,14 +557,13 @@ void connect_peer_eventcb(struct bufferevent *bev, short events, void *arg)
     }
 }
 
-struct snet_conn* snet_conn_new_by_connecting(struct snet_thread* thr, const node_t* dest)
+struct snet_conn *snet_conn_new_by_connecting(struct snet_thread *thr, const node_t *dest)
 {
 	struct event_base *base=thr->evbase;
 	
 	struct snet_conn* conn=ALLOC(struct snet_conn, 1);
 	conn->buff_for_sending=evbuffer_new();
-//	evbuffer_enable_locking(conn->buff_for_sending, NULL);
-	
+
 	//http://www.wangafu.net/~nickm/libevent-book/Ref6_bufferevent.html
 	conn->bev=bufferevent_socket_new(base, -1, BEV_OPT_DEFER_CALLBACKS|BEV_OPT_THREADSAFE);//BEV_OPT_UNLOCK_CALLBACKS|
 	bufferevent_setcb(conn->bev, NULL, NULL, connect_peer_eventcb, conn);
@@ -575,7 +587,7 @@ error_out:
 	return NULL;
 
 }
-struct snet_conn* snet_conn_new_by_fd(struct snet_thread *thr, evutil_socket_t fd, struct sockaddr * addr)
+struct snet_conn *snet_conn_new_by_fd(struct snet_thread *thr, evutil_socket_t fd, struct sockaddr * addr)
 {
 	struct snet_conn* conn=NULL;
 	conn=ALLOC(struct snet_conn, 1);
@@ -635,8 +647,8 @@ void swarmkv_net_send_reply(struct swarmkv_net *net, const node_t *peer, const v
 
 void snet_send_in_evloop(struct snet_thread *thr, const node_t *peer, unsigned long long sequence, enum MSG_TYPE msg_type, void *data, size_t size)
 {
-	struct snet_conn* conn=NULL;
-	void* logger=thr->ref_net->logger;
+	struct snet_conn *conn=NULL;
+	void *logger=thr->ref_net->logger;
 	int err=0;
 
 	HASH_FIND(hh, thr->conn_table, peer, sizeof(node_t), conn);
@@ -673,14 +685,14 @@ static void accept_peer_connection_cb(struct evconnlistener *listener, evutil_so
 {
 	struct swarmkv_net *net = (struct swarmkv_net*) arg;
 	struct snet_thread *thr=NULL;
-	struct snet_conn* conn=NULL;
+	struct snet_conn *conn=NULL;
 	node_t peer;
 	node_init_from_sockaddr(&peer, addr);
 	int thread_id=get_net_thread_id(&peer, net->n_thread);
 	thr=net->threads+thread_id;
 	conn=snet_conn_new_by_fd(thr, fd, addr);
 
-	log_debug(net->logger, MODULE_SWAMRKV_NET, "accept connection form from %s.",
+	log_debug(net->logger, MODULE_SWAMRKV_NET, "accept connection from %s.",
 							conn->connected_from.addr);
 
 	return;
@@ -747,6 +759,7 @@ struct swarmkv_net* swarmkv_net_new(const struct swarmkv_options *opts, node_t* 
 	}
 	node_init(self, addr_str, port);
 	node_copy(&net->self, self);
+	net->listen_port=port;
 	pthread_mutex_init(&net->stat_lock, NULL);
 	return net;
 }
@@ -845,6 +858,11 @@ void swarmkv_net_free(struct swarmkv_net* net)
 			snet_conn_table_remove(conn);
 			snet_conn_free(conn);
 		}
+		HASH_ITER(hh, thr->duplicated_conn_table, conn, tmp)
+		{
+			snet_conn_table_remove(conn);
+			snet_conn_free(conn);
+		}		
 		HASH_ITER(hh, thr->rpc_table, rpc, tmp_rpc)
 		{
 			snet_rpc_free(rpc);

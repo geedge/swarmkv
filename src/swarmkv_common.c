@@ -251,6 +251,26 @@ struct swarmkv_reply *swarmkv_reply_new_node(node_t *node, int is_ask)
 	reply->len=strlen(reply->str);
 	return reply;
 }
+int node_sanity(const node_t *node)
+{
+	char c=0;
+	for(size_t i=0; i<sizeof(node->addr); i++)
+	{
+		c=node->addr[i];
+		if((c>='0'&&c<='9') || 
+			c=='.' ||
+			c==':'||
+			c==0)
+		{
+			continue;
+		}
+		else
+		{
+			return 0;
+		}
+	}
+	return 1;
+}
 sds node_addr2sds(const node_t *node)
 {
 	return sdsnew(node->addr);
@@ -265,6 +285,8 @@ int node_compare(const node_t *node1, const node_t *node2)
 {
 	assert(strchr(node1->addr, ':'));
 	assert(strchr(node2->addr, ':'));
+	assert(node_sanity(node1));
+	assert(node_sanity(node2));
 	return strcmp(node1->addr, node2->addr);
 }
 int node_list_exists(const node_t *list, size_t n_list, const node_t *addr)
@@ -300,6 +322,7 @@ int node_list_remove(node_t *list, size_t n_list, const node_t *addr)
 void node_copy(node_t *dst, const node_t *src)
 {
     memset(dst, 0, sizeof(node_t));
+	assert(node_sanity(src));
     memcpy(dst, src, sizeof(node_t));
 	return;
 }
