@@ -896,6 +896,9 @@ void command_spec_init(struct swarmkv *db)
 	command_register(&(db->command_table), "TYPE", "key",
 					1, 1, CMD_KEY_RW, REPLY_STR_NONE, AUTO_ROUTE,
 					type_command, db->mod_store);
+    command_register(&(db->command_table), "KEYSLOT", "key",
+					1, 1, CMD_KEY_RO, REPLY_ERROR, AUTO_ROUTE,
+					keyslot_command, db->mod_keyspace);
 
 	/* Set commands */
 	command_register(&(db->command_table), "SADD", "key member [member ...]",
@@ -1010,6 +1013,7 @@ void command_spec_init(struct swarmkv *db)
     command_register(&(db->command_table), "KEYSPACE RDEL", "key IP:port",
 					1, 2, CMD_KEY_RO, REPLY_NA, AUTO_ROUTE,
 					keyspace_rdel_command, db->mod_keyspace);
+
 
 	/* low-level keyspace reorgnization commands */
 	command_register(&(db->command_table), "KEYSPACE SETSLOT", "<slot> IMPORTING|MIGRATING|NODE|STABLE IP:port",

@@ -56,14 +56,14 @@ protected:
  	// Some expensive resource shared by all tests.
  	
 	static struct log_handle *logger;
-	static struct swarmkv* db;
+	static struct swarmkv *db;
 };
 struct swarmkv *SwarmkvBasicTest::db;
 struct log_handle *SwarmkvBasicTest::logger;
 TEST_F(SwarmkvBasicTest, TypeString)
 {
 	struct cmd_exec_arg *arg=NULL;
-	struct swarmkv* db=SwarmkvBasicTest::db;
+	struct swarmkv *db=SwarmkvBasicTest::db;
 	const char* key="name";
 	const char* val="zhangsan";
 	int exec_successful=0;
@@ -87,7 +87,7 @@ TEST_F(SwarmkvBasicTest, TypeString)
 }
 TEST_F(SwarmkvBasicTest, TypeInteger)
 {
-	struct swarmkv* db=SwarmkvBasicTest::db;
+	struct swarmkv *db=SwarmkvBasicTest::db;
 	const char *key="int1";
 	struct swarmkv_reply * reply=NULL;
 	
@@ -123,7 +123,7 @@ TEST_F(SwarmkvBasicTest, TypeInteger)
 TEST_F(SwarmkvBasicTest, GenericDEL)
 {
 	struct cmd_exec_arg *arg=NULL;
-	struct swarmkv* db=SwarmkvBasicTest::db;
+	struct swarmkv *db=SwarmkvBasicTest::db;
 	const char* key="name2";
 	const char* val="zhangsan";
 	int exec_successful=0;
@@ -145,7 +145,7 @@ TEST_F(SwarmkvBasicTest, GenericDEL)
 }
 TEST_F(SwarmkvBasicTest, GenericTYPE)
 {
-	struct swarmkv* db=SwarmkvBasicTest::db;
+	struct swarmkv *db=SwarmkvBasicTest::db;
 	struct swarmkv_reply *reply=NULL;
 
 	//TYPE string
@@ -218,7 +218,7 @@ TEST_F(SwarmkvBasicTest, GenericTYPE)
 TEST_F(SwarmkvBasicTest, TypeSet)
 {
 	struct cmd_exec_arg *arg=NULL;
-	struct swarmkv* db=SwarmkvBasicTest::db;
+	struct swarmkv *db=SwarmkvBasicTest::db;
 	const char* key="Jack's friends";
 	const char* member[]={"zhangsan", "lisi", "王二麻子", "Tom", "مرحبا"};
 	size_t member_len[32];
@@ -403,7 +403,7 @@ TEST_F(SwarmkvBasicTest, TypeHash)
 TEST_F(SwarmkvBasicTest, EXPIRE_TTL)
 {
 	struct cmd_exec_arg *arg=NULL;
-	struct swarmkv* db=SwarmkvBasicTest::db;
+	struct swarmkv *db=SwarmkvBasicTest::db;
 	const char* key="quarantine";
 	const char* val="wuhan-江夏-如家";
 	int exec_successful=0;
@@ -458,7 +458,24 @@ TEST_F(SwarmkvBasicTest, EXPIRE_TTL)
 	cmd_exec_arg_free(arg);
 	arg=NULL;
 }
-
+TEST_F(SwarmkvBasicTest, HashTags)
+{
+	struct swarmkv *db=SwarmkvBasicTest::db;
+	struct swarmkv_reply *reply=NULL;
+	const char *keys[]={"{user1000}.following", "{user1000}.followers", "{user1000}.{user1001}.watched"};
+	int slot_id=-1;
+	for(size_t i=0; i<sizeof(keys)/sizeof(const char *); i++)
+	{
+		reply=swarmkv_command(db, "keyslot %s", keys[i]);
+		EXPECT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+		if(slot_id>=0)
+		{
+			EXPECT_EQ(reply->integer, slot_id);
+		}
+		slot_id=reply->integer;
+		swarmkv_reply_free(reply);
+	}
+}
 class SwarmkvTwoNodes : public testing::Test 
 {
 
@@ -514,8 +531,8 @@ struct swarmkv* SwarmkvTwoNodes::db2;
 TEST_F(SwarmkvTwoNodes, SET_GET)
 {
 	struct cmd_exec_arg *arg=NULL;
-	struct swarmkv* db1=SwarmkvTwoNodes::db1;
-	struct swarmkv* db2=SwarmkvTwoNodes::db2;
+	struct swarmkv *db1=SwarmkvTwoNodes::db1;
+	struct swarmkv *db2=SwarmkvTwoNodes::db2;
 	const char *key="id001";
 	const char *val1="zhangsan", *val2="lisi";
 	int exec_successful=0;
@@ -554,8 +571,8 @@ TEST_F(SwarmkvTwoNodes, SET_GET)
 TEST_F(SwarmkvTwoNodes, SET1kString)
 {
 	struct cmd_exec_arg *arg=NULL;
-	struct swarmkv* db1=SwarmkvTwoNodes::db1;
-	struct swarmkv* db2=SwarmkvTwoNodes::db2;
+	struct swarmkv *db1=SwarmkvTwoNodes::db1;
+	struct swarmkv *db2=SwarmkvTwoNodes::db2;
 	struct swarmkv* tmp_db=NULL;
 	const char *key_prefix="test-1k-string";
 	const char *val_prefix="value-xx";
@@ -596,8 +613,8 @@ TEST_F(SwarmkvTwoNodes, SET1kString)
 TEST_F(SwarmkvTwoNodes, INCRYBY1kInteger)
 {
 	struct cmd_exec_arg *arg=NULL;
-	struct swarmkv* db1=SwarmkvTwoNodes::db1;
-	struct swarmkv* db2=SwarmkvTwoNodes::db2;
+	struct swarmkv *db1=SwarmkvTwoNodes::db1;
+	struct swarmkv *db2=SwarmkvTwoNodes::db2;
 	struct swarmkv* tmp_db=NULL;
 	const char *key_prefix="incrby-1k-integer";
 	char key[128]="", val[128]="";
@@ -654,8 +671,8 @@ TEST_F(SwarmkvTwoNodes, INCRYBY1kInteger)
 TEST_F(SwarmkvTwoNodes, DEL)
 {
 	struct cmd_exec_arg *arg=NULL;
-	struct swarmkv* db1=SwarmkvTwoNodes::db1;
-	struct swarmkv* db2=SwarmkvTwoNodes::db2;
+	struct swarmkv *db1=SwarmkvTwoNodes::db1;
+	struct swarmkv *db2=SwarmkvTwoNodes::db2;
 	const char* key="id002";
 	const char* val="to-be-deleted";	
 	int exec_successful=0;
@@ -699,8 +716,8 @@ TEST_F(SwarmkvTwoNodes, DEL)
 TEST_F(SwarmkvTwoNodes, INCRBY)
 {
 	struct cmd_exec_arg *arg=NULL;
-	struct swarmkv* db1=SwarmkvTwoNodes::db1;
-	struct swarmkv* db2=SwarmkvTwoNodes::db2;
+	struct swarmkv *db1=SwarmkvTwoNodes::db1;
+	struct swarmkv *db2=SwarmkvTwoNodes::db2;
 	const char* key="id003";
 	long long val=10000;	
 	int exec_successful=0;
@@ -734,8 +751,8 @@ TEST_F(SwarmkvTwoNodes, INCRBY)
 TEST_F(SwarmkvTwoNodes, EXPIRE)
 {
 	struct cmd_exec_arg *arg=NULL;
-	struct swarmkv* db1=SwarmkvTwoNodes::db1;
-	struct swarmkv* db2=SwarmkvTwoNodes::db2;
+	struct swarmkv *db1=SwarmkvTwoNodes::db1;
+	struct swarmkv *db2=SwarmkvTwoNodes::db2;
 	struct swarmkv* tmp_db=NULL;
 	char key[128]="", val[128]="";
 	int exec_successful=0, i=0, round=128, n_success=0;
@@ -828,8 +845,8 @@ TEST_F(SwarmkvTwoNodes, EXPIRE)
 TEST_F(SwarmkvTwoNodes, TTL)
 {
 	struct cmd_exec_arg *arg=NULL;
-	struct swarmkv* db1=SwarmkvTwoNodes::db1;
-	struct swarmkv* db2=SwarmkvTwoNodes::db2;
+	struct swarmkv *db1=SwarmkvTwoNodes::db1;
+	struct swarmkv *db2=SwarmkvTwoNodes::db2;
 
 	const char *key="ttl-key-001";
 	const char *value="hello-world";
@@ -874,8 +891,8 @@ TEST_F(SwarmkvTwoNodes, TTL)
 TEST_F(SwarmkvTwoNodes, PERSIST)
 {
 	struct cmd_exec_arg *arg=NULL;
-	struct swarmkv* db1=SwarmkvTwoNodes::db1;
-	struct swarmkv* db2=SwarmkvTwoNodes::db2;
+	struct swarmkv *db1=SwarmkvTwoNodes::db1;
+	struct swarmkv *db2=SwarmkvTwoNodes::db2;
 
 	const char *key="persit-key-001";
 	const char *value="hello-world";
@@ -938,8 +955,8 @@ TEST_F(SwarmkvTwoNodes, PERSIST)
 TEST_F(SwarmkvTwoNodes, FromLocalReplica)
 {
 	struct cmd_exec_arg *arg=NULL;
-	struct swarmkv* db1=SwarmkvTwoNodes::db1;
-	struct swarmkv* db2=SwarmkvTwoNodes::db2;
+	struct swarmkv *db1=SwarmkvTwoNodes::db1;
+	struct swarmkv *db2=SwarmkvTwoNodes::db2;
 	const char* key="id004";
 	int exec_successful=0;
 	arg=cmd_exec_arg_new();
@@ -991,7 +1008,7 @@ TEST_F(SwarmkvTwoNodes, FromLocalReplica)
 TEST_F(SwarmkvTwoNodes, TypeSet)
 {
 	struct cmd_exec_arg *arg=NULL;
-	struct swarmkv* db[2];
+	struct swarmkv *db[2];
 	db[0]=SwarmkvTwoNodes::db1;
 	db[1]=SwarmkvTwoNodes::db2;
 	const char *key="myset001";
@@ -1069,7 +1086,7 @@ TEST_F(SwarmkvTwoNodes, TypeSet)
 TEST_F(SwarmkvTwoNodes, TypeTokenBucket)
 {
 	struct cmd_exec_arg *arg=NULL;
-	struct swarmkv* db[2];
+	struct swarmkv *db[2];
 	db[0]=SwarmkvTwoNodes::db1;
 	db[1]=SwarmkvTwoNodes::db2;
 	const char *key="tb-192.168.0.1";
@@ -1162,7 +1179,7 @@ TEST_F(SwarmkvTwoNodes, TypeTokenBucket)
 }
 TEST_F(SwarmkvTwoNodes, TypeHash)
 {
-	struct swarmkv* db[2];
+	struct swarmkv *db[2];
 	db[0]=SwarmkvTwoNodes::db1;
 	db[1]=SwarmkvTwoNodes::db2;
 

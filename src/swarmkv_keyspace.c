@@ -1292,7 +1292,14 @@ void swarmkv_keyspace_info(struct swarmkv_module *mod_keyspace, struct keyspace_
 		pthread_mutex_unlock(&slot_rt->mutex);
 	}
 }
-
+enum cmd_exec_result keyslot_command(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+{
+	/* KEYSLOT key*/
+	char *key=cmd->argv[1];
+	int slot_id=key_hash_slot(key, strlen(key));
+	*reply=swarmkv_reply_new_integer(slot_id);
+	return FINISHED;
+}
 enum cmd_exec_result keyspace_setslot_command(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
 {
 /* KEYSPACE SETSLOT <slot> IMPORTING|MIGRATING|NODE|STABLE IP:port */

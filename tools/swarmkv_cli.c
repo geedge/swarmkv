@@ -135,7 +135,7 @@ static int consul_kv_init_block(char *cluster_name, char *argv[], size_t argc)
 	sdsfree(slot_json);
 	return ret;
 }
-struct swarmkv_reply *cluster_create_command(struct swarmkv* db, char *argv[], size_t argc)
+struct swarmkv_reply *cluster_create_command(struct swarmkv *db, char *argv[], size_t argc)
 {
 	int ret=0;
 	struct swarmkv_reply *reply=NULL;
@@ -156,7 +156,7 @@ struct swarmkv_reply *cluster_create_command(struct swarmkv* db, char *argv[], s
 	return reply;
 }
 
-struct swarmkv_reply *cluster_nodes_command(struct swarmkv* db, char *argv[], size_t argc)
+struct swarmkv_reply *cluster_nodes_command(struct swarmkv *db, char *argv[], size_t argc)
 {
 	struct swarmkv_reply *reply=NULL;
 	int ret=0, no_leader=1;
@@ -211,7 +211,7 @@ struct swarmkv_reply *cluster_nodes_command(struct swarmkv* db, char *argv[], si
 	}
 	return reply;
 }
-struct swarmkv_reply *cluster_slots_command(struct swarmkv* db, char *argv[], size_t argc)
+struct swarmkv_reply *cluster_slots_command(struct swarmkv *db, char *argv[], size_t argc)
 {
 	struct swarmkv_reply *reply=NULL;
 	char url[SWARMKV_URL_MAX]="";
@@ -265,7 +265,7 @@ int is_node_active(struct swarmkv_reply *nodes_reply, node_t *node)
 	}
 	return node_is_active;
 }
-struct swarmkv_reply *cluster_addkeyowner_command(struct swarmkv* db, char *argv[], size_t argc)
+struct swarmkv_reply *cluster_addkeyowner_command(struct swarmkv *db, char *argv[], size_t argc)
 {
 	size_t n_new_node=argc-2;
 	node_t new_nodes[n_new_node];
@@ -498,22 +498,7 @@ error_out:
 	return reply;
 }
 
-struct swarmkv_reply *cluster_keyslot_command(struct swarmkv* db, char *argv[], size_t argc)
-{
-	/*KEYSPACE KEYSLOT key*/
-	struct swarmkv_reply *reply=NULL;
-    if(argc <= 2)
-    {
-        reply = swarmkv_reply_new_error(error_read_slot_table_failed);
-        return reply;
-    }
-
-	char* key=argv[2];
-	int slot_id=key_hash_slot(key, strlen(key));
-	reply=swarmkv_reply_new_integer(slot_id);
-	return reply;
-}
-struct swarmkv_reply *cluster_keys_command(struct swarmkv* db, char *argv[], size_t argc)
+struct swarmkv_reply *cluster_keys_command(struct swarmkv *db, char *argv[], size_t argc)
 {
 	struct swarmkv_reply *nodes_reply=NULL, *keyspace_keys_reply=NULL, *reply=NULL;
 	size_t i=0;
@@ -545,7 +530,7 @@ struct swarmkv_reply *cluster_keys_command(struct swarmkv* db, char *argv[], siz
 	}
 	return reply;
 }
-struct swarmkv_reply *cluster_info_command(struct swarmkv* db, char *argv[], size_t argc)
+struct swarmkv_reply *cluster_info_command(struct swarmkv *db, char *argv[], size_t argc)
 {
 	struct swarmkv_reply *nodes_reply=NULL, *per_node_info_reply=NULL;
 	struct swarmkv_reply *reply;
@@ -643,7 +628,7 @@ void exec_cmd_generic_callback(const struct swarmkv_reply* reply, void * cb_arg)
     return;
 }
 
-void exec_cmd_crdt_join(struct swarmkv* db, struct cluster_sanity_ctx *ctx, struct replica_list *keyspace_list, struct replica_node *crdt_addr, char *key)
+void exec_cmd_crdt_join(struct swarmkv *db, struct cluster_sanity_ctx *ctx, struct replica_list *keyspace_list, struct replica_node *crdt_addr, char *key)
 {
     struct replica_node *tmp=NULL, *keyspace_addr=NULL;
 
@@ -730,7 +715,7 @@ void destroy_relica_list_hash(struct cluster_sanity_ctx *ctx)
     FREE(&ctx);
 }
 
-struct swarmkv_reply *cluster_sanity_command(struct swarmkv* db, char *argv[], size_t argc)
+struct swarmkv_reply *cluster_sanity_command(struct swarmkv *db, char *argv[], size_t argc)
 {
     int need_fix=0;
     int timed_wait_rv;
@@ -923,7 +908,7 @@ finish:
 	return reply;
 }
 
-struct swarmkv_reply *attach_command(struct swarmkv* db, char *argv[], size_t argc)
+struct swarmkv_reply *attach_command(struct swarmkv *db, char *argv[], size_t argc)
 {
 	struct swarmkv_reply *reply=NULL;
     if(argc<2)
@@ -947,7 +932,7 @@ struct swarmkv_reply *attach_command(struct swarmkv* db, char *argv[], size_t ar
     return reply;
 }
 
-struct swarmkv_reply *detach_command(struct swarmkv* db, char *argv[], size_t argc)
+struct swarmkv_reply *detach_command(struct swarmkv *db, char *argv[], size_t argc)
 {
 	struct swarmkv_reply *reply=NULL;
 	g_runtime.is_attaching=0;
@@ -956,7 +941,7 @@ struct swarmkv_reply *detach_command(struct swarmkv* db, char *argv[], size_t ar
     return reply;
 }
 
-typedef struct swarmkv_reply *cluster_command_func(struct swarmkv* db, char *argv[], size_t argc);
+typedef struct swarmkv_reply *cluster_command_func(struct swarmkv *db, char *argv[], size_t argc);
 
 struct cluster_cmd_spec
 {
@@ -967,7 +952,6 @@ struct cluster_cmd_spec
 struct cluster_cmd_spec cluster_cmds[]={
 	{"CLUSTER KEYS", "pattern", cluster_keys_command},
 	{"CLUSTER INFO", "[section]", cluster_info_command},
-	{"CLUSTER KEYSLOT", "key", cluster_keyslot_command},
 	{"CLUSTER NODES", "[breif | verbose]", cluster_nodes_command},
 	{"CLUSTER SLOTS", "", cluster_slots_command},
 	{"CLUSTER ADDKEYOWNER", "IP:port [IP:port ...]", cluster_addkeyowner_command},

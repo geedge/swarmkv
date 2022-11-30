@@ -78,7 +78,7 @@ Except for node in dry run mode, cluster nodes will watch leadership changes and
 
 ### Hash tags
 
-Like [Redis Cluster](https://redis.io/docs/reference/cluster-spec/), SwarmKV implements hash tags, which can be used to ensure that multiple keys are allocated in the same hash slot. If the key contains a "{...}" pattern only the substring between `{` and `}` is hashed in order to obtain the hash slot. However since it is possible that there are multiple occurrences of `{` or `}` the algorithm is well specified by the following rules:
+Like [Redis Cluster](https://redis.io/docs/reference/cluster-spec/), SwarmKV implements hash tags, which can be used to ensure that multiple keys are allocated in the same hash slot for managed by the same key owner. Note that the hash tags does not guarrantee objects are managed by the same object owner. If the key contains a "{...}" pattern only the substring between `{` and `}` is hashed in order to obtain the hash slot. However since it is possible that there are multiple occurrences of `{` or `}` the algorithm is well specified by the following rules:
 
 - IF the key contains a `{` character.
 - AND IF there is a `}` character to the right of `{`.
