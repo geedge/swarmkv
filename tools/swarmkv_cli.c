@@ -24,7 +24,8 @@ struct cluster_manager_command
 struct config
 {	
 	char db_name[256];
-	int consul_port;
+	unsigned int consul_port;
+	unsigned int p2p_port;
 	char consul_host[64];
 	struct swarmkv *db;
 	struct cluster_manager_command cluster_mgr_cmd;
@@ -46,13 +47,13 @@ static void usage(void)
 	fprintf(stderr,
 	"swarmkv-cli %s\n"
 	"\n"
-	"Usage: swarmkv-cli [OPTIONS] [cmd [arg [arg ...]]]\n"
+	"Usage: swarmkv-cli [OPTIONS] [command [arg [arg ...]]]\n"
 	"  -n <cluster-name>  Cluster name used for orchestration.\n"
-	"  -p <consul-port>   Consul Agent port (default: 8500).\n"
-    "  -l <p2p-port>      Consul Agent dryrun listen port (default: 15210).\n"
-	"  --cluster-create	<cluster-name> IP port [IP port]  Create cluster orchestration information in Consul KV.\n"
+	"  -c <consul-port>   Consul Agent port (default: 8500).\n"
+	"  -l <p2p-port>      Listening port for Peer-to-Peer networking (default: random).\n"
+	"  --cluster-create <cluster-name> IP:port [IP:port ...]  Create cluster orchestration information in Consul KV.\n"
 	"  --exec [Command]  Execute comand and exit.\n"
-    "  --attach <IP port>  Attach to a node.\n",
+    "  --attach <IP:port>  Attach to a node.\n",
 	SWARMKV_CLI_VERSION);
 
     exit(1);
@@ -221,7 +222,7 @@ struct swarmkv_reply *cluster_slots_command(struct swarmkv *db, char *argv[], si
 	resp_code=http_blocking_request(EVHTTP_REQ_GET, g_config.consul_host, g_config.consul_port, url, NULL, &resp_body);
 	if(resp_code!=200)
 	{
-		reply=swarmkv_reply_new_error("read %s%s failed", g_config.consul_host, url);
+		reply=swarmkv_reply_new_error("read %s:%u%s failed", g_config.consul_host, g_config.consul_port, url);
 		return reply;
 	}
 	reply=swarmkv_reply_new_verbatim(resp_body, sdslen(resp_body)+1, "js");	
@@ -1133,9 +1134,13 @@ int main(int argc, char * argv[])
 		{
 			strncpy(g_config.db_name, argv[++i], sizeof(g_config.db_name));
 		}
-		else if(!strcmp(argv[i], "-p") && !lastarg)
+		else if(!strcmp(argv[i], "-c") && !lastarg)
 		{
 			sscanf(argv[++i], "%u", &g_config.consul_port);
+		}
+		else if(!strcmp(argv[i], "-l") && !lastarg)
+		{
+			sscanf(argv[++i], "%u", &g_config.p2p_port);
 		}
 		else if(!strcmp(argv[i], "--cluster-create") && !lastarg)
 		{
@@ -1192,7 +1197,8 @@ int main(int argc, char * argv[])
 	void * logger=log_handle_create("swarmkv-cli.log", 0);
 	struct swarmkv_options *opts=swarmkv_options_new();
 	swarmkv_options_set_dryrun(opts);
-	swarmkv_options_set_p2p_port(opts, 0);//listen on random port
+	swarmkv_options_set_p2p_port(opts, g_config.p2p_port);//listen on random port
+	swarmkv_options_set_consul_port(opts, g_config.consul_port);
 	swarmkv_options_set_worker_thread_number(opts, 1);
 	swarmkv_options_set_logger(opts, logger);
 	char *err=NULL;
@@ -1239,7 +1245,10 @@ int main(int argc, char * argv[])
 		{
 			continue;
 		}
-		
+		if(0==strcasecmp(line, "exit")||0==strcasecmp(line, "quit")||0==strcasecmp(line, "q"))
+		{
+			break;
+		}
 		exec_argv=sdssplitargs(line, &exec_argc);
 		if(!exec_argc)
 		{

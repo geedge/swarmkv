@@ -1105,7 +1105,7 @@ void consul_watch_nodes_changes_async(struct swarmkv_keyspace* ks)
 	
 }
 
-int keyslots_init(struct swarmkv_keyspace* ks)
+int keyslots_init(struct swarmkv_keyspace *ks)
 {
 	int i=0, error=0;
 	struct slot_runtime *slot_rt=NULL;

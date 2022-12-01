@@ -518,7 +518,7 @@ void swarmkv_threads_run(struct swarmkv *db)
 		ret=pthread_create(&db->worker_threads[i]->thr, NULL, swarmkv_worker_thread, (void *) (db->worker_threads[i]));
 		if(ret !=0 )//error
 		{
-			log_fatal(db->logger, MODULE_SWAMRKV_CORE, "pthread_create error %d", ret);
+			log_fatal(db->logger, MODULE_SWAMRKV_CORE, "pthread_create() error %d", ret);
 		}
 	}
 	return;
@@ -993,7 +993,7 @@ void command_spec_init(struct swarmkv *db)
 					1, 2, CMD_KEY_NA, REPLY_NA, NOT_AUTO_ROUTE,
 					crdt_exists_command, db->mod_store);
 
-     command_register(&(db->command_table), "CRDT RLIST", "key",
+    command_register(&(db->command_table), "CRDT RLIST", "key",
 					1, 2, CMD_KEY_NA, REPLY_NA,  NOT_AUTO_ROUTE,
 					crdt_rlist_command, db->mod_store);
 

@@ -761,7 +761,7 @@ int http_blocking_request(enum evhttp_cmd_type type, const char *host, unsigned 
 
 	struct evkeyvalq *output_headers = evhttp_request_get_output_headers(client->req);
 	char hostname[256]="";
-	snprintf(hostname, sizeof(hostname), "%s:%d", host, port);
+	snprintf(hostname, sizeof(hostname), "%s:%u", host, port);
 	evhttp_add_header(output_headers, "Host", hostname);
 	evhttp_add_header(output_headers, "Connection", "close");
 	if(req_body)
