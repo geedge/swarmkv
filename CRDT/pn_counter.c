@@ -52,7 +52,7 @@ void PN_counter_free(struct PN_counter *pnc)
 	free(pnc);
 }
 
-long long PN_counter_get(struct PN_counter *pnc)
+long long PN_counter_get(const struct PN_counter *pnc)
 {
 	long long abs_positive_counter=0, abs_negtive_counter=0;
 	struct counter_item *item=NULL, *tmp=NULL;
@@ -98,7 +98,7 @@ long long PN_counter_incrby(struct PN_counter *pnc, long long increment)
 	return PN_counter_get(pnc);
 }
 
-void PN_counter_serialize(struct PN_counter *pnc, char **blob, size_t *blob_sz)
+void PN_counter_serialize(const struct PN_counter *pnc, char **blob, size_t *blob_sz)
 {
 	struct counter_item *c=NULL, *tmp=NULL;
 	size_t mpack_sz=sizeof(struct PN_counter)-sizeof(pnc->hash_item);
@@ -164,7 +164,14 @@ void PN_counter_merge_blob(struct PN_counter *pnc, const char *blob, size_t blob
 	PN_counter_free(to_merge);
 	return;
 }
-size_t PN_counter_replica_num(struct PN_counter *pnc)
+size_t PN_counter_replica_num(const struct PN_counter *pnc)
 {
 	return MAX(HASH_COUNT(pnc->hash_item), 1);
+}
+size_t PN_counter_size(const struct PN_counter *pnc)
+{
+	size_t sz=0;
+	sz+=HASH_COUNT(pnc->hash_item) * sizeof(struct counter_item);
+	sz+=sizeof(struct PN_counter);
+	return sz;
 }

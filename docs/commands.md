@@ -245,7 +245,7 @@ Returns all the members of the set value stored at `key`.
 
 Return
 
-- Array reply: all elements of the set. or empty list if the key does not exist.
+- Array reply: all elements of the set, or empty list if the key does not exist.
 
 ## Hash
 
@@ -400,7 +400,7 @@ The option modify `TCONSUME` behavior if the token bucket has not enough `tokens
 
 Return
 
-- String Reply:  the number of tokens that were allow to consume, or -1 if key does not exist.
+- Integer Reply:  the number of tokens that were allow to consume, or -1 if key does not exist.
 
 ### TINFO
 

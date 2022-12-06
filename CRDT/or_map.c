@@ -309,7 +309,7 @@ struct OR_map_kv *OR_map_get(struct OR_map *map, const char *key, size_t key_len
 	struct OR_map_kv *kv=OR_map_kv_new(record, copy_value);
 	return kv;
 }
-size_t OR_map_filter_keys(struct OR_map *map, OR_map_key_filter_cb filter_func, void *cb_arg, struct OR_map_kv ***kv_list)
+size_t OR_map_filter_keys(const struct OR_map *map, OR_map_key_filter_cb filter_func, void *cb_arg, struct OR_map_kv ***kv_list)
 {
 	if(0==HASH_CNT(hh, map->hash_record))
 	{
@@ -337,7 +337,7 @@ size_t OR_map_filter_keys(struct OR_map *map, OR_map_key_filter_cb filter_func, 
 	}
 	return n_kv;	
 }
-size_t OR_map_generic_traverse(struct OR_map *map, struct OR_map_kv ***kv_list, enum record_copy_type type)
+size_t OR_map_generic_traverse(const struct OR_map *map, struct OR_map_kv ***kv_list, enum record_copy_type type)
 {
 	size_t n_kv=HASH_CNT(hh, map->hash_record);
 	if(n_kv==0)
@@ -356,15 +356,15 @@ size_t OR_map_generic_traverse(struct OR_map *map, struct OR_map_kv ***kv_list, 
 	return n_kv;
 
 }
-size_t OR_map_get_all(struct OR_map *map, struct OR_map_kv ***kv_list)
+size_t OR_map_get_all(const struct OR_map *map, struct OR_map_kv ***kv_list)
 {
 	return OR_map_generic_traverse(map, kv_list, copy_all);
 }
-size_t OR_map_keys(struct OR_map *map, struct OR_map_kv ***kv_list)
+size_t OR_map_keys(const struct OR_map *map, struct OR_map_kv ***kv_list)
 {
 	return OR_map_generic_traverse(map, kv_list, copy_key);
 }
-size_t OR_map_values(struct OR_map *map, struct OR_map_kv ***kv_list)
+size_t OR_map_values(const struct OR_map *map, struct OR_map_kv ***kv_list)
 {
 	return OR_map_generic_traverse(map, kv_list, copy_value);
 }
@@ -381,7 +381,7 @@ int OR_map_remove(struct OR_map *map, const char *key, size_t key_len)
 	OR_record_free(record);
 	return 1;
 }
-int OR_map_exisits(struct OR_map *map, const char* key, size_t key_len)
+int OR_map_exisits(const struct OR_map *map, const char* key, size_t key_len)
 {	
 	struct OR_record *record=NULL;
 	HASH_FIND(hh, map->hash_record, key, key_len, record);
@@ -407,15 +407,34 @@ static int is_removed_by_peer(struct OR_record *record, const struct OR_timestam
 	}
 	return record->hash_timestamp?1:0;
 }
-size_t OR_map_cardinality(struct OR_map *map)
+size_t OR_map_cardinality(const struct OR_map *map)
 {
 	return HASH_COUNT(map->hash_record);
 }
-size_t OR_map_replica_number(struct OR_map *map)
+size_t OR_map_replica_number(const struct OR_map *map)
 {
 	return HASH_COUNT(map->hash_replica_vector);
 }
-void OR_record_serialize(struct OR_record *record, mpack_writer_t *writer)
+size_t OR_record_size(const struct OR_record *record)
+{
+	size_t sz=0;
+	sz+=sizeof(struct OR_record);
+	sz+=record->key_len;
+	switch(record->type)
+	{
+		case TYPE_INTEGER:
+			sz+=PN_counter_size(record->counter);				
+			break;
+		case TYPE_STRING:
+			sz+=LWW_regeister_size(record->string);		
+			break;
+		default:
+			break;
+	}
+	sz+=HASH_COUNT(record->hash_timestamp)*sizeof(struct OR_timestamp);
+	return sz;
+}
+void OR_record_serialize(const struct OR_record *record, mpack_writer_t *writer)
 {
 	struct OR_timestamp *ts=NULL, *tmp_ts=NULL;
 	char *value_blob=NULL;
@@ -532,7 +551,7 @@ static void OR_record_merge(struct OR_record *dst, const struct OR_record *src)
 	return;
 }
 
-void OR_map_serialize(struct OR_map *map, char **blob, size_t *blob_sz)
+void OR_map_serialize(const struct OR_map *map, char **blob, size_t *blob_sz)
 {
 	mpack_writer_t writer;
 	char *mpack_buff=NULL;
@@ -676,4 +695,14 @@ void OR_map_merge_blob(struct OR_map *map, const char *blob, size_t blob_sz)
 	OR_map_free(to_merge);
 	return;
 }
-
+size_t OR_map_size(const struct OR_map *map)
+{
+	size_t sz=0;
+	struct OR_record *record=NULL, *tmp_record=NULL;
+	HASH_ITER(hh, map->hash_record, record, tmp_record)
+	{
+		sz+=OR_record_size(record);
+	}
+	sz+=sizeof(struct OR_map)+HASH_COUNT(map->hash_replica_vector)*sizeof(struct OR_timestamp);
+	return sz;
+}

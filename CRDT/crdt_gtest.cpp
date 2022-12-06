@@ -784,7 +784,9 @@ TEST(PNCounter, Replica100)
 		}
 	}
 	EXPECT_EQ(success, test_replica_num);
-	
+	size_t sz=0;
+	sz=PN_counter_size(pnc[0]);
+	EXPECT_EQ(sz, 8864);
 	for(i=0; i<test_replica_num; i++)
 	{
 		PN_counter_free(pnc[i]);

@@ -331,7 +331,7 @@ void sobj_merge_blob(struct sobj *obj, const char *blob, size_t blob_sz, uuid_t 
 {
 	struct scontainer *ctr=container_of(obj, struct scontainer, obj);
 
-	struct timeval op_timestamp, now;
+	struct timeval now;
 
 	enum sobj_type type;
 	size_t offset=0;
@@ -340,11 +340,11 @@ void sobj_merge_blob(struct sobj *obj, const char *blob, size_t blob_sz, uuid_t 
 	assert(ctr->obj.type==type || ctr->obj.type==OBJ_TYPE_UNDEFINED);
 	ctr->obj.type=type;
 
-	memcpy(&op_timestamp, blob+offset, sizeof(op_timestamp));
-	offset+=sizeof(op_timestamp);
+	memcpy(&ctr->op_timestamp, blob+offset, sizeof(ctr->op_timestamp));
+	offset+=sizeof(ctr->op_timestamp);
 
 	gettimeofday(&now, NULL);
-	if(timercmp(&op_timestamp, &now, >))
+	if(timercmp(&ctr->op_timestamp, &now, >))
 	{
 		fprintf(stderr, "Key %s is merging a blob which has a operation time in the future!\n", obj->key);
 	}
@@ -672,6 +672,35 @@ struct pattern_match_arg
 	sds pattern;
     UT_array *matched_replies;
 };
+const char *type2string(enum sobj_type type)
+{
+	const char *ret_str=NULL;
+	switch(type)
+	{
+		case OBJ_TYPE_STRING:
+			ret_str="string";
+			break;
+		case OBJ_TYPE_INTEGER:
+			ret_str="integer";
+			break;
+		case OBJ_TYPE_SET:
+			ret_str="set";
+			break;
+		case OBJ_TYPE_HASH:
+			ret_str="hash";
+			break;
+		case OBJ_TYPE_TOKEN_BUCKET:
+			ret_str="token-bucket";
+			break;
+		case OBJ_TYPE_UNDEFINED:
+			ret_str="undefined";
+			break;
+		default:
+			assert(0);
+			break;
+	}
+	return ret_str;
+}
 enum cmd_exec_result type_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
 {
 /*TYPE key*/
@@ -682,30 +711,8 @@ enum cmd_exec_result type_command(struct swarmkv_module *mod_store, const struct
 	{
 		return NEED_KEY_ROUTE;
 	}
-	switch(obj->type)
-	{
-		case OBJ_TYPE_STRING:
-			*reply=swarmkv_reply_new_string_fmt("string");
-			break;
-		case OBJ_TYPE_INTEGER:
-			*reply=swarmkv_reply_new_string_fmt("integer");
-			break;
-		case OBJ_TYPE_SET:
-			*reply=swarmkv_reply_new_string_fmt("set");
-			break;
-		case OBJ_TYPE_HASH:
-			*reply=swarmkv_reply_new_string_fmt("hash");
-			break;
-		case OBJ_TYPE_TOKEN_BUCKET:
-			*reply=swarmkv_reply_new_string_fmt("token-bucket");
-			break;
-		case OBJ_TYPE_UNDEFINED:
-			*reply=swarmkv_reply_new_string_fmt("undefined");
-			break;
-		default:
-			assert(0);
-			break;
-	}
+	const char *type_str=type2string(obj->type);
+	*reply=swarmkv_reply_new_string_fmt(type_str);
 	return FINISHED;
 }
 enum cmd_exec_result crdt_pull_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
@@ -872,44 +879,69 @@ enum cmd_exec_result crdt_exists_command(struct swarmkv_module *mod_store, const
 enum cmd_exec_result crdt_rlist_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
 {
 /* CRDT RLIST key*/
-	struct sobj *obj=NULL;
-    int n_matched=0,i=0;
-    UT_array *matched_replies;
-	assert(accessing_node!=NULL);//should never invoked by local
-
 	const sds key=cmd->argv[2];
-	obj=store_lookup(mod_store, key);
-	if(obj)
-	{
-        utarray_new(matched_replies, &ut_array_matched_reply);
-        int iterator=0;
-        node_t *replica_node=NULL;
-        while((replica_node=store_iterate_replica_node(obj, &iterator)) && replica_node)
-        {
-            struct swarmkv_reply *r=NULL;
-            r=swarmkv_reply_new_node(replica_node, 0);
-            utarray_push_back(matched_replies, &r);
-        }
-        n_matched=utarray_len(matched_replies);
-        if(n_matched>0)
-        {
-            *reply=swarmkv_reply_new_array(n_matched);
-            for(i=0; i<n_matched; i++)
-            {
-                (*reply)->elements[i]=*(struct swarmkv_reply **)utarray_eltptr(matched_replies, i);
-            }
-        }
-        else
-        {
-            *reply=swarmkv_reply_new_nil();
-        }
-        utarray_free(matched_replies);
-	}
-	else
+	struct scontainer *ctr=NULL;
+	struct swarmkv_store *store=module2store(mod_store);
+	ctr=store_lookup_scontainer(store, key);
+	if(!ctr)
 	{
 		*reply=swarmkv_reply_new_nil();
+		return FINISHED;
 	}
-
+	*reply=swarmkv_reply_new_array(utarray_len(ctr->replica_node_list));
+	for(size_t i=0; i< (*reply)->n_element; i++)
+	{
+		(*reply)->elements[i]=swarmkv_reply_new_node(utarray_eltptr(ctr->replica_node_list, i), 0);
+	}
 	return FINISHED;
 }
-
+enum cmd_exec_result crdt_info_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+{
+/*CRDT INFO key*/
+	const sds key=cmd->argv[2];
+	struct scontainer *ctr=NULL;
+	struct swarmkv_store *store=module2store(mod_store);
+	ctr=store_lookup_scontainer(store, key);
+	if(!ctr)
+	{
+		*reply=swarmkv_reply_new_array(0);
+		return FINISHED;
+	}
+	size_t sz=0;
+	switch(ctr->obj.type)
+	{
+		case OBJ_TYPE_STRING:
+			sz+=LWW_regeister_size(ctr->obj.string);
+			break;
+		case OBJ_TYPE_INTEGER:
+			sz+=PN_counter_size(ctr->obj.counter);
+			break;
+		case OBJ_TYPE_SET:
+			sz+=OR_set_size(ctr->obj.set);
+			break;
+		case OBJ_TYPE_HASH:
+			sz+=OR_map_size(ctr->obj.hash);
+			break;
+		case OBJ_TYPE_TOKEN_BUCKET:
+			sz+=OC_token_bucket_size(ctr->obj.bucket);
+			break;
+		case OBJ_TYPE_UNDEFINED:
+			sz+=0;
+			break;
+		default:
+			assert(0);
+			break;
+	}
+	sz+=sizeof(struct scontainer)+sdslen(ctr->obj.key);
+	int i=0;
+	*reply=swarmkv_reply_new_array(8);
+	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("Type");
+	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt(type2string(ctr->obj.type));
+	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("Size");
+	(*reply)->elements[i++]=swarmkv_reply_new_integer(sz);
+	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("Replicas");
+	(*reply)->elements[i++]=swarmkv_reply_new_integer(utarray_len(ctr->replica_node_list));
+	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("LastModified");
+	(*reply)->elements[i++]=swarmkv_reply_new_integer(ctr->op_timestamp.tv_sec);
+	return FINISHED;
+}

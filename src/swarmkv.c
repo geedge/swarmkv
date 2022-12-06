@@ -982,7 +982,6 @@ void command_spec_init(struct swarmkv *db)
 	command_register(&(db->command_table), "CRDT JOIN", "key IP:port",
 					2, 2, CMD_KEY_NA, REPLY_NA, NOT_AUTO_ROUTE,
 					crdt_join_command, db->mod_store);
-
 	command_register(&(db->command_table), "CRDT DEL", "key",
 					1, 2, CMD_KEY_NA, REPLY_NA, NOT_AUTO_ROUTE,
 					crdt_del_command, db->mod_store);
@@ -992,10 +991,12 @@ void command_spec_init(struct swarmkv *db)
     command_register(&(db->command_table), "CRDT EXISTS", "key",
 					1, 2, CMD_KEY_NA, REPLY_NA, NOT_AUTO_ROUTE,
 					crdt_exists_command, db->mod_store);
-
     command_register(&(db->command_table), "CRDT RLIST", "key",
 					1, 2, CMD_KEY_NA, REPLY_NA,  NOT_AUTO_ROUTE,
 					crdt_rlist_command, db->mod_store);
+	command_register(&(db->command_table), "CRDT INFO", "key",
+					1, 1, CMD_KEY_RO, REPLY_EMPTY_ARRAY, AUTO_ROUTE,
+					crdt_info_command, db->mod_store);
 
 	/* low-level keyspace operation commands */
 	command_register(&(db->command_table), "KEYSPACE RLIST", "key",

@@ -81,6 +81,9 @@ void LWW_register_merge_blob(struct LWW_register *reg, const char *blob, size_t 
 	LWW_register_free(to_merge);
 	return;
 }
-
+size_t LWW_regeister_size(const struct LWW_register *reg)
+{
+	return (sizeof(struct LWW_register)+reg->size);
+}
 
 

@@ -85,10 +85,10 @@ sds swarmkv_reply_format(const struct swarmkv_reply *r, char *prefix) {
         }
     	break;
     case SWARMKV_REPLY_NIL:
-		out = sdscat(out,"(nil)\n");
+		out = sdscat(out, "(nil)\n");
 		break;
     case SWARMKV_REPLY_ARRAY:
-        if (r->elements == 0)
+        if (r->n_element == 0)
 		{
 			out = sdscat(out,"(empty array)\n");
         } 

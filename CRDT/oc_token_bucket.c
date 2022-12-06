@@ -197,4 +197,10 @@ void OC_token_bucket_merge_blob(struct OC_token_bucket *bucket, const char *blob
 	OC_token_bucket_free(to_merge);
 	return;
 }
-
+size_t OC_token_bucket_size(const struct OC_token_bucket *bucket)
+{
+	size_t sz=0;
+	sz=sizeof(struct OC_token_bucket);
+	sz+=PN_counter_size(bucket->consumed);
+	return sz;
+}
