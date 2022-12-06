@@ -933,6 +933,9 @@ enum cmd_exec_result crdt_info_command(struct swarmkv_module *mod_store, const s
 			break;
 	}
 	sz+=sizeof(struct scontainer)+sdslen(ctr->obj.key);
+	size_t n_replica=0;
+	n_replica=ctr->replica_node_list?utarray_len(ctr->replica_node_list):0;
+	sz+=n_replica*sizeof(node_t);
 	int i=0;
 	*reply=swarmkv_reply_new_array(8);
 	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("Type");
@@ -940,7 +943,7 @@ enum cmd_exec_result crdt_info_command(struct swarmkv_module *mod_store, const s
 	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("Size");
 	(*reply)->elements[i++]=swarmkv_reply_new_integer(sz);
 	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("Replicas");
-	(*reply)->elements[i++]=swarmkv_reply_new_integer(utarray_len(ctr->replica_node_list));
+	(*reply)->elements[i++]=swarmkv_reply_new_integer(n_replica);
 	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("LastModified");
 	(*reply)->elements[i++]=swarmkv_reply_new_integer(ctr->op_timestamp.tv_sec);
 	return FINISHED;

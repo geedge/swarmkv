@@ -995,7 +995,7 @@ void command_spec_init(struct swarmkv *db)
 					1, 2, CMD_KEY_NA, REPLY_NA,  NOT_AUTO_ROUTE,
 					crdt_rlist_command, db->mod_store);
 	command_register(&(db->command_table), "CRDT INFO", "key",
-					1, 1, CMD_KEY_RO, REPLY_EMPTY_ARRAY, AUTO_ROUTE,
+					1, 1, CMD_KEY_RO, REPLY_EMPTY_ARRAY, NOT_AUTO_ROUTE,
 					crdt_info_command, db->mod_store);
 
 	/* low-level keyspace operation commands */
