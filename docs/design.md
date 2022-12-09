@@ -239,7 +239,7 @@ Reply message
 
 A swarmkv instance has one key space thread and several (configurable) worker threads. Swarmkv uses [libevent](https://github.com/libevent/libevent) as a peer-to-peer communication infrastructure.  
 
-The keyspace thread is communicates with Consul.
+The keyspace thread communicates with Consul.
 
 - Watch global slot table changes.
 - Watch leadership changes, run for leader if allowed.
@@ -253,11 +253,12 @@ The worker thread 0 is responsible for:
 All worker threads are responsible for:
 
 - Send KV command message, which is from swarmkv API caller to destination peers.
-- Receive KV command message, and then process it  based on message type:
+- Receive KV command message, and then process it based on command type:
   - Key routing request (from the requester, object reader/writer): lookup the value owner, and then send key routing response.
   - Object operation request (from the requester): lookup the value, perform the operation and then send value operation response.
   - Key routing response (from the key owner): send the request to the decoded value owner.
   - Object operation response (from object owner): update local cache, and invoke the user-specified callback.
+- For multi-thread scalability, each worker thread maintains connections to all active peers. It's possible that the connection number between two nodes is more than one.
 
 ### Lock design
 
@@ -299,7 +300,7 @@ The source files are organized as follows:
 
 [Tarantool](https://www.tarantool.io/en/) is an in-memory computing platform consisting of a database and an application server.
 
-[eXtremeDB](https://www.mcobject.com/) is a hybrid persistent and in-memory database management system for edge and cloud.
+[eXtremeDB](https://www.mcobject.com/) is a hybrid persistent and in-memory database management system for edge and cloud. It's a commercial software and close source.
 
 [vedis](https://vedis.symisc.net/)  is an embeddable datastore C library built with over 70 commands similar in concept to Redis but without the networking layer since Vedis run in the same process of the host application.
 

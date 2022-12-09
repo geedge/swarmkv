@@ -12,9 +12,9 @@
 
 #define	CMD_EXEC_TIMEOUT_MS	1000*2
 
-void generic_callback(const struct swarmkv_reply* reply, void * cb_arg)
+void generic_callback(const struct swarmkv_reply *reply, void * cb_arg)
 {
-	struct cmd_exec_arg* arg=(struct cmd_exec_arg*)cb_arg;
+	struct cmd_exec_arg *arg=(struct cmd_exec_arg*)cb_arg;
 	if(0==reply_compare(reply, &(arg->expected_reply)))
 	{
 		cmd_exec_arg_success(arg);
@@ -32,7 +32,7 @@ class SwarmkvBasicTest : public testing::Test
 protected:	
 	static void SetUpTestCase()
 	{
-		const char* log_path="./basic-test.log";
+		const char *log_path="./basic-test.log";
 		char *err=NULL;
 		const char *cluster_name="swarmkv-basic-test";
 		swarmkv_cli_create_cluster(cluster_name, "127.0.0.1:5210");
@@ -64,8 +64,8 @@ TEST_F(SwarmkvBasicTest, TypeString)
 {
 	struct cmd_exec_arg *arg=NULL;
 	struct swarmkv *db=SwarmkvBasicTest::db;
-	const char* key="name";
-	const char* val="zhangsan";
+	const char *key="name";
+	const char *val="zhangsan";
 	int exec_successful=0;
 
 	arg=cmd_exec_arg_new();
@@ -1255,7 +1255,7 @@ protected:
 		const char *cluster_name="swarmkv-n-nodes";
 		swarmkv_cli_create_cluster(cluster_name, node_list_str);
 		logger=log_handle_create(log_path, 0);
-		struct swarmkv_options* opts[TEST_NODE_NUMBER];
+		struct swarmkv_options *opts[TEST_NODE_NUMBER];
 		for(i=0; i<TEST_NODE_NUMBER; i++)
 		{
 			opts[i]=swarmkv_options_new();			
@@ -1363,11 +1363,9 @@ TEST_F(SwarmkvNNodes, SET_GET)
 		{
 			success_cnt++;
 		}
-		
 	}
 	EXPECT_EQ(success_cnt, TEST_NODE_NUMBER);
 	cmd_exec_arg_free(arg);
-	
 }
 int main(int argc, char ** argv)
 {

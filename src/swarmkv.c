@@ -122,10 +122,10 @@ struct remote_caller_ctx
 	struct future *my_future;
 	struct swarmkv_net *ref_net;
 };
-static void remote_caller_on_success(void* result, void* user)
+static void remote_caller_on_success(void *result, void *user)
 {
 	struct remote_caller_ctx *ctx=(struct remote_caller_ctx*)user;
-	struct swarmkv_reply* reply=(struct swarmkv_reply*) result;
+	struct swarmkv_reply *reply=(struct swarmkv_reply*) result;
 	char *reply_blob=NULL;
 	size_t reply_blob_sz=0;
 	swarmkv_msg_serialize_reply(reply, &reply_blob, &reply_blob_sz);
@@ -227,7 +227,7 @@ enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct sw
 													"synced: %lld\r\n"
 													"sync_ok: %lld\r\n"
 													"sync_err: %lld\r\n"
-													"sync_interval_in_usec:%u\r\n"
+													"sync_interval_in_msec: %.3f\r\n"
 													,
 													sto_info.shards,
 													sto_info.keys,
@@ -235,7 +235,7 @@ enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct sw
 													sto_info.synced,
 													sto_info.sync_ok,
 													sto_info.sync_err,
-													db->opts->sync_interval_us
+													(double)db->opts->sync_interval_us/1000
 													);
 	struct keyspace_info ks_info;
 	swarmkv_keyspace_info(db->mod_keyspace, &ks_info);
@@ -252,7 +252,7 @@ enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct sw
 	struct snet_info net_info;
 	swarmkv_net_info(db->net, &net_info);
 	snprintf(net_info_buff, sizeof(net_info_buff), "# Network\r\n"
-												"timeout_in_msec: %.2f\r\n"
+												"timeout_in_msec: %.3f\r\n"
 												"connections: %lld\r\n"
 												"pending_rpcs: %lld\r\n"
 												"timed_out_rpcs: %lld\r\n"

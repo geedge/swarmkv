@@ -402,7 +402,7 @@ TEST(Performance, Sync)
 			successful_backgroud_running_thread=NULL;
 		}
 	}
-	sleep(1000);
+	sleep(20);
 	for(size_t i=0; i<NODE_NUMBER; i++)
 	{
 		swarmkv_close(db[i]);
