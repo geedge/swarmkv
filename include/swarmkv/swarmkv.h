@@ -1,10 +1,11 @@
 /*
-*****************************Swarm KV******************************************
-*	SwarmKV is a embedded and distributed key-CRDT store with p2p networking
-*	Authors:	Zheng Chao contact@zhengchao.io
-*				Jiang Ping
-*	Version 2022-01-24 version 3.0.0
-*******************************************************************************
+ *****************************Swarm KV******************************************
+ * SwarmKV is a embedded and distributed key-CRDT store with p2p networking
+ * Copyright (c) 2021-2023, Zheng Chao <contact at zhengchao dot io>
+ * Copyright (c) 2021-2022, Jiang Ping
+ * All rights reserved.
+ * Version 2022-01-24 version 3.0.0
+ ******************************************************************************
 */
 
 #pragma once

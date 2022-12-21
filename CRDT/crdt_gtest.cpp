@@ -1083,6 +1083,8 @@ TEST(ORMap, Basic)
 	OR_map_kv_free(result);
 	result=NULL;
 
+	ret=OR_map_set(map, key1, strlen(key1)+1, val1, strlen(val1)+1);
+	EXPECT_EQ(ret, 0);
 	long long integer_result=0;
 	ret=OR_map_incrby(map, key1, strlen(key1)+1, 0, &integer_result);
 	EXPECT_EQ(ret, -1);

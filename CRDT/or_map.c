@@ -41,6 +41,7 @@ struct OR_record
 	struct OR_timestamp *hash_timestamp;
 	int should_merge_flag;
 	UT_hash_handle hh;
+	struct OR_record *next, *prev;
 };
 struct OR_record * OR_record_new(uuid_t replica_id, const char *member, size_t member_sz, enum value_type type)
 {
@@ -105,41 +106,45 @@ void OR_record_step(struct OR_record *record, uuid_t my_uuid, unsigned long long
 	}
 	return;
 }
-void OR_record_set_str(struct OR_record *record, const char *value, size_t value_sz)
+int OR_record_set_str(struct OR_record *record, const char *value, size_t value_sz)
 {
 	if(record->type==TYPE_NONE)
 	{
 		record->string=LWW_register_new(record->replica_id);
 		record->type=TYPE_STRING;
 	}
-	assert(record->type==TYPE_STRING);
+	if(record->type!=TYPE_STRING) return -1;
 	LWW_register_set(record->string, value, value_sz);
 	record->type=TYPE_STRING;
-	return;
+	return 0;
 }
-long long OR_record_set_int(struct OR_record *record, long long integer)
-{
-	long long result;
-	if(record->type==TYPE_NONE)
-	{
-		record->counter=PN_counter_new(record->replica_id);
-		record->type=TYPE_INTEGER;
-	}
-	assert(record->type==TYPE_INTEGER);
-	result=PN_counter_set(record->counter, integer);
-	return result;
-}
-long long OR_record_incrby(struct OR_record *record, long long increment)
+int OR_record_set_int(struct OR_record *record, long long integer)
 {
 	if(record->type==TYPE_NONE)
 	{
 		record->counter=PN_counter_new(record->replica_id);
 		record->type=TYPE_INTEGER;
 	}
-	assert(record->type==TYPE_INTEGER);
-	long long result=0;
-	result=PN_counter_incrby(record->counter, increment);
-	return result;
+	if(record->type!=TYPE_INTEGER)
+	{
+		return -1;
+	}
+	PN_counter_set(record->counter, integer);
+	return 0;
+}
+int OR_record_incrby(struct OR_record *record, long long increment, long long *result)
+{
+	if(record->type==TYPE_NONE)
+	{
+		record->counter=PN_counter_new(record->replica_id);
+		record->type=TYPE_INTEGER;
+	}
+	if(record->type!=TYPE_INTEGER)
+	{
+		return -1;
+	}
+	*result=PN_counter_incrby(record->counter, increment);
+	return 0;
 }
 struct OR_map
 {
@@ -148,6 +153,7 @@ struct OR_map
 	unsigned long long sequence_generator;
 	struct OR_record *hash_record;
 	struct OR_timestamp *hash_replica_vector;
+	struct OR_record *list_record;
 };
 struct OR_map *OR_map_new(uuid_t my_uuid)
 {
@@ -205,7 +211,7 @@ int OR_map_add(struct OR_map *map, const char *key, size_t key_len)
 	
 	return ret;
 }
-int OR_map_set(struct OR_map *map, const char *key, size_t key_len, const char *value, size_t value_sz)
+static int OR_record_create_if_not_exist(struct OR_map *map,  const char *key, size_t key_len, struct OR_record **out)
 {
 	struct OR_record *record=NULL;
 	int ret=0;
@@ -216,44 +222,50 @@ int OR_map_set(struct OR_map *map, const char *key, size_t key_len, const char *
 		HASH_ADD_KEYPTR(hh, map->hash_record, record->key, record->key_len, record);
 		ret=1;
 	}
+	*out=record;
+	return ret;
+}
+int OR_map_set(struct OR_map *map, const char *key, size_t key_len, const char *value, size_t value_sz)
+{
+	struct OR_record *record=NULL;
+	int added=0, ret=0;
+	added=OR_record_create_if_not_exist(map, key, key_len, &record);
 	char *endptr=NULL;
 	long long int_value=strtol(value, &endptr, 10);
 	if(*endptr=='\0')
 	{
-		OR_record_set_int(record, int_value);
+		ret=OR_record_set_int(record, int_value);
 	}
 	else
 	{
-		OR_record_set_str(record, value, value_sz);
+		ret=OR_record_set_str(record, value, value_sz);
 	}
-	
+	if(ret<0) return ret;
 	unsigned long long new_sequence=OR_map_step(map);
 	OR_record_step(record, map->my_id, new_sequence);
 	
-	return ret;
+	return added;
 }
-
+int OR_map_set_score(struct OR_map *map, const char *key, size_t key_len, long long score)
+{
+	struct OR_record *record=NULL;
+	int added=0, ret=0;
+	added=OR_record_create_if_not_exist(map, key, key_len, &record);
+	ret=OR_record_set_int(record, score);
+	if(ret<0) return ret;
+	return added;
+}
 int OR_map_incrby(struct OR_map *map, const char *key, size_t key_len, long long increment, long long *result)
 {
 	struct OR_record *record=NULL;
-	int ret=0;
-	HASH_FIND(hh, map->hash_record, key, key_len, record);
-	if(!record)
-	{		
-		record=OR_record_new(map->my_id, key, key_len, TYPE_INTEGER);
-		HASH_ADD_KEYPTR(hh, map->hash_record, record->key, record->key_len, record);
-		ret=1;
-	}
-	if(record->type!=TYPE_INTEGER)
-	{
-		return -1;
-	}
-	
-	*result=OR_record_incrby(record, increment);
+	int added=0, ret=0;
+	added=OR_record_create_if_not_exist(map, key, key_len, &record);
+	ret=OR_record_incrby(record, increment, result);
+	if(ret<0) return ret;
 	unsigned long long new_sequence=OR_map_step(map);
 	OR_record_step(record, map->my_id, new_sequence);
 	
-	return ret;
+	return added;
 }
 enum record_copy_type
 {

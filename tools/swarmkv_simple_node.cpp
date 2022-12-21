@@ -66,7 +66,7 @@ int main(int argc, char ** argv)
 	swarmkv_options_set_p2p_port(opts, p2p_port);
 	swarmkv_options_set_bind_address(opts, host);
 	swarmkv_options_set_worker_thread_number(opts, worker_thread_number);
-	swarmkv_options_set_p2p_timeout_us(opts,500000);
+	swarmkv_options_set_p2p_timeout_us(opts, 500000);
 	//swarmkv_options_set_disable_run_for_leader(opts);
 	struct swarmkv *db=swarmkv_open(opts, cluster_name, &err);
 	if(err)
@@ -87,7 +87,7 @@ int main(int argc, char ** argv)
 
 		for(i=0; i<key_number; i++)
 		{
-			reply=swarmkv_command_on(db, NULL, "SET scalable-key-%d scalable-value-%d", i, i);
+			reply=swarmkv_command_on(db, NULL, "TCFG tb-%d 100000 10000", i, i);
 			swarmkv_reply_free(reply);
 			if(i%(key_number/10)==0)
 			{
@@ -100,9 +100,12 @@ int main(int argc, char ** argv)
 		if(eplapsed_second==0){ eplapsed_second=1;}
 		printf("> 100%%\nUse %lld seconds, %lld cmd/s.\n", (long long) end.tv_sec-start.tv_sec, key_number/eplapsed_second);
 	}
+	unsigned int round=0;
 	FOREVER
 	{
-		sleep(1);
+		reply=swarmkv_command(db, "tconsume tb-%lld 1000", round%key_number);
+		swarmkv_reply_free(reply);
+		round++;
 	};
 	swarmkv_close(db);
 	return ret;

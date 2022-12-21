@@ -28,7 +28,7 @@ struct swarmkv_options* swarmkv_options_new(void)
 	opts->health_check_port=0;
 	opts->loglevel=0;
     opts->p2p_timeout_us=500*1000;//Default 500ms
-	opts->sync_interval_us=500;
+	opts->sync_interval_us=10*1000;	//Default 10ms
 	strcpy(opts->bind_address, "127.0.0.1");
 	uuid_generate(opts->bin_uuid);
 	opts->nr_worker_threads=1;

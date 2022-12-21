@@ -394,7 +394,7 @@ void snet_task_deferred_run(evutil_socket_t fd, short events, void *arg)
 	return;
 }
 
-static void snet_conn_table_remove(struct snet_conn* conn)
+static void snet_conn_table_remove(struct snet_conn *conn)
 {
 	struct snet_thread *thr=conn->ref_thr;
 	if(conn->is_in_conn_table)
@@ -656,6 +656,12 @@ static void __dummy_event_handler(evutil_socket_t fd, short what, void * arg)
 	struct timespec now;
 	long long input_bytes=0, output_bytes=0;
 	long long input_cmds=0, output_cmds=0;
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	if(now.tv_sec == net->last_stats.tv_sec)
+	{
+		//The stat interval is too short.
+		return;
+	}
 	if(0 != pthread_mutex_trylock(&net->stat_lock))
 	{
 		return;
@@ -667,11 +673,12 @@ static void __dummy_event_handler(evutil_socket_t fd, short what, void * arg)
 		input_cmds += net->threads[i].stat.input_cmds;
 		output_cmds += net->threads[i].stat.output_cmds;
 	}
-	clock_gettime(CLOCK_MONOTONIC, &now);
-	net->instantaneous_input_kbps=(input_bytes - net->last_input_bytes)*8/1000/MAX(now.tv_sec - net->last_stats.tv_sec, 1);
-	net->instantaneous_output_kbps=(output_bytes - net->last_output_bytes)*8/1000/MAX(now.tv_sec - net->last_stats.tv_sec, 1);
-	net->instantaneous_input_cps=(input_cmds - net->last_input_cmds)/MAX(now.tv_sec - net->last_stats.tv_sec, 1);
-	net->instantaneous_output_cps=(output_cmds - net->last_output_cmds)/MAX(now.tv_sec - net->last_stats.tv_sec, 1);
+	
+	long long diff_sec=MAX(now.tv_sec - net->last_stats.tv_sec, 1);
+	net->instantaneous_input_kbps=(input_bytes - net->last_input_bytes)*8/1000/diff_sec;
+	net->instantaneous_output_kbps=(output_bytes - net->last_output_bytes)*8/1000/diff_sec;
+	net->instantaneous_input_cps=(input_cmds - net->last_input_cmds)/diff_sec;
+	net->instantaneous_output_cps=(output_cmds - net->last_output_cmds)/diff_sec;
 
 	clock_gettime(CLOCK_MONOTONIC, &net->last_stats);
 	net->last_input_bytes=input_bytes;

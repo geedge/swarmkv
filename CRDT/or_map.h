@@ -1,7 +1,8 @@
 /*
-* Add-Wins Observed-Remove Map that is state-based and has no tombstones. 
-* Author: contact@zhengchao.io
-*/
+ * Add-Wins Observed-Remove Map that is state-based and has no tombstones. 
+ * Copyright (c) 2021-2022, Chao Zheng <contact at zhengchao dot io>
+ * All rights reserved.
+ */
 #pragma once
 #include <stddef.h>
 #include <uuid/uuid.h>
