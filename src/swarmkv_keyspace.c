@@ -50,7 +50,7 @@ struct key_route_entry
 {
 	sds key;	
 	struct replica_node *hash_replica;
-	struct replica_node *first_replica;//a reference of the first replica in hash_replica;
+//	struct replica_node *first_replica;//a reference of the first replica in hash_replica;
 	uint64_t abs_timeout;
 	char is_expiring;
 	struct timeout timeout_handle;
@@ -94,41 +94,23 @@ int key_entry_add_replica_node(struct key_route_entry *key_entry, const node_t *
 	tmp=ALLOC(struct replica_node, 1);
 	node_copy(&tmp->node, node);
 	HASH_ADD(hh, key_entry->hash_replica, node, sizeof(node_t), tmp);
-	if(HASH_CNT(hh, key_entry->hash_replica)==1)
-	{
-		assert(key_entry->first_replica==NULL);
-		key_entry->first_replica=tmp;
-	}
 	return 1;
 }
 
 int key_entry_rdel_replica_node(struct key_route_entry *key_entry, const node_t *node)
 {
-	struct replica_node  *tmp=NULL, *find_replica=NULL, *replica=NULL;
+	struct replica_node *found=NULL;
 
-	HASH_FIND(hh, key_entry->hash_replica, node, sizeof(node_t), find_replica);
-	if(!find_replica)
+	HASH_FIND(hh, key_entry->hash_replica, node, sizeof(node_t), found);
+	if(found)
+	{
+		HASH_DEL(key_entry->hash_replica, found);
+		return 1;
+	}
+	else
 	{
 		return 0;
 	}
-
-    if(key_entry->first_replica!=find_replica)
-    {
-        HASH_DEL(key_entry->hash_replica, find_replica);
-        return 1;
-    }
-
-    HASH_ITER(hh, key_entry->hash_replica, replica, tmp)
-    {
-        if(replica==find_replica)
-        {
-            HASH_DEL(key_entry->hash_replica, replica);
-            replica=NULL;
-        }
-        key_entry->first_replica=replica;
-    }
-
-	return 1;
 }
 
 struct swarmkv_reply *key_entry_list_replica_nodes(struct key_route_entry *key_entry)
@@ -139,12 +121,8 @@ struct swarmkv_reply *key_entry_list_replica_nodes(struct key_route_entry *key_e
 
 	n_existed_replica=HASH_COUNT(key_entry->hash_replica);
 	reply=swarmkv_reply_new_array(n_existed_replica);
-	//make sure the first replica is at the head
-	reply->elements[i]=swarmkv_reply_new_node(&(key_entry->first_replica->node), 0);
-	i++;
 	HASH_ITER(hh, key_entry->hash_replica, replica, tmp)
 	{
-		if(replica==key_entry->first_replica) continue;
 		reply->elements[i]=swarmkv_reply_new_node(&replica->node, 0);
 		i++;
 	}
@@ -623,7 +601,6 @@ void __acquire_session_lock_cb(struct evhttp_request *req, void *arg)
 			{
 				ks->is_leader=1;
 				log_info(ks->logger, MODULE_SWARMKV_KEYSPACE, "become cluster leader.");
-				consul_watch_nodes_changes_async(ks);
 			}
 			else
 			{
@@ -954,7 +931,7 @@ void propagate_slot_table_async(struct swarmkv_keyspace *ks, struct key_slot new
 	new_slots_json=NULL;
 
 }
-void handle_failed_nodes(struct swarmkv_keyspace *ks, node_t *health_nodes, size_t n_node)
+void remove_failed_nodes_from_global_slot_table(struct swarmkv_keyspace *ks, node_t *health_nodes, size_t n_node)
 {
 	size_t i=0, j=0, k=0;
 	size_t slots_number_effect_by_failed_node=0;
@@ -1046,10 +1023,55 @@ void handle_failed_nodes(struct swarmkv_keyspace *ks, node_t *health_nodes, size
 	slots_copy=NULL;
 	return;
 }
-
+void remove_failed_nodes_from_key_route_table(struct swarmkv_keyspace *ks, node_t *health_nodes, size_t n_node)
+{
+	struct key_route_entry *key_entry=NULL, *tmp_entry=NULL;
+	struct slot_runtime *slot_rt=NULL;
+	struct replica_node *hash_health_node=NULL, *node=NULL, *found=NULL, *tmp_node=NULL;
+	size_t n_modified_key=0, n_removed_replica=0;
+	for(size_t i=0; i<n_node; i++)
+	{
+		node=ALLOC(struct replica_node, 1);
+		node_copy(&node->node, health_nodes+i);
+		HASH_ADD(hh, hash_health_node, node, sizeof(node_t), node);
+	}
+	for(int slot_id=0; slot_id<KEYSPACE_SLOT_NUM; slot_id++)
+	{
+		slot_rt=ks->slot_rts+slot_id;
+		if(!slot_rt->I_am_owner) continue;
+		pthread_mutex_lock(&slot_rt->mutex);
+		HASH_ITER(hh, slot_rt->keyroute_table, key_entry, tmp_entry)
+		{
+			int is_modified=0;
+			HASH_ITER(hh, key_entry->hash_replica, node, tmp_node)
+			{
+				HASH_FIND(hh, hash_health_node, &node->node, sizeof(node->node), found);
+				if(!found)
+				{
+					HASH_DEL(key_entry->hash_replica, node);
+					n_removed_replica++;
+					is_modified=1;
+				}
+			}
+			if(is_modified) n_modified_key++;
+		}
+		pthread_mutex_unlock(&slot_rt->mutex);
+	}
+	HASH_ITER(hh, hash_health_node, node, tmp_node)
+	{
+		HASH_DEL(hash_health_node, node);
+		free(node);
+	}
+	if(n_modified_key>0)
+	{
+		log_fatal(ks->logger, MODULE_SWARMKV_KEYSPACE, 
+				"key route table modified %zu keys and removes %zu replicas for handling failed nodes.",
+				n_modified_key, n_removed_replica);
+	}
+}
 void __watch_nodes_changes_cb(struct evhttp_request *req, void *arg)
 {
-	struct swarmkv_keyspace* ks=(struct swarmkv_keyspace*)arg;
+	struct swarmkv_keyspace *ks=(struct swarmkv_keyspace*)arg;
 	int resp_code=0;
 	const char* tmp=NULL;
 	node_t health_nodes[SWARMKV_NODE_MAX];
@@ -1078,12 +1100,13 @@ void __watch_nodes_changes_cb(struct evhttp_request *req, void *arg)
 		struct evkeyvalq *input_headers=evhttp_request_get_input_headers(req);	
 		tmp=evhttp_find_header(input_headers, "X-Consul-Index");
 		sscanf(tmp, "%d", &ks->consul_nodes_modify_idx);
+		remove_failed_nodes_from_key_route_table(ks, health_nodes, n_node);
 		if(ks->is_leader)
 		{
-			handle_failed_nodes(ks, health_nodes, n_node);
-			consul_watch_nodes_changes_async(ks);
+			remove_failed_nodes_from_global_slot_table(ks, health_nodes, n_node);
 		}
 	}
+	consul_watch_nodes_changes_async(ks);
 }
 void consul_watch_nodes_changes_async(struct swarmkv_keyspace* ks)
 {
@@ -1203,6 +1226,7 @@ struct swarmkv_module* swarmkv_keyspace_new(const struct swarmkv_options *opts, 
 //	consul_kv_init_if_nonexist(ks);	
 	pthread_create(&(ks->thr), NULL, swarmkv_keyspace_thread, (void *) ks);
 	consul_watch_slots_changes_async(ks);
+	consul_watch_nodes_changes_async(ks);
 	if(ks->dryrun)
 	{
 		log_info(ks->logger, MODULE_SWARMKV_KEYSPACE, "work on dry run mode.");

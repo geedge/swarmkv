@@ -76,7 +76,7 @@ void *blocking_call_thread(void *thread_arg)
 	return success;
 }
 
-TEST(MultiThreads, Nthreads)
+TEST(Performance, Nthreads)
 {
 	int NODE_NUMBER=3;
 	int CALLBACK_THREAD_NUMBER=4;
@@ -111,8 +111,6 @@ TEST(MultiThreads, Nthreads)
 		}
 	}
 
-
-
 	pthread_t threads[NODE_NUMBER][WORKER_THREAD_NUMBER];	
 	for(i=0; i<NODE_NUMBER; i++)
 	{
@@ -142,8 +140,6 @@ TEST(MultiThreads, Nthreads)
 		swarmkv_close(db[i]);
 	}
 	log_handle_destroy(logger);
-
-
 }
 int g_running_flag=0;
 void *migration_background_thread(void *thread_arg)
@@ -214,7 +210,7 @@ void *migration_background_thread(void *thread_arg)
 		*success=0;
 	return success;
 }
-TEST(Migration, AddKeyOwner)
+TEST(Resilience, AddSlotOwner)
 {
 	int NODE_NUMBER=2;
 	int CANDINATE_NUMBER=2;
@@ -410,6 +406,82 @@ TEST(Performance, Sync)
 
 	log_handle_destroy(logger);
 
+}
+TEST(Resilience, Failover)
+{
+	size_t NODE_NUMBER=3;	
+	struct swarmkv *db[NODE_NUMBER];
+	char *err=NULL;
+
+	unsigned int p2p_port_start=11310, health_port_start=12310;
+	char node_list_str[1024]={0};
+	for(size_t i=0; i<NODE_NUMBER; i++)
+	{
+		snprintf(node_list_str+strlen(node_list_str), sizeof(node_list_str)-strlen(node_list_str), "127.0.0.1:%zu ", p2p_port_start+i);
+	}
+	const char *cluster_name="swarmkv-failover";
+	swarmkv_cli_create_cluster(cluster_name, node_list_str);
+	struct swarmkv_options *opts[NODE_NUMBER];
+	for(size_t i=0; i<NODE_NUMBER; i++)
+	{
+		opts[i]=swarmkv_options_new();
+		swarmkv_options_set_p2p_port(opts[i], p2p_port_start+i);
+		swarmkv_options_set_health_check_port(opts[i], health_port_start+i);
+		db[i]=swarmkv_open(opts[i], cluster_name, &err);
+		if(err)
+		{
+			printf("swarmkv_open %zu instance failed: %s\n", i, err);
+			free(err);
+			err=NULL;
+		}
+		ASSERT_TRUE(err==NULL);
+	}
+	size_t KEY_NUMBER=8;
+	struct swarmkv_reply *reply=NULL;
+	for(size_t i=0; i<KEY_NUMBER; i++)
+	{
+		reply=swarmkv_command(db[i%NODE_NUMBER], "SET fo-%zu %zu", i, i);
+		swarmkv_reply_free(reply);
+	}
+	for(size_t i=0; i<KEY_NUMBER; i++)
+	{
+		for(size_t j=0; j<NODE_NUMBER; j++)
+		{
+			reply=swarmkv_command(db[j], "GET fo-%zu", i);
+			swarmkv_reply_free(reply);
+		}
+	}
+	swarmkv_close(db[0]);
+	db[0]=NULL;
+	char target[32];
+	sleep(10);
+	for(size_t i=0; i<KEY_NUMBER; i++)
+	{
+		for(size_t j=1; j<NODE_NUMBER; j++)
+		{
+			reply=swarmkv_command(db[j], "SET fo-%zu %zu", i, i+1);
+			swarmkv_reply_free(reply);
+		}
+	}
+	for(size_t i=0; i<KEY_NUMBER; i++)
+	{
+		reply=swarmkv_command(db[1], "KEYSPACE RLIST fo-%zu", i);
+		EXPECT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
+		EXPECT_EQ(reply->n_element, NODE_NUMBER-1);
+		swarmkv_reply_free(reply);
+		for(size_t j=1; j<NODE_NUMBER; j++)
+		{
+			snprintf(target, sizeof(target), "127.0.0.1:%zu", p2p_port_start+j);
+			reply=swarmkv_command_on(db[1], target, "CRDT RLIST fo-%zu", i);
+			EXPECT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
+			EXPECT_EQ(reply->n_element, NODE_NUMBER-2);
+			swarmkv_reply_free(reply);
+		}
+	}
+	for(size_t i=1; i<NODE_NUMBER; i++)
+	{
+		swarmkv_close(db[i]);
+	}
 }
 int main(int argc, char ** argv)
 {

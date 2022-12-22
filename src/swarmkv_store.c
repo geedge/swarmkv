@@ -165,11 +165,11 @@ static void scontainer_remove(struct scontainer **table, struct scontainer *ctr)
 
 static int node_cmp(const void *a, const void *b)
 {
-	return memcmp(a, b, sizeof(node_t));
+	return node_compare((node_t *) a, (node_t *) b);
 }
 static int scontainer_add_replica_node(struct scontainer *ctr, const node_t *node)
 {
-	node_t* found=NULL;
+	node_t *found=NULL;
 	if(!ctr->replica_node_list)
 	{
 		utarray_new(ctr->replica_node_list, &ut_node_addr_icd);
@@ -183,16 +183,15 @@ static int scontainer_add_replica_node(struct scontainer *ctr, const node_t *nod
 	utarray_sort(ctr->replica_node_list, node_cmp);
 	return 1;
 }
-
-static node_t *scontainer_iterate_replica_nodes(struct scontainer *ctr, int *iterator)
+static void scontainer_remove_replica_node(struct scontainer *ctr, const node_t *node)
 {
-	node_t *addr=NULL;
-	if(ctr->replica_node_list && *iterator < utarray_len(ctr->replica_node_list))
-	{
-		addr=utarray_eltptr(ctr->replica_node_list, *iterator);
-		(*iterator)++;
-	}
-	return addr;
+	node_t *found=NULL;
+	if(!ctr->replica_node_list) return;
+	found=(node_t*)utarray_find(ctr->replica_node_list, node, node_cmp);
+	if(!found) return;
+	int pos=utarray_eltidx(ctr->replica_node_list, found);
+	utarray_erase(ctr->replica_node_list, pos, 1);
+	return;
 }
 void store_add_scontainer(struct swarmkv_store *store, struct scontainer *ctr)
 {
@@ -401,12 +400,6 @@ void sobj_merge_blob(struct sobj *obj, const char *blob, size_t blob_sz, uuid_t 
 
 }
 
-node_t *store_iterate_replica_node(struct sobj *obj, int *iterator)
-{
-    struct scontainer *ctr=container_of(obj, struct scontainer, obj);
-    return scontainer_iterate_replica_nodes(ctr, iterator);
-}
-
 enum CRDT_OP
 {
 	CRDT_PULL,
@@ -417,6 +410,7 @@ struct crdt_generic_ctx
 {
 	enum CRDT_OP op;
 	struct swarmkv_store *store;
+	node_t peer;
 	sds key;
 	struct future *f;
 };
@@ -481,10 +475,25 @@ static void crdt_generic_on_succ(void* result, void* user)
 	crdt_generic_ctx_free(ctx);
 	return;
 }
+static void store_remove_failed_peer(struct swarmkv_store *store, int shard, const node_t *peer)
+{
+	struct scontainer *ctr=NULL, *tmp=NULL;
+	pthread_rwlock_wrlock(&store->rwlock[shard]);
+	HASH_ITER(hh, store->obj_table[shard], ctr, tmp)
+	{
+		scontainer_remove_replica_node(ctr, peer);
+	}
+	pthread_rwlock_unlock(&store->rwlock[shard]);
+}
 static void crdt_generic_on_fail(enum e_future_error err, const char * what, void * user)
 {
 	struct crdt_generic_ctx *ctx=(struct crdt_generic_ctx *)user;
 	atomic_inc(&ctx->store->sync_err);
+	if(err==FUTURE_ERROR_TIMEOUT)
+	{
+		int shard_idx=get_shard_id(ctx->key);
+		store_remove_failed_peer(ctx->store, shard_idx, &ctx->peer);
+	}
 	crdt_generic_ctx_free(ctx);
 	return;
 }
@@ -497,6 +506,7 @@ void crdt_generic_call(struct swarmkv_store *store, enum CRDT_OP op, const struc
 	ctx->op=op;
 	ctx->store=store;
 	ctx->key=sdsdup(cmd->argv[2]);
+	node_copy(&ctx->peer, peer);
 	ctx->f=future_create(symbol[op], crdt_generic_on_succ, crdt_generic_on_fail, ctx);
 	store->exec_cmd(store->exec_cmd_handle, cmd, NULL, peer, ctx->f);
 	return;

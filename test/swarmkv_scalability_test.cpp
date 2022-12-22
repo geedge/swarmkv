@@ -159,7 +159,7 @@ void *scalable_worker_thread(void *thread_arg)
 	return success;
 }
 
-TEST(Performance, Scalability)
+TEST(Scalability, MultiThreads)
 {
 	char *err=NULL;
 	int worker_thread_number=1;
@@ -188,7 +188,7 @@ TEST(Performance, Scalability)
 	{
 		pthread_create(&(threads[i]), NULL, scalable_worker_thread, db);
 	}
-	sleep(3600);
+	sleep(100);
 
 	int *successful_scalable_worker_thread=NULL;
 

@@ -180,6 +180,18 @@ void snet_rpc_timeout_callback(evutil_socket_t fd, short events, void *arg)
 	rpc->cb(&rpc->peer, NULL, 0, rpc->cb_arg);
 	snet_rpc_free(rpc);
 }
+void snet_rpc_process_peer_event(struct snet_thread *thr, const node_t *peer)
+{
+	struct snet_rpc *rpc=NULL, *tmp_rpc=NULL;
+	HASH_ITER(hh, thr->rpc_table, rpc, tmp_rpc)
+	{
+		if(0==node_compare(&rpc->peer, peer))
+		{
+			rpc->cb(&rpc->peer, NULL, 0, rpc->cb_arg);
+			snet_rpc_free(rpc);
+		}
+	}
+}
 struct snet_rpc *snet_rpc_lookup(struct snet_thread *thr, unsigned long long sequence)
 {
 	struct snet_rpc *rpc=NULL;
@@ -593,6 +605,7 @@ static void peer_conn_event_cb(struct bufferevent *bev, short events, void *arg)
 								err, evutil_socket_error_to_string(err));
 		//swarmkv-cli's connection has listen port number > 10000.
 	}
+	snet_rpc_process_peer_event(thr, &conn->peer_listen_addr);
 	snet_conn_table_remove(conn);
 	snet_conn_free(conn);
 	return;
