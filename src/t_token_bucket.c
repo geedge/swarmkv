@@ -107,6 +107,18 @@ enum cmd_exec_result tconsume_command(struct swarmkv_module *mod_store, const st
 	{
 		return NEED_KEY_ROUTE;		
 	}
+	if(obj->type==OBJ_TYPE_UNDEFINED)
+	{
+		node_t replica;
+		int ret=0;
+		ret=sobj_get_random_replica(obj, &replica);
+		if(ret)
+		{
+			*reply=swarmkv_reply_new_node(&replica, 1);
+			return REDIRECT;
+		}
+		return NEED_KEY_ROUTE;
+	}
 	if(obj->type!=OBJ_TYPE_TOKEN_BUCKET)
 	{
 		*reply=swarmkv_reply_new_error(error_wrong_type);		

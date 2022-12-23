@@ -242,12 +242,12 @@ struct scontainer *store_lookup_scontainer(struct swarmkv_store *store, sds key)
 		return NULL;
 	}	
 }
-struct sobj *store_lookup(struct swarmkv_module* mod_store, sds key)
+struct sobj *store_lookup(struct swarmkv_module *mod_store, sds key)
 {
 	struct swarmkv_store *store=module2store(mod_store);
 	struct scontainer *ctr=NULL;
 	ctr=store_lookup_scontainer(store, key);
-	if(ctr && !ctr->is_pending)
+	if(ctr) //&& !ctr->is_pending
 	{
 		return &(ctr->obj);
 	}
@@ -274,6 +274,14 @@ void sobj_need_sync(struct swarmkv_module *mod_store, struct sobj *obj)
 		ctr->is_in_sync_q=1;
 	}
 	return;
+}
+int sobj_get_random_replica(struct sobj *obj, node_t *out)
+{
+	struct scontainer *ctr=container_of(obj, struct scontainer, obj);
+	if(!ctr->replica_node_list) return 0;
+	node_t *replica=(node_t*)utarray_eltptr(ctr->replica_node_list, 0);
+	node_copy(out, replica);
+	return 1;
 }
 void scontainer_serialize(struct scontainer *ctr, char **blob, size_t *blob_sz)
 {
@@ -896,6 +904,11 @@ enum cmd_exec_result crdt_rlist_command(struct swarmkv_module *mod_store, const 
 	if(!ctr)
 	{
 		*reply=swarmkv_reply_new_nil();
+		return FINISHED;
+	}
+	if(!ctr->replica_node_list)
+	{
+		*reply=swarmkv_reply_new_array(0);
 		return FINISHED;
 	}
 	*reply=swarmkv_reply_new_array(utarray_len(ctr->replica_node_list));

@@ -180,8 +180,9 @@ void snet_rpc_timeout_callback(evutil_socket_t fd, short events, void *arg)
 	rpc->cb(&rpc->peer, NULL, 0, rpc->cb_arg);
 	snet_rpc_free(rpc);
 }
-void snet_rpc_process_peer_event(struct snet_thread *thr, const node_t *peer)
+int snet_rpc_process_peer_event(struct snet_thread *thr, const node_t *peer)
 {
+	int n_canceled=0;
 	struct snet_rpc *rpc=NULL, *tmp_rpc=NULL;
 	HASH_ITER(hh, thr->rpc_table, rpc, tmp_rpc)
 	{
@@ -189,8 +190,10 @@ void snet_rpc_process_peer_event(struct snet_thread *thr, const node_t *peer)
 		{
 			rpc->cb(&rpc->peer, NULL, 0, rpc->cb_arg);
 			snet_rpc_free(rpc);
+			n_canceled++;
 		}
 	}
+	return n_canceled;
 }
 struct snet_rpc *snet_rpc_lookup(struct snet_thread *thr, unsigned long long sequence)
 {
@@ -597,15 +600,16 @@ static void peer_conn_event_cb(struct bufferevent *bev, short events, void *arg)
 	struct snet_thread *thr=conn->ref_thr;
 	
 	int err = EVUTIL_SOCKET_ERROR();
-
+	int canceled_rpc=snet_rpc_process_peer_event(thr, &conn->peer_listen_addr);
 	if (events & BEV_EVENT_ERROR || events & BEV_EVENT_EOF)
 	{
-		log_debug(thr->ref_logger, MODULE_SWAMRKV_NET, "%s connection error, %d (%s).",
+		log_debug(thr->ref_logger, MODULE_SWAMRKV_NET, "%s connection error, %d (%s). %d RPCs are canceled.",
 								conn->connected_from.addr,
-								err, evutil_socket_error_to_string(err));
+								err, evutil_socket_error_to_string(err),
+								canceled_rpc);
 		//swarmkv-cli's connection has listen port number > 10000.
 	}
-	snet_rpc_process_peer_event(thr, &conn->peer_listen_addr);
+	
 	snet_conn_table_remove(conn);
 	snet_conn_free(conn);
 	return;
@@ -630,9 +634,11 @@ void connect_peer_eventcb(struct bufferevent *bev, short events, void *arg)
 	else if (events & BEV_EVENT_ERROR)
     {
 		int err = EVUTIL_SOCKET_ERROR();
-		log_fatal(thr->ref_logger, MODULE_SWAMRKV_NET, "connect to %s failed %d (%s).",
+		int canceled_rpc=snet_rpc_process_peer_event(thr, &conn->peer_listen_addr);
+		log_fatal(thr->ref_logger, MODULE_SWAMRKV_NET, "connect to %s failed %d (%s). %d RPCs are canceled.",
 								conn->peer_listen_addr.addr,
-								err, evutil_socket_error_to_string(err));
+								err, evutil_socket_error_to_string(err),
+								canceled_rpc);
 		snet_conn_table_remove(conn);
 		snet_conn_free(conn);
     }

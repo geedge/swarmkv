@@ -55,7 +55,7 @@ struct store_info
 void swarmkv_store_info(struct swarmkv_module *module, struct store_info *info);
 
 void sobj_need_sync(struct swarmkv_module *mod_store, struct sobj *obj);
-
+int sobj_get_random_replica(struct sobj *obj, node_t *out);
 
 void store_get_uuid(struct swarmkv_module* mod_store, uuid_t uuid);
 struct sobj *store_lookup(struct swarmkv_module* mod_store, sds key);

@@ -1029,6 +1029,7 @@ void remove_failed_nodes_from_key_route_table(struct swarmkv_keyspace *ks, node_
 	struct slot_runtime *slot_rt=NULL;
 	struct replica_node *hash_health_node=NULL, *node=NULL, *found=NULL, *tmp_node=NULL;
 	size_t n_modified_key=0, n_removed_replica=0;
+	return;
 	for(size_t i=0; i<n_node; i++)
 	{
 		node=ALLOC(struct replica_node, 1);

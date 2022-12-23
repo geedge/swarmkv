@@ -307,10 +307,12 @@ void *background_tconsume_thread(void *thread_arg)
 	{
 		snprintf(key, sizeof(key), "tb-%zu", (round+start)%g_token_bucket_number);
 		cmd_exec_arg_expect_integer(arg, tokens);
+		arg->print_reply_on_fail=1;
 		swarmkv_tconsume(db, key, strlen(key), tokens, cmd_exec_generic_callback, arg);
 		ret=cmd_exec_arg_wait(arg, PERF_TEST_EXEC_TO_MS);
 		cmd_exec_arg_clear(arg);		
 		if(ret==1) got_token_cnt++;
+		else printf("tconsume %s failed\n", key);
 		round++;
 	}
 	cmd_exec_arg_free(arg);
@@ -383,7 +385,7 @@ TEST(Performance, Sync)
 		}
 	}
 
-	sleep(10);
+	sleep(20);
 	g_tconsume_running_flag=0;
 	int *successful_backgroud_running_thread=NULL;
 	for(size_t i=0; i<NODE_NUMBER; i++)
@@ -409,13 +411,13 @@ TEST(Performance, Sync)
 }
 TEST(Resilience, Failover)
 {
-	size_t NODE_NUMBER=3;	
+	size_t NODE_NUMBER=4;	
 	struct swarmkv *db[NODE_NUMBER];
 	char *err=NULL;
 
 	unsigned int p2p_port_start=11310, health_port_start=12310;
 	char node_list_str[1024]={0};
-	for(size_t i=0; i<NODE_NUMBER; i++)
+	for(size_t i=1; i<NODE_NUMBER; i++)
 	{
 		snprintf(node_list_str+strlen(node_list_str), sizeof(node_list_str)-strlen(node_list_str), "127.0.0.1:%zu ", p2p_port_start+i);
 	}
@@ -436,38 +438,33 @@ TEST(Resilience, Failover)
 		}
 		ASSERT_TRUE(err==NULL);
 	}
-	size_t KEY_NUMBER=8;
+	size_t KEY_NUMBER=1024;
 	struct swarmkv_reply *reply=NULL;
-	for(size_t i=0; i<KEY_NUMBER; i++)
-	{
-		reply=swarmkv_command(db[i%NODE_NUMBER], "SET fo-%zu %zu", i, i);
-		swarmkv_reply_free(reply);
-	}
 	for(size_t i=0; i<KEY_NUMBER; i++)
 	{
 		for(size_t j=0; j<NODE_NUMBER; j++)
 		{
-			reply=swarmkv_command(db[j], "GET fo-%zu", i);
+			reply=swarmkv_command(db[j], "SET fo-%zu node-%zu", i, j);
 			swarmkv_reply_free(reply);
 		}
 	}
 	swarmkv_close(db[0]);
 	db[0]=NULL;
-	char target[32];
-	sleep(10);
 	for(size_t i=0; i<KEY_NUMBER; i++)
 	{
 		for(size_t j=1; j<NODE_NUMBER; j++)
 		{
-			reply=swarmkv_command(db[j], "SET fo-%zu %zu", i, i+1);
+			reply=swarmkv_command(db[j], "SET fo-%zu node-%zu", i, j);
 			swarmkv_reply_free(reply);
 		}
 	}
+	char target[32];
+	sleep(10);
 	for(size_t i=0; i<KEY_NUMBER; i++)
 	{
 		reply=swarmkv_command(db[1], "KEYSPACE RLIST fo-%zu", i);
 		EXPECT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
-		EXPECT_EQ(reply->n_element, NODE_NUMBER-1);
+		EXPECT_EQ(reply->n_element, NODE_NUMBER);
 		swarmkv_reply_free(reply);
 		for(size_t j=1; j<NODE_NUMBER; j++)
 		{
