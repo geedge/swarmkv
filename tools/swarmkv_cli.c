@@ -3,6 +3,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <ctype.h>
 
 #include "uthash.h"
 #include "sds.h"
@@ -762,6 +763,11 @@ struct swarmkv_reply *cluster_sanity_command(struct swarmkv *db, char *argv[], s
         keyspace_keys_reply=NULL;
     }
 
+    if(reply)
+    {
+        ctx->reply_num=reply->n_element;
+    }
+
     for(size_t i=0; reply && i<reply->n_element; i++)
     {
         struct replica_list *keysapce_replica_list=NULL;
@@ -772,15 +778,9 @@ struct swarmkv_reply *cluster_sanity_command(struct swarmkv *db, char *argv[], s
             keysapce_replica_list->key=sdsnewlen(reply->elements[i]->str, reply->elements[i]->len);
             keysapce_replica_list->len=reply->elements[i]->len;
             HASH_ADD_KEYPTR(hh, ctx->keyspace_replica_hash, keysapce_replica_list->key, keysapce_replica_list->len, keysapce_replica_list);
+            swarmkv_async_command_on(db, build_keyspace_replica_list, keysapce_replica_list, NULL, "keyspace rlist %s", keysapce_replica_list->key);
         }
     }
-    struct replica_list *item_replica_list,*tmp=NULL;
-    ctx->reply_num=HASH_COUNT(ctx->keyspace_replica_hash);
-    HASH_ITER(hh, ctx->keyspace_replica_hash, item_replica_list, tmp)
-    {
-        swarmkv_async_command_on(db, build_keyspace_replica_list, item_replica_list, NULL, "keyspace rlist %s", item_replica_list->key);
-    }
-
     if(reply)
     {
         swarmkv_reply_free(reply);
@@ -1000,17 +1000,53 @@ size_t get_possible_cluster_command_name(const char *prefix, const char* cmd_nam
 	}
 	return n_matched;
 }
-const char *get_cluster_command_hint(const char* cmd_name)
+char *get_cluster_command_hint(const char* cmd_name)
 {
+    int argc, buflen = strlen(cmd_name);
+    sds *argv = sdssplitargs(cmd_name,&argc);
+    int endspace = buflen && isspace(cmd_name[buflen-1]);
+
+    if (argc == 0)
+    {
+        sdsfreesplitres(argv,argc);
+        return NULL;
+    }
+
 	size_t n_cmd=sizeof(cluster_cmds)/sizeof(struct cluster_cmd_spec);
-	size_t i=0;
+	size_t i=0, j=0;
 	for(i=0; i<n_cmd; i++)
 	{
-		if(0==strcasecmp(cluster_cmds[i].name, cmd_name))
+        int argc_cmd;
+        sds *argv_cmd = sdssplitargs(cluster_cmds[i].name, &argc_cmd);
+        sds params=sdsdup(argv[0]);
+        for(j=1; j<argc && argc==argc_cmd; j++)
+        {
+            params = sdscatprintf(params, " %s", argv[j]);
+        }
+        sdsfreesplitres(argv_cmd,argc_cmd);
+
+		if(0==strcasecmp(cluster_cmds[i].name, params))
 		{
-			return cluster_cmds[i].hint;
+            sds hint = sdsnew(cluster_cmds[i].hint);
+            int toremove = argc - argc_cmd;
+            while(toremove > 0 && sdslen(hint)) {
+                if (hint[0] == '[') break;
+                if (hint[0] == ' ') toremove--;
+                sdsrange(hint,1,-1);
+            }
+            if (!endspace) {
+                sds newhint = sdsnewlen(" ",1);
+                newhint = sdscatsds(newhint,hint);
+                sdsfree(hint);
+                hint = newhint;
+            }
+            sdsfree(params);
+            sdsfreesplitres(argv,argc);
+			return hint;
 		}
+        sdsfree(params);
 	}
+    sdsfreesplitres(argv,argc);
 	return NULL;
 }
 
@@ -1085,7 +1121,7 @@ void completion(const char *buff, linenoiseCompletions *lc)
 
 char *hints(const char *cmd, int *color, int *bold)
 {
-	const char *p=NULL;
+	char *p=NULL;
 	static char buff[512];
 	int offset=0;
 	/*
@@ -1110,9 +1146,10 @@ char *hints(const char *cmd, int *color, int *bold)
 		*color = 90;
 		*bold = 0;
 		snprintf(buff, sizeof(buff), " %s", p);
+        sdsfree(p);
 		return buff;
 	}
-	
+
 	return NULL;
 }
 

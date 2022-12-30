@@ -957,7 +957,6 @@ void swarmkv_net_dispath(struct swarmkv_net *net, int thread_id)
 	int ret=event_base_dispatch(net->threads[thread_id].evbase);
 	if(net->threads[thread_id].is_dispatching){
 		log_fatal(net->logger, MODULE_SWAMRKV_NET, "event_base_dispatch() returns %d abnormally", ret);
-		sleep(1000);
 	}
 	event_del(ev);
 	event_free(ev);

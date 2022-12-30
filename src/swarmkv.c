@@ -31,6 +31,7 @@
 #include <sys/syscall.h>
 #include <sys/prctl.h>
 #include <pthread.h>
+#include <ctype.h>
 
 
 const char* SWARMKV_VERSION="3.0.0";
@@ -1080,16 +1081,54 @@ size_t swarmkv_get_possible_command_name(struct swarmkv *db, const char *prefix,
 	}
 	return n_matched;
 }
-const char *swarmkv_get_command_hint(struct swarmkv *db, const char* cmd_name)
+char *swarmkv_get_command_hint(struct swarmkv *db, const char* cmd_name)
 {
+    int argc, buflen = strlen(cmd_name);
+    sds *argv = sdssplitargs(cmd_name,&argc);
+    int endspace = buflen && isspace(cmd_name[buflen-1]);
+
+    if (argc == 0)
+    {
+        sdsfreesplitres(argv,argc);
+        return NULL;
+    }
+
+    size_t i;
 	struct swarmkv_cmd_spec *spec=NULL, *tmp_spec=NULL;
 	HASH_ITER(hh, db->command_table, spec, tmp_spec)
 	{
-		if(0==strcasecmp(spec->name, cmd_name))
+        int argc_spec;
+        sds *argv_spec = sdssplitargs(spec->name, &argc_spec);
+        sds params=sdsdup(argv[0]);
+        for(i=1; i<argc_spec && argc>=argc_spec; i++)
+        {
+            params = sdscatprintf(params, " %s", argv[i]);
+        }
+        sdsfreesplitres(argv_spec,argc_spec);
+
+		if(0==strcasecmp(spec->name, params))
 		{
-			return spec->hint;
+            sds hint = sdsnew(spec->hint);
+            int toremove = argc - argc_spec;
+            while(toremove > 0 && sdslen(hint)) {
+                if (hint[0] == '[') break;
+                if (hint[0] == ' ') toremove--;
+                sdsrange(hint,1,-1);
+            }
+
+            if (!endspace) {
+                sds newhint = sdsnewlen(" ",1);
+                newhint = sdscatsds(newhint,hint);
+                sdsfree(hint);
+                hint = newhint;
+            }
+            sdsfree(params);
+            sdsfreesplitres(argv,argc);
+			return hint;
 		}
+        sdsfree(params);
 	}
+    sdsfreesplitres(argv,argc);
 	return NULL;
 }
 /*

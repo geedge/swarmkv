@@ -173,10 +173,8 @@ protected:
 		logger=log_handle_create(log_path, 0);
 		struct swarmkv_options* opts=swarmkv_options_new();
 		swarmkv_options_set_p2p_port(opts, 5210);
-		swarmkv_options_set_p2p_timeout_us(opts, 100*1000);
 		swarmkv_options_set_health_check_port(opts, 6210);
 		swarmkv_options_set_logger(opts, logger);
-		swarmkv_options_set_disable_run_for_leader(opts);
 		db=swarmkv_open(opts, cluster_name, &err);
 		if(err)
 		{
@@ -474,7 +472,7 @@ TEST_F(SwarmkvCliNodes, DebugAssert)
 {
 	pthread_t pid=0;
 	size_t node_number=2;
-	char result[2048]={0},target[26]={0};
+	char result[4096]={0},target[26]={0};
 	struct cmd_exec_arg* reply_arg=NULL;
 	unsigned int p2p_port_start=9210;
 
@@ -482,7 +480,7 @@ TEST_F(SwarmkvCliNodes, DebugAssert)
 	swarmkv_cli_create_cluster(cluster_name, "127.0.0.1:9210");
 	wait_for_sync();
 
-	for(size_t i=0; i<=node_number; i++)
+	for(size_t i=node_number; i<0; i--)
 	{
 		char *cmd_string=ALLOC(char, 128);
 		snprintf(cmd_string, 128, "../tools/simple_node -n %s -h 127.0.0.1:%zu -t 1 -k %d", cluster_name, p2p_port_start+i, 100);
@@ -518,14 +516,10 @@ TEST_F(SwarmkvCliNodes, DebugAssert)
 				break;
 			}
 			gettimeofday(&end, NULL);
-			if( end.tv_sec-start.tv_sec > 15)
+			if( end.tv_sec-start.tv_sec > 20)
 			{
 				break;
 			}
-		}
-		if(i!=node_number)
-		{
-			EXPECT_TRUE(NULL==strstr(result, target));
 		}
 		swarmkv_cli_system_cmd(NULL, result, sizeof(result), NULL, "CLUSTER SANITY heal");
 		cmd_exec_arg_expect_integer(reply_arg, 0);

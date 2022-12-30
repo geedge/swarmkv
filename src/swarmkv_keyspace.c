@@ -451,6 +451,9 @@ void *swarmkv_keyspace_thread(void *arg)
 	struct timeval timer_delay = {2, 0};
 	evtimer_add(ev, &timer_delay);
 
+    consul_watch_slots_changes_async(ks);
+	consul_watch_nodes_changes_async(ks);
+
 	event_base_dispatch(ks->evbase);
 	event_del(ev);
 	event_free(ev);
@@ -1124,7 +1127,7 @@ void consul_watch_nodes_changes_async(struct swarmkv_keyspace* ks)
     evhttp_add_header(output_headers, "Host", LOCAL_HOST);
 	evhttp_add_header(output_headers, "Connection", "close");
 
-	snprintf(url, sizeof(url), "/v1/health/service/%s?passing=1&index=%d", ks->db_name, ks->consul_nodes_modify_idx);
+	snprintf(url, sizeof(url), "/v1/health/service/%s?passing=1&index=%d&wait=10s", ks->db_name, ks->consul_nodes_modify_idx);
 	evhttp_make_request(conn, request, EVHTTP_REQ_GET, url);
 	
 }
@@ -1226,8 +1229,7 @@ struct swarmkv_module* swarmkv_keyspace_new(const struct swarmkv_options *opts, 
 	}
 //	consul_kv_init_if_nonexist(ks);	
 	pthread_create(&(ks->thr), NULL, swarmkv_keyspace_thread, (void *) ks);
-	consul_watch_slots_changes_async(ks);
-	consul_watch_nodes_changes_async(ks);
+
 	if(ks->dryrun)
 	{
 		log_info(ks->logger, MODULE_SWARMKV_KEYSPACE, "work on dry run mode.");

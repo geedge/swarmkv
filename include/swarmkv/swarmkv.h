@@ -94,7 +94,7 @@ void swarmkv_tconsume(struct swarmkv * db, const char * key, size_t keylen, long
 
 //Used by swarmkv-cli
 size_t swarmkv_get_possible_command_name(struct swarmkv *db, const char *prefix, const char* cmd_names[], size_t sz);
-const char *swarmkv_get_command_hint(struct swarmkv *db, const char* cmd_name);
+char *swarmkv_get_command_hint(struct swarmkv *db, const char* cmd_name);
 
 
 
