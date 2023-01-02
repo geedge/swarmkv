@@ -6,7 +6,19 @@
 
 #include <stdlib.h>
 #include <assert.h>
-
+enum cmd_exec_result handle_undefined_object(struct sobj *obj, struct swarmkv_reply **reply)
+{
+	assert(obj->type==OBJ_TYPE_UNDEFINED);
+	node_t replica;
+	int ret=0;
+	ret=sobj_get_random_replica(obj, &replica);
+	if(ret)
+	{
+		*reply=swarmkv_reply_new_node(&replica, 1);
+		return REDIRECT;
+	}
+	return NEED_KEY_ROUTE;	
+}
 enum cmd_exec_result tcfg_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
 {
 /*TCFG key rate capacity*/
@@ -69,9 +81,14 @@ enum cmd_exec_result tinfo_command(struct swarmkv_module *mod_store, const struc
 	const sds key=cmd->argv[1];
 	
 	obj=store_lookup(mod_store, key);
-	if(!obj || obj->type==OBJ_TYPE_UNDEFINED)
+	if(!obj)
 	{
 		return NEED_KEY_ROUTE;		
+	}
+	//Unlike string, set and hash, TCONSUME and TINFO can only operate on an initialized token bucket.
+	if(obj->type==OBJ_TYPE_UNDEFINED)
+	{
+		return handle_undefined_object(obj, reply);
 	}
 	if(obj->type!=OBJ_TYPE_TOKEN_BUCKET)
 	{
@@ -109,15 +126,7 @@ enum cmd_exec_result tconsume_command(struct swarmkv_module *mod_store, const st
 	}
 	if(obj->type==OBJ_TYPE_UNDEFINED)
 	{
-		node_t replica;
-		int ret=0;
-		ret=sobj_get_random_replica(obj, &replica);
-		if(ret)
-		{
-			*reply=swarmkv_reply_new_node(&replica, 1);
-			return REDIRECT;
-		}
-		return NEED_KEY_ROUTE;
+		return handle_undefined_object(obj, reply);
 	}
 	if(obj->type!=OBJ_TYPE_TOKEN_BUCKET)
 	{
