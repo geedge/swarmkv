@@ -1137,6 +1137,47 @@ int my_key_filter(const char *key, size_t key_len, void *cb_arg)
 		return 0;
 	}
 }
+
+TEST(ORMap, ReSetAndGet)
+{
+	uuid_t uuid;
+	uuid_generate(uuid);
+	int ret = 0;
+	struct OR_map *map=OR_map_new(uuid);
+	int KV_NUM = 1000, ROUND=1000;
+	uuid_t keys[KV_NUM];
+	uuid_t values[KV_NUM];
+
+	struct OR_map_kv *result=NULL;
+	for(int i=0; i<KV_NUM; i++)
+	{
+		uuid_generate(keys[i]);
+		uuid_generate(values[i]);
+	}
+
+	for(int j=0; j<ROUND; j++)
+	{
+		for(int i=0; i<KV_NUM; i++)
+		{
+			result=OR_map_get(map,  (const char*)&keys[i], sizeof(keys[i]));
+			if(result == NULL)
+			{
+				ret = 0;
+				ret = OR_map_set(map, (const char*)&keys[i], sizeof(keys[i]), (const char*)values[i], sizeof(values[i]));
+				EXPECT_EQ(ret, 1);
+				result=OR_map_get(map,  (const char*)&keys[i], sizeof(keys[i]));
+			}
+			EXPECT_TRUE(result);
+			EXPECT_EQ(result->type, TYPE_STRING);
+			EXPECT_EQ(memcmp(result->string, values[i], sizeof(values[i])), 0);
+			OR_map_kv_free(result);
+			result = NULL;
+		}
+	}
+
+	OR_map_free(map);
+}
+
 TEST(ORMap, Filter)
 {
 	uuid_t uuid;
