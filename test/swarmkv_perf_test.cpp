@@ -261,9 +261,9 @@ TEST(Resilience, AddSlotOwner)
 	int offset=0;
 	for(i=0; i<CANDINATE_NUMBER; i++)
 	{
-		offset+=snprintf(candinate_string+offset, sizeof(candinate_string)-offset, "127.0.0.1:%u ",p2p_port_start+NODE_NUMBER+i);
+		offset+=snprintf(candinate_string+offset, sizeof(candinate_string)-offset, "127.0.0.1:%u ", p2p_port_start+NODE_NUMBER+i);
 	}
-	swarmkv_cli_add_key_owner(cluster_name, candinate_string);
+	swarmkv_cli_add_slot_owner(cluster_name, candinate_string);
 	sleep(30);
 	g_running_flag=0;
 	int *successful_backgroud_running_thread=NULL;

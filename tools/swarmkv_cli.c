@@ -267,7 +267,7 @@ int is_node_active(struct swarmkv_reply *nodes_reply, node_t *node)
 	}
 	return node_is_active;
 }
-struct swarmkv_reply *cluster_addkeyowner_command(struct swarmkv *db, char *argv[], size_t argc)
+struct swarmkv_reply *cluster_addslotowner_command(struct swarmkv *db, char *argv[], size_t argc)
 {
 	size_t n_new_node=argc-2;
 	node_t new_nodes[n_new_node];
@@ -276,7 +276,7 @@ struct swarmkv_reply *cluster_addkeyowner_command(struct swarmkv *db, char *argv
 
     if(argc <= 2)
     {
-        reply = swarmkv_reply_new_error(error_wrong_number_of_arg, "CLUSTER ADDKEYOWNER");
+        reply = swarmkv_reply_new_error(error_wrong_number_of_arg, "CLUSTER ADDSLOTOWNER");
         return reply;
     }
 	char *cmd_cluster_nodes[]={"cluster", "nodes", "brief"};
@@ -294,7 +294,7 @@ struct swarmkv_reply *cluster_addkeyowner_command(struct swarmkv *db, char *argv
 		}
 		if(!is_node_active(nodes_reply, new_nodes+i))
 		{
-			reply=swarmkv_reply_new_error(error_cluster_addkeyowner_node_is_not_active, (new_nodes+i)->addr);
+			reply=swarmkv_reply_new_error(error_cluster_addslotowner_node_is_not_active, (new_nodes+i)->addr);
 			goto error_out;
 		}
 	}
@@ -316,7 +316,7 @@ struct swarmkv_reply *cluster_addkeyowner_command(struct swarmkv *db, char *argv
 		{
 			if(0==node_compare(&(old_slots[j].owner), new_nodes+i))
 			{
-				reply=swarmkv_reply_new_error(error_cluster_addkeyowner_node_has_slot, (new_nodes+i)->addr);
+				reply=swarmkv_reply_new_error(error_cluster_addslotowner_node_has_slot, (new_nodes+i)->addr);
 				goto error_out;
 			}
 		}
@@ -955,7 +955,7 @@ struct cluster_cmd_spec cluster_cmds[]={
 	{"CLUSTER INFO", "[section]", cluster_info_command},
 	{"CLUSTER NODES", "[breif | verbose]", cluster_nodes_command},
 	{"CLUSTER SLOTS", "", cluster_slots_command},
-	{"CLUSTER ADDKEYOWNER", "IP:port [IP:port ...]", cluster_addkeyowner_command},
+	{"CLUSTER ADDSLOTOWNER", "IP:port [IP:port ...]", cluster_addslotowner_command},
 	{"CLUSTER CREATE", "cluster-name IP:port [IP:port ...]", cluster_create_command},
     {"CLUSTER SANITY", "check | heal", cluster_sanity_command},
     {"ATTACH", "IP:port", attach_command},

@@ -14,10 +14,10 @@ int swarmkv_cli_create_cluster(const char *cluster_name, const char *node_string
 	snprintf(cmd_string, sizeof(cmd_string), "../tools/swarmkv-cli --cluster-create %s %s", cluster_name, node_string);
 	return system(cmd_string);
 }
-int swarmkv_cli_add_key_owner(const char *cluster_name, const char *node_string)
+int swarmkv_cli_add_slot_owner(const char *cluster_name, const char *node_string)
 {
 	char cmd_string[1024];
-	snprintf(cmd_string, sizeof(cmd_string), "../tools/swarmkv-cli -n %s --exec cluster addkeyowner %s", cluster_name, node_string);
+	snprintf(cmd_string, sizeof(cmd_string), "../tools/swarmkv-cli -n %s --exec cluster addslotowner %s", cluster_name, node_string);
 	return system(cmd_string);
 
 }
