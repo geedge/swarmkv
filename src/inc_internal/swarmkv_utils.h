@@ -1,6 +1,7 @@
 #pragma once
 
 #include <assert.h>
+#include <stddef.h>
 
 #define ALLOC(type, number) ((type *)calloc(sizeof(type), number))
 #define	FREE(p)	{free(*p);*p=NULL;}
@@ -41,5 +42,5 @@ char *toLower(char* s);
 char *toUpper(char* s);
 int stringmatchlen(const char *pattern, int patternLen, const char *string, int stringLen, int nocase);
 long long ustime(void);
-int is_number(const char *string, long long *number);
+int is_number(const char *string, size_t sz, long long *number);
 int is_double(const char *string, double *number);

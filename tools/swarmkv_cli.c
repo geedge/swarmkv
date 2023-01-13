@@ -1297,7 +1297,7 @@ int main(int argc, char * argv[])
 		run_times=1;
 		run_interval_sec=0;
 		offset=0;
-		if(is_number(exec_argv[0], &run_times))
+		if(is_number(exec_argv[0], strlen(exec_argv[0])+1, &run_times))
 		{
 			offset++;
 			if(exec_argc>1 && is_double(exec_argv[1], &run_interval_sec))

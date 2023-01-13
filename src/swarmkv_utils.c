@@ -188,13 +188,26 @@ long long ustime(void) {
     ust += tv.tv_nsec/1000;
     return ust;
 }
-int is_number(const char *string, long long *number)
+int is_number(const char *string, size_t sz, long long *number)
 {
+    if(sz>20) return 0;
+
+    for(size_t i=0; i<sz ; i++)
+    {
+        if((string[i]<'0' || string[i]>'9') && string[i]!='-')
+        {
+            return 0;
+        }
+        if(string[i]=='\0' && i<sz-1)
+        {
+            return 0;
+        }
+    }
 	char *endptr=NULL;
 	*number=strtol(string, &endptr, 10);
 	if(*endptr=='\0')
 	{
-		return 1;		
+		return 1;
 	}
     else
     {

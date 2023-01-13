@@ -1,4 +1,5 @@
 #include "swarmkv_common.h"
+#include "swarmkv_utils.h"
 #include "swarmkv_store.h"
 #include "swarmkv_error.h"
 #include "or_map.h"
@@ -48,16 +49,24 @@ enum cmd_exec_result hset_command(struct swarmkv_module *mod_store, const struct
 
 	sds field;
     sds value;
-		
+	long long int_val=0;
+
 	if(obj->type==OBJ_TYPE_HASH)
 	{
 		for(i=0; i<n_to_add; i++)
 		{
             field=cmd->argv[2+i*2];
             value=cmd->argv[2+i*2+1];
-
-            ret=OR_map_set(obj->hash, field, sdslen(field),
+			if(is_number(value, sdslen(value), &int_val))
+			{
+				ret=OR_map_set_integer(obj->hash, field, sdslen(field), int_val);
+			}
+			else
+			{
+           		ret=OR_map_set_string(obj->hash, field, sdslen(field),
                             value, sdslen(value));
+			}
+
 			if(ret>0) n_added++;
 		}
 		*reply=swarmkv_reply_new_integer(n_added);

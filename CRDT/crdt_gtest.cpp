@@ -1068,7 +1068,7 @@ TEST(ORMap, Basic)
 
 	const char *key2="lisi";
 	const char *val1="rich", *val2="poor";
-	ret=OR_map_set(map, key2, strlen(key2)+1, val1, strlen(val1)+1);
+	ret=OR_map_set_string(map, key2, strlen(key2)+1, val1, strlen(val1)+1);
 	EXPECT_EQ(ret, 1);
 	struct OR_map_kv *result=NULL;
 	result=OR_map_get(map,  key2, strlen(key2)+1);
@@ -1076,14 +1076,14 @@ TEST(ORMap, Basic)
 	OR_map_kv_free(result);
 	result=NULL;
 	
-	ret=OR_map_set(map, key2, strlen(key2)+1, val2, strlen(val2)+1);
+	ret=OR_map_set_string(map, key2, strlen(key2)+1, val2, strlen(val2)+1);
 	EXPECT_EQ(ret, 0);
 	result=OR_map_get(map,  key2, strlen(key2)+1);
 	EXPECT_STREQ(val2, result->string);
 	OR_map_kv_free(result);
 	result=NULL;
 
-	ret=OR_map_set(map, key1, strlen(key1)+1, val1, strlen(val1)+1);
+	ret=OR_map_set_string(map, key1, strlen(key1)+1, val1, strlen(val1)+1);
 	EXPECT_EQ(ret, 0);
 	long long integer_result=0;
 	ret=OR_map_incrby(map, key1, strlen(key1)+1, 0, &integer_result);
@@ -1138,7 +1138,7 @@ int my_key_filter(const char *key, size_t key_len, void *cb_arg)
 	}
 }
 
-TEST(ORMap, ReSetAndGet)
+TEST(ORMap, RepetitiveGet)
 {
 	uuid_t uuid;
 	uuid_generate(uuid);
@@ -1153,22 +1153,16 @@ TEST(ORMap, ReSetAndGet)
 	{
 		uuid_generate(keys[i]);
 		uuid_generate(values[i]);
+		ret = OR_map_set_string(map, (const char*)&keys[i], sizeof(keys[i]), (const char*)values[i], sizeof(values[i]));
+		EXPECT_EQ(ret, 1);
 	}
-
 	for(int j=0; j<ROUND; j++)
 	{
 		for(int i=0; i<KV_NUM; i++)
 		{
 			result=OR_map_get(map,  (const char*)&keys[i], sizeof(keys[i]));
-			if(result == NULL)
-			{
-				ret = 0;
-				ret = OR_map_set(map, (const char*)&keys[i], sizeof(keys[i]), (const char*)values[i], sizeof(values[i]));
-				EXPECT_EQ(ret, 1);
-				result=OR_map_get(map,  (const char*)&keys[i], sizeof(keys[i]));
-			}
-			EXPECT_TRUE(result);
-			EXPECT_EQ(result->type, TYPE_STRING);
+			ASSERT_TRUE(result);
+			ASSERT_EQ(result->type, TYPE_STRING);
 			EXPECT_EQ(memcmp(result->string, values[i], sizeof(values[i])), 0);
 			OR_map_kv_free(result);
 			result = NULL;
@@ -1185,20 +1179,21 @@ TEST(ORMap, Filter)
 
 	struct OR_map *map=OR_map_new(uuid);
 	int ret=0;
-	char key[32], value[32];
+	char key[32];
+	long long value=0;
 	size_t n_prefixed_key=8;
 	const char *prefix="a_";
 	for(size_t i=0; i<n_prefixed_key; i++)
 	{
 		snprintf(key, sizeof(key), "%s%zu", prefix, i);
-		snprintf(value, sizeof(value), "%zu", i);
-		ret=OR_map_set(map, key, strlen(key)+1, value, strlen(value)+1);
+		value=i;
+		ret=OR_map_set_integer(map, key, strlen(key)+1, value);
 	}
 	for(size_t i=0; i<12; i++)
 	{
 		snprintf(key, sizeof(key), "b_%zu", i);
-		snprintf(value, sizeof(value), "%zu", i);
-		ret=OR_map_set(map, key, strlen(key)+1, value, strlen(value)+1);
+		value=i;
+		ret=OR_map_set_integer(map, key, strlen(key)+1, value);
 	}
 
 	struct OR_map_kv **kv_list=NULL;
@@ -1271,7 +1266,7 @@ TEST(ORMap, SetGet)
 	{
 		snprintf(key_buffer, sizeof(key_buffer), "%s-%zu", key_prefix, i);
 		snprintf(val_buffer, sizeof(val_buffer), "%s-%zu", val_prefix, i);
-		OR_map_set(map[0], key_buffer, strlen(key_buffer)+1, val_buffer, strlen(val_buffer)+1);
+		OR_map_set_string(map[0], key_buffer, strlen(key_buffer)+1, val_buffer, strlen(val_buffer)+1);
 	}
 	char *blob=NULL;
 	size_t blob_sz=0;
@@ -1400,7 +1395,7 @@ TEST(ORMap, Remove)
 		else
 		{
 			snprintf(val_buffer, sizeof(val_buffer), "%s-%zu", val_prefix, i);			
-			OR_map_set(map[i%2], key_buffer, strlen(key_buffer)+1, val_buffer, strlen(val_buffer)+1);
+			OR_map_set_string(map[i%2], key_buffer, strlen(key_buffer)+1, val_buffer, strlen(val_buffer)+1);
 		}
 	}
 	char *blob=NULL;
@@ -1467,7 +1462,7 @@ TEST(ORMap, ObservedRemove)
 	{
 		snprintf(key_buffer, sizeof(key_buffer), "%s-%zu", key_prefix, i);
 		snprintf(val_buffer, sizeof(val_buffer), "%s-%zu", val_prefix, i);			
-		OR_map_set(map[i%2], key_buffer, strlen(key_buffer)+1, val_buffer, strlen(val_buffer)+1);
+		OR_map_set_string(map[i%2], key_buffer, strlen(key_buffer)+1, val_buffer, strlen(val_buffer)+1);
 		
 	}
 	char *blob=NULL;
@@ -1483,7 +1478,7 @@ TEST(ORMap, ObservedRemove)
 	ret=OR_map_remove(map[0], key_buffer, strlen(key_buffer)+1);
 	EXPECT_EQ(ret, 1);
 	const char *val="Hello Stellar!";
-	ret=OR_map_set(map[1], key_buffer, strlen(key_buffer)+1, val, strlen(val)+1);
+	ret=OR_map_set_string(map[1], key_buffer, strlen(key_buffer)+1, val, strlen(val)+1);
 
 	OR_map_serialize(map[0], &blob, &blob_sz);
 	OR_map_merge_blob(map[1], blob, blob_sz);
@@ -1532,7 +1527,7 @@ TEST(ORMap, Replica32)
 				break;
 			case 1:
 				snprintf(val_buffer, sizeof(val_buffer), "%s-%zu", val_prefix, i);			
-				OR_map_set(map[i%replica_number], key_buffer, strlen(key_buffer)+1, val_buffer, strlen(val_buffer)+1);
+				OR_map_set_string(map[i%replica_number], key_buffer, strlen(key_buffer)+1, val_buffer, strlen(val_buffer)+1);
 				break;
 			case 2:
 				OR_map_add(map[i%replica_number], key_buffer, strlen(key_buffer)+1);
@@ -1587,7 +1582,7 @@ TEST(ORMap, Replica32)
 				break;
 			case 1:
 				snprintf(val_buffer, sizeof(val_buffer), "%s-%zu-updated", val_prefix, i);			
-				OR_map_set(map[i%replica_number], key_buffer, strlen(key_buffer)+1, val_buffer, strlen(val_buffer)+1);
+				OR_map_set_string(map[i%replica_number], key_buffer, strlen(key_buffer)+1, val_buffer, strlen(val_buffer)+1);
 				break;
 			case 2:
 				OR_map_remove(map[i%replica_number], key_buffer, strlen(key_buffer)+1);

@@ -231,8 +231,28 @@ int OR_map_set(struct OR_map *map, const char *key, size_t key_len, const char *
 	int added=0, ret=0;
 	added=OR_record_create_if_not_exist(map, key, key_len, &record);
 	char *endptr=NULL;
-	long long int_value=strtol(value, &endptr, 10);
-	if(*endptr=='\0')
+	int is_integer=0;
+	if(value_sz<21)
+	{
+		for(size_t i=0; i<value_sz; i++)
+		{
+			if((value[i]<'0' || value[i]>'9') && value[i]!='-')
+			{
+				continue;
+			}
+			else
+			{
+				is_integer=0;
+				break;
+			}
+		}
+	}
+	long long int_value=0;
+	if(is_integer)
+	{
+		int_value=strtol(value, &endptr, 10);
+	}
+	if(*endptr=='\0' && is_integer)
 	{
 		ret=OR_record_set_int(record, int_value);
 	}
@@ -244,6 +264,28 @@ int OR_map_set(struct OR_map *map, const char *key, size_t key_len, const char *
 	unsigned long long new_sequence=OR_map_step(map);
 	OR_record_step(record, map->my_id, new_sequence);
 	
+	return added;
+}
+int OR_map_set_string(struct OR_map *map, const char *key, size_t key_len, const char *value, size_t value_sz)
+{
+	struct OR_record *record=NULL;
+	int added=0, ret=0;
+	added=OR_record_create_if_not_exist(map, key, key_len, &record);
+	ret=OR_record_set_str(record, value, value_sz);
+	if(ret<0) return ret;
+	unsigned long long new_sequence=OR_map_step(map);
+	OR_record_step(record, map->my_id, new_sequence);
+	return added;
+}
+int OR_map_set_integer(struct OR_map *map, const char *key, size_t key_len, long long int_value)
+{
+	struct OR_record *record=NULL;
+	int added=0, ret=0;
+	added=OR_record_create_if_not_exist(map, key, key_len, &record);
+	ret=OR_record_set_int(record, int_value);
+	if(ret<0) return ret;
+	unsigned long long new_sequence=OR_map_step(map);
+	OR_record_step(record, map->my_id, new_sequence);
 	return added;
 }
 int OR_map_set_score(struct OR_map *map, const char *key, size_t key_len, long long score)
