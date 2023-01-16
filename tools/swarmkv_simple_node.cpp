@@ -17,8 +17,8 @@ static void help()
 		"swarmkv_simple_node <-n| -h | -p |-t> arg\n"
 		"Usage:\n"
 		"  -n <Cluster Name>\n"
-		"  -h <Local IP>\n"
-		"  -p <P2P Port> \n"
+		"  -h <Ip:port>\n"
+		"  -c <Ip:port>\n"
 		"  -t <Thread Number>\n"
 		"  -k <Key Number\n");
 	    exit(1);
@@ -29,11 +29,14 @@ int main(int argc, char ** argv)
 	int ret=0;
 	long long i=0;
 	char host[32]={0};
+	char consul_host[32]={0};
 	long long key_number=0;
 	int worker_thread_number=1;
+	unsigned int consul_port=8500;
 	unsigned int p2p_port;
 	char cluster_name[256];
 	if(argc < 3) { help();}
+	strcpy(consul_host, "127.0.0.1");
 	strncpy(cluster_name, "swarmkv-simple-node", sizeof(cluster_name));
 	for (i = 1; i < argc; i++)
 	{
@@ -45,6 +48,10 @@ int main(int argc, char ** argv)
 		else if (!strcmp(argv[i], "-h") && !lastarg)
 		{
 			sscanf(argv[++i], "%[^:]:%u", host, &p2p_port);
+		}
+		else if(!strcmp(argv[i], "-c") && !lastarg)
+		{
+           	sscanf(argv[++i], "%[^:]:%u", consul_host, &consul_port);
 		}
 		else if(!strcmp(argv[i], "-t") && !lastarg)
 		{
@@ -65,6 +72,8 @@ int main(int argc, char ** argv)
 	struct swarmkv_options *opts=swarmkv_options_new();
 	swarmkv_options_set_p2p_port(opts, p2p_port);
 	swarmkv_options_set_bind_address(opts, host);
+	swarmkv_options_set_consul_host(opts, consul_host);
+	swarmkv_options_set_consul_port(opts, consul_port);
 	swarmkv_options_set_worker_thread_number(opts, worker_thread_number);
 	swarmkv_options_set_p2p_timeout_us(opts, 500000);
 	swarmkv_options_set_sync_interval_us(opts, 500);

@@ -30,6 +30,7 @@ struct swarmkv_options* swarmkv_options_new(void)
     opts->p2p_timeout_us=500*1000;//Default 500ms
 	opts->sync_interval_us=10*1000;	//Default 10ms
 	strcpy(opts->bind_address, "127.0.0.1");
+	strcpy(opts->consul_address, "127.0.0.1");
 	uuid_generate(opts->bin_uuid);
 	opts->nr_worker_threads=1;
 	opts->is_assigned_to_db=0;
@@ -82,6 +83,11 @@ int swarmkv_options_set_logger(struct swarmkv_options *opts, void *logger)
 int swarmkv_options_set_disable_run_for_leader(struct swarmkv_options *opts)
 {
 	opts->run_for_leader_flag=0;
+	return 0;
+}
+int swarmkv_options_set_consul_host(struct swarmkv_options *opts, const char* ip_addr)
+{
+	strncpy(opts->consul_address, ip_addr, sizeof(opts->consul_address));
 	return 0;
 }
 int swarmkv_options_set_consul_port(struct swarmkv_options *opts, unsigned int consul_port)

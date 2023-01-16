@@ -114,7 +114,7 @@ int sync_master_get_cmd(struct sync_master *master, node_t *peer, struct swarmkv
 }
 void sync_master_free(struct sync_master *master)
 {
-	size_t task_cnt=HASH_COUNT(master->task_table);
+	size_t __attribute__((__unused__))task_cnt=HASH_COUNT(master->task_table);
 	assert(task_cnt==0);
 	assert(master->to_sync==master->synced);
 	free(master);

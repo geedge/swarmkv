@@ -384,7 +384,7 @@ void node_init_from_sockaddr(node_t *node, const struct sockaddr * sa)
 {
 	char ip[MAX_IPV4_ADDR_LEN+1];
 	size_t ip_len=sizeof(ip);
-	unsigned int port;
+	unsigned int port=0;
     switch(sa->sa_family)
 	{
         case AF_INET:

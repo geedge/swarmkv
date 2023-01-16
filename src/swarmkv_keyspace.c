@@ -239,7 +239,7 @@ void http_request_callback(struct evhttp_request *req, void *arg)
 	free(ctx);
 	return;
 }
-void http_get_async(const char *symbol, const char *url, const char *host, unsigned short port, struct event_base *evbase, struct future *f, struct log_handle *logger)
+void http_get_async(const char *symbol, node_t self, const char *url, const char *host, unsigned short port, struct event_base *evbase, struct future *f, struct log_handle *logger)
 {
 	struct http_req_context *ctx=ALLOC(struct http_req_context, 1);
 	strncpy(ctx->symbol, symbol, sizeof(ctx->symbol));
@@ -252,7 +252,10 @@ void http_get_async(const char *symbol, const char *url, const char *host, unsig
 	struct evkeyvalq *output_headers = evhttp_request_get_output_headers(request);
 	evhttp_connection_set_timeout(ctx->conn, 1800);//set to 30min for blocking query.
 
-    evhttp_add_header(output_headers, "Host", LOCAL_HOST);
+    char ip[16]={};
+	unsigned int p2p_port=0;
+    node_parse(&self, &p2p_port, ip, sizeof(ip));
+    evhttp_add_header(output_headers, "Host", ip);
 	evhttp_add_header(output_headers, "Connection", "close");
 
 	evhttp_make_request(ctx->conn, request, EVHTTP_REQ_GET, url);
@@ -295,6 +298,7 @@ struct swarmkv_keyspace
 	struct slot_runtime slot_rts[KEYSPACE_SLOT_NUM];
 	node_t nodes[SWARMKV_MAX_NODE_NUM];
 
+	char consul_agent_host[MAX_IPV4_ADDR_LEN];
 	unsigned int consul_agent_port;
 	unsigned int health_check_port;	//Port for internal HTTP server
 	int dryrun;
@@ -324,7 +328,7 @@ struct consul_task *consul_task_getnxset(struct swarmkv_keyspace *ks, const char
 	HASH_FIND(hh, ks->consul_task_hash, task_name, strlen(task_name), task);
 	if(!task)
 	{
-		task=consul_task_new(task_name, ks->evbase, CONSUL_HOST, (unsigned short)ks->consul_agent_port);
+		task=consul_task_new(task_name, ks->evbase, ks->consul_agent_host, (unsigned short)ks->consul_agent_port);
 		HASH_ADD(hh, ks->consul_task_hash, task_name, strlen(task_name), task);
 	}
 	return task;
@@ -431,7 +435,7 @@ int consul_service_register(struct swarmkv_keyspace* ks)
 	cJSON_AddStringToObject(check, "Name", ks->db_name);
 	snprintf(ks->consul_check_id, sizeof(ks->consul_check_id), "%.128s-%u", ks->db_name, p2p_port);
 	cJSON_AddStringToObject(check, "CheckID", ks->consul_check_id);
-	snprintf(health_check_url, sizeof(health_check_url), "http://localhost:%u/health", ks->health_check_port);
+	snprintf(health_check_url, sizeof(health_check_url), "http://%s:%u/health", ip, ks->health_check_port);
 	cJSON_AddStringToObject(check, "HTTP", health_check_url);
 	cJSON_AddStringToObject(check, "Interval", "2s");
 	cJSON_AddStringToObject(check, "Timeout", "1s");
@@ -446,7 +450,7 @@ int consul_service_register(struct swarmkv_keyspace* ks)
 	
 	sds resp_body=NULL;
 	int resp_code=0;
-	resp_code=http_blocking_request(EVHTTP_REQ_PUT, CONSUL_HOST, ks->consul_agent_port, "/v1/agent/service/register?replace-existing-checks=true",
+	resp_code=http_blocking_request(EVHTTP_REQ_PUT, ks->consul_agent_host, ks->consul_agent_port, "/v1/agent/service/register?replace-existing-checks=true",
 		req_body,  &resp_body);
 	if(resp_code!=200)
 	{
@@ -560,8 +564,11 @@ void consul_create_session_async(struct swarmkv_keyspace* ks)
 	evhttp_connection_set_timeout(conn, 2);
 
 	struct evkeyvalq *output_headers = evhttp_request_get_output_headers(request);
-	
-    evhttp_add_header(output_headers, "Host", LOCAL_HOST);
+
+    char ip[16]={};
+	unsigned int port=0;
+    node_parse(&ks->self, &port, ip, sizeof(ip));
+    evhttp_add_header(output_headers, "Host", ip);
 	evhttp_add_header(output_headers, "Connection", "close");
 	
 	struct evbuffer* output_buffer = evhttp_request_get_output_buffer(request);
@@ -641,8 +648,11 @@ void consul_session_check_async(struct swarmkv_keyspace* ks)
 	evhttp_connection_set_timeout(conn, 2);
 
 	struct evkeyvalq *output_headers = evhttp_request_get_output_headers(request);
-	
-    evhttp_add_header(output_headers, "Host", LOCAL_HOST);
+
+    char ip[16]={};
+	unsigned int port=0;
+    node_parse(&ks->self, &port, ip, sizeof(ip));
+    evhttp_add_header(output_headers, "Host", ip);
 	evhttp_add_header(output_headers, "Connection", "close");
 	
 	evhttp_make_request(conn, request, EVHTTP_REQ_GET, url);
@@ -711,8 +721,11 @@ void consul_acquire_session_lock_async(struct swarmkv_keyspace* ks)
 	char number[64];
 	struct evkeyvalq *output_headers = evhttp_request_get_output_headers(request);
 	snprintf(number, sizeof(number), "%zu", sdslen(req_body));
-	
-    evhttp_add_header(output_headers, "Host", LOCAL_HOST);
+
+    char ip[16]={};
+	unsigned int port=0;
+    node_parse(&ks->self, &port, ip, sizeof(ip));
+    evhttp_add_header(output_headers, "Host", ip);
 	evhttp_add_header(output_headers, "Connection", "close");
 
 	evhttp_add_header(output_headers, "Content-Type", "application/json");
@@ -800,7 +813,7 @@ void consul_watch_leadership_changes_async(struct swarmkv_keyspace* ks)
 	snprintf(url, sizeof(url), "/v1/kv/swarmkv/%s/lead?index=%d&wait=10s", ks->db_name, ks->consul_lead_key_modify_idx);
 
 	struct future *f=future_create(__func__, watch_leadership_changes_on_success, watch_leadership_changes_on_fail, ks);
-	http_get_async(__func__, url, LOCAL_HOST, ks->consul_agent_port, ks->evbase, f, ks->logger);
+	http_get_async(__func__, ks->self, url, ks->consul_agent_host, ks->consul_agent_port, ks->evbase, f, ks->logger);
 	return;
 }
 void watch_slots_changes_on_success(void *result, void *arg)
@@ -879,7 +892,7 @@ void consul_watch_slots_changes_async(struct swarmkv_keyspace *ks)
 	char url[SWARMKV_URL_MAX]="";
 	snprintf(url, sizeof(url), "/v1/kv/swarmkv/%s/slots?index=%d", ks->db_name, ks->consul_slots_modify_idx);
 	struct future *f=future_create(__func__, watch_slots_changes_on_success, watch_slots_changes_on_fail, ks);
-	http_get_async(__func__, url, LOCAL_HOST, ks->consul_agent_port, ks->evbase, f, ks->logger);
+	http_get_async(__func__, ks->self, url, ks->consul_agent_host, ks->consul_agent_port, ks->evbase, f, ks->logger);
 	return;
 }
 void __propagate_slot_table_cb(struct evhttp_request *req, void *arg)
@@ -920,8 +933,8 @@ void propagate_slot_table_async(struct swarmkv_keyspace *ks, struct key_slot new
 	evhttp_connection_set_timeout(conn, 20);
 	
 	struct evkeyvalq *output_headers = evhttp_request_get_output_headers(request);
-	
-	evhttp_add_header(output_headers, "Host", CONSUL_HOST);
+
+	evhttp_add_header(output_headers, "Host", ks->consul_agent_host);
 	evhttp_add_header(output_headers, "Connection", "close");
 	
 	struct evbuffer* output_buffer = evhttp_request_get_output_buffer(request);
@@ -1120,8 +1133,8 @@ void consul_watch_nodes_changes_async(struct swarmkv_keyspace* ks)
 
 	snprintf(url, sizeof(url), "/v1/health/service/%s?passing=1&index=%d&wait=10s", ks->db_name, ks->consul_nodes_modify_idx);
 	struct future *f=future_create(__func__, watch_nodes_changes_on_success, watch_nodes_changes_on_fail, ks);
-	http_get_async(__func__, url, LOCAL_HOST, ks->consul_agent_port, ks->evbase, f, ks->logger);
-	
+	http_get_async(__func__, ks->self, url, ks->consul_agent_host, ks->consul_agent_port, ks->evbase, f, ks->logger);
+
 }
 
 int keyslots_init(struct swarmkv_keyspace *ks)
@@ -1143,7 +1156,7 @@ int keyslots_init(struct swarmkv_keyspace *ks)
 	sds resp_body=NULL;
 	int resp_code=0;
 	snprintf(url, sizeof(url), "/v1/kv/swarmkv/%s/slots?raw=1", ks->db_name);
-	resp_code=http_blocking_request(EVHTTP_REQ_GET, CONSUL_HOST, ks->consul_agent_port, url, NULL, &resp_body);
+	resp_code=http_blocking_request(EVHTTP_REQ_GET, ks->consul_agent_host, ks->consul_agent_port, url, NULL, &resp_body);
 	if(resp_code!=200)
 	{
 		return -1;
@@ -1206,6 +1219,8 @@ struct swarmkv_module* swarmkv_keyspace_new(const struct swarmkv_options *opts, 
 
 	ks->health_check_port=opts->health_check_port;
 	ks->consul_agent_port=opts->consul_port;
+    strncpy(ks->consul_agent_host, opts->consul_address, sizeof(ks->consul_agent_host));
+
     ks->evbase = event_base_new();
 	ks->logger = logger;
 	ks->dryrun= opts->dryrun;
@@ -1484,7 +1499,7 @@ long long key_slot_merge(struct slot_runtime *slot_rt, const char *blob, size_t 
 	mpack_tree_parse(&tree);
 	mpack_node_t root=mpack_tree_root(&tree);
 	mpack_node_t mpnode_key, mpnode_keyentry, mpnode_table;
-	int slot_id=mpack_node_int(mpack_node_map_cstr(root, "slot_id"));
+	int __attribute__((__unused__))slot_id=mpack_node_int(mpack_node_map_cstr(root, "slot_id"));
 	assert(slot_id==slot_rt->slot.slot_id);
 	mpnode_table=mpack_node_map_cstr(root, "key_route_table");
 

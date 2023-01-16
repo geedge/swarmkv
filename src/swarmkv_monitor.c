@@ -26,7 +26,7 @@ struct recorder *recorder_new(const char *key, long long max_latency_usec)
 {
     struct recorder *recorder=ALLOC(struct recorder, 1);
     strncpy(recorder->key, key, sizeof(recorder->key));
-    int ret=0;
+    int __attribute__((__unused__))ret=0;
     ret=hdr_interval_recorder_init_all(&recorder->hdr_interval, LOWEST_TRACKABLE_VALUE, max_latency_usec, SIGNIFICANT_FIGURES);
     assert(ret==0);
     hdr_init(1, max_latency_usec, 2, &recorder->hdr_all_time);
@@ -85,7 +85,7 @@ void recorder_sample(struct recorder *recorder, struct recorder_metric *metric)
     memset(metric, 0, sizeof(struct recorder_metric));
     recorder->hdr_previous=hdr_interval_recorder_sample_and_recycle(&recorder->hdr_interval, recorder->hdr_previous);
     long long recent_total_count=recorder->hdr_previous->total_count;
-    long long dropped=hdr_add(recorder->hdr_all_time, recorder->hdr_previous);
+    long long __attribute__((__unused__))dropped=hdr_add(recorder->hdr_all_time, recorder->hdr_previous);
     assert(dropped==0);
     strncpy(metric->key, recorder->key, sizeof(metric->key));
     metric->total_count=recorder->hdr_all_time->total_count;

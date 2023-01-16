@@ -50,7 +50,7 @@ static void usage(void)
 	"\n"
 	"Usage: swarmkv-cli [OPTIONS] [command [arg [arg ...]]]\n"
 	"  -n <cluster-name>  Cluster name used for orchestration.\n"
-	"  -c <consul-port>   Consul Agent port (default: 8500).\n"
+	"  -c <consul-ip:consul-port>       Consul Agent ip and port (port default: 8500).\n"
 	"  -l <p2p-port>      Listening port for Peer-to-Peer networking (default: random).\n"
 	"  --cluster-create <cluster-name> IP:port [IP:port ...]  Create cluster orchestration information in Consul KV.\n"
 	"  --exec [Command]  Execute comand and exit.\n"
@@ -1162,7 +1162,7 @@ int main(int argc, char * argv[])
 	g_config.consul_port=8500;
 	strcpy(g_config.consul_host, "127.0.0.1");
     int i;
-	sds *exec_argv, *attach_argv;
+	sds *exec_argv=NULL, *attach_argv=NULL;
 	int exec_argc=0, attach_argc=1;
     for (i = 1; i < argc; i++)
 	{
@@ -1173,7 +1173,15 @@ int main(int argc, char * argv[])
 		}
 		else if(!strcmp(argv[i], "-c") && !lastarg)
 		{
-			sscanf(argv[++i], "%u", &g_config.consul_port);
+            int n_read=sscanf(argv[++i], "%[^:]:%u", g_config.consul_host, &g_config.consul_port);
+	        if(n_read!=2)
+        	{
+		        reply=swarmkv_reply_new_error("ERR expected address format is `IP:port`.");
+                swarmkv_reply_print(reply, stdout);
+		        swarmkv_reply_free(reply);
+                usage();
+		        return 0;
+        	}
 		}
 		else if(!strcmp(argv[i], "-l") && !lastarg)
 		{
@@ -1235,6 +1243,7 @@ int main(int argc, char * argv[])
 	struct swarmkv_options *opts=swarmkv_options_new();
 	swarmkv_options_set_dryrun(opts);
 	swarmkv_options_set_p2p_port(opts, g_config.p2p_port);//listen on random port
+    swarmkv_options_set_consul_host(opts, g_config.consul_host);
 	swarmkv_options_set_consul_port(opts, g_config.consul_port);
 	swarmkv_options_set_worker_thread_number(opts, 1);
 	swarmkv_options_set_logger(opts, logger);

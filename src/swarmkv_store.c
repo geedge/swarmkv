@@ -773,8 +773,8 @@ enum cmd_exec_result crdt_push_command(struct swarmkv_module *mod_store, const s
 	assert(accessing_node!=NULL);//should never invoked by local
 	long long synced=0;
 	uuid_t uuid;
-	int first_key_shard_idx=0;
-	int shard_idx=0;
+	int __attribute__((__unused__))first_key_shard_idx=0;
+	int __attribute__((__unused__))shard_idx=0;
 	first_key_shard_idx=get_shard_id(cmd->argv[2]);
 
 	store_get_uuid(mod_store, uuid);

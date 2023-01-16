@@ -68,6 +68,7 @@ struct swarmkv_options
 	struct log_handle *logger;
 	int loglevel;
 	char bind_address[MAX_IPV4_ADDR_LEN];
+	char consul_address[MAX_IPV4_ADDR_LEN];
 	uuid_t bin_uuid;
 	size_t nr_worker_threads;
 	int is_assigned_to_db;
