@@ -38,7 +38,7 @@ protected:
 		swarmkv_cli_create_cluster(cluster_name, "127.0.0.1:5210");
 		logger=log_handle_create(log_path, 0);
 		struct swarmkv_options* opts=swarmkv_options_new();
-		swarmkv_options_set_p2p_port(opts, 5210);
+		swarmkv_options_set_cluster_port(opts, 5210);
 		swarmkv_options_set_health_check_port(opts, 6210);
 		swarmkv_options_set_logger(opts, logger);
 		db=swarmkv_open(opts, cluster_name, &err);
@@ -491,7 +491,7 @@ protected:
 		
 		logger=log_handle_create(log_path, 0);
 		struct swarmkv_options* opts1=swarmkv_options_new();
-		swarmkv_options_set_p2p_port(opts1, 5210);
+		swarmkv_options_set_cluster_port(opts1, 5210);
 		swarmkv_options_set_health_check_port(opts1, 6210);
 		swarmkv_options_set_logger(opts1, logger);
 		db1=swarmkv_open(opts1, cluster_name, &err);
@@ -503,7 +503,7 @@ protected:
 		}
 
 		struct swarmkv_options* opts2=swarmkv_options_new();
-		swarmkv_options_set_p2p_port(opts2, 5211);
+		swarmkv_options_set_cluster_port(opts2, 5211);
 		swarmkv_options_set_health_check_port(opts2, 6211);
 		swarmkv_options_set_logger(opts2, logger);
 		db2=swarmkv_open(opts2, cluster_name, &err);
@@ -1259,7 +1259,7 @@ protected:
 		for(i=0; i<TEST_NODE_NUMBER; i++)
 		{
 			opts[i]=swarmkv_options_new();			
-			swarmkv_options_set_p2p_port(opts[i], 5210+i);
+			swarmkv_options_set_cluster_port(opts[i], 5210+i);
 			swarmkv_options_set_health_check_port(opts[i], 6210+i);
 			swarmkv_options_set_worker_thread_number(opts[i], 2);
 			swarmkv_options_set_logger(opts[i], logger);

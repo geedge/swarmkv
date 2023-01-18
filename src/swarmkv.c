@@ -1176,7 +1176,7 @@ struct swarmkv *swarmkv_open(struct swarmkv_options* opts, const char * db_name,
 	if(opts->dryrun)
 	{
 	}
-	node_init(&db->self, opts->bind_address, opts->p2p_port);
+	node_init(&db->self, opts->bind_address, opts->cluster_port);
 	db->mod_monitor=swarmkv_monitor_new(db->opts);
 
 	db->mod_keyspace=swarmkv_keyspace_new(db->opts, db_name, db->logger, err);
@@ -1187,7 +1187,7 @@ struct swarmkv *swarmkv_open(struct swarmkv_options* opts, const char * db_name,
 	swarmkv_keyspace_set_exec_cmd_func(db->mod_keyspace, __exec_cmd, db);
 	swarmkv_keyspace_set_monitor_handle(db->mod_keyspace, db->mod_monitor);
 
-	//Note: if the p2p_port is 0, swarmkv_net_new updates db->self.p2p_port.
+	//Note: if the cluster_port is 0, swarmkv_net_new updates db->self.cluster_port.
 	db->net=swarmkv_net_new(opts, &db->self, db->logger, err);
 	if(*err)
 	{

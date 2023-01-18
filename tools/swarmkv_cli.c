@@ -26,7 +26,7 @@ struct config
 {	
 	char db_name[256];
 	unsigned int consul_port;
-	unsigned int p2p_port;
+	unsigned int cluster_port;
 	char consul_host[64];
 	struct swarmkv *db;
 	struct cluster_manager_command cluster_mgr_cmd;
@@ -389,8 +389,8 @@ struct swarmkv_reply *cluster_addslotowner_command(struct swarmkv *db, char *arg
 		{
 			continue;
 		}
-/*		printf("Migrating slot %d from %s %u to %s %u ... ", tmp->slot_id, tmp->owner.addr.ip_addr, tmp->owner.addr.p2p_port,
-														node.addr.ip_addr, node.addr.p2p_port);
+/*		printf("Migrating slot %d from %s %u to %s %u ... ", tmp->slot_id, tmp->owner.addr.ip_addr, tmp->owner.addr.cluster_port,
+														node.addr.ip_addr, node.addr.cluster_port);
 */
 		/*STEP 2.1 Set NEW node's slot to IMPORTING state. Slot will return to STABLE state after udpate the global slot table*/
 		setslot_reply=swarmkv_command_on(db, new_node->addr, "keyspace setslot %d IMPORTING %s", 
@@ -1185,7 +1185,7 @@ int main(int argc, char * argv[])
 		}
 		else if(!strcmp(argv[i], "-l") && !lastarg)
 		{
-			sscanf(argv[++i], "%u", &g_config.p2p_port);
+			sscanf(argv[++i], "%u", &g_config.cluster_port);
 		}
 		else if(!strcmp(argv[i], "--cluster-create") && !lastarg)
 		{
@@ -1242,7 +1242,7 @@ int main(int argc, char * argv[])
 	void * logger=log_handle_create("swarmkv-cli.log", 0);
 	struct swarmkv_options *opts=swarmkv_options_new();
 	swarmkv_options_set_dryrun(opts);
-	swarmkv_options_set_p2p_port(opts, g_config.p2p_port);//listen on random port
+	swarmkv_options_set_cluster_port(opts, g_config.cluster_port);//listen on random port
     swarmkv_options_set_consul_host(opts, g_config.consul_host);
 	swarmkv_options_set_consul_port(opts, g_config.consul_port);
 	swarmkv_options_set_worker_thread_number(opts, 1);

@@ -24,13 +24,13 @@ struct swarmkv_options* swarmkv_options_new(void)
 {
 	struct swarmkv_options *opts=ALLOC(struct swarmkv_options, 1);
 	opts->consul_port=8500;
-	opts->p2p_port=5210;
+	opts->cluster_port=5210;
 	opts->health_check_port=0;
 	opts->loglevel=0;
     opts->p2p_timeout_us=500*1000;//Default 500ms
 	opts->sync_interval_us=10*1000;	//Default 10ms
 	strcpy(opts->bind_address, "127.0.0.1");
-	strcpy(opts->consul_address, "127.0.0.1");
+	strcpy(opts->consul_agent_host, "127.0.0.1");
 	uuid_generate(opts->bin_uuid);
 	opts->nr_worker_threads=1;
 	opts->is_assigned_to_db=0;
@@ -49,9 +49,9 @@ void swarmkv_options_free(struct swarmkv_options *opt)
 	}
 	return;
 }
-int swarmkv_options_set_p2p_port(struct swarmkv_options *opts, unsigned int p2p_port)
+int swarmkv_options_set_cluster_port(struct swarmkv_options *opts, unsigned int cluster_port)
 {
-	opts->p2p_port=p2p_port;
+	opts->cluster_port=cluster_port;
 	return 0;
 }
 int swarmkv_options_set_health_check_port(struct swarmkv_options *opts, unsigned int health_check_port)
@@ -59,7 +59,7 @@ int swarmkv_options_set_health_check_port(struct swarmkv_options *opts, unsigned
 	opts->health_check_port=health_check_port;
 	return 0;
 }
-int swarmkv_options_set_p2p_timeout_us(struct swarmkv_options *opts, unsigned int timeout_ms)
+int swarmkv_options_set_cluster_timeout_us(struct swarmkv_options *opts, unsigned int timeout_ms)
 {
 	opts->p2p_timeout_us=timeout_ms;
 	return 0;
@@ -87,7 +87,7 @@ int swarmkv_options_set_disable_run_for_leader(struct swarmkv_options *opts)
 }
 int swarmkv_options_set_consul_host(struct swarmkv_options *opts, const char* ip_addr)
 {
-	strncpy(opts->consul_address, ip_addr, sizeof(opts->consul_address));
+	strncpy(opts->consul_agent_host, ip_addr, sizeof(opts->consul_agent_host));
 	return 0;
 }
 int swarmkv_options_set_consul_port(struct swarmkv_options *opts, unsigned int consul_port)
@@ -98,7 +98,7 @@ int swarmkv_options_set_consul_port(struct swarmkv_options *opts, unsigned int c
 int swarmkv_options_set_dryrun(struct swarmkv_options *opts)
 {
 	opts->dryrun=1;
-	opts->p2p_port=15210;//overrides default p2p port
+	opts->cluster_port=15210;//overrides default p2p port
 	return 0;
 }
 int swarmkv_options_set_worker_thread_number(struct swarmkv_options *opts, size_t nr_worker_threads)

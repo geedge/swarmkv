@@ -169,11 +169,11 @@ TEST(Scalability, MultiThreads)
 	const char *cluster_name="demo";
 	struct swarmkv_options *opts=swarmkv_options_new();
 	swarmkv_options_set_dryrun(opts);
-	swarmkv_options_set_p2p_port(opts, 5212);
+	swarmkv_options_set_cluster_port(opts, 5212);
 	swarmkv_options_set_health_check_port(opts, 6212);
 	swarmkv_options_set_logger(opts, logger);
 	swarmkv_options_set_worker_thread_number(opts, 2);
-	swarmkv_options_set_p2p_timeout_us(opts, 500*1000);
+	swarmkv_options_set_cluster_timeout_us(opts, 500*1000);
 	struct swarmkv *db=swarmkv_open(opts, cluster_name, &err);
 	if(err)
 	{

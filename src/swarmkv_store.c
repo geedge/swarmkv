@@ -580,7 +580,7 @@ struct swarmkv_module *swarmkv_store_new(const struct swarmkv_options *opts, exe
 		pthread_rwlock_init(&(store->rwlock[i]), NULL);
 	}
 	uuid_copy(store->my_uuid, node_uuid);
-	node_init(&store->self, opts->bind_address, opts->p2p_port);
+	node_init(&store->self, opts->bind_address, opts->cluster_port);
 
 	store->exec_cmd=send_cmd;
 	store->exec_cmd_handle=handle_send_cmd;

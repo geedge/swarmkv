@@ -98,7 +98,7 @@ TEST(Performance, Nthreads)
 	for(i=0; i<NODE_NUMBER; i++)
 	{
 		opts[i]=swarmkv_options_new();	
-		swarmkv_options_set_p2p_port(opts[i], 5310+i);
+		swarmkv_options_set_cluster_port(opts[i], 5310+i);
 		swarmkv_options_set_health_check_port(opts[i], 6310+i);
 		swarmkv_options_set_logger(opts[i], logger);
 		swarmkv_options_set_worker_thread_number(opts[i], WORKER_THREAD_NUMBER);
@@ -233,11 +233,11 @@ TEST(Resilience, AddSlotOwner)
 	for(i=0; i<NODE_NUMBER+CANDINATE_NUMBER; i++)
 	{
 		opts[i]=swarmkv_options_new();	
-		swarmkv_options_set_p2p_port(opts[i], p2p_port_start+i);
+		swarmkv_options_set_cluster_port(opts[i], p2p_port_start+i);
 		swarmkv_options_set_health_check_port(opts[i], health_port_start+i);
 		swarmkv_options_set_logger(opts[i], logger);
 		swarmkv_options_set_worker_thread_number(opts[i], WORKER_THREAD_NUMBER);
-		swarmkv_options_set_p2p_timeout_us(opts[i], 100*1000);
+		swarmkv_options_set_cluster_timeout_us(opts[i], 100*1000);
 		swarmkv_options_set_disable_run_for_leader(opts[i]);
 		db[i]=swarmkv_open(opts[i], cluster_name, &err);
 		if(err)
@@ -346,11 +346,11 @@ TEST(Performance, Sync)
 	for(size_t i=0; i<NODE_NUMBER; i++)
 	{
 		opts[i]=swarmkv_options_new();
-		swarmkv_options_set_p2p_port(opts[i], p2p_port_start+i);
+		swarmkv_options_set_cluster_port(opts[i], p2p_port_start+i);
 		swarmkv_options_set_health_check_port(opts[i], health_port_start+i);
 		swarmkv_options_set_logger(opts[i], logger);
 		swarmkv_options_set_worker_thread_number(opts[i], WORKER_THREAD_NUMBER);
-		swarmkv_options_set_p2p_timeout_us(opts[i], 1000*1000);
+		swarmkv_options_set_cluster_timeout_us(opts[i], 1000*1000);
 		swarmkv_options_set_sync_interval_us(opts[i], 100*1000);
 		swarmkv_options_set_disable_run_for_leader(opts[i]);
 		db[i]=swarmkv_open(opts[i], cluster_name, &err);
@@ -427,7 +427,7 @@ TEST(Resilience, Failover)
 	for(size_t i=0; i<NODE_NUMBER; i++)
 	{
 		opts[i]=swarmkv_options_new();
-		swarmkv_options_set_p2p_port(opts[i], p2p_port_start+i);
+		swarmkv_options_set_cluster_port(opts[i], p2p_port_start+i);
 		swarmkv_options_set_health_check_port(opts[i], health_port_start+i);
 		db[i]=swarmkv_open(opts[i], cluster_name, &err);
 		if(err)

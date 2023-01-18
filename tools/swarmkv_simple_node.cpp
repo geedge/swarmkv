@@ -33,7 +33,7 @@ int main(int argc, char ** argv)
 	long long key_number=0;
 	int worker_thread_number=1;
 	unsigned int consul_port=8500;
-	unsigned int p2p_port;
+	unsigned int cluster_port;
 	char cluster_name[256];
 	if(argc < 3) { help();}
 	strcpy(consul_host, "127.0.0.1");
@@ -47,7 +47,7 @@ int main(int argc, char ** argv)
 		}
 		else if (!strcmp(argv[i], "-h") && !lastarg)
 		{
-			sscanf(argv[++i], "%[^:]:%u", host, &p2p_port);
+			sscanf(argv[++i], "%[^:]:%u", host, &cluster_port);
 		}
 		else if(!strcmp(argv[i], "-c") && !lastarg)
 		{
@@ -70,12 +70,12 @@ int main(int argc, char ** argv)
 	char *err=NULL;
 
 	struct swarmkv_options *opts=swarmkv_options_new();
-	swarmkv_options_set_p2p_port(opts, p2p_port);
+	swarmkv_options_set_cluster_port(opts, cluster_port);
 	swarmkv_options_set_bind_address(opts, host);
 	swarmkv_options_set_consul_host(opts, consul_host);
 	swarmkv_options_set_consul_port(opts, consul_port);
 	swarmkv_options_set_worker_thread_number(opts, worker_thread_number);
-	swarmkv_options_set_p2p_timeout_us(opts, 500000);
+	swarmkv_options_set_cluster_timeout_us(opts, 500000);
 	swarmkv_options_set_sync_interval_us(opts, 500);
 	//swarmkv_options_set_disable_run_for_leader(opts);
 	struct swarmkv *db=swarmkv_open(opts, cluster_name, &err);

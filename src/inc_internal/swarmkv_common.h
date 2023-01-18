@@ -28,7 +28,7 @@ enum cmd_exec_result
 struct swarmkv_node_addr
 {
 	char ip_addr[INET6_ADDRSTRLEN];	//#define INET6_ADDRSTRLEN 46 (#include <arpa/inet.h>, see man inet_ntop
-	unsigned int p2p_port;	//host order
+	unsigned int cluster_port;	//host order
 
 };*/
 #define MAX_IPV4_ADDR_LEN	15
@@ -59,7 +59,7 @@ char *str_replace(char *orig, char *rep, char *with);
 struct swarmkv_options
 {
 	unsigned int health_check_port;
-	unsigned int p2p_port;
+	unsigned int cluster_port;
 	int dryrun;
 	int run_for_leader_flag;
 	unsigned int consul_port;
@@ -68,7 +68,7 @@ struct swarmkv_options
 	struct log_handle *logger;
 	int loglevel;
 	char bind_address[MAX_IPV4_ADDR_LEN];
-	char consul_address[MAX_IPV4_ADDR_LEN];
+	char consul_agent_host[MAX_IPV4_ADDR_LEN];
 	uuid_t bin_uuid;
 	size_t nr_worker_threads;
 	int is_assigned_to_db;

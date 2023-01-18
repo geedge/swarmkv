@@ -11,7 +11,7 @@ int main(int argc, char **argv)
     for(size_t i=0; i<2; i++)
     {
         opts[i]=swarmkv_options_new();
-        swarmkv_options_set_p2p_port(opts[i], 5210+i);
+        swarmkv_options_set_cluster_port(opts[i], 5210+i);
         db[i]=swarmkv_open(opts[i], cluster_name, &err);
         if(err)
         {
