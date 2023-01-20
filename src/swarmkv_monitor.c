@@ -210,7 +210,7 @@ struct swarmkv_monitor *module2monitor(struct swarmkv_module *module)
 struct swarmkv_module *swarmkv_monitor_new(const struct swarmkv_options *opts)
 {
     struct swarmkv_monitor *monitor=ALLOC(struct swarmkv_monitor, 1);
-    monitor->max_latency_usec=opts->p2p_timeout_us;
+    monitor->max_latency_usec=opts->cluster_timeout_us;
     monitor->nr_worker_threads=opts->nr_worker_threads;
     monitor->peers=ALLOC(struct recorder *, monitor->nr_worker_threads);
     pthread_mutex_init(&monitor->lock_event_recorder, NULL);

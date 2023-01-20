@@ -273,7 +273,7 @@ enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct sw
 												"instantaneous_input_cps: %.2f\r\n"
 												"instantaneous_output_cps: %.2f\r\n"
 												,
-												(double)db->opts->p2p_timeout_us/1000,
+												(double)db->opts->cluster_timeout_us/1000,
 												net_info.connections,
 												net_info.pending_rpcs,
 												net_info.timed_out_rpcs,

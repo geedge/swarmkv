@@ -773,7 +773,7 @@ struct swarmkv_net* swarmkv_net_new(const struct swarmkv_options *opts, node_t* 
 		thr=net->threads+i;
 		thr->evbase=event_base_new();
 		thr->thread_id=i;
-		thr->peer_timeout_us=opts->p2p_timeout_us;
+		thr->peer_timeout_us=opts->cluster_timeout_us;
 		thr->ref_logger=logger;
 		thr->ref_net=net;
 		thr->conn_table=NULL;

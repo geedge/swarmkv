@@ -27,7 +27,7 @@ struct swarmkv_options* swarmkv_options_new(void)
 	opts->cluster_port=5210;
 	opts->health_check_port=0;
 	opts->loglevel=0;
-    opts->p2p_timeout_us=500*1000;//Default 500ms
+    opts->cluster_timeout_us=500*1000;//Default 500ms
 	opts->sync_interval_us=10*1000;	//Default 10ms
 	strcpy(opts->bind_address, "127.0.0.1");
 	strcpy(opts->consul_agent_host, "127.0.0.1");
@@ -61,7 +61,7 @@ int swarmkv_options_set_health_check_port(struct swarmkv_options *opts, unsigned
 }
 int swarmkv_options_set_cluster_timeout_us(struct swarmkv_options *opts, unsigned int timeout_ms)
 {
-	opts->p2p_timeout_us=timeout_ms;
+	opts->cluster_timeout_us=timeout_ms;
 	return 0;
 }
 int swarmkv_options_set_sync_interval_us(struct swarmkv_options *opts, unsigned int interval_us)
