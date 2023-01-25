@@ -1147,13 +1147,15 @@ static void libevent_log_cb(int severity, const char *msg)
 	fclose(logfile);
 }
 */
-struct swarmkv *swarmkv_open(struct swarmkv_options* opts, const char * db_name, char **err)
+struct swarmkv *swarmkv_open(struct swarmkv_options *opts, const char *db_name, char **err)
 {
 	struct swarmkv *db = NULL;
 //	event_set_log_callback(libevent_log_cb);
 	db=ALLOC(struct swarmkv, 1);
 	strncpy(db->db_name, db_name, sizeof(db->db_name));
-
+    /* adds locking, only required if accessed from separate threads */
+	evthread_use_pthreads();
+	
 	strncpy(db->module.name, "db", sizeof(db->module.name));
 	db->module.mod_ctx=db;
 	db->module.lock=NULL;

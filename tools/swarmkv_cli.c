@@ -375,7 +375,7 @@ struct swarmkv_reply *cluster_addslotowner_command(struct swarmkv *db, char *arg
 	
 	struct swarmkv_reply *setslot_reply=NULL, *getkeysinslot_reply=NULL, *addkeystoslot_reply=NULL;
 	sds *migrate_argv=NULL;
-	printf("%zu slot to be migrated\n", actual_rebalanced_slot_num);
+	printf("%zu slots to be migrated\n", actual_rebalanced_slot_num);
 	long long migrated_keys=0;
 	node_t *new_node=NULL, *old_node=NULL;
 	int slot_id=0;
@@ -1239,7 +1239,7 @@ int main(int argc, char * argv[])
 		return 0;
 	}
 	snprintf(g_runtime.prompt, sizeof(g_runtime.prompt), "%s> ", g_config.db_name);
-	void * logger=log_handle_create("swarmkv-cli.log", 0);
+	struct log_handle * logger=log_handle_create("swarmkv-cli.log", 0);
 	struct swarmkv_options *opts=swarmkv_options_new();
 	swarmkv_options_set_dryrun(opts);
 	swarmkv_options_set_cluster_port(opts, g_config.cluster_port);//listen on random port

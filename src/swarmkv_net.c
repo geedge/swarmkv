@@ -760,14 +760,13 @@ static void __accept_error_cb(struct evconnlistener *listener, void *arg)
 struct swarmkv_net* swarmkv_net_new(const struct swarmkv_options *opts, node_t* self, void* logger, char **err)
 {
 	struct swarmkv_net* net=NULL;	
-    /* adds locking, only required if accessed from separate threads */
-	evthread_use_pthreads();
 	net=ALLOC(struct swarmkv_net, 1);
 	net->logger=logger;
 	net->n_thread=opts->nr_worker_threads;
 	net->sequence_generator=1;
 	net->threads=ALLOC(struct snet_thread, net->n_thread);
 	struct snet_thread *thr=NULL;
+	
 	for(size_t i=0; i<net->n_thread; i++)
 	{
 		thr=net->threads+i;
