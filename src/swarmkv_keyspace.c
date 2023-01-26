@@ -216,7 +216,6 @@ struct swarmkv_keyspace
 
 	char consul_agent_host[MAX_IPV4_ADDR_LEN];
 	unsigned int consul_agent_port;
-	unsigned int health_check_port;	//Port for internal HTTP server
 	int dryrun;
 	int init_success;
 
@@ -430,15 +429,13 @@ int consul_service_register(struct swarmkv_keyspace* ks)
 	int ret=0;
 	char health_check_url[SWARMKV_URL_MAX]="";
 	char uuid_str[37];
-	unsigned int cluster_port=0;
-	char ip[16];
-	node_parse(&ks->self, &cluster_port, ip, sizeof(ip));
+	
 	cJSON* service=cJSON_CreateObject();
 	cJSON_AddStringToObject(service, "Name", ks->db_name);
-	snprintf(ks->consul_service_id, sizeof(ks->consul_service_id), "%.128s-%d", ks->db_name, cluster_port);
+	snprintf(ks->consul_service_id, sizeof(ks->consul_service_id), "%.128s-%d", ks->db_name, ks->opts->cluster_announce_port);
 	cJSON_AddStringToObject(service, "ID", ks->consul_service_id);
-	cJSON_AddStringToObject(service, "Address", ip);
-	cJSON_AddNumberToObject(service, "Port", cluster_port);
+	cJSON_AddStringToObject(service, "Address", ks->opts->cluster_announce_ip);
+	cJSON_AddNumberToObject(service, "Port", ks->opts->cluster_announce_port);
 
 	cJSON* meta=cJSON_CreateObject();
 	uuid_unparse_lower(ks->uuid, uuid_str);
@@ -449,9 +446,9 @@ int consul_service_register(struct swarmkv_keyspace* ks)
 	cJSON* check=cJSON_CreateObject();
 
 	cJSON_AddStringToObject(check, "Name", ks->db_name);
-	snprintf(ks->consul_check_id, sizeof(ks->consul_check_id), "%.128s-%u", ks->db_name, cluster_port);
+	snprintf(ks->consul_check_id, sizeof(ks->consul_check_id), "%.128s-%u", ks->db_name, ks->opts->cluster_announce_port);
 	cJSON_AddStringToObject(check, "CheckID", ks->consul_check_id);
-	snprintf(health_check_url, sizeof(health_check_url), "http://%s:%u/health", ip, ks->health_check_port);
+	snprintf(health_check_url, sizeof(health_check_url), "http://%s:%u/health", ks->opts->cluster_announce_ip, ks->opts->health_check_announce_port);
 	cJSON_AddStringToObject(check, "HTTP", health_check_url);
 	cJSON_AddStringToObject(check, "Interval", "2s");
 	cJSON_AddStringToObject(check, "Timeout", "1s");
@@ -1183,7 +1180,7 @@ void keyspace_unlock(struct swarmkv_module *mod_keyspace, enum cmd_key_flag flag
 	return;
 }
 
-struct swarmkv_module* swarmkv_keyspace_new(const struct swarmkv_options *opts, const char *db_name, void *logger, char **err)
+struct swarmkv_module *swarmkv_keyspace_new(struct swarmkv_options *opts, const char *db_name, struct log_handle *logger, char **err)
 {
 	struct swarmkv_keyspace *ks=ALLOC(struct swarmkv_keyspace, 1);
 	strncpy(ks->module.name, "keyspace", sizeof(ks->module.name));
@@ -1191,10 +1188,9 @@ struct swarmkv_module* swarmkv_keyspace_new(const struct swarmkv_options *opts, 
 	ks->module.lock=keyspace_lock;
 	ks->module.unlock=keyspace_unlock;
 	strncpy(ks->db_name, db_name, sizeof(ks->db_name));
-	node_init(&ks->self, opts->bind_address, opts->cluster_port);
+	node_init(&ks->self, opts->cluster_announce_ip, opts->cluster_announce_port);
 	uuid_copy(ks->uuid, opts->bin_uuid);
 	ks->opts=opts;
-	ks->health_check_port=opts->health_check_port;
 	ks->consul_agent_port=opts->consul_port;
     strncpy(ks->consul_agent_host, opts->consul_agent_host, sizeof(ks->consul_agent_host));
 
@@ -1215,7 +1211,6 @@ struct swarmkv_module* swarmkv_keyspace_new(const struct swarmkv_options *opts, 
 	//We MUST start watching in different thread than evbase_dispatch(), if not, evhttp_make_request() maybe fail due to socket fd error.
 	//This happens when calling swarmkv-cli for adding more slot owners.
 	//I spent two days on this issue, but still don't known what magic design of libevent2 causing this problem.
-
 	consul_watch_slots_changes_async(ks);    
 	consul_watch_nodes_changes_async(ks);
 
@@ -1226,14 +1221,17 @@ struct swarmkv_module* swarmkv_keyspace_new(const struct swarmkv_options *opts, 
 		log_info(ks->logger, MODULE_SWARMKV_KEYSPACE, "work on dry run mode.");
 		return &(ks->module);
 	}
-	ks->http_server=http_server_new(ks->evbase, &(ks->health_check_port), ks);
+	ks->http_server=http_server_new(ks->evbase, &(opts->health_check_port), ks);
 	if(!ks->http_server)
 	{
 		asprintf(err, "health check HTTP server start failed.");
 		log_fatal(ks->logger, MODULE_SWARMKV_KEYSPACE, "health check HTTP server start failed.");
 		goto error_out;
 	}
-
+	if(opts->health_check_announce_port==0)
+	{
+		opts->health_check_announce_port=opts->health_check_port;
+	}
 	ret=consul_service_register(ks);
 	if(ret<0)
 	{	
@@ -1291,7 +1289,7 @@ void swarmkv_keyspace_info(struct swarmkv_module *mod_keyspace, struct keyspace_
 	int i=0;
 	struct slot_runtime *slot_rt=NULL;
 
-	info->health_check_port=ks->health_check_port;
+	info->health_check_port=ks->opts->health_check_announce_port;
 	info->keys=0;
 	info->expires=0;
 	info->slots=0;

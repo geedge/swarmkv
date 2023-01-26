@@ -58,8 +58,10 @@ int str2integer(const char *str, long long *integer);
 char *str_replace(char *orig, char *rep, char *with);
 struct swarmkv_options
 {
-	unsigned int health_check_port;
 	unsigned int cluster_port;
+	unsigned int cluster_announce_port;
+	unsigned int health_check_port;
+	unsigned int health_check_announce_port;
 	int dryrun;
 	int run_for_leader_flag;
 	unsigned int consul_port;
@@ -67,6 +69,7 @@ struct swarmkv_options
 	unsigned int sync_interval_us;
 	struct log_handle *logger;
 	int loglevel;
+	char cluster_announce_ip[MAX_IPV4_ADDR_LEN];
 	char bind_address[MAX_IPV4_ADDR_LEN];
 	char consul_agent_host[MAX_IPV4_ADDR_LEN];
 	uuid_t bin_uuid;

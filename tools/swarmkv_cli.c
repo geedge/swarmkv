@@ -56,7 +56,6 @@ static void usage(void)
 	"  --exec [Command]  Execute comand and exit.\n"
     "  --attach <IP:port>  Attach to a node.\n",
 	SWARMKV_CLI_VERSION);
-
     exit(1);
 }
 
@@ -273,7 +272,7 @@ struct swarmkv_reply *cluster_addslotowner_command(struct swarmkv *db, char *arg
 	node_t new_nodes[n_new_node];
 	struct swarmkv_reply *slots_reply=NULL, *nodes_reply=NULL, *reply=NULL;
 	size_t i=0, j=0, actual_rebalanced_slot_num=0;
-
+	struct key_slot *old_slots=NULL, *new_slots=NULL;
     if(argc <= 2)
     {
         reply = swarmkv_reply_new_error(error_wrong_number_of_arg, "CLUSTER ADDSLOTOWNER");
@@ -307,8 +306,8 @@ struct swarmkv_reply *cluster_addslotowner_command(struct swarmkv *db, char *arg
 		slots_reply=NULL;
 		goto error_out;
 	}
-	struct key_slot *old_slots=ALLOC(struct key_slot, KEYSPACE_SLOT_NUM);
-	struct key_slot *new_slots=ALLOC(struct key_slot, KEYSPACE_SLOT_NUM);
+	old_slots=ALLOC(struct key_slot, KEYSPACE_SLOT_NUM);
+	new_slots=ALLOC(struct key_slot, KEYSPACE_SLOT_NUM);
 	json2keyslots(slots_reply->str, old_slots, sizeof(struct key_slot), 0, KEYSPACE_SLOT_NUM);
 	for(i=0; i<n_new_node; i++)
 	{
@@ -1306,7 +1305,7 @@ int main(int argc, char * argv[])
 		run_times=1;
 		run_interval_sec=0;
 		offset=0;
-		if(is_number(exec_argv[0], strlen(exec_argv[0])+1, &run_times))
+		if(is_number(exec_argv[0], sdslen(exec_argv[0]), &run_times))
 		{
 			offset++;
 			if(exec_argc>1 && is_double(exec_argv[1], &run_interval_sec))

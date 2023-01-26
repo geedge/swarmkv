@@ -1237,6 +1237,60 @@ TEST_F(SwarmkvTwoNodes, Wait)
 	return;
 	sleep(3600*2);
 }
+TEST(CloudNative, AnnounceIPPort)
+{
+	size_t NODE_NUMBER=2, i=0;
+	int cluster_port_base=7210;
+	int health_check_port_base=8210;
+	struct swarmkv *db[NODE_NUMBER];
+	struct swarmkv_options *opts[NODE_NUMBER];
+	const char *cluster_name="skv-in-k8s";
+	char *err=NULL;
+	const char *annouce_ip="172.17.93.178";//eth0 of GDNT-BJ-DEV1 of AliCloud
+	const char *bind_ip="0.0.0.0";
+	char node_list_str[1024]={0};
+	for(i=0; i<NODE_NUMBER; i++)
+	{
+		snprintf(node_list_str+strlen(node_list_str), sizeof(node_list_str)-strlen(node_list_str), "%s:%zu ", annouce_ip, cluster_port_base+i);
+	}
+	swarmkv_cli_create_cluster(cluster_name, node_list_str);
+
+	for(i=0; i<NODE_NUMBER; i++)
+	{
+		opts[i]=swarmkv_options_new();			
+		swarmkv_options_set_cluster_port(opts[i], cluster_port_base+i);
+		swarmkv_options_set_health_check_port(opts[i], health_check_port_base+i);
+		swarmkv_options_set_bind_address(opts[i], bind_ip);
+		swarmkv_options_set_cluster_announce_ip(opts[i], annouce_ip);
+		db[i]=swarmkv_open(opts[i], cluster_name, &err);
+		if(err)
+		{
+			printf("swarmkv_open %zu instance failed: %s\n", i, err);
+			free(err);
+			err=NULL;
+		}
+	}
+
+	const char *key="int1";
+	struct swarmkv_reply * reply=NULL;
+	
+	reply=swarmkv_command(db[0], "INCR %s", key);
+	EXPECT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 1);
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db[1], "INCRBY %s 100", key);
+	EXPECT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 101);
+	swarmkv_reply_free(reply);
+
+	//sleep(10000);
+
+	for(i=0; i<NODE_NUMBER; i++)
+	{
+		swarmkv_close(db[i]);
+	}
+}
 #define TEST_NODE_NUMBER	8
 class SwarmkvNNodes : public testing::Test 
 {

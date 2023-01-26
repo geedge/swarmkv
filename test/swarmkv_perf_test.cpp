@@ -378,7 +378,7 @@ TEST(Resilience, AddSlotOwner)
 			pthread_create(&(threads[i][j]), NULL, migration_background_thread, db[i]);
 		}
 	}
-	sleep(10);
+	sleep(5);
 	char candinate_string[1024];
 	int offset=0;
 	for(i=0; i<CANDINATE_NUMBER; i++)
@@ -386,7 +386,7 @@ TEST(Resilience, AddSlotOwner)
 		offset+=snprintf(candinate_string+offset, sizeof(candinate_string)-offset, "127.0.0.1:%u ", p2p_port_start+NODE_NUMBER+i);
 	}
 	swarmkv_cli_add_slot_owner(cluster_name, candinate_string);
-	sleep(30);
+	sleep(10);
 	g_running_flag=0;
 	int *successful_backgroud_running_thread=NULL;
 	for(i=0; i<NODE_NUMBER; i++)

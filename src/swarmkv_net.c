@@ -127,7 +127,6 @@ struct swarmkv_net
 	unsigned long long sequence_generator;
 	int n_connection;
 	node_t self;
-	unsigned short listen_port;
 	struct snet_thread *threads;
 	
 	struct evconnlistener *listener;	
@@ -757,9 +756,9 @@ static void __accept_error_cb(struct evconnlistener *listener, void *arg)
 							err, evutil_socket_error_to_string(err));
 }
 
-struct swarmkv_net* swarmkv_net_new(const struct swarmkv_options *opts, node_t* self, void* logger, char **err)
+struct swarmkv_net *swarmkv_net_new(struct swarmkv_options *opts, struct log_handle *logger, char **err)
 {
-	struct swarmkv_net* net=NULL;	
+	struct swarmkv_net *net=NULL;	
 	net=ALLOC(struct swarmkv_net, 1);
 	net->logger=logger;
 	net->n_thread=opts->nr_worker_threads;
@@ -781,18 +780,15 @@ struct swarmkv_net* swarmkv_net_new(const struct swarmkv_options *opts, node_t* 
 
 	//Refer to http://www.wangafu.net/~nickm/libevent-book/Ref8_listener.html
 	struct sockaddr_in sin;
-	unsigned int port;
-	char addr_str[16];
-	node_parse(self, &port, addr_str, sizeof(addr_str));
 	memset(&sin, 0, sizeof(sin));
 	sin.sin_family = AF_INET;
-	sin.sin_addr.s_addr = htonl(0);	// Listen on 0.0.0.0
-	sin.sin_port = htons((unsigned short)port);
+	inet_pton(AF_INET, opts->bind_address, &(sin.sin_addr));
+	sin.sin_port = htons((unsigned short)opts->cluster_port);
 	net->listener=evconnlistener_new_bind(net->threads[0].evbase, accept_peer_connection_cb, net, 
 										LEV_OPT_CLOSE_ON_FREE|LEV_OPT_REUSEABLE, -1, (struct sockaddr*)&sin, sizeof(sin));
 	if(!net->listener)
 	{
-		asprintf(err, "listen on port %u failed", port);
+		asprintf(err, "listen on port %u failed", opts->cluster_port);
 		free(net);
 		return NULL;
 	}
@@ -804,13 +800,14 @@ struct swarmkv_net* swarmkv_net_new(const struct swarmkv_options *opts, node_t* 
 	{
 		asprintf(err, "getsockname failed");
 	}
-	if(port==0)
+
+	opts->cluster_port=ntohs(((struct sockaddr_in*)&ss)->sin_port);
+	if(opts->cluster_announce_port==0)
 	{
-		port=ntohs(((struct sockaddr_in*)&ss)->sin_port);
+		opts->cluster_announce_port=opts->cluster_port;
 	}
-	node_init(self, addr_str, port);
-	node_copy(&net->self, self);
-	net->listen_port=port;
+	node_init(&net->self, opts->cluster_announce_ip, opts->cluster_announce_port);
+
 	pthread_mutex_init(&net->stat_lock, NULL);
 	return net;
 }
@@ -955,11 +952,10 @@ void swarmkv_net_dispath(struct swarmkv_net *net, int thread_id)
 	evtimer_add(ev, &timer_delay);
 	int ret=event_base_dispatch(net->threads[thread_id].evbase);
 	if(net->threads[thread_id].is_dispatching){
-		log_fatal(net->logger, MODULE_SWAMRKV_NET, "event_base_dispatch() returns %d abnormally", ret);
+		log_fatal(net->logger, MODULE_SWAMRKV_NET, "event_base_dispatch() exit abnormally, ret=%d", ret);
+		sleep(1000);
 	}
 	event_del(ev);
 	event_free(ev);
 	return;
 }
-
-

@@ -29,7 +29,8 @@ struct swarmkv_options* swarmkv_options_new(void)
 	opts->loglevel=0;
     opts->cluster_timeout_us=500*1000;//Default 500ms
 	opts->sync_interval_us=10*1000;	//Default 10ms
-	strcpy(opts->bind_address, "127.0.0.1");
+	strcpy(opts->bind_address, "0.0.0.0");
+	strcpy(opts->cluster_announce_ip, "127.0.0.1");
 	strcpy(opts->consul_agent_host, "127.0.0.1");
 	uuid_generate(opts->bin_uuid);
 	opts->nr_worker_threads=1;
@@ -54,9 +55,19 @@ int swarmkv_options_set_cluster_port(struct swarmkv_options *opts, unsigned int 
 	opts->cluster_port=cluster_port;
 	return 0;
 }
+int swarmkv_options_set_cluster_announce_port(struct swarmkv_options *opts, unsigned int cluster_announce_port)
+{
+	opts->cluster_announce_port=cluster_announce_port;
+	return 0;
+}
 int swarmkv_options_set_health_check_port(struct swarmkv_options *opts, unsigned int health_check_port)
 {
 	opts->health_check_port=health_check_port;
+	return 0;
+}
+int swarmkv_options_set_health_check_announce_port(struct swarmkv_options *opts, unsigned int health_check_announce_port)
+{
+	opts->health_check_port=health_check_announce_port;
 	return 0;
 }
 int swarmkv_options_set_cluster_timeout_us(struct swarmkv_options *opts, unsigned int timeout_ms)
@@ -69,10 +80,14 @@ int swarmkv_options_set_sync_interval_us(struct swarmkv_options *opts, unsigned 
 	opts->sync_interval_us=interval_us;
 	return 0;
 }
-
-int swarmkv_options_set_bind_address(struct swarmkv_options *opts, const char* ip_addr)
+int swarmkv_options_set_bind_address(struct swarmkv_options *opts, const char *ip_addr)
 {
 	strncpy(opts->bind_address, ip_addr, sizeof(opts->bind_address));
+	return 0;
+}
+int swarmkv_options_set_cluster_announce_ip(struct swarmkv_options *opts, const char *ip_addr)
+{
+	strncpy(opts->cluster_announce_ip, ip_addr, sizeof(opts->cluster_announce_ip));
 	return 0;
 }
 int swarmkv_options_set_logger(struct swarmkv_options *opts, void *logger)

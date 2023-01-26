@@ -49,6 +49,7 @@ int swarmkv_options_set_health_check_port(struct swarmkv_options *opts, unsigned
 int swarmkv_options_set_cluster_timeout_us(struct swarmkv_options *opts, unsigned int timeout_us);
 int swarmkv_options_set_sync_interval_us(struct swarmkv_options *opts, unsigned int interval_us);
 int swarmkv_options_set_bind_address(struct swarmkv_options *opts, const char* ip_addr);
+
 int swarmkv_options_set_logger(struct swarmkv_options *opts, void *logger);
 int swarmkv_options_set_consul_port(struct swarmkv_options *opts, unsigned int consul_port);
 int swarmkv_options_set_consul_host(struct swarmkv_options *opts, const char* ip_addr);
@@ -56,6 +57,9 @@ int swarmkv_options_set_dryrun(struct swarmkv_options *opts);
 int swarmkv_options_set_disable_run_for_leader(struct swarmkv_options *opts);
 int swarmkv_options_set_worker_thread_number(struct swarmkv_options *opts, size_t nr_worker_threads);
 
+int swarmkv_options_set_cluster_announce_ip(struct swarmkv_options *opts, const char *ip_addr);
+int swarmkv_options_set_cluster_announce_port(struct swarmkv_options *opts, unsigned int cluster_announce_port);
+int swarmkv_options_set_health_check_announce_port(struct swarmkv_options *opts, unsigned int health_check_announce_port);
 
 struct swarmkv;
 

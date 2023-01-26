@@ -8,6 +8,40 @@
 #include <unistd.h>
 #include <stdlib.h>
 
+ __attribute__((__unused__)) static int exec_prog(const char **argv)
+{
+    pid_t   my_pid;
+    
+    if (0 == (my_pid = fork())) {
+            if (-1 == execve(argv[0], (char **)argv , NULL)) {
+                    perror("child process execve failed [%m]");
+                    return -1;
+            }
+    }
+
+#ifdef WAIT_FOR_COMPLETION
+	int     status, timeout /* unused ifdef WAIT_FOR_COMPLETION */;
+    timeout = 1000;
+
+    while (0 == waitpid(my_pid , &status , WNOHANG)) {
+            if ( --timeout < 0 ) {
+                    perror("timeout");
+                    return -1;
+            }
+            sleep(1);
+    }
+
+    printf("%s WEXITSTATUS %d WIFEXITED %d [status %d]\n",
+            argv[0], WEXITSTATUS(status), WIFEXITED(status), status);
+
+    if (1 != WIFEXITED(status) || 0 != WEXITSTATUS(status)) {
+            perror("%s failed, halt system");
+            return -1;
+    }
+
+#endif
+    return 0;
+}
 int swarmkv_cli_create_cluster(const char *cluster_name, const char *node_string)
 {
 	char cmd_string[1024];
@@ -19,7 +53,11 @@ int swarmkv_cli_add_slot_owner(const char *cluster_name, const char *node_string
 	char cmd_string[1024];
 	snprintf(cmd_string, sizeof(cmd_string), "../tools/swarmkv-cli -n %s --exec cluster addslotowner %s", cluster_name, node_string);
 	return system(cmd_string);
-
+// https://stackoverflow.com/questions/16744785/c-threads-using-execl-suicides-itself
+//	const char *argv[]={"../tools/swarmkv-cli",  "-n", cluster_name,
+//	 "--exec", "cluster", "addslotowner", "127.0.0.1:7312", "127.0.0.1:7313", NULL};
+//	exec_prog(argv);
+//	return 0;
 }
 void wait_for_sync()
 {
