@@ -318,7 +318,7 @@ void consul_request_make(struct consul_request *req, enum evhttp_cmd_type cmd, c
 	struct evkeyvalq *output_headers = evhttp_request_get_output_headers(req->evhttpreq);
 	evhttp_add_header(output_headers, "Host", req->ref_client->consul_agent_host);
 //	evhttp_add_header(output_headers, "Connection", "close");
-
+	
 	evhttp_make_request(req->ref_client->evhttpconn, req->evhttpreq, cmd, url);
 }
 
@@ -330,6 +330,7 @@ struct consul_client *consul_client_new(const char *host, unsigned short port, s
 	client->logger=logger;
 	client->evbase=evbase;
 	client->evhttpconn=evhttp_connection_base_new(client->evbase, NULL, client->consul_agent_host, client->consul_agent_port);
+
 	evhttp_connection_set_timeout(client->evhttpconn, 1800);//set to 30min for blocking query.
 	evhttp_connection_set_closecb(client->evhttpconn, http_request_on_close, client);
 	return client;
@@ -382,6 +383,7 @@ struct evhttp* http_server_new(struct event_base* evbase, unsigned int *port_lis
     }
 	evutil_socket_t sockfd=-1;
 	sockfd=evhttp_bound_socket_get_fd(bound_socket);
+	evutil_make_socket_closeonexec(sockfd);
     struct sockaddr_storage ss;
 	ev_socklen_t socklen = sizeof(ss);
 	if (getsockname(sockfd, (struct sockaddr *)&ss, &socklen) < 0)
@@ -1208,10 +1210,8 @@ struct swarmkv_module *swarmkv_keyspace_new(struct swarmkv_options *opts, const 
         log_fatal(ks->logger, MODULE_SWARMKV_KEYSPACE, "key slots init failed.");
 		goto error_out;
 	}
-	//We MUST start watching in different thread than evbase_dispatch(), if not, evhttp_make_request() maybe fail due to socket fd error.
-	//This happens when calling swarmkv-cli for adding more slot owners.
-	//I spent two days on this issue, but still don't known what magic design of libevent2 causing this problem.
-	consul_watch_slots_changes_async(ks);    
+
+	consul_watch_slots_changes_async(ks);
 	consul_watch_nodes_changes_async(ks);
 
 	pthread_create(&(ks->thr), NULL, swarmkv_keyspace_thread, (void *) ks);

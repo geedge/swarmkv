@@ -43,7 +43,7 @@ void swarmkv_reply_free(struct swarmkv_reply *reply);
 void swarmkv_reply_print(const struct swarmkv_reply *reply, FILE* stream);
 
 struct swarmkv_options;
-struct swarmkv_options* swarmkv_options_new(void);
+struct swarmkv_options *swarmkv_options_new(void);
 int swarmkv_options_set_cluster_port(struct swarmkv_options *opts, unsigned int cluster_port);
 int swarmkv_options_set_health_check_port(struct swarmkv_options *opts, unsigned int health_check_port);
 int swarmkv_options_set_cluster_timeout_us(struct swarmkv_options *opts, unsigned int timeout_us);

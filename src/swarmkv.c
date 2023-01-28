@@ -488,7 +488,7 @@ struct swarmkv_cmd_spec *get_spec_by_argv(struct swarmkv *db, size_t argc, char*
 }
 
 
-static void libevent_log_cb(int severity, const char *msg)
+ __attribute__((unused)) static void libevent_log_cb(int severity, const char *msg)
 {
     const char *s;
     FILE *logfile=fopen("libevent_run.log", "a");
@@ -501,6 +501,7 @@ static void libevent_log_cb(int severity, const char *msg)
     }
     fprintf(logfile, "[%s] %s\n", s, msg);
 	fclose(logfile);
+	sleep(1000);
 }
 
 
@@ -1151,7 +1152,7 @@ char *swarmkv_get_command_hint(struct swarmkv *db, const char* cmd_name)
 struct swarmkv *swarmkv_open(struct swarmkv_options *opts, const char *db_name, char **err)
 {
 	struct swarmkv *db = NULL;
-	event_set_log_callback(libevent_log_cb);
+//	event_set_log_callback(libevent_log_cb);
 	db=ALLOC(struct swarmkv, 1);
 	strncpy(db->db_name, db_name, sizeof(db->db_name));
     /* adds locking, only required if accessed from separate threads */

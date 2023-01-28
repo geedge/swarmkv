@@ -268,6 +268,7 @@ struct snet_conn *snet_conn_new_by_fd(struct snet_thread *thr, evutil_socket_t f
 	setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, (char*)&yes, sizeof(yes));
 //	evbuffer_enable_locking(conn->buff_for_sending, NULL);
 	evutil_make_socket_nonblocking(fd);
+	evutil_make_socket_closeonexec(fd);
 	node_init_from_sockaddr(&conn->connected_from, addr);
 
 	conn->bev=bufferevent_socket_new(thr->evbase, fd, BEV_OPT_DEFER_CALLBACKS|BEV_OPT_THREADSAFE);//BEV_OPT_UNLOCK_CALLBACKS|
@@ -624,6 +625,7 @@ void connect_peer_eventcb(struct bufferevent *bev, short events, void *arg)
 		int yes=1;
 		evutil_socket_t fd=bufferevent_getfd(conn->bev);
 		setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, (char*)&yes, sizeof(yes));
+		evutil_make_socket_closeonexec(fd);
 		bufferevent_write_buffer(conn->bev, conn->buff_for_sending);
 		bufferevent_setcb(conn->bev, peer_conn_read_cb, peer_conn_write_cb, peer_conn_event_cb, conn);
 		bufferevent_enable(conn->bev, EV_READ | EV_WRITE);
@@ -950,10 +952,10 @@ void swarmkv_net_dispath(struct swarmkv_net *net, int thread_id)
 	struct timeval timer_delay = {2, 0};
 	net->threads[thread_id].is_dispatching=1;
 	evtimer_add(ev, &timer_delay);
+	
 	int ret=event_base_dispatch(net->threads[thread_id].evbase);
 	if(net->threads[thread_id].is_dispatching){
 		log_fatal(net->logger, MODULE_SWAMRKV_NET, "event_base_dispatch() exit abnormally, ret=%d", ret);
-		sleep(1000);
 	}
 	event_del(ev);
 	event_free(ev);

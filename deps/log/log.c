@@ -136,7 +136,7 @@ static int log_create_path(const char *file_path)
     {
 		return 0;
     }
-
+    fclose(fp);
     return 1;
 }
 
@@ -271,7 +271,8 @@ int log_options_add_file_fp(struct log_handle *handle, int level)
     ret =log_create_path(_handle_t->run_log_path);
     if(ret==0)
     {
-        fp=stderr;
+        //fp=stderr;
+        //What are you doing?!
     }
     return log_add_method_callback(handle, log_print_file, fp, level);
 }
