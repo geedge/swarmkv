@@ -1278,7 +1278,8 @@ void swarmkv_close(struct swarmkv * db)
 		log_handle_destroy(db->logger);
 		db->logger=NULL;
 	}
-	free(db->opts);
+	db->opts->is_assigned_to_db=0;
+	swarmkv_options_free(db->opts);
 	db->opts=NULL;
 	free(db);
 	return;

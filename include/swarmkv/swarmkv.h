@@ -44,6 +44,9 @@ void swarmkv_reply_print(const struct swarmkv_reply *reply, FILE* stream);
 
 struct swarmkv_options;
 struct swarmkv_options *swarmkv_options_new(void);
+/* Once you call swarmkv_open() with the opts, the ownership is transferred, do NOT call swarmkv_options_free().*/
+void swarmkv_options_free(struct swarmkv_options *opts);
+
 int swarmkv_options_set_cluster_port(struct swarmkv_options *opts, unsigned int cluster_port);
 int swarmkv_options_set_health_check_port(struct swarmkv_options *opts, unsigned int health_check_port);
 int swarmkv_options_set_cluster_timeout_us(struct swarmkv_options *opts, unsigned int timeout_us);
@@ -63,6 +66,7 @@ int swarmkv_options_set_health_check_announce_port(struct swarmkv_options *opts,
 
 struct swarmkv;
 
+/* The ownership of opts is transferred to swarmkv instance.*/
 struct swarmkv *swarmkv_open(struct swarmkv_options *opts, const char * cluster_name, char **err);
 void swarmkv_close(struct swarmkv * db);
 
