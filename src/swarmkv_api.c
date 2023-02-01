@@ -67,7 +67,7 @@ int swarmkv_options_set_health_check_port(struct swarmkv_options *opts, unsigned
 }
 int swarmkv_options_set_health_check_announce_port(struct swarmkv_options *opts, unsigned int health_check_announce_port)
 {
-	opts->health_check_port=health_check_announce_port;
+	opts->health_check_announce_port=health_check_announce_port;
 	return 0;
 }
 int swarmkv_options_set_cluster_timeout_us(struct swarmkv_options *opts, unsigned int timeout_ms)

@@ -640,6 +640,11 @@ void connect_peer_eventcb(struct bufferevent *bev, short events, void *arg)
 								conn->peer_listen_addr.addr,
 								err, evutil_socket_error_to_string(err),
 								canceled_rpc);
+        if(conn->fd<=0)
+        {
+            evutil_socket_t fd=bufferevent_getfd(conn->bev);
+            conn->fd=fd;
+        }
 		snet_conn_table_remove(conn);
 		snet_conn_free(conn);
     }
