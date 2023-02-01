@@ -8,6 +8,8 @@
 #include <uuid/uuid.h>
 #include <time.h>
 
+#include "log.h"
+
 #define FOREVER for(;;)
 
 static void help()
@@ -18,9 +20,12 @@ static void help()
 		"Usage:\n"
 		"  -n <Cluster Name>\n"
 		"  -h <Ip:port>\n"
-		"  -c <Ip:port>\n"
+		"  -c <Consul Ip:Consul port>\n"
+		"  -a <Cluster Announce ip:Cluster Announce Port>\n"
+		"  -b <Health Check Announce Ip:Health Check Announce Port>\n"
 		"  -t <Thread Number>\n"
-		"  -k <Key Number\n");
+		"  -k <Key Number>\n"
+		"  -l <Consul Heal Check Port>\n");
 	    exit(1);
 }
 
@@ -34,7 +39,15 @@ int main(int argc, char ** argv)
 	int worker_thread_number=1;
 	unsigned int consul_port=8500;
 	unsigned int cluster_port;
+	unsigned int consul_heal_check_port;
 	char cluster_name[256];
+
+	char cluster_announce_ip[32];
+	unsigned int cluster_announce_port;
+
+	char healthcheck_announce_ip[32];
+	unsigned int healthcheck_announce_port;
+
 	if(argc < 3) { help();}
 	strcpy(consul_host, "127.0.0.1");
 	strncpy(cluster_name, "swarmkv-simple-node", sizeof(cluster_name));
@@ -53,6 +66,14 @@ int main(int argc, char ** argv)
 		{
            	sscanf(argv[++i], "%[^:]:%u", consul_host, &consul_port);
 		}
+		else if(!strcmp(argv[i], "-a") && !lastarg)
+		{
+           	sscanf(argv[++i], "%[^:]:%u", cluster_announce_ip, &cluster_announce_port);
+		}
+		else if(!strcmp(argv[i], "-b") && !lastarg)
+		{
+           	sscanf(argv[++i], "%[^:]:%u", healthcheck_announce_ip, &healthcheck_announce_port);
+		}
 		else if(!strcmp(argv[i], "-t") && !lastarg)
 		{
 			sscanf(argv[++i], "%u", &worker_thread_number);
@@ -60,6 +81,10 @@ int main(int argc, char ** argv)
 		else if(!strcmp(argv[i], "-k") && !lastarg)
 		{
 			sscanf(argv[++i], "%lld", &key_number);
+		}
+		else if(!strcmp(argv[i], "-l") && !lastarg)
+		{
+			sscanf(argv[++i], "%u", &consul_heal_check_port);
 		}
 		else
 		{
@@ -69,11 +94,21 @@ int main(int argc, char ** argv)
 
 	char *err=NULL;
 
+	const char *log_path="./swarmkv-simple-node.log";
+	struct log_handle * logger=log_handle_create(log_path, 0);
+
 	struct swarmkv_options *opts=swarmkv_options_new();
+	swarmkv_options_set_logger(opts, logger);
 	swarmkv_options_set_cluster_port(opts, cluster_port);
 	swarmkv_options_set_bind_address(opts, host);
 	swarmkv_options_set_consul_host(opts, consul_host);
 	swarmkv_options_set_consul_port(opts, consul_port);
+	swarmkv_options_set_health_check_port(opts, consul_heal_check_port);
+
+	swarmkv_options_set_cluster_announce_ip(opts, cluster_announce_ip);
+	swarmkv_options_set_cluster_announce_port(opts, cluster_announce_port);
+	swarmkv_options_set_health_check_announce_port(opts, healthcheck_announce_port);
+
 	swarmkv_options_set_worker_thread_number(opts, worker_thread_number);
 	swarmkv_options_set_cluster_timeout_us(opts, 500000);
 	swarmkv_options_set_sync_interval_us(opts, 500);
@@ -99,7 +134,7 @@ int main(int argc, char ** argv)
 		{
 			reply=swarmkv_command_on(db, NULL, "TCFG tb-%d 100000 10000", i, i);
 			swarmkv_reply_free(reply);
-			if(i%(key_number/10)==0)
+			if(key_number > 10 && i%(key_number/10)==0)
 			{
 				printf(" > %lld%%", i*100/key_number);
 				fflush(stdout);
