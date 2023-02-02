@@ -43,8 +43,8 @@ struct log_handle
     int enable;
     FILE *fp;
     va_list ap;
-	char run_log_path[1024];
-    char cur_log_file[1024];
+	char defined_log_fn[1024];
+    char runtime_log_fn[1024];
     pthread_mutex_t mutex;
     log_op_iface iface;
 };
@@ -96,7 +96,7 @@ int log_open_file(char *file_name, struct log_handle *handle)
 	{
 		return -1;
 	}
-    memcpy(handle->cur_log_file, file_name, strlen(file_name));
+    memcpy(handle->runtime_log_fn, file_name, strlen(file_name));
     handle->fp = fp;
 	return 0;
 }
@@ -148,7 +148,7 @@ int log_create_log_file(struct log_handle *handle)
     {
         return 0;
     }
-    sprintf(tmp_log_file_name, "%s.%04d-%02d-%02d", handle->run_log_path, local_time.tm_year + 1900, local_time.tm_mon + 1, local_time.tm_mday);
+    sprintf(tmp_log_file_name, "%s.%04d-%02d-%02d", handle->defined_log_fn, local_time.tm_year + 1900, local_time.tm_mon + 1, local_time.tm_mday);
 
     if(handle->fp == NULL)
     {
@@ -156,7 +156,7 @@ int log_create_log_file(struct log_handle *handle)
     }
     else
     {
-	    if (0 != memcmp(tmp_log_file_name, handle->cur_log_file, strlen(tmp_log_file_name)))
+	    if (0 != memcmp(tmp_log_file_name, handle->runtime_log_fn, strlen(tmp_log_file_name)))
 	    {
 		    if(0 != log_open_file(tmp_log_file_name, handle))return 0;
 	    }
@@ -178,11 +178,11 @@ static void log_print_file(struct log_handle *handle, int level, const char *mod
              month_str[local_time.tm_mon], local_time.tm_mday, local_time.tm_hour, local_time.tm_min, local_time.tm_sec, local_time.tm_year+1900);
 
     log_create_log_file(handle);
-    fprintf((FILE *)handle->fp, "%s, %s, %s, ", buf, level_str_map[level], module);
+    fprintf(handle->fp, "%s, %s, %s, ", buf, level_str_map[level], module);
 
-    vfprintf((FILE *)handle->fp, fmt, ap);
-    fprintf((FILE *)handle->fp, "\n");
-    fflush((FILE *)handle->fp);
+    vfprintf(handle->fp, fmt, ap);
+    fprintf(handle->fp, "\n");
+    fflush(handle->fp);
 }
 
 static void log_print_console(struct log_handle *handle, int level, const char *module, va_list ap, const char *fmt)
@@ -196,11 +196,11 @@ static void log_print_console(struct log_handle *handle, int level, const char *
     if(NULL == (localtime_r(&t, &local_time))) return;
     snprintf(buf, sizeof(buf), "%s %s %d %02d:%02d:%02d %d", weekday_str[local_time.tm_wday],
              month_str[local_time.tm_mon], local_time.tm_mday, local_time.tm_hour, local_time.tm_min, local_time.tm_sec, local_time.tm_year+1900);
-    fprintf((FILE *)handle->fp, "%s, %s, %s, ", buf, level_str_map[level], module);
+    fprintf(handle->fp, "%s, %s, %s, ", buf, level_str_map[level], module);
 
-    vfprintf((FILE *)handle->fp, fmt, ap);
-    fprintf((FILE *)handle->fp, "\n");
-    fflush((FILE *)handle->fp);
+    vfprintf(handle->fp, fmt, ap);
+    fprintf(handle->fp, "\n");
+    fflush(handle->fp);
 }
 
 void log_options_set_level(struct log_handle * handle, int level)
@@ -228,12 +228,12 @@ struct log_handle *log_handle_create(const char *file_path, int level)
     }
 	handle->enable=1;
     handle->level = level;
-    strncpy(handle->run_log_path, file_path, 1024);
+    strncpy(handle->defined_log_fn, file_path, 1024);
     pthread_mutex_init(&handle->mutex,NULL);
 
     if(handle->enable)
     {
-        log_create_path(handle->run_log_path);
+        log_create_path(handle->defined_log_fn);
     }
 
     return handle;
