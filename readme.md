@@ -50,7 +50,7 @@ Download and unzip swarmkv-xx.zip
 
 SwarmKV uses [HashiCorp Consul](https://www.consul.io/) for cluster management, which includes leader election, health checking, and slot table management. You can download Hashicorp Consul from https://developer.hashicorp.com/consul/downloads.
 
-Then, run consul agent in debug mode. If you are not familiar with Consul, there is a consul configuration file in swarmkv source directory, copy it to a somewhere you desire.
+Then, run consul agent in debug mode. If you are not familiar with Consul, there is a consul configuration file in swarmkv source directory, copy it to somewhere you desire.
 
 - Edit `./swarmkv/test/consul.d/server.hcl` and set the `bind_addr ` as you need
 

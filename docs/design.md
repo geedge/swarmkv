@@ -104,14 +104,14 @@ When adding a new node, the operation is **Assign slot_id from `original_node`  
 
 - `KEYSPACE SETSLOT new_node_ip:port <slot_id> IMPORTING original_node_ip:port` 
   - The command sets the <slot_id> of new_node to IMPORTING state.
-  - When a slot is set as IMPORTING, the node will accept all queries that are about this hash slot, but only if the request is preceded by an ASKING command. If the ASKING command was not given by the client, the query is redirected to the real hash slot owner via a -MOVED redirection error, as would happen normally.
+  - When a slot is set as IMPORTING, the node will accept all keyspace queries that are about this hash slot.
 
 - `KEYSPACE SETSLOT original_node_ip:port <slot_id> MIGRATING new_node_ip:port` 
   - The command sets the <slot_id> of old_node to MIGRATING state.
   - When a slot is set as MIGRATING, the node will accept all queries that are about this hash slot, but only if the key in question exists, otherwise the query is forwarded using a -ASK redirection to the node that is target of the migration.
 
 - `KEYSPACE GETKEYSINSLOT original_node_ip:port <slot_id>`
-  - The command gets a blob of all key entries of <slot_Id> from the original_node
+  - The command gets a blob of all key entries of <slot_id> from the original_node
 
 - `KEYSPACE ADDKEYSTOSLOT new_node_ip:port <slot_id> blob_of_getkeysinslot  `
   - The command adds all key entries to the <slot_id> of new_node.
@@ -122,7 +122,7 @@ When adding a new node, the operation is **Assign slot_id from `original_node`  
 
 After all desired slots are migrated, the `swarmkv-cli` updates the global slot table in Consul.
 
-Known Issues:
+Known issues:
 
 - Deleting existing keys and adding replica to existing keys between the `getkeysinslot` and `delslotkeys` could not take effect on the new node. It's better to execute `CLUSTER SANITY heal` after the migration.
 
@@ -140,11 +140,11 @@ Known Issues:
 When a requestor executes a command, it takes the following steps
 
 - Local Execution
-  - For key exists in local store, commands are executed locally, except for commands influence keyspace.
+  - For key exists in local store, commands are executed locally, except for commands modify keyspace.
 - Key Route
-  - The requestor hash the key to slot to find out the key owner.
+  - The requestor hash the key to slot id to find out the key owner.
   - The requestor send  `KEYSPACE RADD/RLIST/DEL` command to the key owner.
-- The Key owner processes the keyspace command and return the addresses of all replica.
+- The key owner processes the keyspace command and return the addresses of all replica.
 - The requestor receives the key owner's reply, it will
   - Create local replica
   - Send the command to the one of the replica
@@ -152,8 +152,6 @@ When a requestor executes a command, it takes the following steps
 
 - Other replica executes the command, registers the requestor as one of the replica nodes, and send a reply to the requestor
 - The requestor receives the reply and invokes user callback function.
-
-Low-level commands don't have auto-route ability. If you execute low-level command via `swarmkv-cli`, you should execute `ATTACH IP:port` first.
 
 ## CRDT Explained
 
@@ -273,15 +271,20 @@ For a swarmkv node, it has three modules. Each module has its own internal data 
 The source files are organized as follows:
 
 - src/swarmkv.c event loop, orchestration
-- src/swarmkv_store.c  kv operation, key hash table is implemented with [uthash](https://troydhanson.github.io/uthash/). Use [sds](https://github.com/antirez/sds) as a dynamic string library.
+- src/swarmkv_api.c API implementaions.
+- src/swarmkv_store.c  KV operations, key hash table is implemented with [uthash](https://troydhanson.github.io/uthash/). Use [sds](https://github.com/antirez/sds) as a dynamic string library.
+- src/swarmkv_sync.c batching CRDT syncronization.
 - src/t_string.c  commands of data type string.
 - src/t_set.c commands of data type set.
 - src/swarmkv_keyspace.c: The control plane of SwarmKV. Interact with [HashiCorp Consul](https://www.consul.io/) for node discovery, slot assignment, and leader election.
 - src/swarmkv_message.c: Message is encoded to [MessagePack](https://msgpack.org/index.html) format by [mpack](https://github.com/ludocode/mpack) library.
 - src/swarmkv_net.c: High performance P2P communication via [libevent](https://libevent.org/).
-- src/test/ Unit tests.
+- src/swarmkv_message.c Collecting performance metrics.
+- src/t_xxx.c Implementing SwarmKV data types.
 - src/deps/ Dependencies in source codes format, such as [uthash](https://troydhanson.github.io/uthash/), [sds](https://github.com/antirez/sds), [mpack](https://github.com/ludocode/mpack), [timeout](https://25thandclement.com/~william/projects/timeout.c.html), [cJSON](https://github.com/DaveGamble/cJSON), [HDRHistogram](https://github.com/HdrHistogram/HdrHistogram_c)
 - src/vendor/  Dependencies in archive format.
+- CRDT/ Implementing Conflict-free replicated data type.
+- test/ Unit tests.
 - tools/swarmkv_cli: CLI implementation which is facilitated by [linenoise](https://github.com/antirez/linenoise).
 
 # Similar projects
