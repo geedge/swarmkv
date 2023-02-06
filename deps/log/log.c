@@ -141,14 +141,14 @@ int log_create_log_file(struct log_handle *handle)
 {
     time_t t;
     struct tm local_time;
-    char tmp_log_file_name[512];
+    char tmp_log_file_name[1024+128];
 
     time(&t);
     if(NULL == (localtime_r(&t, &local_time)))
     {
         return 0;
     }
-    sprintf(tmp_log_file_name, "%s.%04d-%02d-%02d", handle->defined_log_fn, local_time.tm_year + 1900, local_time.tm_mon + 1, local_time.tm_mday);
+    snprintf(tmp_log_file_name, sizeof(tmp_log_file_name), "%s.%04d-%02d-%02d", handle->defined_log_fn, local_time.tm_year + 1900, local_time.tm_mon + 1, local_time.tm_mday);
 
     if(handle->fp == NULL)
     {
