@@ -580,7 +580,7 @@ static struct swarmkv_reply *keyroute_fail_reply(enum cmd_keyroute_failover fail
 			reply=swarmkv_reply_new_integer(0);		
 			break;
 		case REPLY_INT_MINORS1:
-			reply=swarmkv_reply_new_integer(0);
+			reply=swarmkv_reply_new_integer(-1);
 			break;
 		case REPLY_NIL:
 			reply=swarmkv_reply_new_nil();

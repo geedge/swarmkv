@@ -59,10 +59,10 @@ long long OC_token_bucket_control(struct OC_token_bucket *bucket, struct timeval
 	assert(refilled>=0);
 	assert(consumed>=0);
 	int refill_flag=0;
-	
-	if(delta_time_ms>=bucket->cfg.refill_duration_ms)
+
+    to_add=bucket->cfg.CIR*delta_time_ms/1000;
+	if(delta_time_ms>=bucket->cfg.refill_duration_ms && to_add>0)
 	{
-		to_add=bucket->cfg.CIR*delta_time_ms/1000;
 		if(refilled<consumed)
 		{
 			refilled=consumed;
