@@ -1236,7 +1236,7 @@ error_out:
 		swarmkv_keyspace_free(db->mod_keyspace);
 		db->mod_keyspace=NULL;
 	}
-	free(db->opts);
+	swarmkv_options_free(db->opts);
 	db->opts=NULL;
 	free(db);
 	db=NULL;

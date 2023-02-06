@@ -47,8 +47,8 @@ enum cmd_exec_result hset_command(struct swarmkv_module *mod_store, const struct
 	size_t i=0;
 	int ret=0, n_added=0;
 
-	sds field;
-    sds value;
+	sds field=NULL;
+    sds value=NULL;
 	long long int_val=0;
 
 	if(obj->type==OBJ_TYPE_HASH)
