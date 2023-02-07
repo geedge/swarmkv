@@ -67,11 +67,11 @@ develop_build_debug_for_centos7:
     UPLOAD: 0
     PACKAGE: 0
     BUILD_TYPE: Debug
-    SYMBOL_TARGET: swarmkv
+    SYMBOL_TARGET: libswarmkv
     PULP3_REPO_NAME: framework-testing-x86_64.el7
     PULP3_DIST_NAME: framework-testing-x86_64.el7
   artifacts:
-    name: "swarmkv-$CI_COMMIT_REF_NAME-debug"
+    name: "libswarmkv-$CI_COMMIT_REF_NAME-debug"
     paths:
       - build/*.rpm
   only:
@@ -86,11 +86,11 @@ develop_build_release_for_centos7:
     PACKAGE: 1
     BUILD_TYPE: RelWithDebInfo
     ENABLE_DEVEL_SWITCH: "ON"
-    SYMBOL_TARGET: swarmkv
+    SYMBOL_TARGET: libswarmkv
     PULP3_REPO_NAME: framework-testing-x86_64.el7
     PULP3_DIST_NAME: framework-testing-x86_64.el7
   artifacts:
-    name: "swarmkv-$CI_COMMIT_REF_NAME-release"
+    name: "libswarmkv-$CI_COMMIT_REF_NAME-release"
     paths:
       - build/*.rpm
   only:
@@ -102,12 +102,12 @@ release_build_debug_for_centos7:
     UPLOAD: 0
     PACKAGE: 0
     BUILD_TYPE: Debug
-    SYMBOL_TARGET: swarmkv
+    SYMBOL_TARGET: libswarmkv
     PULP3_REPO_NAME: framework-stable-x86_64.el7
     PULP3_DIST_NAME: framework-stable-x86_64.el7
   extends: .build_by_travis_for_centos7
   artifacts:
-    name: "swarmkv-$CI_COMMIT_REF_NAME-debug"
+    name: "libswarmkv-$CI_COMMIT_REF_NAME-debug"
     paths:
     - build/*.rpm
   only:
@@ -118,12 +118,12 @@ release_build_release_for_centos7:
     BUILD_TYPE: RelWithDebInfo
     UPLOAD: 1
     PACKAGE: 1
-    SYMBOL_TARGET: swarmkv
+    SYMBOL_TARGET: libswarmkv
     PULP3_REPO_NAME: framework-stable-x86_64.el7
     PULP3_DIST_NAME: framework-stable-x86_64.el7
   extends: .build_by_travis_for_centos7
   artifacts:
-    name: "swarmkv-$CI_COMMIT_REF_NAME-release"
+    name: "libswarmkv-$CI_COMMIT_REF_NAME-release"
     paths:
       - build/*.rpm
   only:
@@ -157,11 +157,11 @@ develop_build_debug_for_centos8:
     UPLOAD: 0
     PACKAGE: 0
     BUILD_TYPE: Debug
-    SYMBOL_TARGET: swarmkv
+    SYMBOL_TARGET: libswarmkv
     PULP3_REPO_NAME: framework-testing-x86_64.el8
     PULP3_DIST_NAME: framework-testing-x86_64.el8
   artifacts:
-    name: "swarmkv-$CI_COMMIT_REF_NAME-debug"
+    name: "libswarmkv-$CI_COMMIT_REF_NAME-debug"
     paths:
       - build/*.rpm
   only:
@@ -176,11 +176,11 @@ develop_build_release_for_centos8:
     PACKAGE: 1
     BUILD_TYPE: RelWithDebInfo
     ENABLE_DEVEL_SWITCH: "ON"
-    SYMBOL_TARGET: swarmkv
+    SYMBOL_TARGET: libswarmkv
     PULP3_REPO_NAME: framework-testing-x86_64.el8
     PULP3_DIST_NAME: framework-testing-x86_64.el8
   artifacts:
-    name: "swarmkv-$CI_COMMIT_REF_NAME-release"
+    name: "libswarmkv-$CI_COMMIT_REF_NAME-release"
     paths:
       - build/*.rpm
   only:
@@ -192,12 +192,12 @@ release_build_debug_for_centos8:
     UPLOAD: 0
     PACKAGE: 0
     BUILD_TYPE: Debug
-    SYMBOL_TARGET: swarmkv
+    SYMBOL_TARGET: libswarmkv
     PULP3_REPO_NAME: framework-stable-x86_64.el8
     PULP3_DIST_NAME: framework-stable-x86_64.el8
   extends: .build_by_travis_for_centos8
   artifacts:
-    name: "swarmkv-$CI_COMMIT_REF_NAME-debug"
+    name: "libswarmkv-$CI_COMMIT_REF_NAME-debug"
     paths:
       - build/*.rpm
   only:
@@ -208,12 +208,12 @@ release_build_release_for_centos8:
     BUILD_TYPE: RelWithDebInfo
     UPLOAD: 1
     PACKAGE: 1
-    SYMBOL_TARGET: swarmkv
+    SYMBOL_TARGET: libswarmkv
     PULP3_REPO_NAME: framework-stable-x86_64.el8
     PULP3_DIST_NAME: framework-stable-x86_64.el8
   extends: .build_by_travis_for_centos8
   artifacts:
-    name: "swarmkv-$CI_COMMIT_REF_NAME-release"
+    name: "libswarmkv-$CI_COMMIT_REF_NAME-release"
     paths:
       - build/*.rpm
   only:
