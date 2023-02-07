@@ -1,0 +1,220 @@
+variables:
+  GIT_STRATEGY: "clone"
+  BUILD_PADDING_PREFIX: /tmp/padding_for_CPACK_RPM_BUILD_SOURCE_DIRS_PREFIX_PREFIX_PREFIX_PREFIX_PREFIX_PREFIX/
+  INSTALL_PREFIX: "/opt/MESA/lib/"
+  INSTALL_DEPENDENCY_LIBRARY: zlib-devel libuuid-devel openssl-devel framework_env 
+  TESTING_VERSION_BUILD: 0
+  BUILD_IMAGE_CENTOS7: "git.mesalab.cn:7443/mesa_platform/build-env:master"
+  BUILD_IMAGE_CENTOS8: "git.mesalab.cn:7443/mesa_platform/build-env:rockylinux"
+
+stages:
+- build
+
+###############################################################################
+# The script is set to el7 or el8
+###############################################################################
+.build_before_script:
+  before_script:
+    - mkdir -p $BUILD_PADDING_PREFIX/$CI_PROJECT_NAMESPACE/
+    - ln -s $CI_PROJECT_DIR $BUILD_PADDING_PREFIX/$CI_PROJECT_PATH
+    - cd $BUILD_PADDING_PREFIX/$CI_PROJECT_PATH
+    - chmod +x ./ci/travis.sh
+    - yum makecache
+
+.build_by_travis_for_centos7:
+  stage: build
+  image: $BUILD_IMAGE_CENTOS7
+  extends: .build_before_script
+  script:
+    - ./ci/travis.sh
+  tags:
+    - share
+
+.build_by_travis_for_centos8:
+  stage: build
+  image: $BUILD_IMAGE_CENTOS8
+  extends: .build_before_script
+  script:
+    - ./ci/travis.sh
+  tags:
+    - share
+
+###############################################################################
+# compile use image: centos7
+###############################################################################
+branch_build_debug_for_centos7:
+  extends: .build_by_travis_for_centos7
+  variables:
+    BUILD_TYPE: Debug
+  except:
+    - /^develop-.*$/i
+    - /^master.*$/i
+    - tags
+
+branch_build_release_for_centos7:
+  variables:
+    BUILD_TYPE: RelWithDebInfo
+  extends: .build_by_travis_for_centos7
+  except:
+    - /^develop-.*$/i
+    - /^master.*$/i
+    - tags
+
+develop_build_debug_for_centos7:
+  extends: .build_by_travis_for_centos7
+  variables:
+    TESTING_VERSION_BUILD: 1
+    UPLOAD: 0
+    PACKAGE: 0
+    BUILD_TYPE: Debug
+    SYMBOL_TARGET: swarmkv
+    PULP3_REPO_NAME: framework-testing-x86_64.el7
+    PULP3_DIST_NAME: framework-testing-x86_64.el7
+  artifacts:
+    name: "swarmkv-$CI_COMMIT_REF_NAME-debug"
+    paths:
+      - build/*.rpm
+  only:
+    - /^develop-.*$/i
+    - /^master.*$/i
+
+develop_build_release_for_centos7:
+  extends: .build_by_travis_for_centos7
+  variables:
+    TESTING_VERSION_BUILD: 1
+    UPLOAD: 1
+    PACKAGE: 1
+    BUILD_TYPE: RelWithDebInfo
+    ENABLE_DEVEL_SWITCH: "ON"
+    SYMBOL_TARGET: swarmkv
+    PULP3_REPO_NAME: framework-testing-x86_64.el7
+    PULP3_DIST_NAME: framework-testing-x86_64.el7
+  artifacts:
+    name: "swarmkv-$CI_COMMIT_REF_NAME-release"
+    paths:
+      - build/*.rpm
+  only:
+    - /^develop-.*$/i
+    - /^master.*$/i
+
+release_build_debug_for_centos7:
+  variables:
+    UPLOAD: 0
+    PACKAGE: 0
+    BUILD_TYPE: Debug
+    SYMBOL_TARGET: swarmkv
+    PULP3_REPO_NAME: framework-stable-x86_64.el7
+    PULP3_DIST_NAME: framework-stable-x86_64.el7
+  extends: .build_by_travis_for_centos7
+  artifacts:
+    name: "swarmkv-$CI_COMMIT_REF_NAME-debug"
+    paths:
+    - build/*.rpm
+  only:
+    - tags
+
+release_build_release_for_centos7:
+  variables:
+    BUILD_TYPE: RelWithDebInfo
+    UPLOAD: 1
+    PACKAGE: 1
+    SYMBOL_TARGET: swarmkv
+    PULP3_REPO_NAME: framework-stable-x86_64.el7
+    PULP3_DIST_NAME: framework-stable-x86_64.el7
+  extends: .build_by_travis_for_centos7
+  artifacts:
+    name: "swarmkv-$CI_COMMIT_REF_NAME-release"
+    paths:
+      - build/*.rpm
+  only:
+    - tags
+
+###############################################################################
+# compile use image: centos8
+###############################################################################
+branch_build_debug_for_centos8:
+  extends: .build_by_travis_for_centos8
+  variables:
+    BUILD_TYPE: Debug
+  except:
+    - /^develop-.*$/i
+    - /^master.*$/i
+    - tags
+
+branch_build_release_for_centos8:
+  variables:
+    BUILD_TYPE: RelWithDebInfo
+  extends: .build_by_travis_for_centos8
+  except:
+    - /^develop-.*$/i
+    - /^master.*$/i
+    - tags
+
+develop_build_debug_for_centos8:
+  extends: .build_by_travis_for_centos8
+  variables:
+    TESTING_VERSION_BUILD: 1
+    UPLOAD: 0
+    PACKAGE: 0
+    BUILD_TYPE: Debug
+    SYMBOL_TARGET: swarmkv
+    PULP3_REPO_NAME: framework-testing-x86_64.el8
+    PULP3_DIST_NAME: framework-testing-x86_64.el8
+  artifacts:
+    name: "swarmkv-$CI_COMMIT_REF_NAME-debug"
+    paths:
+      - build/*.rpm
+  only:
+    - /^develop-.*$/i
+    - /^master.*$/i
+
+develop_build_release_for_centos8:
+  extends: .build_by_travis_for_centos8
+  variables:
+    TESTING_VERSION_BUILD: 1
+    UPLOAD: 1
+    PACKAGE: 1
+    BUILD_TYPE: RelWithDebInfo
+    ENABLE_DEVEL_SWITCH: "ON"
+    SYMBOL_TARGET: swarmkv
+    PULP3_REPO_NAME: framework-testing-x86_64.el8
+    PULP3_DIST_NAME: framework-testing-x86_64.el8
+  artifacts:
+    name: "swarmkv-$CI_COMMIT_REF_NAME-release"
+    paths:
+      - build/*.rpm
+  only:
+    - /^develop-.*$/i
+    - /^master.*$/i
+
+release_build_debug_for_centos8:
+  variables:
+    UPLOAD: 0
+    PACKAGE: 0
+    BUILD_TYPE: Debug
+    SYMBOL_TARGET: swarmkv
+    PULP3_REPO_NAME: framework-stable-x86_64.el8
+    PULP3_DIST_NAME: framework-stable-x86_64.el8
+  extends: .build_by_travis_for_centos8
+  artifacts:
+    name: "swarmkv-$CI_COMMIT_REF_NAME-debug"
+    paths:
+      - build/*.rpm
+  only:
+    - tags
+
+release_build_release_for_centos8:
+  variables:
+    BUILD_TYPE: RelWithDebInfo
+    UPLOAD: 1
+    PACKAGE: 1
+    SYMBOL_TARGET: swarmkv
+    PULP3_REPO_NAME: framework-stable-x86_64.el8
+    PULP3_DIST_NAME: framework-stable-x86_64.el8
+  extends: .build_by_travis_for_centos8
+  artifacts:
+    name: "swarmkv-$CI_COMMIT_REF_NAME-release"
+    paths:
+      - build/*.rpm
+  only:
+    - tags

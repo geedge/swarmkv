@@ -56,3 +56,6 @@ set_target_properties(swarmkv-shared PROPERTIES LINK_FLAGS "-Wl,--version-script
 target_include_directories(swarmkv-shared PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/inc_internal/)
 
 target_link_libraries(swarmkv-shared CRDT libevent-static libevent-static-pthreads libhdr-static ${SWARMKV_DEPEND_DYN_LIB})
+
+install(FILES ${PROJECT_SOURCE_DIR}/include/swarmkv/swarmkv.h DESTINATION /opt/MESA/include/MESA/ COMPONENT HEADER)
+install(TARGETS swarmkv-shared LIBRARY DESTINATION /opt/MESA/lib/ COMPONENT library)
