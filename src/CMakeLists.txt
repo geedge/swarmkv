@@ -57,5 +57,6 @@ target_include_directories(swarmkv-shared PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/in
 
 target_link_libraries(swarmkv-shared CRDT libevent-static libevent-static-pthreads libhdr-static ${SWARMKV_DEPEND_DYN_LIB})
 
-install(FILES ${PROJECT_SOURCE_DIR}/include/swarmkv/swarmkv.h DESTINATION /opt/MESA/include/MESA/ COMPONENT HEADER)
-install(TARGETS swarmkv-shared LIBRARY DESTINATION /opt/MESA/lib/ COMPONENT library)
+set(CMAKE_INSTALL_PREFIX /opt/MESA/)
+install(FILES ${PROJECT_SOURCE_DIR}/include/swarmkv/swarmkv.h DESTINATION ${CMAKE_INSTALL_PREFIX}/include/MESA/ COMPONENT HEADER)
+install(TARGETS swarmkv-shared LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/ COMPONENT library)

@@ -1,7 +1,7 @@
 variables:
   GIT_STRATEGY: "clone"
   BUILD_PADDING_PREFIX: /tmp/padding_for_CPACK_RPM_BUILD_SOURCE_DIRS_PREFIX_PREFIX_PREFIX_PREFIX_PREFIX_PREFIX/
-  INSTALL_PREFIX: "/opt/MESA/lib/"
+  INSTALL_PREFIX: "/opt/MESA/"
   INSTALL_DEPENDENCY_LIBRARY: zlib-devel libuuid-devel openssl-devel framework_env 
   TESTING_VERSION_BUILD: 0
   BUILD_IMAGE_CENTOS7: "git.mesalab.cn:7443/mesa_platform/build-env:master"
