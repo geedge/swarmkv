@@ -10,3 +10,5 @@ target_link_libraries(swarmkv-cli swarmkv-static ${SWARMKV_DEPEND_DYN_LIB})
 
 add_executable(simple_node swarmkv_simple_node.cpp )
 target_link_libraries(simple_node swarmkv-static libjemalloc-static dl ${SWARMKV_DEPEND_DYN_LIB})
+
+install(TARGETS swarmkv-cli DESTINATION /usr/local/bin/ COMPONENT TOOLS)
