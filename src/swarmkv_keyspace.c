@@ -1522,7 +1522,7 @@ enum cmd_exec_result keyspace_getkeysinslot_command(struct swarmkv_module *mod_k
 	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
 
 	long long slot_id=-1;
-	struct slot_runtime* slot_rt=NULL;
+	struct slot_runtime *slot_rt=NULL;
 	if(0!=str2integer(cmd->argv[2], &slot_id) || slot_id>=KEYSPACE_SLOT_NUM)
 	{
 		*reply=swarmkv_reply_new_error(error_arg_not_valid_integer, cmd->argv[2]);
@@ -1574,7 +1574,7 @@ enum cmd_exec_result keyspace_delslotkeys_command(struct swarmkv_module *mod_key
 	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
 
 	long long slot_id=-1;
-	struct slot_runtime* slot_rt=NULL;
+	struct slot_runtime *slot_rt=NULL;
 	struct key_route_entry *key_entry=NULL, *tmp=NULL;
 	long long delete_num=0;
 

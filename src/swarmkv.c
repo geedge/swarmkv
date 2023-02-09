@@ -147,6 +147,7 @@ static void remote_caller_on_fail(enum e_future_error err, const char * what, vo
 	free(reply_blob);
 	future_destroy(ctx->my_future);
 	free(ctx);
+	swarmkv_reply_free(reply);
 	return;
 }
 void exec_for_remote(const node_t *peer, unsigned long long sequence, const void *data, size_t size, void *arg)
