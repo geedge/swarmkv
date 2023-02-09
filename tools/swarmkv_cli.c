@@ -160,7 +160,7 @@ struct swarmkv_reply *cluster_create_command(struct swarmkv *db, char *argv[], s
 struct swarmkv_reply *cluster_nodes_command(struct swarmkv *db, char *argv[], size_t argc)
 {
 	struct swarmkv_reply *reply=NULL;
-	int ret=0, no_leader=1;
+	int ret=0, no_leader=0;
 	node_t leader; 	
 	node_t nodes[SWARMKV_NODE_MAX];
 	size_t n_node=SWARMKV_NODE_MAX;

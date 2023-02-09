@@ -249,6 +249,7 @@ struct consul_request
 	char symbol[SWARMKV_SYMBOL_MAX];
 	long long request_id;
 	struct evhttp_request *evhttpreq;
+	struct evhttp_connection *evhttpconn; //tcp connection for the request
 	struct future *f;
 	struct consul_client *ref_client;
 	UT_hash_handle hh;
@@ -260,7 +261,6 @@ struct consul_client
 	long long req_id_generator;
 	struct event_base *evbase;	//reference of keyspace evbase
 	struct log_handle *logger;	//reference of logger
-	struct evhttp_connection *evhttpconn; //tcp connection for the request
 	struct consul_request *request_table;
 };
 void consul_request_callback(struct evhttp_request *evhttpreq, void *arg);
@@ -274,6 +274,11 @@ struct consul_request *consul_request_new(struct consul_client *client, const ch
 	req->ref_client=client;
 	req->request_id=client->req_id_generator++;
 
+	req->evhttpconn=evhttp_connection_base_new(client->evbase, NULL, client->consul_agent_host, client->consul_agent_port);
+
+	evhttp_connection_set_timeout(req->evhttpconn, 30*60);//set to 30min for blocking query.
+	evhttp_connection_set_closecb(req->evhttpconn, http_request_on_close, client);
+
 	struct consul_request *tmp=NULL;
 	HASH_FIND(hh, client->request_table, symbol, strlen(symbol), tmp);
 	assert(tmp==NULL);
@@ -284,7 +289,7 @@ struct consul_request *consul_request_new(struct consul_client *client, const ch
 }
 void consul_request_free(struct consul_request *req)
 {
-	//evhttp_connection_free(req->evhttpconn);
+	evhttp_connection_free(req->evhttpconn);
 	//if(req->evhttpreq) evhttp_request_free(req->evhttpreq);
 	future_destroy(req->f);
 	
@@ -302,7 +307,6 @@ void consul_request_callback(struct evhttp_request *evhttpreq, void *arg)
 		log_fatal(req->ref_client->logger, MODULE_SWARMKV_KEYSPACE, "%s failed: %s",
 								req->symbol,
 								evutil_socket_error_to_string(errcode));
-		sleep(1000);
 		promise_failed(p, FUTURE_ERROR_EXCEPTION, "socket error");		
 	}
 
@@ -317,9 +321,9 @@ void consul_request_make(struct consul_request *req, enum evhttp_cmd_type cmd, c
 {
 	struct evkeyvalq *output_headers = evhttp_request_get_output_headers(req->evhttpreq);
 	evhttp_add_header(output_headers, "Host", req->ref_client->consul_agent_host);
-//	evhttp_add_header(output_headers, "Connection", "close");
+	evhttp_add_header(output_headers, "Connection", "close");
 	
-	evhttp_make_request(req->ref_client->evhttpconn, req->evhttpreq, cmd, url);
+	evhttp_make_request(req->evhttpconn, req->evhttpreq, cmd, url);
 }
 
 struct consul_client *consul_client_new(const char *host, unsigned short port, struct event_base *evbase, struct log_handle *logger)
@@ -329,10 +333,7 @@ struct consul_client *consul_client_new(const char *host, unsigned short port, s
 	strncpy(client->consul_agent_host, host, sizeof(client->consul_agent_host));
 	client->logger=logger;
 	client->evbase=evbase;
-	client->evhttpconn=evhttp_connection_base_new(client->evbase, NULL, client->consul_agent_host, client->consul_agent_port);
 
-	evhttp_connection_set_timeout(client->evhttpconn, 1800);//set to 30min for blocking query.
-	evhttp_connection_set_closecb(client->evhttpconn, http_request_on_close, client);
 	return client;
 }
 void consul_client_free(struct consul_client *client)
@@ -343,8 +344,8 @@ void consul_client_free(struct consul_client *client)
 		HASH_DEL(client->request_table, req);
 		consul_request_free(req);
 	}
-	evhttp_connection_free(client->evhttpconn);
 	free(client);
+	return;
 }
 void consul_acquire_session_lock_async(struct swarmkv_keyspace* ks);
 void consul_watch_leadership_changes_async(struct swarmkv_keyspace* ks);
@@ -540,7 +541,7 @@ void consul_session_create_on_success(void *result, void *arg)
 	sdsfree(out);
 	return;
 }
-void consul_session_create_on_on_fail(enum e_future_error err, const char * what, void * arg)
+void consul_session_create_on_fail(enum e_future_error err, const char * what, void * arg)
 {
 	struct swarmkv_keyspace *ks=(struct swarmkv_keyspace*)arg;
 	log_info(ks->logger, MODULE_SWARMKV_KEYSPACE, "consul session create failed: %s.", what);
@@ -567,11 +568,8 @@ void consul_create_session_async(struct swarmkv_keyspace *ks)
 	char url[SWARMKV_URL_MAX]="";
 	snprintf(url, sizeof(url), "/v1/session/create");
 
-	struct future *f=future_create(__func__, consul_session_create_on_success, consul_session_create_on_on_fail, ks);
+	struct future *f=future_create(__func__, consul_session_create_on_success, consul_session_create_on_fail, ks);
 	struct consul_request *req=consul_request_new(ks->consul_client, __func__, f);
-
-	
-//	evhttp_connection_set_timeout(req->evhttpconn, 2);
 
 	struct evkeyvalq *output_headers = evhttp_request_get_output_headers(req->evhttpreq);
 	
@@ -699,8 +697,6 @@ void consul_acquire_session_lock_async(struct swarmkv_keyspace* ks)
 
 	struct future *f=future_create(__func__, acquire_session_lock_on_success, acquire_session_lock_on_fail, ks);
 	struct consul_request *req=consul_request_new(ks->consul_client, __func__, f);
-
-//	evhttp_connection_set_timeout(req->evhttpconn, 2);
 
 	struct evbuffer* output_buffer = evhttp_request_get_output_buffer(req->evhttpreq);
 	evbuffer_add(output_buffer, req_body, sdslen(req_body));

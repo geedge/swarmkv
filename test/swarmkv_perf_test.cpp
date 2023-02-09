@@ -132,7 +132,7 @@ TEST(Performance, Nthreads)
 			successful_of_blocking_call_thread=NULL;
 		}
 	}
-//		sleep(60*100);
+//	sleep(30*60);
 	for(i=0; i<NODE_NUMBER; i++)
 	{
 		//close slowly to cover more code branches.
