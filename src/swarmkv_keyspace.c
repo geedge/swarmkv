@@ -264,6 +264,7 @@ struct consul_client
 	struct consul_request *request_table;
 };
 void consul_request_callback(struct evhttp_request *evhttpreq, void *arg);
+void consul_request_error_callback(enum evhttp_request_error error, void *arg);
 struct consul_request *consul_request_new(struct consul_client *client, const char *symbol, struct future *f)
 {
 	struct consul_request *req=ALLOC(struct consul_request, 1);
@@ -273,6 +274,7 @@ struct consul_request *consul_request_new(struct consul_client *client, const ch
 	req->f=f;
 	req->ref_client=client;
 	req->request_id=client->req_id_generator++;
+	evhttp_request_set_error_cb(req->evhttpreq, consul_request_error_callback);
 
 	req->evhttpconn=evhttp_connection_base_new(client->evbase, NULL, client->consul_agent_host, client->consul_agent_port);
 
@@ -295,6 +297,13 @@ void consul_request_free(struct consul_request *req)
 	
 	free(req);
 }
+void consul_request_error_callback(enum evhttp_request_error error, void *arg)
+{
+	struct consul_request *req=(struct consul_request *)arg;
+	struct promise *p=future_to_promise(req->f);
+	promise_failed(p, FUTURE_ERROR_EXCEPTION, "consul request error");
+	consul_request_free(req);
+}
 void consul_request_callback(struct evhttp_request *evhttpreq, void *arg)
 {
 	struct consul_request *req=(struct consul_request *)arg;
@@ -309,9 +318,10 @@ void consul_request_callback(struct evhttp_request *evhttpreq, void *arg)
 								evutil_socket_error_to_string(errcode));
 		promise_failed(p, FUTURE_ERROR_EXCEPTION, "socket error");		
 	}
-
-	promise_success(p, evhttpreq);
-	
+	else
+	{
+		promise_success(p, evhttpreq);
+	}
 	//The request should be freed automatically after the http_request_done has finished executing.
 	req->evhttpreq=NULL;
 	consul_request_free(req);
