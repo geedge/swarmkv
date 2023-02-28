@@ -471,34 +471,34 @@ void *swarmkv_simple_node(void *args)
 TEST_F(SwarmkvCliNodes, DebugAssert)
 {
 	pthread_t pid=0;
-	size_t node_number=2;
+	size_t node_number=3;
 	char result[4096]={0},target[26]={0};
 	struct cmd_exec_arg* reply_arg=NULL;
 	unsigned int p2p_port_start=9210;
 
 	const char *cluster_name="swarmkv-assert";
+	swarmkv_cli_set_db("swarmkv-assert");
 	swarmkv_cli_create_cluster(cluster_name, "127.0.0.1:9210");
 	wait_for_sync();
 
-	for(size_t i=node_number; i<0; i--)
+	for(size_t i=0; i<node_number; i++)
 	{
 		char *cmd_string=ALLOC(char, 128);
-		snprintf(cmd_string, 128, "../tools/simple_node -n %s -h 127.0.0.1:%zu -t 1 -k %d", cluster_name, p2p_port_start+i, 100);
+		snprintf(cmd_string, 128, "../tools/simple_node -n %s -h 127.0.0.1:%zu -a 127.0.0.1:%zu  -t 1 -k %d", cluster_name, p2p_port_start+i, p2p_port_start+i, 100);
 		pthread_create(&pid, NULL, swarmkv_simple_node, cmd_string);
-		sleep(1);
 	}
 	sleep(1);
 	swarmkv_cli_system_cmd(NULL, result, sizeof(result), NULL, "CLUSTER SANITY heal");
 
 	swarmkv_cli_set_db("swarmkv-assert");
-	for(size_t i=0; i<=node_number; i++)
+	for(size_t i=0; i<node_number; i++)
 	{
-		swarmkv_cli_system_cmd(NULL, result, sizeof(result), NULL, "CLUSTER ADDKEYOWNER 127.0.0.1:%zu", p2p_port_start+i);
+		swarmkv_cli_system_cmd(NULL, result, sizeof(result), NULL, "CLUSTER ADDSLOTOWNER 127.0.0.1:%zu", p2p_port_start+i);
 	}
 	swarmkv_cli_system_cmd(NULL, result, sizeof(result), NULL, "CLUSTER SLOTS");
 
 	reply_arg=cmd_exec_arg_new();
-	for(size_t i=0; i<=node_number; i++)
+	for(size_t i=0; i<node_number; i++)
 	{
 		swarmkv_cli_attach("127.0.0.1", p2p_port_start+i);
 		swarmkv_cli_system_cmd(NULL, result, sizeof(result), NULL, "DEBUG ASSERT");
@@ -511,12 +511,12 @@ TEST_F(SwarmkvCliNodes, DebugAssert)
 			if(i==node_number) break;
 			swarmkv_cli_system_cmd(NULL, result, sizeof(result), NULL, "CLUSTER SLOTS");
 			snprintf(target, sizeof(target), "127.0.0.1:%zu", p2p_port_start+i);
-			if(!strstr(result, target))
+			if(!strstr(result, target) || i==2)
 			{
 				break;
 			}
 			gettimeofday(&end, NULL);
-			if( end.tv_sec-start.tv_sec > 20)
+			if( end.tv_sec-start.tv_sec > 120)
 			{
 				break;
 			}

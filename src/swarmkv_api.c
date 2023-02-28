@@ -95,6 +95,16 @@ int swarmkv_options_set_logger(struct swarmkv_options *opts, void *logger)
 	opts->logger=logger;
 	return 0;
 }
+int swarmkv_options_set_log_level(struct swarmkv_options *opts, int loglevel)
+{
+    opts->loglevel=loglevel;
+    return 0;
+}
+int swarmkv_options_set_log_path(struct swarmkv_options *opts, const char *logpath)
+{
+    opts->logpath=logpath;
+    return 0;
+}
 int swarmkv_options_set_disable_run_for_leader(struct swarmkv_options *opts)
 {
 	opts->run_for_leader_flag=0;

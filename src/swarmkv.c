@@ -1172,7 +1172,14 @@ struct swarmkv *swarmkv_open(struct swarmkv_options *opts, const char *db_name, 
 	else
 	{
 		char log_path[1024]="";
-		snprintf(log_path, sizeof(log_path), "%s.log", db_name);
+        if(opts->logpath)
+        {
+            snprintf(log_path, sizeof(log_path), "%s/%s.log", opts->logpath, db_name);
+        }
+        else
+        {
+            snprintf(log_path, sizeof(log_path), "%s.log", db_name);
+        }
         db->logger=log_handle_create(log_path, opts->loglevel);
 	}
 	swarmkv_create_thread_ctx(db);

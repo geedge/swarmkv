@@ -54,6 +54,8 @@ int swarmkv_options_set_sync_interval_us(struct swarmkv_options *opts, unsigned 
 int swarmkv_options_set_bind_address(struct swarmkv_options *opts, const char* ip_addr);
 
 int swarmkv_options_set_logger(struct swarmkv_options *opts, void *logger);
+int swarmkv_options_set_log_level(struct swarmkv_options *opts, int loglevel);
+int swarmkv_options_set_log_path(struct swarmkv_options *opts, const char *logpath);
 int swarmkv_options_set_consul_port(struct swarmkv_options *opts, unsigned int consul_port);
 int swarmkv_options_set_consul_host(struct swarmkv_options *opts, const char* ip_addr);
 int swarmkv_options_set_dryrun(struct swarmkv_options *opts);
