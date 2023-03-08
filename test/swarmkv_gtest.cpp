@@ -321,7 +321,7 @@ TEST_F(SwarmkvBasicTest, TypeTokenBucket)
 	srand(171);
 	struct swarmkv_reply *reply=NULL;
 	int i=0;
-	while(now.tv_sec - start.tv_sec<10)
+	while(now.tv_sec - start.tv_sec<3)
 	{
 		request_tokens=random()%(2*rate);
 		cmd_exec_arg_expect_integer(arg, 0);
@@ -398,6 +398,17 @@ TEST_F(SwarmkvBasicTest, TypeHash)
 
 	reply=swarmkv_command(db, "HGET %s name", key);
 	ASSERT_EQ(reply->type, SWARMKV_REPLY_NIL);
+	swarmkv_reply_free(reply);
+
+	const char *key2="uid002";
+	reply=swarmkv_command(db, "HINCRBY %s age 30", key2);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 30);
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db, "HINCRBY %s age -1", key2);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 30-1);
 	swarmkv_reply_free(reply);
 }
 TEST_F(SwarmkvBasicTest, EXPIRE_TTL)

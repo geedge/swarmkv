@@ -203,12 +203,11 @@ enum cmd_exec_result hincrby_command(struct swarmkv_module *mod_store, const str
 	const sds key=cmd->argv[1];
 	sds field=cmd->argv[2];
 
-	char *endptr=NULL;
-	long long increment=strtol(cmd->argv[3], &endptr, 10);
-	if(*endptr!='\0')
+	long long increment=0;
+	if(!is_number(cmd->argv[3], sdslen(cmd->argv[3]), &increment))
 	{
 		*reply=swarmkv_reply_new_error(error_value_not_integer);
-		return FINISHED; 		
+		return FINISHED;
 	}
 
 	obj=store_lookup(mod_store, key);
@@ -230,14 +229,14 @@ enum cmd_exec_result hincrby_command(struct swarmkv_module *mod_store, const str
 	if(obj->type==OBJ_TYPE_HASH)
 	{
         ret=OR_map_incrby(obj->hash, field, sdslen(field), increment, &result);
-        if(ret==0)
-        {
-		    *reply=swarmkv_reply_new_integer(result);
-            sobj_need_sync(mod_store, obj);
-        }
-		else
+		if(ret<0)
         {
             *reply=swarmkv_reply_new_error(error_wrong_type);	
+        }
+		else
+		{
+		    *reply=swarmkv_reply_new_integer(result);
+            sobj_need_sync(mod_store, obj);
         }
 	}
 	else
