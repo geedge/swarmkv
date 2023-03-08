@@ -69,6 +69,7 @@ struct swarmkv_options
 	unsigned int sync_interval_us;
 	struct log_handle *logger;
 	int loglevel;
+    const char *logpath;
 	char cluster_announce_ip[MAX_IPV4_ADDR_LEN];
 	char bind_address[MAX_IPV4_ADDR_LEN];
 	char consul_agent_host[MAX_IPV4_ADDR_LEN];

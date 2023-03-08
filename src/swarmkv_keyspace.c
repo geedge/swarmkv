@@ -807,18 +807,24 @@ void consul_watch_leadership_changes_async(struct swarmkv_keyspace* ks)
 }
 void watch_slots_changes_on_success(void *result, void *arg)
 {
+    struct evhttp_request *req=(struct evhttp_request*)result;
 	struct swarmkv_keyspace *ks=(struct swarmkv_keyspace*)arg;
 	cJSON *metadata_array=NULL, *metadata=NULL, *value=NULL, *modify_idx=NULL;
-	int	i=0;
-	
-	struct key_slot *new_slots=NULL;
-	struct evhttp_request *req=(struct evhttp_request*)result;
-	struct evbuffer *buf=NULL;
-	buf=evhttp_request_get_input_buffer(req);
-	size_t len = evbuffer_get_length(buf);
-	sds resp_body_buff=sdsnewlen(SDS_NOINIT, len);
-	evbuffer_copyout(buf, resp_body_buff, len);
+	int	i=0,resp_code=0;
 
+    resp_code=evhttp_request_get_response_code(req);
+    if(resp_code!=200)
+    {
+        log_info(ks->logger, MODULE_SWARMKV_KEYSPACE, "watch slot changes failed: HTTP code %d.", resp_code);
+        consul_watch_slots_changes_async(ks);
+	    return;
+    }
+    struct key_slot *new_slots=NULL;
+    struct evbuffer *buf=NULL;
+    buf=evhttp_request_get_input_buffer(req);
+    size_t len = evbuffer_get_length(buf);
+    sds resp_body_buff=sdsnewlen(SDS_NOINIT, len);
+    evbuffer_copyout(buf, resp_body_buff, len);
 
 	metadata_array=cJSON_Parse(resp_body_buff);
 	metadata=cJSON_GetArrayItem(metadata_array, 0);
