@@ -183,7 +183,16 @@ TEST(OCTokenBucket, Basic)
 	tokens=OC_token_bucket_control(bucket, now, OCTB_CMD_CONSUME_NORMAL, 10);
 	EXPECT_EQ(tokens, 10);
 	OC_token_bucket_free(bucket);
-	
+
+	gettimeofday(&now, NULL);
+	bucket=OC_token_bucket_new(uuid, now, 0, 0);
+
+	tokens=OC_token_bucket_control(bucket, now, OCTB_CMD_CONSUME_NORMAL, 140);
+	EXPECT_EQ(tokens, 140);
+
+	tokens=OC_token_bucket_control(bucket, now, OCTB_CMD_CONSUME_NORMAL, 65535);
+	EXPECT_EQ(tokens, 65535);
+	OC_token_bucket_free(bucket);
 }
 TEST(OCTokenBucket, Merge)
 {

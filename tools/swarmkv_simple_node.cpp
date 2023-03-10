@@ -1,5 +1,7 @@
 #include "swarmkv/swarmkv.h"
+#include "swarmkv_utils.h"
 #include <gtest/gtest.h>
+#include <stdlib.h>
 #include <string.h>
 #include <pthread.h>
 #include <asm/errno.h>
@@ -7,16 +9,28 @@
 #include <unistd.h>
 #include <uuid/uuid.h>
 #include <time.h>
-
 #include "log.h"
 
 #define FOREVER for(;;)
+
+static long long tokens=0;
+
+#define get_delta_ms(start, end) ((end.tv_sec-start.tv_sec)*1000 + (end.tv_usec-start.tv_usec)/1000)
+
+void tconsume_callback(const struct swarmkv_reply* reply, void * cb_arg)
+{
+	if(reply->type==SWARMKV_REPLY_INTEGER && reply->integer > 0)
+	{
+		atomic_add(&tokens, reply->integer);
+	}
+	return;
+}
 
 static void help()
 {
 	fprintf(stderr, "Welcome to Swarmkv Node\n");
 	fprintf(stderr,
-		"swarmkv_simple_node <-n| -h | -p |-t> arg\n"
+		"simple_node <-n| -h | -p |-t> arg\n"
 		"Usage:\n"
 		"  -n <Cluster Name>\n"
 		"  -h <Ip:port>\n"
@@ -25,7 +39,8 @@ static void help()
 		"  -b <Health Check Announce Ip:Health Check Announce Port>\n"
 		"  -t <Thread Number>\n"
 		"  -k <Key Number>\n"
-		"  -l <Consul Heal Check Port>\n");
+		"  -l <Consul Heal Check Port>\n"
+		"e.g.:./simple_node -n demo -h 127.0.0.1:5210 -a 127.0.0.1:5210  -t 1 -k 1\n");
 	    exit(1);
 }
 
@@ -94,11 +109,7 @@ int main(int argc, char ** argv)
 
 	char *err=NULL;
 
-	const char *log_path="./swarmkv-simple-node.log";
-	struct log_handle * logger=log_handle_create(log_path, 0);
-
 	struct swarmkv_options *opts=swarmkv_options_new();
-	swarmkv_options_set_logger(opts, logger);
 	swarmkv_options_set_cluster_port(opts, cluster_port);
 	swarmkv_options_set_bind_address(opts, host);
 	swarmkv_options_set_consul_host(opts, consul_host);
@@ -132,7 +143,7 @@ int main(int argc, char ** argv)
 
 		for(i=0; i<key_number; i++)
 		{
-			reply=swarmkv_command_on(db, NULL, "TCFG tb-%d 100000 10000", i, i);
+			reply=swarmkv_command_on(db, NULL, "TCFG tb-%d 50000 50000", i, i);
 			swarmkv_reply_free(reply);
 			if(key_number > 10 && i%(key_number/10)==0)
 			{
@@ -145,12 +156,41 @@ int main(int argc, char ** argv)
 		if(eplapsed_second==0){ eplapsed_second=1;}
 		printf("> 100%%\nUse %lld seconds, %lld cmd/s.\n", (long long) end.tv_sec-start.tv_sec, key_number/eplapsed_second);
 	}
-	unsigned int round=0;
+
+	char key[128]={0};
+	unsigned int round=0, async_round=1;
+	struct timeval now;
+	gettimeofday(&now, NULL);
+
 	FOREVER
 	{
-		reply=swarmkv_command(db, "tconsume tb-%lld 1000", round%key_number);
-		swarmkv_reply_free(reply);
-		round++;
+		/*Multiple token synchronization test*/
+		if(key_number > 1)
+		{
+			reply=swarmkv_command(db, "tconsume tb-%lld 1000", round%key_number);
+			swarmkv_reply_free(reply);
+			round++;
+			continue;
+		}
+		/*tb-0 for asynchronous token acquisition testing*/
+		snprintf(key, sizeof(key), "tb-0");
+		long long consume_token[]={210, 60, 1514, 407};
+		swarmkv_tconsume(db, key, strlen(key), consume_token[rand()%4], tconsume_callback, NULL);
+		struct timeval end;
+		gettimeofday(&end, NULL);
+		long long delta_time_ms = get_delta_ms(now, end);
+		if(delta_time_ms >= 1000)
+		{
+			async_round++;
+			long long get_token = atomic_read(&tokens);
+			printf("Take time %lld, Consumed token %lld\n", delta_time_ms, get_token);
+			atomic_set(&tokens, 0);
+			gettimeofday(&now, NULL);
+			if(async_round%5==0)
+			{
+				usleep(1000000);
+			}
+		}
 	};
 	swarmkv_close(db);
 	return ret;

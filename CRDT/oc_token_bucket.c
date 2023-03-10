@@ -60,6 +60,11 @@ long long OC_token_bucket_control(struct OC_token_bucket *bucket, struct timeval
 	assert(consumed>=0);
 	int refill_flag=0;
 
+    if(bucket->cfg.CBS==0 && bucket->cfg.CIR==0)
+    {
+        cmd=OCTB_CMD_CONSUME_FORCE;
+    }
+
     to_add=bucket->cfg.CIR*delta_time_ms/1000;
 	if(delta_time_ms>=bucket->cfg.refill_duration_ms && to_add>0)
 	{
