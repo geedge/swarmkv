@@ -324,7 +324,6 @@ TEST_F(SwarmkvBasicTest, TypeTokenBucket)
 	while(now.tv_sec - start.tv_sec<3)
 	{
 		request_tokens=random()%(2*rate);
-		cmd_exec_arg_expect_integer(arg, 0);
 		reply=swarmkv_command(db, "TCONSUME %s %lld FLEXIBLE", key, request_tokens);
 		if(reply->type==SWARMKV_REPLY_INTEGER)
 		{
@@ -336,6 +335,23 @@ TEST_F(SwarmkvBasicTest, TypeTokenBucket)
 	}
 	EXPECT_LE(got_tokens, (now.tv_sec -start.tv_sec)*rate+capacity);	
 	cmd_exec_arg_free(arg);
+
+	//Infinite tokens
+	reply=swarmkv_command(db, "TCFG %s 0 0", key);
+	EXPECT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	swarmkv_reply_free(reply);
+	long long t=0;
+	for(i=0; i<100; i++)
+	{
+		reply=swarmkv_command(db, "TCONSUME %s 10000", key);
+		t+=reply->integer;
+		swarmkv_reply_free(reply);
+	}
+	EXPECT_EQ(t, 10000*i);
+	reply=swarmkv_command(db, "TINFO %s", key);
+	ASSERT_EQ(reply->n_element, 10);
+	EXPECT_EQ(reply->elements[5]->integer, got_tokens+t);
+	swarmkv_reply_free(reply);
 }
 TEST_F(SwarmkvBasicTest, TypeHash)
 {

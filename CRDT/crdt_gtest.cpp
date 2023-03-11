@@ -184,14 +184,65 @@ TEST(OCTokenBucket, Basic)
 	EXPECT_EQ(tokens, 10);
 	OC_token_bucket_free(bucket);
 
-	gettimeofday(&now, NULL);
-	bucket=OC_token_bucket_new(uuid, now, 0, 0);
 
+}
+TEST(OCTokenBucket, Boundary)
+{
+	uuid_t uuid;
+	uuid_generate(uuid);
+
+	struct timeval now;
+	gettimeofday(&now, NULL);
+	struct OC_token_bucket *bucket=NULL;
+	long long tokens=0, consumed=0;
+
+	//Zero CIR
+	bucket=OC_token_bucket_new(uuid, now, 0, 1000);
+	tokens=OC_token_bucket_control(bucket, now, OCTB_CMD_CONSUME_NORMAL, 1000);
+	EXPECT_EQ(tokens, 1000);
+
+	now.tv_sec++;
+	tokens=OC_token_bucket_control(bucket, now, OCTB_CMD_CONSUME_NORMAL, 1);
+	EXPECT_EQ(tokens, 0);
+	OC_token_bucket_free(bucket);
+
+	//Zero CBS
+	bucket=OC_token_bucket_new(uuid, now, 1000, 0);
+	tokens=OC_token_bucket_control(bucket, now, OCTB_CMD_CONSUME_NORMAL, 1);
+	EXPECT_EQ(tokens, 0);
+	OC_token_bucket_free(bucket);
+
+	//Infinite Tokens
+	bucket=OC_token_bucket_new(uuid, now, 0, 0);
 	tokens=OC_token_bucket_control(bucket, now, OCTB_CMD_CONSUME_NORMAL, 140);
+	consumed+=tokens;
 	EXPECT_EQ(tokens, 140);
 
+
 	tokens=OC_token_bucket_control(bucket, now, OCTB_CMD_CONSUME_NORMAL, 65535);
+	consumed+=tokens;
 	EXPECT_EQ(tokens, 65535);
+
+	tokens=OC_token_bucket_control(bucket, now, OCTB_CMD_READ_CONSUEMD, 0);
+	EXPECT_EQ(tokens, consumed);
+
+	tokens=OC_token_bucket_control(bucket, now, OCTB_CMD_READ_REFILLED, 0);
+	EXPECT_EQ(tokens, consumed);
+
+	now.tv_sec++;
+	OC_token_bucket_configure(bucket, now, 100, 500, 10);
+	
+	now.tv_sec+=500/100;
+	tokens=OC_token_bucket_control(bucket, now, OCTB_CMD_CONSUME_NORMAL, 500);
+	consumed+=tokens;
+	EXPECT_EQ(tokens, 500);
+
+	tokens=OC_token_bucket_control(bucket, now, OCTB_CMD_READ_CONSUEMD, 0);
+	EXPECT_EQ(tokens, consumed);
+
+	tokens=OC_token_bucket_control(bucket, now, OCTB_CMD_READ_REFILLED, 0);
+	EXPECT_EQ(tokens, consumed);
+
 	OC_token_bucket_free(bucket);
 }
 TEST(OCTokenBucket, Merge)

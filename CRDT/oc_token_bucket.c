@@ -59,10 +59,12 @@ long long OC_token_bucket_control(struct OC_token_bucket *bucket, struct timeval
 	assert(refilled>=0);
 	assert(consumed>=0);
 	int refill_flag=0;
-
+	int infinite_flag=0;
     if(bucket->cfg.CBS==0 && bucket->cfg.CIR==0)
     {
-        cmd=OCTB_CMD_CONSUME_FORCE;
+		infinite_flag=1;
+		refilled+=tokens;
+		refill_flag=1;
     }
 
     to_add=bucket->cfg.CIR*delta_time_ms/1000;
@@ -93,16 +95,23 @@ long long OC_token_bucket_control(struct OC_token_bucket *bucket, struct timeval
 	switch(cmd)
 	{
 		case OCTB_CMD_CONSUME_AS_MUCH_AS_POSSIBLE:
-			assigned=global_available;
+			assigned=infinite_flag?tokens:global_available;
 			break;
 		case OCTB_CMD_CONSUME_FORCE:
 			assigned=tokens;
 			break;
-		case OCTB_CMD_CONSUME_FLEXIBLE:			
-			assigned=MIN(tokens, local_available);
+		case OCTB_CMD_CONSUME_FLEXIBLE:
+			assigned=infinite_flag?tokens:MIN(tokens, local_available);;
 			break;
 		case OCTB_CMD_CONSUME_NORMAL:
-			assigned=(tokens<=local_available) ? tokens:0;
+			if(infinite_flag)
+			{
+				assigned=tokens;
+			}
+			else
+			{
+				assigned=(tokens<=local_available) ? tokens:0;
+			}
 			break;
 		case OCTB_CMD_READ_AVAILABLE:
 			return global_available;
