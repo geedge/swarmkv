@@ -14,7 +14,7 @@ struct swarmkv_reply* deserialize_reply(mpack_node_t reply_node)
 	{
 		case SWARMKV_REPLY_INTEGER:
 			item=mpack_node_map_cstr(reply_node, "integer");
-			reply=swarmkv_reply_new_integer(mpack_node_int(item));
+			reply=swarmkv_reply_new_integer(mpack_node_i64(item));
 			break;
 		case SWARMKV_REPLY_STRING:
 		case SWARMKV_REPLY_ERROR:
@@ -108,7 +108,7 @@ void swarmkv_msg_serialize_reply(const struct swarmkv_reply* reply, char **blob,
 	{
 		case SWARMKV_REPLY_INTEGER:
 			mpack_write_cstr(&writer, "integer");
-			mpack_write_int(&writer, reply->integer);
+			mpack_write_i64(&writer, reply->integer);
 			break;
 		case SWARMKV_REPLY_STRING:
 		case SWARMKV_REPLY_STATUS:
