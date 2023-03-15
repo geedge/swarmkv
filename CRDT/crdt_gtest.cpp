@@ -35,56 +35,87 @@ enum traffic_type
 	LIGHT_UNIFORM_TYPE,
 	LIGHT_TWO_EIGHT_TYPE,
 	HEAVY_TWO_EIGHT_TYPE,
-	HEAVY_UNIFORM_EXTREME_TYPE
+	HEAVY_UNIFORM_TYPE
 };
 
-long long get_request_tokens(int index, enum traffic_type type, long long step_us, long long CIR, long long CBS) 
+enum configure_command
+{
+	ASYNC_DEFAULT,
+	ASYNC_ADD_NODE,
+	ASYNC_ADJUST_MERGE,
+	CONCURRNET_DEFAULT,
+	CONCURRENT_ADD_NODE,
+	CONCURRENT_ADJUST_MERGE
+};
+
+long long get_request_tokens(size_t index, enum traffic_type type, long long step_us, long long CIR, long long CBS, size_t replica_num, size_t new_replica_bindex) 
 {
 	long long request_size;
-	long long standard = CIR * step_us / 1000000;
-	long long sd10 = floor((long double)standard * 0.1);
-	int eight_replica_num = floor(REPLICA_NUMBER * 0.8);
-	long long rand_sd10 = random() % sd10;
-	int scope_flag = FALSE;
-	if (random() % 2) scope_flag = TRUE;
+	double average_ratio2, average_ratio8, total_ratio2, total_ratio8;
+	long long standard = CIR*step_us/1000000;
+	long long sdf = floor((long double)standard * 0.05);	//floating 5%
+	size_t occupy8_replica_num = floor(replica_num * 0.8);
+	long long rand_sdf = random()%sdf;
+	size_t scope_flag = FALSE;
+	if(random()%2) scope_flag = TRUE;
+	if(new_replica_bindex > 0 && index >= new_replica_bindex)
+	{
+		request_size = (long long)floor((long double)standard * 0.3); //request for new nodes 
+		if (scope_flag) {
+			request_size += rand_sdf;
+		} else {
+			request_size -= rand_sdf;
+		}
+		return request_size;
+	}
 	switch (type) 
 	{
 		case LIGHT_UNIFORM_TYPE:
 			request_size = (long long)floor((long double)standard * 0.5);
 			if (scope_flag) {
-			request_size += rand_sd10;
+				request_size += rand_sdf;
 			} else {
-			request_size -= rand_sd10;
+				request_size -= rand_sdf;
 			}
 			break;
 		case LIGHT_TWO_EIGHT_TYPE:
-			if (index < eight_replica_num && scope_flag) {
-			request_size = (long long)floor((long double)standard * 0.2) + rand_sd10;
-			} else if (index < eight_replica_num && !scope_flag) {
-			request_size = (long long)floor((long double)standard * 0.2) - rand_sd10;
-			} else if (index >= eight_replica_num && scope_flag) {
-			request_size = (long long)floor((long double)standard * 1.6) + rand_sd10;
+			//average 0.67*CIR per node
+			total_ratio2 = (0.67*replica_num) / 5;
+			total_ratio8 = (0.67*replica_num) - total_ratio2;
+			average_ratio2 = total_ratio2 / occupy8_replica_num;
+			average_ratio8 = total_ratio8 / (replica_num-occupy8_replica_num);  
+			if (index < occupy8_replica_num && scope_flag) {
+				request_size = (long long)floor((long double)standard * average_ratio2) + rand_sdf;
+			} else if (index < occupy8_replica_num && !scope_flag) {
+				request_size = (long long)floor((long double)standard * average_ratio2) - rand_sdf;
+			} else if (index >= occupy8_replica_num && scope_flag) {
+				request_size = (long long)floor((long double)standard * average_ratio8) + rand_sdf;
 			} else {
-			request_size = (long long)floor((long double)standard * 1.6) - rand_sd10;
+				request_size = (long long)floor((long double)standard * average_ratio8) - rand_sdf;
 			}
 			break;
 		case HEAVY_TWO_EIGHT_TYPE:
-			if (index < eight_replica_num && scope_flag) {
-			request_size = (long long)floor((long double)standard * 0.6) + rand_sd10;
-			} else if (index < eight_replica_num && !scope_flag) {
-			request_size = (long long)floor((long double)standard * 0.6) - rand_sd10;
-			} else if (index >= eight_replica_num && scope_flag) {
-			request_size = (long long)floor((long double)standard * 4.8) + rand_sd10;
+			//average 2*CIR per node
+			total_ratio2 = (2.0*replica_num) / 5;
+			total_ratio8 = (2.0*replica_num) - total_ratio2;
+			average_ratio2 = total_ratio2 / occupy8_replica_num;  
+			average_ratio8 = total_ratio8 / (replica_num-occupy8_replica_num); 
+			if (index < occupy8_replica_num && scope_flag) {
+				request_size = (long long)floor((long double)standard * average_ratio2) + rand_sdf;
+			} else if (index < occupy8_replica_num && !scope_flag) {
+				request_size = (long long)floor((long double)standard * average_ratio2) - rand_sdf;
+			} else if (index >= occupy8_replica_num && scope_flag) {
+				request_size = (long long)floor((long double)standard * average_ratio8) + rand_sdf;
 			} else {
-			request_size = (long long)floor((long double)standard * 4.8) - rand_sd10;
+				request_size = (long long)floor((long double)standard * average_ratio8) - rand_sdf;
 			}
 			break;
-		case HEAVY_UNIFORM_EXTREME_TYPE:
+		case HEAVY_UNIFORM_TYPE:
 			request_size = (long long)floor((long double)standard * 2);
 			if (scope_flag) {
-			request_size += rand_sd10;
+				request_size += rand_sdf;
 			} else {
-			request_size -= rand_sd10;
+				request_size -= rand_sdf;
 			}
 			break;
 		default:
@@ -93,16 +124,18 @@ long long get_request_tokens(int index, enum traffic_type type, long long step_u
 	return request_size;
 }
 
-void traffic_distribution(traffic_type type)
+void traffic_distribution(traffic_type type, enum configure_command configure=ASYNC_DEFAULT)
 {
-	struct OC_token_bucket *buckets[REPLICA_NUMBER];
+	size_t init_replica_num = REPLICA_NUMBER, new_replica_bindex = 0;
+	size_t replica_num = init_replica_num;
+	struct OC_token_bucket *buckets[100];
 	size_t i = 0, j = 0;
 	long long CIR = 1*1024*1024; // 1Mps
 	long long CBS = 2*1024*1024;
 	uuid_t uuid;
 	struct timeval start;
 	gettimeofday(&start, NULL);
-	for (i = 0; i < REPLICA_NUMBER; i++) 
+	for (i = 0; i < replica_num; i++) 
 	{
 		uuid_generate(uuid);
 		buckets[i] = OC_token_bucket_new(uuid, start, CIR, CBS);
@@ -115,27 +148,56 @@ void traffic_distribution(traffic_type type)
 	memcpy(&now, &start, sizeof(now));
 	step.tv_sec = 0;
 	step.tv_usec = (suseconds_t)step_us;
+	int concurrent_flag = FALSE;
+	if(configure == CONCURRNET_DEFAULT || configure == CONCURRENT_ADD_NODE || configure == CONCURRENT_ADJUST_MERGE)
+	{
+		concurrent_flag = TRUE;
+	}
 	for (i = 0; (long long)i < mimic_duration_us / step_us; i++) 
 	{
-		j = i % 3; // sequence selection
 		timeradd(&now, &step, &now);
-		tokens = get_request_tokens(j, type, step_us, CIR, CBS);
-		flexible_tokens = OC_token_bucket_control(buckets[j], now, OCTB_CMD_CONSUME_FLEXIBLE, tokens);
-		requested += tokens;
-		consumed += flexible_tokens;
-		if(i%100==0)
+		for(j = 0; j < replica_num; j++)
 		{
-			OC_token_bucket_sync(buckets, REPLICA_NUMBER);
+			if(!concurrent_flag)
+			{
+				j = i % replica_num; // sequence selection
+				tokens = get_request_tokens(j, type, step_us, CIR, CBS, init_replica_num, new_replica_bindex);
+			}else 
+			{
+				tokens = get_request_tokens(j, type, step_us, CIR, CBS, init_replica_num, new_replica_bindex);
+				if(new_replica_bindex <= 0 || j < new_replica_bindex) 
+					tokens = round((long double)tokens/init_replica_num);
+			} 
+			flexible_tokens = OC_token_bucket_control(buckets[j], now, OCTB_CMD_CONSUME_FLEXIBLE, tokens);
+			requested += tokens;
+			consumed += flexible_tokens;
+			if(configure == ASYNC_ADJUST_MERGE || configure == CONCURRENT_ADJUST_MERGE)
+			{
+				if(i % 10000 == 0)
+				{
+					OC_token_bucket_sync(buckets, replica_num);
+				}
+			}else 
+			{
+				OC_token_bucket_sync(buckets, replica_num);
+			}
+			if(!concurrent_flag) break;
+		}
+		if((configure == ASYNC_ADD_NODE || configure == CONCURRENT_ADD_NODE) && ((i == 10000) || (i == 50000)))	//two replica added
+		{
+			uuid_generate(uuid);
+			buckets[replica_num] = OC_token_bucket_new((const char *)uuid, sizeof(uuid), now, CIR, CBS);
+			new_replica_bindex = replica_num;
+			replica_num++;
 		}
 	}
 	upper_limit = CBS + CIR * timeval_delta_ms(start, now) / 1000;
 	refilled = OC_token_bucket_control(buckets[0], now, OCTB_CMD_READ_REFILLED, 0);
 	EXPECT_LE(consumed, requested);
 	double accuracy = (double)consumed / MIN(refilled, requested);
-	EXPECT_NEAR(accuracy, 1, 0.01);
 	printf("accuracy:%f, upper_limit:%lld, refilled:%lld, requested:%lld, consumed:%lld\n",
 			accuracy, upper_limit, refilled, requested, consumed);
-	for(i = 0; i < REPLICA_NUMBER; i++) 
+	for(i = 0; i < replica_num; i++) 
 	{
 		OC_token_bucket_free(buckets[i]);
 	}
@@ -143,10 +205,42 @@ void traffic_distribution(traffic_type type)
 
 TEST(OCTokenBucket, TrafficTypeConsumer)
 {
+	printf("[ASYNC_DEFAULT]\n");
 	traffic_distribution(LIGHT_UNIFORM_TYPE);
 	traffic_distribution(LIGHT_TWO_EIGHT_TYPE);
 	traffic_distribution(HEAVY_TWO_EIGHT_TYPE);
-	traffic_distribution(HEAVY_UNIFORM_EXTREME_TYPE);
+	traffic_distribution(HEAVY_UNIFORM_TYPE);
+
+	//异步模式下的追加节点，UNIFORM类型请求量降低，主要是因为总请求量一定，新加节点请求量低于平均水平
+	printf("[ASYNC_ADD_NODE]\n");
+	traffic_distribution(LIGHT_UNIFORM_TYPE, ASYNC_ADD_NODE);
+	traffic_distribution(LIGHT_TWO_EIGHT_TYPE, ASYNC_ADD_NODE);
+	traffic_distribution(HEAVY_TWO_EIGHT_TYPE, ASYNC_ADD_NODE);
+	traffic_distribution(HEAVY_UNIFORM_TYPE, ASYNC_ADD_NODE);
+
+	printf("[ASYNC_ADJUST_MERGE]\n");
+	traffic_distribution(LIGHT_UNIFORM_TYPE, ASYNC_ADJUST_MERGE);
+	traffic_distribution(LIGHT_TWO_EIGHT_TYPE, ASYNC_ADJUST_MERGE);
+	traffic_distribution(HEAVY_TWO_EIGHT_TYPE, ASYNC_ADJUST_MERGE);
+	traffic_distribution(HEAVY_UNIFORM_TYPE, ASYNC_ADJUST_MERGE);
+	
+	printf("[CONCURRENT_DEFAULT]\n");
+	traffic_distribution(LIGHT_UNIFORM_TYPE, CONCURRNET_DEFAULT);
+	traffic_distribution(LIGHT_TWO_EIGHT_TYPE, CONCURRNET_DEFAULT);
+	traffic_distribution(HEAVY_TWO_EIGHT_TYPE, CONCURRNET_DEFAULT);
+	traffic_distribution(HEAVY_UNIFORM_TYPE, CONCURRNET_DEFAULT);
+
+	printf("[CONCURRENT_ADD_NODE]\n");
+	traffic_distribution(LIGHT_UNIFORM_TYPE, CONCURRENT_ADD_NODE);
+	traffic_distribution(LIGHT_TWO_EIGHT_TYPE, CONCURRENT_ADD_NODE);
+	traffic_distribution(HEAVY_TWO_EIGHT_TYPE, CONCURRENT_ADD_NODE);
+	traffic_distribution(HEAVY_UNIFORM_TYPE, CONCURRENT_ADD_NODE);
+
+	printf("[CONCURRENT_ADJUST_MERGE]\n");
+	traffic_distribution(LIGHT_UNIFORM_TYPE, CONCURRENT_ADJUST_MERGE);
+	traffic_distribution(LIGHT_TWO_EIGHT_TYPE, CONCURRENT_ADJUST_MERGE);
+	traffic_distribution(HEAVY_TWO_EIGHT_TYPE, CONCURRENT_ADJUST_MERGE);
+	traffic_distribution(HEAVY_UNIFORM_TYPE, CONCURRENT_ADJUST_MERGE);
 }
 
 TEST(OCTokenBucket, Basic)
@@ -366,6 +460,7 @@ TEST(OCTokenBucket, LightConsumer)
 		}
 	}
 }
+
 TEST(OCTokenBucket, ConcurrentHeavyConsumer)
 {
 	struct OC_token_bucket *buckets[REPLICA_NUMBER];

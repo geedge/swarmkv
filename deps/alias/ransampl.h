@@ -1,0 +1,35 @@
+/*
+ * Library:   ransampl (random number sampling)
+ *
+ * File:      ransampl.h
+ *
+ * Contents:  Random-number sampling using the Walker-Vose alias method
+ *
+ * Copyright: Joachim Wuttke, Forschungszentrum Juelich GmbH (2013)
+ *
+ * License:   see ../COPYING (FreeBSD)
+ *
+ * Homepage:  https://jugit.fz-juelich.de/mlz/ransampl
+ */
+
+#ifndef RANSAMPL_H
+#define RANSAMPL_H
+#undef __BEGIN_DECLS
+#undef __END_DECLS
+#ifdef __cplusplus
+# define __BEGIN_DECLS extern "C" {
+# define __END_DECLS }
+#else
+# define __BEGIN_DECLS /* empty */
+# define __END_DECLS /* empty */
+#endif
+__BEGIN_DECLS
+
+typedef struct ransampl ransampl_ws;
+
+ransampl_ws *ransampl_init(double *p, int n); //default weight = 1;
+int ransampl_draw( ransampl_ws *ws );
+void ransampl_free( ransampl_ws *ws );
+
+__END_DECLS
+#endif /* RANSAMPL_H */
