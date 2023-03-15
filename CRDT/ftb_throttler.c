@@ -1,4 +1,4 @@
-#include "ftbf_throttle.h"
+#include "ftb_throttler.h"
 #include "crdt_utils.h"
 #include "hash_fun.h"
 #include "pn_counter.h"
@@ -12,7 +12,7 @@
 #define MAX_SKETCH_WIDTH 1024
 #define MAX_QUEUE_DEPTH 2000
 
-struct ftbf_class_id
+struct ftbt_class_id
 {
     long long class_hash[MAX_SKETCH_DEPTH];
     unsigned char weight;
@@ -20,7 +20,7 @@ struct ftbf_class_id
 
 struct active_class_queue
 {
-    struct ftbf_class_id queue[MAX_QUEUE_DEPTH];
+    struct ftbt_class_id queue[MAX_QUEUE_DEPTH];
     long long head;
     long long tail;
     long long len;
@@ -34,16 +34,16 @@ struct count_min_sketch
     size_t width;
 };
 
-struct ftbf_configuration
+struct ftbt_configuration
 {
 	long long CIR;	//Committed Information Rate
 	long long CBS;	//Committed Burst Size
 	long long refill_duration_ms;
 	struct timeval write_timestamp;
 };
-struct ftbf_throttle
+struct ftb_throttler
 {
-	struct ftbf_configuration cfg;
+	struct ftbt_configuration cfg;
 	long long refilled;
 	struct timeval refill_timestamp;
 	struct PN_counter *consumed;
@@ -51,7 +51,7 @@ struct ftbf_throttle
     struct active_class_queue active_q;
 };
 
-static void ftbf_fill_class_id(struct ftbf_class_id *cid, struct ftbf_throttle *t, const char *req_class_id, unsigned char weight)
+static void ftbt_fill_class_id(struct ftbt_class_id *cid, struct ftb_throttler *t, const char *req_class_id, unsigned char weight)
 {
     for(size_t i = 0; i < t->sketch.depth; ++i)
     {
@@ -60,7 +60,7 @@ static void ftbf_fill_class_id(struct ftbf_class_id *cid, struct ftbf_throttle *
     cid->weight = weight;
 }
 
-static void ftbf_update_sketch(struct count_min_sketch *sketch, long long *hash, long long count)
+static void ftbt_update_sketch(struct count_min_sketch *sketch, long long *hash, long long count)
 {
     size_t i = 0;
     long long hashval = 0;
@@ -70,7 +70,7 @@ static void ftbf_update_sketch(struct count_min_sketch *sketch, long long *hash,
         sketch->occupied_token[i][hashval] += count;
     }
 }
-static long long ftbf_estimate_sketch(struct count_min_sketch sketch, long long *hash)
+static long long ftbt_estimate_sketch(struct count_min_sketch sketch, long long *hash)
 {
     size_t i = 0;
     long long minval = LLONG_MAX;
@@ -83,7 +83,7 @@ static long long ftbf_estimate_sketch(struct count_min_sketch sketch, long long 
     return minval;
 }
 
-static int ftbf_aq_enqueue(struct ftbf_class_id *cid, struct ftbf_throttle *t)
+static int ftbt_aq_enqueue(struct ftbt_class_id *cid, struct ftb_throttler *t)
 {
     struct active_class_queue *aq = &t->active_q;
     if(aq->len >= MAX_QUEUE_DEPTH)
@@ -91,14 +91,14 @@ static int ftbf_aq_enqueue(struct ftbf_class_id *cid, struct ftbf_throttle *t)
         printf("Unexpected: active flow queue full.\n");
         return FALSE;
     }
-    memcpy(&(aq->queue[aq->tail]), cid, sizeof(struct ftbf_class_id));
+    memcpy(&(aq->queue[aq->tail]), cid, sizeof(struct ftbt_class_id));
     aq->tail = (aq->tail + 1) % MAX_QUEUE_DEPTH;
     aq->len++;
     return TRUE;
 }
 
 //update weight
-static void ftbf_operate_weight(struct ftbf_class_id cid, struct ftbf_throttle *t)
+static void ftbt_operate_weight(struct ftbt_class_id cid, struct ftb_throttler *t)
 {
     struct active_class_queue *aq =  &t->active_q;
     size_t i,j;
@@ -115,7 +115,7 @@ static void ftbf_operate_weight(struct ftbf_class_id cid, struct ftbf_throttle *
     aq->queue[i].weight = cid.weight;
 }
 
-static void ftbf_aq_dequeue(struct ftbf_throttle *t, long long available)
+static void ftbt_aq_dequeue(struct ftb_throttler *t, long long available)
 {
     struct active_class_queue *aq = &t->active_q;
     long long occupied_tokens = 0;
@@ -123,16 +123,16 @@ static void ftbf_aq_dequeue(struct ftbf_throttle *t, long long available)
     {
         while (aq->len > 0)
         {
-            struct ftbf_class_id *cid = &aq->queue[aq->head];
-            occupied_tokens = ftbf_estimate_sketch(t->sketch, cid->class_hash);
+            struct ftbt_class_id *cid = &aq->queue[aq->head];
+            occupied_tokens = ftbt_estimate_sketch(t->sketch, cid->class_hash);
             unsigned char weight = cid->weight;
             long long alloc_tokens_weighted = aq->alloc_tokens * weight;
             long long consume = occupied_tokens > alloc_tokens_weighted ? alloc_tokens_weighted : occupied_tokens;
             if(available - consume >= 0)
             {
-                ftbf_update_sketch(&t->sketch, cid->class_hash, -consume);
+                ftbt_update_sketch(&t->sketch, cid->class_hash, -consume);
                 if(occupied_tokens > alloc_tokens_weighted)
-                    ftbf_aq_enqueue(cid, t);
+                    ftbt_aq_enqueue(cid, t);
                 PN_counter_incrby(t->consumed, consume);
                 available -= consume;
             }else{
@@ -144,9 +144,9 @@ static void ftbf_aq_dequeue(struct ftbf_throttle *t, long long available)
     }
 }
 
-struct ftbf_throttle *ftbf_throttle_new(uuid_t my_id, struct timeval now, long long CIR, long long CBS, long long alloc_tokens)
+struct ftb_throttler *ftb_throttler_new(uuid_t my_id, struct timeval now, long long CIR, long long CBS, long long alloc_tokens)
 {
-	struct ftbf_throttle *t=ALLOC(struct ftbf_throttle, 1);
+	struct ftb_throttler *t=ALLOC(struct ftb_throttler, 1);
 	t->consumed=PN_counter_new(my_id);
 	gettimeofday(&t->cfg.write_timestamp, NULL);
 	memcpy(&t->cfg.write_timestamp, &now, sizeof(t->cfg.write_timestamp));
@@ -166,7 +166,7 @@ struct ftbf_throttle *ftbf_throttle_new(uuid_t my_id, struct timeval now, long l
 	return t;
 }
 
-void ftbf_throttle_free(struct ftbf_throttle *t)
+void ftb_throttler_free(struct ftb_throttler *t)
 {
 	PN_counter_free(t->consumed);
     for(size_t i = 0; i < t->sketch.depth; ++i){
@@ -175,7 +175,7 @@ void ftbf_throttle_free(struct ftbf_throttle *t)
 	free(t);
 }
 
-void ftbf_throttle_configure(struct ftbf_throttle *t, struct timeval now, long long CIR, long long CBS, long long refill_duration_ms)
+void ftb_throttler_configure(struct ftb_throttler *t, struct timeval now, long long CIR, long long CBS, long long refill_duration_ms)
 {
 	memcpy(&t->cfg.write_timestamp, &now, sizeof(t->cfg.write_timestamp));
 	if(CIR>=0) t->cfg.CIR=CIR;
@@ -183,7 +183,7 @@ void ftbf_throttle_configure(struct ftbf_throttle *t, struct timeval now, long l
 	if(refill_duration_ms>0) t->cfg.refill_duration_ms=refill_duration_ms;
 }
 
-long long ftbf_throttle_control(struct ftbf_throttle *t, struct timeval now, enum ftbf_throttle_command cmd, long long tokens, const char *req_class_id, unsigned char weight)
+long long ftb_throttler_control(struct ftb_throttler *t, struct timeval now, enum ftb_throttler_command cmd, long long tokens, const char *req_class_id, unsigned char weight)
 {
 	long long delta_time_ms=timeval_delta_ms(t->refill_timestamp, now);
 	long long consumed=PN_counter_get(t->consumed);
@@ -193,7 +193,7 @@ long long ftbf_throttle_control(struct ftbf_throttle *t, struct timeval now, enu
 	assert(consumed>=0);
 	int refill_flag=0;
     long long global_available, local_available;
-    struct ftbf_class_id cid;
+    struct ftbt_class_id cid;
     long long occupied_tokens, token_threshold;
     int rtn = 0;
 
@@ -202,7 +202,7 @@ long long ftbf_throttle_control(struct ftbf_throttle *t, struct timeval now, enu
     local_available = global_available;
     if(delta_time_ms >= t->cfg.refill_duration_ms)
     {
-        ftbf_aq_dequeue(t, local_available);
+        ftbt_aq_dequeue(t, local_available);
     }
     consumed = PN_counter_get(t->consumed);
     refilled = t->refilled;
@@ -233,28 +233,28 @@ long long ftbf_throttle_control(struct ftbf_throttle *t, struct timeval now, enu
 
 	global_available=MAX(refilled-consumed, 0);
 	local_available=global_available;
-    ftbf_fill_class_id(&cid, t, req_class_id, weight);
-	ftbf_operate_weight(cid, t);
-    occupied_tokens = ftbf_estimate_sketch(t->sketch, cid.class_hash);
+    ftbt_fill_class_id(&cid, t, req_class_id, weight);
+	ftbt_operate_weight(cid, t);
+    occupied_tokens = ftbt_estimate_sketch(t->sketch, cid.class_hash);
     token_threshold = local_available*weight;
 
 	switch(cmd)
 	{
-		case FTBF_CMD_CONSUME_FLEXIBLE:
+		case FTBT_CMD_CONSUME_FLEXIBLE:
             if (occupied_tokens <= token_threshold)
             {
                 if (occupied_tokens == 0)
-                    ftbf_aq_enqueue(&cid, t); 
-                ftbf_update_sketch(&t->sketch, cid.class_hash, tokens);
+                    ftbt_aq_enqueue(&cid, t); 
+                ftbt_update_sketch(&t->sketch, cid.class_hash, tokens);
                 rtn++;
             }
 			break;
-		case FTBF_CMD_CONSUME_NORMAL:
+		case FTBT_CMD_CONSUME_NORMAL:
 			if (occupied_tokens <= token_threshold && local_available >= tokens)
             {
                 if (occupied_tokens == 0)
-                    ftbf_aq_enqueue(&cid, t); 
-                ftbf_update_sketch(&t->sketch, cid.class_hash, tokens);
+                    ftbt_aq_enqueue(&cid, t); 
+                ftbt_update_sketch(&t->sketch, cid.class_hash, tokens);
                 rtn++;
             }
 			break;
@@ -270,17 +270,17 @@ long long ftbf_throttle_control(struct ftbf_throttle *t, struct timeval now, enu
 
 	return rtn;
 }
-long long ftbf_throttle_read_refilled(struct ftbf_throttle *t)
+long long ftbt_throttler_read_refilled(struct ftb_throttler *t)
 {
     return t->refilled;
 }
-long long ftbf_throttle_read_available(struct ftbf_throttle *t)
+long long ftbt_throttler_read_available(struct ftb_throttler *t)
 {
 	long long consumed=PN_counter_get(t->consumed);
 	long long global_available=MAX(t->refilled-consumed, 0);
     return global_available;
 }
-void ftbf_throttle_info(struct ftbf_throttle *t, struct ftbf_throttle_info *info)
+void ftb_throttler_info(struct ftb_throttler *t, struct ftb_throttler_info *info)
 {
 	struct timeval now;
 	gettimeofday(&now, NULL);
@@ -290,11 +290,11 @@ void ftbf_throttle_info(struct ftbf_throttle *t, struct ftbf_throttle_info *info
 	info->refill_duration_ms=t->cfg.refill_duration_ms;
 	info->consumed=PN_counter_get(t->consumed);
 	info->refilled=t->refilled;
-	info->available=ftbf_throttle_read_available(t);
+	info->available=ftbt_throttler_read_available(t);
 	return;
 }
 
-void ftbf_throttle_serialize(struct ftbf_throttle *t, char **blob, size_t *blob_sz)
+void ftb_throttler_serialize(struct ftb_throttler *t, char **blob, size_t *blob_sz)
 {
 	mpack_writer_t writer;
     char *mpack_buff=NULL;
@@ -324,9 +324,9 @@ void ftbf_throttle_serialize(struct ftbf_throttle *t, char **blob, size_t *blob_
     *blob_sz=mpack_sz;
 	return;
 }
-struct ftbf_throttle *ftbf_throttle_deserialize(const char *blob, size_t blob_sz)
+struct ftb_throttler *ftb_throttler_deserialize(const char *blob, size_t blob_sz)
 {
-	struct ftbf_throttle *t=ALLOC(struct ftbf_throttle, 1);
+	struct ftb_throttler *t=ALLOC(struct ftb_throttler, 1);
     mpack_tree_t tree;
     mpack_tree_init_data(&tree, blob, blob_sz);
     mpack_tree_parse(&tree);
@@ -357,7 +357,7 @@ struct ftbf_throttle *ftbf_throttle_deserialize(const char *blob, size_t blob_sz
     }
 	return t;
 }
-void ftbf_throttle_merge(struct ftbf_throttle *src, struct ftbf_throttle *dst)
+void ftb_throttler_merge(struct ftb_throttler *src, struct ftb_throttler *dst)
 {
     PN_counter_merge(src->consumed, dst->consumed);
     if(src->refilled > dst->refilled)
@@ -371,10 +371,10 @@ void ftbf_throttle_merge(struct ftbf_throttle *src, struct ftbf_throttle *dst)
         src->refill_timestamp = dst->refill_timestamp;
     }
 }
-void ftbf_throttle_merge_blob(struct ftbf_throttle *t, const char *blob, size_t blob_sz)
+void ftb_throttler_merge_blob(struct ftb_throttler *t, const char *blob, size_t blob_sz)
 {
-	struct ftbf_throttle *to_merge=ftbf_throttle_deserialize(blob, blob_sz);
-	ftbf_throttle_merge(t, to_merge);
-	ftbf_throttle_free(to_merge);
+	struct ftb_throttler *to_merge=ftb_throttler_deserialize(blob, blob_sz);
+	ftb_throttler_merge(t, to_merge);
+	ftb_throttler_free(to_merge);
 	return;
 }

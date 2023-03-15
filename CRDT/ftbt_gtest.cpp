@@ -1,4 +1,4 @@
-#include "ftbf_throttle.h"
+#include "ftb_throttler.h"
 #include "crdt_utils.h"
 #include "ransampl.h"
 #include <cstddef>
@@ -10,63 +10,63 @@
 #include "util/flow_tokens.h"
 #include "util/fair_index.h"
 
-void ftbf_throttle_sync(struct ftbf_throttle *list[], size_t n)
+void ftbt_throttle_sync(struct ftb_throttler *list[], size_t n)
 {
     char *blob=NULL;
     size_t blob_sz=0;
     for(size_t i=0; i<n; i++)
     {
-        ftbf_throttle_serialize(list[i], &blob, &blob_sz);
+        ftb_throttler_serialize(list[i], &blob, &blob_sz);
         for(size_t j=0; j<n; j++)
         {
             if(j==i) continue;
-            ftbf_throttle_merge_blob(list[j], blob, blob_sz);
+            ftb_throttler_merge_blob(list[j], blob, blob_sz);
         }
         free(blob);
         blob=NULL;
     }
 }
 
-TEST(FTBF, Basic)
+TEST(FTBT, Basic)
 {
     uuid_t uuid;
 	uuid_generate(uuid);
 
-	struct ftbf_throttle *bucket=NULL;
-    struct ftbf_throttle_info *info = ALLOC(struct ftbf_throttle_info, 1);
+	struct ftb_throttler *bucket=NULL;
+    struct ftb_throttler_info *info = ALLOC(struct ftb_throttler_info, 1);
 	long long CIR=100;
 	long long CBS=200;
 	struct timeval now;
 	gettimeofday(&now, NULL);
 
-	bucket=ftbf_throttle_new(uuid, now, CIR, CBS, CIR/10);
+	bucket=ftb_throttler_new(uuid, now, CIR, CBS, CIR/10);
 	long long rtn = 0;
 
-	rtn=ftbf_throttle_control(bucket, now, FTBF_CMD_CONSUME_NORMAL, 60, "1", 1);
-    ftbf_throttle_info(bucket, info);
+	rtn=ftb_throttler_control(bucket, now, FTBT_CMD_CONSUME_NORMAL, 60, "1", 1);
+    ftb_throttler_info(bucket, info);
 	EXPECT_EQ(rtn, 1);
     EXPECT_EQ(info->available, 200);
 
-    rtn=ftbf_throttle_control(bucket, now, FTBF_CMD_CONSUME_FLEXIBLE, 200, "1", 1);
-    ftbf_throttle_info(bucket, info);
+    rtn=ftb_throttler_control(bucket, now, FTBT_CMD_CONSUME_FLEXIBLE, 200, "1", 1);
+    ftb_throttler_info(bucket, info);
 	EXPECT_EQ(rtn, 1);
     EXPECT_EQ(info->available, 200);
 
-    rtn=ftbf_throttle_control(bucket, now, FTBF_CMD_CONSUME_NORMAL, 60, "1", 1);
-    ftbf_throttle_info(bucket, info);
+    rtn=ftb_throttler_control(bucket, now, FTBT_CMD_CONSUME_NORMAL, 60, "1", 1);
+    ftb_throttler_info(bucket, info);
 	EXPECT_EQ(rtn, 0);
     EXPECT_EQ(info->available, 200);
 	
-	ftbf_throttle_free(bucket);
+	ftb_throttler_free(bucket);
 }
 
-TEST(FTBF, BasicWeighted)
+TEST(FTBT, BasicWeighted)
 {
     uuid_t uuid;
 	uuid_generate(uuid);
 
-	struct ftbf_throttle *bucket=NULL;
-    struct ftbf_throttle_info *info = ALLOC(struct ftbf_throttle_info, 1);
+	struct ftb_throttler *bucket=NULL;
+    struct ftb_throttler_info *info = ALLOC(struct ftb_throttler_info, 1);
 	long long CIR=100*1000; //100*1000 bps
 	long long CBS=200;
 	struct timeval now, step;
@@ -75,34 +75,34 @@ TEST(FTBF, BasicWeighted)
     step.tv_sec=0;
     step.tv_usec=(suseconds_t)1000;
 
-	bucket=ftbf_throttle_new(uuid, now, CIR, CBS, CIR/10);
+	bucket=ftb_throttler_new(uuid, now, CIR, CBS, CIR/10);
 	long long rtn = 0;
 
-	rtn=ftbf_throttle_control(bucket, now, FTBF_CMD_CONSUME_NORMAL, 200, "1", 1); //active list : 200
-    ftbf_throttle_info(bucket, info);
+	rtn=ftb_throttler_control(bucket, now, FTBT_CMD_CONSUME_NORMAL, 200, "1", 1); //active list : 200
+    ftb_throttler_info(bucket, info);
 	EXPECT_EQ(rtn, 1);
     EXPECT_EQ(info->available, 200);
 
-    rtn=ftbf_throttle_control(bucket, now, FTBF_CMD_CONSUME_NORMAL, 160, "2", 2);//active list : 200 160
-    ftbf_throttle_info(bucket, info);
+    rtn=ftb_throttler_control(bucket, now, FTBT_CMD_CONSUME_NORMAL, 160, "2", 2);//active list : 200 160
+    ftb_throttler_info(bucket, info);
 	EXPECT_EQ(rtn, 1);
     EXPECT_EQ(info->available, 200);
 
     timeradd(&now, &step, &now);
-    rtn=ftbf_throttle_control(bucket, now, FTBF_CMD_CONSUME_NORMAL, 20, "1", 1);//active list : 130 30
-    ftbf_throttle_info(bucket, info);
+    rtn=ftb_throttler_control(bucket, now, FTBT_CMD_CONSUME_NORMAL, 20, "1", 1);//active list : 130 30
+    ftb_throttler_info(bucket, info);
 	EXPECT_EQ(rtn, 1);
     EXPECT_EQ(info->available, 100);
 
-	ftbf_throttle_free(bucket);
+	ftb_throttler_free(bucket);
 }
 
-TEST(FTBF, Merge)
+TEST(FTBT, Merge)
 {
     uuid_t uuid;
 
-	struct ftbf_throttle *bucket[2];
-    struct ftbf_throttle_info *info = ALLOC(struct ftbf_throttle_info, 1);
+	struct ftb_throttler *bucket[2];
+    struct ftb_throttler_info *info = ALLOC(struct ftb_throttler_info, 1);
 	long long CIR=100*1000; //100*1000 bps
 	long long CBS=200;
     long long rtn = 0;
@@ -113,39 +113,39 @@ TEST(FTBF, Merge)
     step.tv_usec=(suseconds_t)1000;
 
     uuid_generate(uuid);
-	bucket[0]=ftbf_throttle_new(uuid, now, CIR, CBS, CIR/10);
+	bucket[0]=ftb_throttler_new(uuid, now, CIR, CBS, CIR/10);
     uuid_generate(uuid);
-    bucket[1]=ftbf_throttle_new(uuid, now, CIR, CBS, CIR/10);
+    bucket[1]=ftb_throttler_new(uuid, now, CIR, CBS, CIR/10);
 
-	rtn=ftbf_throttle_control(bucket[0], now, FTBF_CMD_CONSUME_NORMAL, 200, "1", 1);
-    ftbf_throttle_info(bucket[0], info);
+	rtn=ftb_throttler_control(bucket[0], now, FTBT_CMD_CONSUME_NORMAL, 200, "1", 1);
+    ftb_throttler_info(bucket[0], info);
 	EXPECT_EQ(rtn, 1);
     EXPECT_EQ(info->available, 200);
 
-    rtn=ftbf_throttle_control(bucket[1], now, FTBF_CMD_CONSUME_NORMAL, 50, "2", 1);
-	ftbf_throttle_info(bucket[1], info);
+    rtn=ftb_throttler_control(bucket[1], now, FTBT_CMD_CONSUME_NORMAL, 50, "2", 1);
+	ftb_throttler_info(bucket[1], info);
 	EXPECT_EQ(rtn, 1);
     EXPECT_EQ(info->available, 200);
 
     timeradd(&now, &step, &now);
-    rtn=ftbf_throttle_control(bucket[0], now, FTBF_CMD_CONSUME_NORMAL, 0, "1", 1); //300-200=100
-	ftbf_throttle_info(bucket[0], info);
+    rtn=ftb_throttler_control(bucket[0], now, FTBT_CMD_CONSUME_NORMAL, 0, "1", 1); //300-200=100
+	ftb_throttler_info(bucket[0], info);
     EXPECT_EQ(rtn, 1);
     EXPECT_EQ(info->available, 100);
-    rtn=ftbf_throttle_control(bucket[1], now, FTBF_CMD_CONSUME_NORMAL, 0, "2", 1);//300-50=250(200)
-	ftbf_throttle_info(bucket[1], info);
+    rtn=ftb_throttler_control(bucket[1], now, FTBT_CMD_CONSUME_NORMAL, 0, "2", 1);//300-50=250(200)
+	ftb_throttler_info(bucket[1], info);
     EXPECT_EQ(rtn, 1);
     EXPECT_EQ(info->available, 200);
 
-    ftbf_throttle_sync(bucket, 2);
+    ftbt_throttle_sync(bucket, 2);
 
-    ftbf_throttle_info(bucket[0], info);
+    ftb_throttler_info(bucket[0], info);
     EXPECT_EQ(info->available, 50);
-	ftbf_throttle_info(bucket[1], info);
+	ftb_throttler_info(bucket[1], info);
     EXPECT_EQ(info->available, 50);
 	
-	ftbf_throttle_free(bucket[0]);
-    ftbf_throttle_free(bucket[1]);
+	ftb_throttler_free(bucket[0]);
+    ftb_throttler_free(bucket[1]);
 }
 
 #define FAIR_INDEX_CIR 1*1024*1000 //1024 bit/ms
@@ -153,7 +153,7 @@ TEST(FTBF, Merge)
 #define FAIR_INDEX_REQ FAIR_INDEX_CIR/1000
 #define FAIR_INDEX_MIMIC_DURATION_US 1*1000*1000
 
-TEST(FTBF, Pareto)
+TEST(FTBT, Pareto)
 {
     int class_num = 24;
     enum flow_type ftype = PARETO;
@@ -161,9 +161,9 @@ TEST(FTBF, Pareto)
     uuid_generate(uuid);
     struct timeval start;
     gettimeofday(&start, NULL);
-    struct ftbf_throttle_info *info = ALLOC(struct ftbf_throttle_info, 1);
-    struct ftbf_throttle *bucket=NULL;
-    bucket=ftbf_throttle_new(uuid, start, FAIR_INDEX_CIR, FAIR_INDEX_CBS, FAIR_INDEX_CIR/1000/10);
+    struct ftb_throttler_info *info = ALLOC(struct ftb_throttler_info, 1);
+    struct ftb_throttler *bucket=NULL;
+    bucket=ftb_throttler_new(uuid, start, FAIR_INDEX_CIR, FAIR_INDEX_CBS, FAIR_INDEX_CIR/1000/10);
     size_t i,j,k;
     long long tokens=0;
     long long consumed_class[class_num];
@@ -200,7 +200,7 @@ TEST(FTBF, Pareto)
             tokens = 0.2*FAIR_INDEX_REQ+rand()%5;
             requested += tokens;
             sprintf(str, "%zu", j);
-            int rtn = ftbf_throttle_control(bucket, now, FTBF_CMD_CONSUME_FLEXIBLE, tokens, str, class_weight[j]);
+            int rtn = ftb_throttler_control(bucket, now, FTBT_CMD_CONSUME_FLEXIBLE, tokens, str, class_weight[j]);
             ftbf_result.cnt++;
             ftbf_class_results[j].cnt++;
             if(rtn > 0)
@@ -216,7 +216,7 @@ TEST(FTBF, Pareto)
     }
 
     upper_limit=FAIR_INDEX_CBS+FAIR_INDEX_CIR/1000*timeval_delta_ms(start, now);
-    ftbf_throttle_info(bucket, info);
+    ftb_throttler_info(bucket, info);
     refilled=info->refilled;
     for(i=0; i<(size_t)class_num; ++i)
     {
@@ -235,7 +235,8 @@ TEST(FTBF, Pareto)
            consumed,
            jain_fair_index);
     ransampl_free(ws);
-    ftbf_throttle_free(bucket);
+    ftb_throttler_free(bucket);
+    EXPECT_NEAR(jain_fair_index, 1, 0.01);
 }
 
 
