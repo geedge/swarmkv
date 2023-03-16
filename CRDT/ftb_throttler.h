@@ -6,6 +6,7 @@
 #include <stddef.h>
 #include <sys/time.h>
 #include <uuid/uuid.h>
+#include <stdint.h>
 #ifdef __cplusplus
 extern "C"
 {
@@ -32,7 +33,7 @@ enum ftb_throttler_command
 	FTBT_CMD_CONSUME_NORMAL,
 	FTBT_CMD_CONSUME_FLEXIBLE,
 };
-long long ftb_throttler_control(struct ftb_throttler *t, struct timeval now, enum ftb_throttler_command cmd, long long tokens, const char *req_class_id, unsigned char weight);
+long long ftb_throttler_control(struct ftb_throttler *t, struct timeval now, enum ftb_throttler_command cmd, long long tokens, uint64_t req_class_id, unsigned char weight);
 
 void ftb_throttler_serialize(struct ftb_throttler *t, char **blob, size_t *blob_sz);
 struct ftb_throttler *ftb_throttler_deserialize(const char *blob, size_t blob_sz);

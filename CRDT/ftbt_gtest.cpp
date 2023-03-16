@@ -42,17 +42,17 @@ TEST(FTBT, Basic)
 	bucket=ftb_throttler_new(uuid, now, CIR, CBS, CIR/10);
 	long long rtn = 0;
 
-	rtn=ftb_throttler_control(bucket, now, FTBT_CMD_CONSUME_NORMAL, 60, "1", 1);
+	rtn=ftb_throttler_control(bucket, now, FTBT_CMD_CONSUME_NORMAL, 60, 1, 1);
     ftb_throttler_info(bucket, info);
 	EXPECT_EQ(rtn, 1);
     EXPECT_EQ(info->available, 200);
 
-    rtn=ftb_throttler_control(bucket, now, FTBT_CMD_CONSUME_FLEXIBLE, 200, "1", 1);
+    rtn=ftb_throttler_control(bucket, now, FTBT_CMD_CONSUME_FLEXIBLE, 200, 1, 1);
     ftb_throttler_info(bucket, info);
 	EXPECT_EQ(rtn, 1);
     EXPECT_EQ(info->available, 200);
 
-    rtn=ftb_throttler_control(bucket, now, FTBT_CMD_CONSUME_NORMAL, 60, "1", 1);
+    rtn=ftb_throttler_control(bucket, now, FTBT_CMD_CONSUME_NORMAL, 60, 1, 1);
     ftb_throttler_info(bucket, info);
 	EXPECT_EQ(rtn, 0);
     EXPECT_EQ(info->available, 200);
@@ -78,18 +78,18 @@ TEST(FTBT, BasicWeighted)
 	bucket=ftb_throttler_new(uuid, now, CIR, CBS, CIR/10);
 	long long rtn = 0;
 
-	rtn=ftb_throttler_control(bucket, now, FTBT_CMD_CONSUME_NORMAL, 200, "1", 1); //active list : 200
+	rtn=ftb_throttler_control(bucket, now, FTBT_CMD_CONSUME_NORMAL, 200, 1, 1); //active list : 200
     ftb_throttler_info(bucket, info);
 	EXPECT_EQ(rtn, 1);
     EXPECT_EQ(info->available, 200);
 
-    rtn=ftb_throttler_control(bucket, now, FTBT_CMD_CONSUME_NORMAL, 160, "2", 2);//active list : 200 160
+    rtn=ftb_throttler_control(bucket, now, FTBT_CMD_CONSUME_NORMAL, 160, 2, 2);//active list : 200 160
     ftb_throttler_info(bucket, info);
 	EXPECT_EQ(rtn, 1);
     EXPECT_EQ(info->available, 200);
 
     timeradd(&now, &step, &now);
-    rtn=ftb_throttler_control(bucket, now, FTBT_CMD_CONSUME_NORMAL, 20, "1", 1);//active list : 130 30
+    rtn=ftb_throttler_control(bucket, now, FTBT_CMD_CONSUME_NORMAL, 20, 1, 1);//active list : 130 30
     ftb_throttler_info(bucket, info);
 	EXPECT_EQ(rtn, 1);
     EXPECT_EQ(info->available, 100);
@@ -117,22 +117,22 @@ TEST(FTBT, Merge)
     uuid_generate(uuid);
     bucket[1]=ftb_throttler_new(uuid, now, CIR, CBS, CIR/10);
 
-	rtn=ftb_throttler_control(bucket[0], now, FTBT_CMD_CONSUME_NORMAL, 200, "1", 1);
+	rtn=ftb_throttler_control(bucket[0], now, FTBT_CMD_CONSUME_NORMAL, 200, 1, 1);
     ftb_throttler_info(bucket[0], info);
 	EXPECT_EQ(rtn, 1);
     EXPECT_EQ(info->available, 200);
 
-    rtn=ftb_throttler_control(bucket[1], now, FTBT_CMD_CONSUME_NORMAL, 50, "2", 1);
+    rtn=ftb_throttler_control(bucket[1], now, FTBT_CMD_CONSUME_NORMAL, 50, 2, 1);
 	ftb_throttler_info(bucket[1], info);
 	EXPECT_EQ(rtn, 1);
     EXPECT_EQ(info->available, 200);
 
     timeradd(&now, &step, &now);
-    rtn=ftb_throttler_control(bucket[0], now, FTBT_CMD_CONSUME_NORMAL, 0, "1", 1); //300-200=100
+    rtn=ftb_throttler_control(bucket[0], now, FTBT_CMD_CONSUME_NORMAL, 0, 1, 1); //300-200=100
 	ftb_throttler_info(bucket[0], info);
     EXPECT_EQ(rtn, 1);
     EXPECT_EQ(info->available, 100);
-    rtn=ftb_throttler_control(bucket[1], now, FTBT_CMD_CONSUME_NORMAL, 0, "2", 1);//300-50=250(200)
+    rtn=ftb_throttler_control(bucket[1], now, FTBT_CMD_CONSUME_NORMAL, 0, 2, 1);//300-50=250(200)
 	ftb_throttler_info(bucket[1], info);
     EXPECT_EQ(rtn, 1);
     EXPECT_EQ(info->available, 200);
@@ -173,7 +173,6 @@ TEST(FTBT, Pareto)
     step.tv_sec=0;
     step.tv_usec=(suseconds_t)1000;
     memset(consumed_class, 0, sizeof(consumed_class));
-    char str[20];
 
     struct test_records ftbf_class_results[class_num], ftbf_result;
     unsigned char class_weight[class_num];
@@ -199,8 +198,7 @@ TEST(FTBT, Pareto)
             j = ransampl_draw(ws); //并发但未限定每个classid最多请求一次，待修改
             tokens = 0.2*FAIR_INDEX_REQ+rand()%5;
             requested += tokens;
-            sprintf(str, "%zu", j);
-            int rtn = ftb_throttler_control(bucket, now, FTBT_CMD_CONSUME_FLEXIBLE, tokens, str, class_weight[j]);
+            int rtn = ftb_throttler_control(bucket, now, FTBT_CMD_CONSUME_FLEXIBLE, tokens, j, class_weight[j]);
             ftbf_result.cnt++;
             ftbf_class_results[j].cnt++;
             if(rtn > 0)

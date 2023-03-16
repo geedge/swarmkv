@@ -1,9 +1,9 @@
 #include "ftb_throttler.h"
 #include "crdt_utils.h"
-#include "hash_fun.h"
 #include "pn_counter.h"
 #include "uthash.h"
 #include "mpack.h"
+#include "xxhash.h"
 
 #include <assert.h>
 #include <string.h>
@@ -14,7 +14,7 @@
 
 struct ftbt_class_id
 {
-    long long class_hash[MAX_SKETCH_DEPTH];
+    unsigned long class_hash[MAX_SKETCH_DEPTH];
     unsigned char weight;
 };
 
@@ -30,6 +30,7 @@ struct active_class_queue
 struct count_min_sketch
 {
     long long *occupied_token[MAX_SKETCH_DEPTH];
+    long long perturbation[MAX_SKETCH_DEPTH];
     size_t depth;
     size_t width;
 };
@@ -51,26 +52,38 @@ struct ftb_throttler
     struct active_class_queue active_q;
 };
 
-static void ftbt_fill_class_id(struct ftbt_class_id *cid, struct ftb_throttler *t, const char *req_class_id, unsigned char weight)
+static void ftbt_perturbation(struct ftb_throttler *t)
 {
+    size_t i;
+    srand((unsigned)time(NULL));
+    for(i = 0; i < t->sketch.depth; ++i)
+    {
+        t->sketch.perturbation[i] = rand();
+    }
+}
+
+static void ftbt_fill_class_id(struct ftbt_class_id *cid, struct ftb_throttler *t, uint64_t req_class_id, unsigned char weight)
+{
+    uint64_t *p;
     for(size_t i = 0; i < t->sketch.depth; ++i)
     {
-        cid->class_hash[i] = custom_get_hash(i, (char *)req_class_id);
+        p = &req_class_id;
+        cid->class_hash[i] = XXH64(p, sizeof(req_class_id), t->sketch.perturbation[i]);;
     }
     cid->weight = weight;
 }
 
-static void ftbt_update_sketch(struct count_min_sketch *sketch, long long *hash, long long count)
+static void ftbt_update_sketch(struct count_min_sketch *sketch, unsigned long *hash, long long count)
 {
     size_t i = 0;
-    long long hashval = 0;
+    unsigned long hashval = 0;
     for(i = 0; i < sketch->depth; ++i)
     {
         hashval = hash[i] % sketch->width;
         sketch->occupied_token[i][hashval] += count;
     }
 }
-static long long ftbt_estimate_sketch(struct count_min_sketch sketch, long long *hash)
+static long long ftbt_estimate_sketch(struct count_min_sketch sketch, unsigned long *hash)
 {
     size_t i = 0;
     long long minval = LLONG_MAX;
@@ -163,6 +176,7 @@ struct ftb_throttler *ftb_throttler_new(uuid_t my_id, struct timeval now, long l
     for(size_t i = 0; i < t->sketch.depth; ++i){
         t->sketch.occupied_token[i] = ALLOC(long long, t->sketch.width);
     }
+    ftbt_perturbation(t);
 	return t;
 }
 
@@ -183,7 +197,7 @@ void ftb_throttler_configure(struct ftb_throttler *t, struct timeval now, long l
 	if(refill_duration_ms>0) t->cfg.refill_duration_ms=refill_duration_ms;
 }
 
-long long ftb_throttler_control(struct ftb_throttler *t, struct timeval now, enum ftb_throttler_command cmd, long long tokens, const char *req_class_id, unsigned char weight)
+long long ftb_throttler_control(struct ftb_throttler *t, struct timeval now, enum ftb_throttler_command cmd, long long tokens, uint64_t req_class_id, unsigned char weight)
 {
 	long long delta_time_ms=timeval_delta_ms(t->refill_timestamp, now);
 	long long consumed=PN_counter_get(t->consumed);
