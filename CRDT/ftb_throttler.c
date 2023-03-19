@@ -62,9 +62,9 @@ static void ftbt_perturbation(struct ftb_throttler *t)
     }
 }
 
-static void ftbt_fill_class_id(struct ftbt_class_id *cid, struct ftb_throttler *t, uint64_t req_class_id, unsigned char weight)
+static void ftbt_fill_class_id(struct ftbt_class_id *cid, struct ftb_throttler *t, unsigned long req_class_id, unsigned char weight)
 {
-    uint64_t *p;
+    unsigned long *p;
     for(size_t i = 0; i < t->sketch.depth; ++i)
     {
         p = &req_class_id;
@@ -169,7 +169,7 @@ struct ftb_throttler *ftb_throttler_new(uuid_t my_id, struct timeval now, long l
 	memcpy(&t->refill_timestamp, &now, sizeof(t->cfg.write_timestamp));
 	t->refilled=t->cfg.CBS;
     //active queue
-    t->active_q.alloc_tokens = alloc_tokens; //修正,可调整
+    t->active_q.alloc_tokens = alloc_tokens/1000; //可调整
     //sketch
     t->sketch.depth = MAX_SKETCH_DEPTH;
     t->sketch.width = MAX_SKETCH_WIDTH;
@@ -197,7 +197,7 @@ void ftb_throttler_configure(struct ftb_throttler *t, struct timeval now, long l
 	if(refill_duration_ms>0) t->cfg.refill_duration_ms=refill_duration_ms;
 }
 
-long long ftb_throttler_control(struct ftb_throttler *t, struct timeval now, enum ftb_throttler_command cmd, long long tokens, uint64_t req_class_id, unsigned char weight)
+long long ftb_throttler_control(struct ftb_throttler *t, struct timeval now, enum ftb_throttler_command cmd, long long tokens, unsigned long req_class_id, unsigned char weight)
 {
 	long long delta_time_ms=timeval_delta_ms(t->refill_timestamp, now);
 	long long consumed=PN_counter_get(t->consumed);
@@ -213,7 +213,7 @@ long long ftb_throttler_control(struct ftb_throttler *t, struct timeval now, enu
 
     //dequeue
     global_available=MAX(refilled-consumed, 0);
-    local_available = global_available;
+    local_available = global_available; //not reserved
     if(delta_time_ms >= t->cfg.refill_duration_ms)
     {
         ftbt_aq_dequeue(t, local_available);
