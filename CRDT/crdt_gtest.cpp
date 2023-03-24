@@ -4,6 +4,7 @@
 #include "or_map.h"
 #include "oc_token_bucket.h"
 #include "crdt_utils.h"
+#include "cms.h"
 
 #include <gtest/gtest.h>
 #include <unistd.h> //usleep
@@ -1690,7 +1691,77 @@ TEST(ORMap, Replica32)
 	}
 
 }
-
+TEST(CMS, Basic)
+{
+	uuid_t uuid;
+	uuid_generate(uuid);
+	struct cms *cms=cms_new(uuid);
+	int ret=0;
+	for(int i=0; i<10; i++)
+	{
+		ret=cms_add_n(cms, (char *)&i, sizeof(i), i+1);
+	}
+	for(int i=0; i<10; i++)
+	{
+		ret=cms_check(cms, (char *)&i, sizeof(i));
+		EXPECT_EQ(ret, i+1);
+	}
+	for(int i=0; i<10; i++)
+	{
+		ret=cms_remove_n(cms, (char *)&i, sizeof(i), i);
+	}
+	for(int i=0; i<10; i++)
+	{
+		ret=cms_check(cms, (char *)&i, sizeof(i));
+		EXPECT_EQ(ret, 1);
+	}
+	cms_free(cms);
+}
+void CMS_sync(struct cms *list[], size_t n)
+{
+	char *blob=NULL;
+	size_t blob_sz=0;
+	
+	for(size_t i=0; i<n; i++)
+	{
+		cms_serialize(list[i], &blob, &blob_sz);
+		for(size_t j=0; j<n; j++)
+		{
+			if(j==i) continue;
+			cms_merge_blob(list[j], blob, blob_sz);
+		}
+		free(blob);
+		blob=NULL;
+	}	
+	return;
+}
+TEST(CMS, Merge)
+{
+	size_t replica_number=2, round=10;
+	long long key=1234;
+	struct cms *cms[replica_number];
+	uuid_t uuid;
+	for(size_t i=0; i<replica_number; i++)
+	{
+		uuid_generate(uuid);
+		cms[i]=cms_new(uuid);
+	}
+	for(size_t i=0; i<round; i++)
+	{
+		cms_add_n(cms[i%replica_number], (char*) &key, sizeof(key), 1);
+	}
+	CMS_sync(cms, replica_number);
+	int ret=0;
+	for(size_t i=0; i<replica_number; i++)
+	{
+		ret=cms_check(cms[i], (char *)&key, sizeof(key));
+		EXPECT_EQ(ret, round);
+	}
+	for(size_t i=0; i<replica_number; i++)
+	{
+		cms_free(cms[i]);
+	}	
+}
 int main(int argc, char ** argv)
 {
 	int ret=0;

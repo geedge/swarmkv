@@ -134,7 +134,7 @@ struct PN_counter *PN_counter_deserialize(const char *blob, size_t blob_sz)
 	}
 	return pnc;
 }
-void PN_counter_merge(struct PN_counter *dst, struct PN_counter *src)
+void PN_counter_merge(struct PN_counter *dst, const struct PN_counter *src)
 {
 	struct counter_item *src_item=NULL, *dst_item=NULL, *tmp=NULL;	
 	if(timercmp(&dst->write_timestamp, &src->write_timestamp, <))//Last-Write-Wins
