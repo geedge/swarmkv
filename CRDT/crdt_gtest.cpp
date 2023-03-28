@@ -4,7 +4,8 @@
 #include "or_map.h"
 #include "oc_token_bucket.h"
 #include "crdt_utils.h"
-#include "cms.h"
+#include "cm_sketch.h"
+#include "sf_token_bucket.h"
 
 #include <gtest/gtest.h>
 #include <unistd.h> //usleep
@@ -1695,40 +1696,46 @@ TEST(CMS, Basic)
 {
 	uuid_t uuid;
 	uuid_generate(uuid);
-	struct cms *cms=cms_new(uuid);
-	int ret=0;
+	struct CM_sketch *cms=CM_sketch_new(uuid);
+	int ret=0, n_added=0;
 	for(int i=0; i<10; i++)
 	{
-		ret=cms_add_n(cms, (char *)&i, sizeof(i), i+1);
+		ret=CM_sketch_add_n(cms, (char *)&i, sizeof(i), i+1);
+		n_added += i+1;
 	}
 	for(int i=0; i<10; i++)
 	{
-		ret=cms_check(cms, (char *)&i, sizeof(i));
+		ret=CM_sketch_query(cms, (char *)&i, sizeof(i));
 		EXPECT_EQ(ret, i+1);
 	}
 	for(int i=0; i<10; i++)
 	{
-		ret=cms_remove_n(cms, (char *)&i, sizeof(i), i);
+		ret=CM_sketch_remove_n(cms, (char *)&i, sizeof(i), i);
+		n_added -= i;
 	}
 	for(int i=0; i<10; i++)
 	{
-		ret=cms_check(cms, (char *)&i, sizeof(i));
+		ret=CM_sketch_query(cms, (char *)&i, sizeof(i));
 		EXPECT_EQ(ret, 1);
 	}
-	cms_free(cms);
+	struct CM_sketch_info info;
+	CM_sketch_info(cms, &info);
+	EXPECT_EQ(info.n_element, n_added);
+	printf("error_rate: %f confidence: %f\n", info.error_rate, info.confidence);
+	CM_sketch_free(cms);
 }
-void CMS_sync(struct cms *list[], size_t n)
+void CMS_sync(struct CM_sketch *list[], size_t n)
 {
 	char *blob=NULL;
 	size_t blob_sz=0;
 	
 	for(size_t i=0; i<n; i++)
 	{
-		cms_serialize(list[i], &blob, &blob_sz);
+		CM_sketch_serialize(list[i], &blob, &blob_sz);
 		for(size_t j=0; j<n; j++)
 		{
 			if(j==i) continue;
-			cms_merge_blob(list[j], blob, blob_sz);
+			CM_sketch_merge_blob(list[j], blob, blob_sz);
 		}
 		free(blob);
 		blob=NULL;
@@ -1739,28 +1746,136 @@ TEST(CMS, Merge)
 {
 	size_t replica_number=2, round=10;
 	long long key=1234;
-	struct cms *cms[replica_number];
+	struct CM_sketch *cms[replica_number];
 	uuid_t uuid;
 	for(size_t i=0; i<replica_number; i++)
 	{
 		uuid_generate(uuid);
-		cms[i]=cms_new(uuid);
+		cms[i]=CM_sketch_new(uuid);
 	}
 	for(size_t i=0; i<round; i++)
 	{
-		cms_add_n(cms[i%replica_number], (char*) &key, sizeof(key), 1);
+		CM_sketch_add_n(cms[i%replica_number], (char*) &key, sizeof(key), 1);
 	}
 	CMS_sync(cms, replica_number);
 	int ret=0;
 	for(size_t i=0; i<replica_number; i++)
 	{
-		ret=cms_check(cms[i], (char *)&key, sizeof(key));
+		ret=CM_sketch_query(cms[i], (char *)&key, sizeof(key));
 		EXPECT_EQ(ret, round);
 	}
 	for(size_t i=0; i<replica_number; i++)
 	{
-		cms_free(cms[i]);
+		CM_sketch_free(cms[i]);
 	}	
+}
+TEST(CMS, Idempotent)
+{
+	size_t replica_number=8, round=10000, i=0;
+	struct CM_sketch *cms[replica_number];
+	uuid_t uuid;
+	
+	for(i=0; i<replica_number; i++)
+	{
+		uuid_generate(uuid);
+		cms[i]=CM_sketch_new(uuid);
+	}
+	int n_added=0;
+	for(i=0; i<round; i++)
+	{
+		CM_sketch_add_n(cms[i%replica_number], (char*) &i, sizeof(i), i);
+		n_added+=i;
+	}
+	CMS_sync(cms, replica_number);
+	CMS_sync(cms, replica_number);
+	int ret=0;
+	size_t success=0;
+	struct CM_sketch_info info;
+	CM_sketch_info(cms[0], &info);
+
+	for(i=0; i<round; i++)
+	{
+		ret=CM_sketch_query(cms[(i+1)%replica_number], (char*) &i, sizeof(i));
+		if((double)ret<((double)i+info.error_rate*n_added))
+		{
+			success++;
+		}
+	}
+	EXPECT_GE((double)success/round, info.confidence);
+	for(i=0; i<replica_number; i++)
+	{
+		CM_sketch_free(cms[i]);
+	}	
+}
+TEST(AStochasticFair, Demo)
+{
+	double pc=0.0, pa=0.0;
+	double p=0.0;
+	int row=10;
+	for(int i=0; i<row+1; i++)
+	{
+		pc=i*((double)1/row);
+		for(int j=0; j<row+1; j++)
+		{
+			pa=j*((double)1/row);
+			p=pow((1-pa), 2)+pow(1-pc, 2);
+			p=sqrt(p);
+			//printf("%.2f %.2f %.2f\n", pc, pa, p);
+		}
+	}
+}
+struct sto_req
+{
+	long long class_id;
+	long long weight;
+	long long token_per_second;
+	long long got_tokens;
+};
+TEST(StochasticFair, Basic)
+{
+	uuid_t uuid;
+	uuid_generate(uuid);
+	long long CIR=120000;
+	long long CBS=200000;
+
+	struct timeval start, step, now;
+	int step_us=1000;
+	gettimeofday(&start, NULL);
+	memcpy(&now, &start, sizeof(now));
+	step.tv_sec=0;
+	step.tv_usec=(suseconds_t)step_us;
+	struct SF_token_bucket *sft=SF_token_bucket_new(uuid, now, 0, CIR, CBS);
+	int n_class=5, duration_s=100;
+	struct sto_req req[n_class]={{1, 1, 20000, 0}, 
+								{2, 1, 20000, 0},
+								{3, 1, 20000, 0},
+								{4, 1, 40000, 0},
+								{5, 1, 45000, 0}};
+	for(int i=0; i<duration_s*(1000*1000/step_us); i++)
+	{
+		timeradd(&now, &step, &now);
+		int k=random()%n_class;
+		for(int j=0; j<n_class; j++)
+		{
+			int idx=(j+k)%n_class;
+			
+			req[idx].got_tokens+=SF_token_bucket_consume(sft, now, req[idx].class_id, req[idx].weight, 
+								req[idx].token_per_second*step_us/(1000*1000));
+		}
+	}
+	for(int i=0; i<n_class; i++)
+	{
+		printf("%lld ", req[i].got_tokens/duration_s);
+	}
+	printf("total=%lld\r\n", CIR);
+	long long classes[n_class];
+	for(int i=0; i<n_class; i++)
+	{
+		classes[i]=req[i].class_id;
+	}
+	SF_token_bucket_print_prob(sft, classes, n_class);
+	//printf("available=%lld\r\n", CIR*duration_s+CBS);
+	SF_token_bucket_free(sft);
 }
 int main(int argc, char ** argv)
 {
