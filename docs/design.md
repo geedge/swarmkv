@@ -47,7 +47,7 @@ The command returns a JSON array.
 	},
 	{
 		"slot": "1023",
-    "owner": "192.168.0.1:5211"
+		"owner": "192.168.0.1:5211"
 	}
 ]
 ```
@@ -180,6 +180,12 @@ At the very beginning, the bucket is full, which means it has *CBS* tokens. You 
 
 If a network partition happens, the token bucket will be out-of-sync, and each replica has the entire CIR. And after the partition heals, replicas share the CIR again. The OC Token Bucket is robust to overuse as long as the sync interval is reasonable, i.e., 200ms.
 
+### Stochastic Fair Token Bucket
+Stochastic Fair Token Bucket is implemented with a Count-min Sketch and an OC Token Bucket. It archieves [max-min fairness](https://www.ece.rutgers.edu/~marsic/Teaching/CCN/minmax-fairsh.html) which is defined as follows:
+- Resources are allocated in order of increasing demand
+- No source gets a resource share larger than its demand
+- Sources with unsatisfied demands get an equal share of the resource
+
 ## Fault tolerance
 
 ### High availability
@@ -274,16 +280,14 @@ The source files are organized as follows:
 - src/swarmkv_api.c API implementaions.
 - src/swarmkv_store.c  KV operations, key hash table is implemented with [uthash](https://troydhanson.github.io/uthash/). Use [sds](https://github.com/antirez/sds) as a dynamic string library.
 - src/swarmkv_sync.c batching CRDT syncronization.
-- src/t_string.c  commands of data type string.
-- src/t_set.c commands of data type set.
 - src/swarmkv_keyspace.c: The control plane of SwarmKV. Interact with [HashiCorp Consul](https://www.consul.io/) for node discovery, slot assignment, and leader election.
 - src/swarmkv_message.c: Message is encoded to [MessagePack](https://msgpack.org/index.html) format by [mpack](https://github.com/ludocode/mpack) library.
 - src/swarmkv_net.c: High performance P2P communication via [libevent](https://libevent.org/).
 - src/swarmkv_message.c Collecting performance metrics.
-- src/t_xxx.c Implementing SwarmKV data types.
+- src/t_xxx.c Implementing SwarmKV commands of various data types.
 - src/deps/ Dependencies in source codes format, such as [uthash](https://troydhanson.github.io/uthash/), [sds](https://github.com/antirez/sds), [mpack](https://github.com/ludocode/mpack), [timeout](https://25thandclement.com/~william/projects/timeout.c.html), [cJSON](https://github.com/DaveGamble/cJSON), [HDRHistogram](https://github.com/HdrHistogram/HdrHistogram_c)
 - src/vendor/  Dependencies in archive format.
-- CRDT/ Implementing Conflict-free replicated data type.
+- CRDT/ Implementing Conflict-free replicated data types.
 - test/ Unit tests.
 - tools/swarmkv_cli: CLI implementation which is facilitated by [linenoise](https://github.com/antirez/linenoise).
 
@@ -291,7 +295,7 @@ The source files are organized as follows:
 
 [dqlite](https://dqlite.io/) is a C library that implements an embeddable and replicated SQL database engine with high availability and automatic failover.
 
-*[rqlite](https://github.com/rqlite/rqlite)* is an easy-to-use, lightweight, distributed relational database, which uses [SQLite](https://www.sqlite.org/) as its storage engine. 
+[rqlite](https://github.com/rqlite/rqlite) is an easy-to-use, lightweight, distributed relational database, which uses [SQLite](https://www.sqlite.org/) as its storage engine. 
 
 [Zeppelin](https://github.com/Qihoo360/zeppelin) is a Distributed Key-Value Platform that aims to provide excellent performance, reliability, and scalability.
 
@@ -327,7 +331,7 @@ The source files are organized as follows:
 
 # References
 
-Woo, Shinae, et al. "Elastic scaling of stateful network functions." *15th {USENIX} Symposium on Networked Systems Design and Implementation ({NSDI} 18)*. 2018.
+Woo, Shinae, et al. "Elastic scaling of stateful network functions." *15th {USENIX} Symposium on Networked Systems Design and Implementation ({NSDI} 18)*. 2018. [Source] (https://www.usenix.org/conference/nsdi18/presentation/woo)
 
 Bieniusa, Annette, et al. "[An optimized conflict-free replicated set](https://arxiv.org/pdf/1210.3368.pdf)." *arXiv preprint arXiv:1210.3368* (2012).
 
