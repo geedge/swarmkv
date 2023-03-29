@@ -10,6 +10,7 @@
 #include <stdio.h>
 
 #define SFT_REFRESH_INTERVAL_MS 2000
+#define SFT_WARMUP_INTERVAL_MS  500
 struct SF_token_bucket
 {
     uuid_t uuid;
@@ -18,11 +19,10 @@ struct SF_token_bucket
     struct OC_token_bucket *bucket;
     int cms_idx;   //current active cms (0 or 1)
     char double_buffering;
-    int is_jamming;
     int n_request;
     int n_jam;
-    struct CM_sketch *cms[2];//two cms for double buffer
-    struct timeval refresh_time;
+    struct CM_sketch *cms[2];   //two cms for double buffer
+    struct timeval refresh_time;//timestamp of last cms changing
 };
 int stochastic_pass(double pc, double pa)
 {
@@ -75,7 +75,6 @@ long long SF_token_bucket_consume(struct SF_token_bucket *sft, struct timeval no
     long long delta_time_ms=timeval_delta_ms(sft->refresh_time, now);
     if(delta_time_ms>SFT_REFRESH_INTERVAL_MS)
     {
-        sft->is_jamming=0;
         sft->n_request=0;
         sft->n_jam=0;
         CM_sketch_free(sft->cms[sft->cms_idx]);
@@ -95,12 +94,11 @@ long long SF_token_bucket_consume(struct SF_token_bucket *sft, struct timeval no
     got_tokens=OC_token_bucket_control(sft->bucket, now, OCTB_CMD_CONSUME_NORMAL, tokens);
     if(got_tokens)
     {
-        CM_sketch_add_n(sft->cms[sft->cms_idx], (char *)&class_id, sizeof(class_id), MAX(got_tokens/weight, 1));
-        CM_sketch_add_n(sft->cms[sft->cms_idx^1], (char *)&class_id, sizeof(class_id), MAX(got_tokens/weight, 1));
+        CM_sketch_add_n(sft->cms[sft->cms_idx], (char *)&class_id, sizeof(class_id), got_tokens/weight);
+        CM_sketch_add_n(sft->cms[sft->cms_idx^1], (char *)&class_id, sizeof(class_id), got_tokens/weight);
     }
     if(got_tokens==0 && tokens>0)
     {
-        sft->is_jamming=1;
         sft->n_jam++;
     }
     sft->n_request++;
