@@ -8,9 +8,11 @@
 #include <string.h> 
 #include <assert.h>
 #include <stdio.h>
+#include <stdint.h>
 
-#define SFT_REFRESH_INTERVAL_MS 2000
-#define SFT_WARMUP_INTERVAL_MS  500
+#define SFTB_REFRESH_INTERVAL_MS 2000
+#define SFTB_WARMUP_INTERVAL_MS  500
+#define SFTB_MAX_WEIGHT  20
 struct SF_token_bucket
 {
     uuid_t uuid;
@@ -34,21 +36,22 @@ int stochastic_pass(double pc, double pa)
 }
 struct SF_token_bucket *SF_token_bucket_new(uuid_t uuid, struct timeval now, int type, long long CIR, long long CBS)
 {
-    struct SF_token_bucket *sft=ALLOC(struct SF_token_bucket, 1);
-    sft->bucket=OC_token_bucket_new(uuid, now, CIR, CBS);
-    sft->CIR=CIR;
-    sft->cms[0]=CM_sketch_new(uuid);
-    sft->cms[1]=CM_sketch_new(uuid);
-    memcpy(&sft->refresh_time, &now, sizeof(sft->refresh_time));
-    return sft;
+    struct SF_token_bucket *sftb=ALLOC(struct SF_token_bucket, 1);
+    sftb->bucket=OC_token_bucket_new(uuid, now, CIR, CBS);
+    sftb->CIR=CIR;
+    sftb->cms[0]=CM_sketch_new(uuid);
+    sftb->cms[1]=CM_sketch_new(uuid);
+    memcpy(&sftb->refresh_time, &now, sizeof(sftb->refresh_time));
+    return sftb;
 }
-void SF_token_bucket_free(struct SF_token_bucket *sft)
+void SF_token_bucket_free(struct SF_token_bucket *sftb)
 {
-    OC_token_bucket_free(sft->bucket);
-    CM_sketch_free(sft->cms[0]);
-    CM_sketch_free(sft->cms[1]);
-    free(sft);
+    OC_token_bucket_free(sftb->bucket);
+    CM_sketch_free(sftb->cms[0]);
+    CM_sketch_free(sftb->cms[1]);
+    free(sftb);
 }
+
 static double sft_prob(const struct CM_sketch *cms, long long class_id)
 {
     long long class_consumed=0, total_consumed=0, min=0, max=0;
@@ -68,46 +71,55 @@ static double sft_prob(const struct CM_sketch *cms, long long class_id)
     //pow(1-p_consumed, 2); 
     return p_pass;
 }
-long long SF_token_bucket_consume(struct SF_token_bucket *sft, struct timeval now, long long class_id, long long weight, long long tokens)
+long long SF_token_bucket_consume(struct SF_token_bucket *sftb, struct timeval now, long long class_id, long long weight, long long tokens)
 {
     long long got_tokens=0;
     int r=0;
-    long long delta_time_ms=timeval_delta_ms(sft->refresh_time, now);
-    if(delta_time_ms>SFT_REFRESH_INTERVAL_MS)
+    long long delta_time_ms=timeval_delta_ms(sftb->refresh_time, now);
+    if(delta_time_ms>SFTB_REFRESH_INTERVAL_MS)
     {
-        sft->n_request=0;
-        sft->n_jam=0;
-        CM_sketch_free(sft->cms[sft->cms_idx]);
-        sft->cms[sft->cms_idx]=CM_sketch_new(sft->uuid);
-        sft->cms_idx^=1;
-        memcpy(&sft->refresh_time, &now, sizeof(sft->refresh_time));
+        sftb->n_request=0;
+        sftb->n_jam=0;
+        CM_sketch_free(sftb->cms[sftb->cms_idx]);
+        sftb->cms[sftb->cms_idx]=CM_sketch_new(sftb->uuid);
+        sftb->cms_idx^=1;
+        memcpy(&sftb->refresh_time, &now, sizeof(sftb->refresh_time));
     }
-    if((double)sft->n_jam/sft->n_request>0.01)
+    long long available=OC_token_bucket_control(sftb->bucket, now, OCTB_CMD_READ_AVAILABLE, 0);
+    double p_avail=(double)available/(sftb->CIR*SFTB_REFRESH_INTERVAL_MS/1000);
+    //if(sftb->n_jam)
+    //if((double)sftb->n_jam*weight/sftb->n_request>0.001)
+    //if((double)sftb->n_jam/sftb->n_request>0.1)
+    if(p_avail<(double)1/weight/2.1)
+    //if((sftb->n_jam>weight*20))
+    //if((double)available/(sftb->CIR*SFTB_REFRESH_INTERVAL_MS/1000) < 0.9)
     {
-        double p_pass=sft_prob(sft->cms[sft->cms_idx], class_id);
+        double p_pass=sft_prob(sftb->cms[sftb->cms_idx], class_id);
+        //p_pass=sqrt(pow(p_pass, 2)+pow(p_avail, 2));
+
         r=random()%1000;
         if(r>p_pass*1000)
         {
             return 0;
         }
     }
-    got_tokens=OC_token_bucket_control(sft->bucket, now, OCTB_CMD_CONSUME_NORMAL, tokens);
+    got_tokens=OC_token_bucket_control(sftb->bucket, now, OCTB_CMD_CONSUME_NORMAL, tokens);
     if(got_tokens)
     {
-        CM_sketch_add_n(sft->cms[sft->cms_idx], (char *)&class_id, sizeof(class_id), got_tokens/weight);
-        CM_sketch_add_n(sft->cms[sft->cms_idx^1], (char *)&class_id, sizeof(class_id), got_tokens/weight);
+        CM_sketch_add_n(sftb->cms[sftb->cms_idx], (char *)&class_id, sizeof(class_id), got_tokens/weight);
+        CM_sketch_add_n(sftb->cms[sftb->cms_idx^1], (char *)&class_id, sizeof(class_id), got_tokens/weight);
     }
     if(got_tokens==0 && tokens>0)
     {
-        sft->n_jam++;
+        sftb->n_jam++;
     }
-    sft->n_request++;
+    sftb->n_request++;
     return got_tokens;
 }
-void SF_token_bucket_print_prob(struct SF_token_bucket *sft, long long *classes, size_t n_class)
+double SF_token_bucket_get_prob(struct SF_token_bucket *sftb, struct timeval now, long long class_id)
 {
-    for(size_t i=0; i<n_class; i++)
-    {
-        printf("class=%lld prob=%f\r\n", classes[i], sft_prob(sft->cms[sft->cms_idx], classes[i]));
-    }
+    double p_pass=0;
+    p_pass= sft_prob(sftb->cms[sftb->cms_idx], class_id);
+    //p_pass=sqrt(pow(p_pass, 2)+pow(p_avail, 2));
+    return p_pass;
 }

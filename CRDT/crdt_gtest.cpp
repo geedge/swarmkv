@@ -1825,7 +1825,6 @@ int cmp_sftb_class(const void *a, const void* b)
 }
 double max_min_fairness_index(long long available_tokens, struct sftb_class * classes, size_t n_class)
 {
-
 	qsort(classes, n_class, sizeof(struct sftb_class), cmp_sftb_class);
 	long long total_weight=0;
 	for(size_t i=0; i<n_class; i++)
@@ -1834,22 +1833,43 @@ double max_min_fairness_index(long long available_tokens, struct sftb_class * cl
 	}
 	long long left_tokens=available_tokens;
 	long long left_weight=total_weight;
-	for(size_t i=0; i<n_class; i++)
+	size_t n_satisfied=0;
+
+	while(n_satisfied<n_class && left_tokens/left_weight>0 )
 	{
-		long long share=classes[i].weight*left_tokens/(long long)(left_weight);
-		if(classes[i].demand_tokens < share)
+		long long share=left_tokens/left_weight;
+		for(size_t i=0; i<n_class; i++)
 		{
-			classes[i].ideal_tokens=classes[i].demand_tokens;
+			long long my_share=classes[i].weight*share;
+			if(classes[i].demand_tokens == classes[i].ideal_tokens)
+			{
+				continue;
+			}
+			else if(classes[i].demand_tokens - classes[i].ideal_tokens <= my_share)
+			{
+				left_tokens -= (classes[i].demand_tokens - classes[i].ideal_tokens);
+				classes[i].ideal_tokens=classes[i].demand_tokens;
+			}
+			else
+			{
+				left_tokens -= my_share;
+				classes[i].ideal_tokens+=my_share;
+				
+			}
+		}
+		left_weight=0;
+		n_satisfied=0;
+		for(size_t i=0; i<n_class; i++)
+		{
+			if(classes[i].demand_tokens == classes[i].ideal_tokens)
+			{
+				n_satisfied++;
+				continue;
+			}
+			left_weight += classes[i].weight;
 			
 		}
-		else
-		{
-			classes[i].ideal_tokens=share;
-		}
-		left_tokens -= classes[i].ideal_tokens;
-		left_weight -= classes[i].weight;
 	}
-
 	double index=0;
 	for(size_t i=0; i<n_class; i++)
 	{
@@ -1890,18 +1910,16 @@ double SF_token_bucket_test(struct sftb_class *classes, size_t n_class, long lon
 	int print=1;
 	if(print)
 	{
+		printf("class\tprobability\tdemand\tallocated\tideal\r\n");
 		for(size_t i=0; i<n_class; i++)
 		{
-			printf("%lld ", classes[i].allocated_tokens/duration_s);
+			printf("%lld\t%f\t%lld\t%lld\t%lld\r\n", classes[i].class_id,
+										SF_token_bucket_get_prob(sftb, now, classes[i].class_id),
+										classes[i].demand_tokens/duration_s,
+										classes[i].allocated_tokens/duration_s,
+										classes[i].ideal_tokens/duration_s);
 		}
-		printf("total=%lld\r\n", CIR);
-		long long id_list[n_class];
-		for(size_t i=0; i<n_class; i++)
-		{
-			id_list[i]=classes[i].class_id;
-		}
-		SF_token_bucket_print_prob(sftb, id_list, n_class);
-		printf("fairness %f\r\n", index);
+		printf("CIR %lld fairness index %f\r\n", CIR, index);
 	}
 	SF_token_bucket_free(sftb);
 	return index;
@@ -1952,10 +1970,64 @@ TEST(StochasticFairTokenBucket, Weight)
 	struct sftb_class one_heavy_classes[5]={{1, 1, 20000, 0, 0, 0}, 
 								{2, 2, 20000, 0, 0, 0},
 								{3, 3, 20000, 0, 0, 0},
-								{4, 4, 20000, 0, 0, 0},
+								{4, 4, 30000, 0, 0, 0},
 								{5, 5, 50000, 0, 0, 0}};
 	
 	index=SF_token_bucket_test(one_heavy_classes, 5, 120000, 200000, 100);
+	EXPECT_NEAR(index, 1, 0.02);
+
+	struct sftb_class t1_heavy_classes[5]={{1, 1, 40000, 0, 0, 0}, 
+								{2, 2, 20000, 0, 0, 0},
+								{3, 3, 20000, 0, 0, 0},
+								{4, 4, 30000, 0, 0, 0},
+								{5, 5, 50000, 0, 0, 0}};
+	
+	index=SF_token_bucket_test(t1_heavy_classes, 5, 120000, 200000, 100);
+	EXPECT_NEAR(index, 1, 0.02);
+
+	struct sftb_class t2_heavy_classes[5]={{1, 1, 40000, 0, 0, 0}, 
+								{2, 2, 20000, 0, 0, 0},
+								{3, 3, 20000, 0, 0, 0},
+								{4, 4, 30000, 0, 0, 0},
+								{5, 10, 50000, 0, 0, 0}};
+	
+	index=SF_token_bucket_test(t2_heavy_classes, 5, 120000, 200000, 100);
+	EXPECT_NEAR(index, 1, 0.02);
+
+	struct sftb_class t3_heavy_classes[5]={{1, 1, 40000, 0, 0, 0}, 
+								{2, 2, 20000, 0, 0, 0},
+								{3, 3, 22000, 0, 0, 0},
+								{4, 4, 20000, 0, 0, 0},
+								{5, 10, 10000, 0, 0, 0}};
+	
+	index=SF_token_bucket_test(t3_heavy_classes, 5, 100000, 200000, 100);
+	EXPECT_NEAR(index, 1, 0.02);
+
+	struct sftb_class all_light_classes[5]={{1, 1, 20000, 0, 0, 0}, 
+								{2, 2, 20000, 0, 0, 0},
+								{3, 3, 22000, 0, 0, 0},
+								{4, 4, 20000, 0, 0, 0},
+								{5, 10, 23000, 0, 0, 0}};
+	
+	index=SF_token_bucket_test(all_light_classes, 5, 100000, 200000, 100);
+	EXPECT_NEAR(index, 1, 0.02);
+
+}
+TEST(StochasticFairTokenBucket, Weight100)
+{
+	size_t n_class=100;
+	long long per_class_CIR=100000;
+	long long CIR=n_class*per_class_CIR;
+	long long CBS=CIR;
+	struct sftb_class one_heavy_classes[n_class];
+	memset(one_heavy_classes, 0, sizeof(one_heavy_classes));
+	for(size_t i=0; i<n_class; i++)
+	{
+		one_heavy_classes[i].class_id=i;
+		one_heavy_classes[i].requested_CIR=per_class_CIR+i*per_class_CIR/n_class;
+		one_heavy_classes[i].weight=i%20+1;
+	}
+	double index=SF_token_bucket_test(one_heavy_classes, n_class, CIR, CBS, 100);
 	EXPECT_NEAR(index, 1, 0.02);
 }
 int main(int argc, char ** argv)
