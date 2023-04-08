@@ -349,8 +349,12 @@ https://hermes-protocol.com/
 
 [A fast, fault-tolerant & linearizable replication protocol](https://hermes-protocol.com/)
 
-https://bucket4j.com/8.1.0/toc.html
+[Bucket4j 8.1.0 Reference](https://bucket4j.com/8.1.0/toc.html)
 
 [An Introduction to Computer Networks: Chapter 24 - Token Bucket Rate Limiting](https://intronetworks.cs.luc.edu/current/html/tokenbucket.html)
 
+[Deficit round robin](https://en.wikipedia.org/wiki/Deficit_round_robin)
+
 [sfq - Stochastic Fairness Queueing](https://man7.org/linux/man-pages/man8/tc-sfq.8.html)
+
+Adas, Dolev, and Roy Friedman. "[Sliding Window CRDT Sketches](https://ieeexplore.ieee.org/abstract/document/9603721)." 2021 40th International Symposium on Reliable Distributed Systems (SRDS). IEEE, 2021.

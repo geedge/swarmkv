@@ -1,7 +1,8 @@
 add_definitions(-D_GNU_SOURCE) 
 add_definitions(-fPIC)
 
-add_library(CRDT lww_register.c pn_counter.c or_map.c or_set.c oc_token_bucket.c cm_sketch.c sf_token_bucket.c fs_token_bucket.c)
+add_library(CRDT lww_register.c pn_counter.c or_map.c or_set.c oc_token_bucket.c cm_sketch.c st_hll.c
+			sf_token_bucket.c fs_token_bucket.c)
 
 include_directories(${PROJECT_SOURCE_DIR}/deps/mpack
 					${PROJECT_SOURCE_DIR}/deps/uthash

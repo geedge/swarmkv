@@ -10,21 +10,28 @@
 #include <stdio.h>
 #include <stdint.h>
 
-#define REFILL_INTERVAL_MS  100
+#define ROUND_INTERVAL_MS  100
 #define MAX_CLASSES   128
+#define EPOCH_INTERVAL_MS   100
 struct fs_class
 {
     long long class_id;
     long long weight;
-    long long available;
+    long long consumed;
+    struct timeval last_round;
 };
 struct FS_token_bucket
 {
     uuid_t uuid;
     size_t n_class;
     struct fs_class all_classes[MAX_CLASSES];
-    struct timeval last_refilled;
+    int cms_idx;
+    struct timeval last_deficit;
+    long long per_weight_deficit;
+    struct CM_sketch *consumed[2];
     long long CIR, CBS;
+    long long total_weight;
+    struct OC_token_bucket *bucket;
 };
 
 struct FS_token_bucket *FS_token_bucket_new(uuid_t uuid, struct timeval now, long long CIR, long long CBS)
@@ -32,70 +39,20 @@ struct FS_token_bucket *FS_token_bucket_new(uuid_t uuid, struct timeval now, lon
     struct FS_token_bucket *fstb=ALLOC(struct FS_token_bucket, 1);
     fstb->CIR=CIR;
     fstb->CBS=CBS;
-    memcpy(&fstb->last_refilled, &now, sizeof(fstb->last_refilled));
     uuid_copy(fstb->uuid, uuid);
+    fstb->bucket=OC_token_bucket_new(uuid, now, CIR, CBS);  
     return fstb;
 }
 void FS_token_bucket_free(struct FS_token_bucket *fstb)
 {
+    OC_token_bucket_free(fstb->bucket);
     free(fstb);
 }
-static void max_min_refill(struct fs_class *classes, size_t n_class, long long per_class_CBS, long long tokens)
-{
-    long long total_weight=0;
-    
-    for(size_t i=0; i<n_class; i++)
-    {
-        total_weight+=classes[i].weight;
-    }
 
-    long long n_satisfied=0, left_tokens=tokens, left_weight=total_weight;
-    while(n_satisfied<n_class && left_tokens/left_weight>0 )
-    {
-        long long share=left_tokens/left_weight;
-        for(size_t i=0; i<n_class; i++)
-        {
-            long long my_share=classes[i].weight*share;
-            if(classes[i].available == per_class_CBS)
-            {
-                continue;
-            }
-            else if(per_class_CBS - classes[i].available <= my_share)
-            {
-                left_tokens -= (per_class_CBS - classes[i].available);
-                classes[i].available = per_class_CBS;
-            }
-            else
-            {
-                left_tokens -= my_share;
-                classes[i].available += my_share;
-                
-            }
-        }
-        left_weight=0;
-        n_satisfied=0;
-        for(size_t i=0; i<n_class; i++)
-        {
-            if(classes[i].available == per_class_CBS)
-            {
-                n_satisfied++;
-                continue;
-            }
-            left_weight += classes[i].weight;
-            
-        }
-    }
-}
 long long FS_token_bucket_consume(struct FS_token_bucket *fstb, struct timeval now, long long class_id, long long weight, long long tokens)
 {
     long long got_tokens=0;
-    long long delta_time_ms=timeval_delta_ms(fstb->last_refilled, now);
-    if(delta_time_ms>REFILL_INTERVAL_MS && fstb->n_class>0)
-    {
-        long long generated=fstb->CIR*delta_time_ms/1000;
-        max_min_refill(fstb->all_classes, fstb->n_class, fstb->CBS/(fstb->n_class+1), generated);
-        memcpy(&fstb->last_refilled, &now, sizeof(fstb->last_refilled));
-    }
+ 
     struct fs_class *self=NULL;
     for(size_t i=0; i<fstb->n_class; i++)
     {
@@ -110,13 +67,33 @@ long long FS_token_bucket_consume(struct FS_token_bucket *fstb, struct timeval n
         self=fstb->all_classes + fstb->n_class;
         self->class_id=class_id;
         self->weight=weight;
-        self->available=fstb->CBS/(fstb->n_class+1);
+        self->consumed=0;
+        memcpy(&self->last_round, &now, sizeof(self->last_round));
         fstb->n_class++;
+        fstb->total_weight+=weight;
     }
-    if(tokens<=self->available)
+    long long available=OC_token_bucket_control(fstb->bucket, now, OCTB_CMD_READ_AVAILABLE, 0);
+    long long delta_time_ms=0;
+    delta_time_ms=timeval_delta_ms(self->last_round, now);
+    if(delta_time_ms>ROUND_INTERVAL_MS)
     {
-        self->available-=tokens;
-        got_tokens=tokens;
+        fstb->per_weight_deficit=available/fstb->total_weight;
+        memcpy(&fstb->last_deficit, &now, sizeof(fstb->last_deficit));
     }
+    delta_time_ms=timeval_delta_ms(self->last_round, now);
+    
+   // long long current_epoch=delta_time_ms/EPOCH_INTERVAL_MS;
+    if(delta_time_ms>ROUND_INTERVAL_MS)
+    {
+        self->consumed=0;
+        memcpy(&self->last_round, &now, sizeof(self->last_round));
+    }
+    //long long threshhold=available*self->weight/fstb->total_weight;
+    if(tokens + self->consumed > fstb->per_weight_deficit*weight)
+    {
+        return 0;
+    }
+    got_tokens=OC_token_bucket_control(fstb->bucket, now, OCTB_CMD_CONSUME_NORMAL, tokens);
+    self->consumed += got_tokens;
     return got_tokens;
 }
