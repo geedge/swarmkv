@@ -1,5 +1,6 @@
 #include "cm_sketch.h"
 #include "uthash.h"
+#include "xxhash.h"
 #include "mpack.h"
 #include "crdt_utils.h"
 
@@ -9,16 +10,6 @@
 #include <math.h> //pow
 
 #define CMS_MAX_DEPTH   16
-static uint64_t __fnv_1a(const char *key, size_t len, int seed) {
-    // FNV-1a hash (http://www.isthe.com/chongo/tech/comp/fnv/)
-    int i=0;
-    uint64_t h = 14695981039346656037ULL + (31 * seed); // FNV_OFFSET 64 bit with magic number seed
-    for (i = 0; i < len; ++i){
-            h = h ^ (unsigned char) key[i];
-            h = h * 1099511628211ULL; // FNV_PRIME 64 bit
-    }
-    return h;
-}
 static int32_t __safe_add(int32_t a, int32_t b)
 {
     if (a == INT32_MAX || a == INT32_MIN) {
@@ -180,7 +171,7 @@ int CM_sketch_query(const struct CM_sketch *cms, const char *key, size_t len)
     assert(cms->opt.depth <= CMS_MAX_DEPTH);
     for(int i=0; i<cms->opt.depth; i++)
     {
-        hashes[i]=__fnv_1a(key, len, i);
+        hashes[i]=XXH64(key, len, i);
     }
 
     added_global=cms_query(cms, hashes, cms->opt.depth);
@@ -199,7 +190,7 @@ int CM_sketch_add_n(struct CM_sketch *cms, const char *key, size_t len, int time
     uint64_t hashes[CMS_MAX_DEPTH]={0};
     for(int i=0; i<cms->opt.depth && i<CMS_MAX_DEPTH; i++)
 	{
-        hashes[i]=__fnv_1a(key, len, i);
+        hashes[i]=XXH64(key, len, i);
     }
     cms_bin_add(bin, hashes, cms->opt.depth, times);
     long long added=cms_query(cms, hashes, cms->opt.depth);

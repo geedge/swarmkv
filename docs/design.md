@@ -350,3 +350,7 @@ https://hermes-protocol.com/
 [A fast, fault-tolerant & linearizable replication protocol](https://hermes-protocol.com/)
 
 https://bucket4j.com/8.1.0/toc.html
+
+[An Introduction to Computer Networks: Chapter 24 - Token Bucket Rate Limiting](https://intronetworks.cs.luc.edu/current/html/tokenbucket.html)
+
+[sfq - Stochastic Fairness Queueing](https://man7.org/linux/man-pages/man8/tc-sfq.8.html)
