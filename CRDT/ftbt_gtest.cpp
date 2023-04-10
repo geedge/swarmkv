@@ -3,12 +3,19 @@
 #include "ransampl.h"
 #include <cstddef>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <gtest/gtest.h>
 #include <unistd.h>
 #include <uuid/uuid.h>
 #include <math.h>
 #include "util/flow_tokens.h"
 #include "util/fair_index.h"
+
+#define FAIR_INDEX_CIR 1*1000*1000 //1000 bit/ms, 1M/s
+#define FAIR_INDEX_CBS 10*1000
+#define FAIR_INDEX_REQ FAIR_INDEX_CIR/1000
+#define FAIR_INDEX_MIMIC_DURATION_US 100*1000*1000
 
 void ftb_throttler_sync(struct ftb_throttler *list[], size_t n)
 {
@@ -148,11 +155,6 @@ TEST(FTBT, Merge)
     ftb_throttler_free(bucket[1]);
 }
 
-#define FAIR_INDEX_CIR 1*1024*1000 //1024 bit/ms
-#define FAIR_INDEX_CBS 10*1024
-#define FAIR_INDEX_REQ FAIR_INDEX_CIR/1000
-#define FAIR_INDEX_MIMIC_DURATION_US 1*1000*1000
-
 TEST(FTBT, SingleReplica)
 {
     int class_num = 24;
@@ -172,19 +174,16 @@ TEST(FTBT, SingleReplica)
     step.tv_sec=0;
     step.tv_usec=(suseconds_t)1000;
 
-    struct test_records ftbf_class_results[class_num], ftbf_result;
-    unsigned char class_weight[class_num];
     double prob[class_num];
-    memset(&ftbf_result, 0, sizeof(ftbf_result));
-    memset(ftbf_class_results, 0, sizeof(ftbf_class_results));
-    memset(class_weight, 0, sizeof(class_weight));
+    struct fstb_class pareto_classes[class_num];
     memset(prob, 0, sizeof(prob));
-
+    memset(pareto_classes, 0, sizeof(pareto_classes));
     for(i = 0; i < (size_t)class_num; i++)
     {
-        class_weight[i] = 1;
+        pareto_classes[i].class_id = i+1;
+        pareto_classes[i].weight = 1;
     }
-    set_flow_prob(prob, class_num, ftype);
+    long double sum_w = set_flow_prob(prob, class_num, ftype);
     ransampl_ws *ws = ransampl_init(prob, class_num);
     int round = FAIR_INDEX_MIMIC_DURATION_US/1000;
     srandom(17);
@@ -194,19 +193,13 @@ TEST(FTBT, SingleReplica)
         for(k = 0; k < (size_t)class_num; ++k)
         {
             j = ransampl_draw(ws); 
-            tokens = 0.2*FAIR_INDEX_REQ+rand()%5;
+            tokens = (long long)(sum_w*FAIR_INDEX_REQ/class_num);
             requested += tokens;
-            int rtn = ftb_throttler_control(bucket, now, FTBT_CMD_CONSUME_FLEXIBLE, tokens, j, class_weight[j]);
-            ftbf_result.cnt++;
-            ftbf_class_results[j].cnt++;
+            pareto_classes[j].demand_tokens += tokens;
+            int rtn = ftb_throttler_control(bucket, now, FTBT_CMD_CONSUME_NORMAL, tokens, j, pareto_classes[j].weight);
             if(rtn > 0)
-            {
-                ftbf_result.succ_cnt++;
-                ftbf_class_results[j].succ_cnt++;
-            }else
-            {
-                ftbf_result.fail_cnt++;
-                ftbf_class_results[j].fail_cnt++;
+            {   
+                pareto_classes[j].allocated_tokens += tokens;
             }
         }
     }
@@ -218,36 +211,45 @@ TEST(FTBT, SingleReplica)
     EXPECT_LE(consumed, requested);
     double accuracy=(double)consumed/MIN(refilled, requested);
 
-    float jain_fair_index = calculate_jain_fair_index(&ftbf_result, ftbf_class_results, class_weight, class_num);
-    printf("accuracy:%f, upper_limit:%lld, refilled:%lld, requested:%lld, consumed:%lld, jain_fair_index:%f\n",
+    float fair_index = max_min_fairness_index(refilled, pareto_classes, class_num);
+    int print=1;
+	if(print)
+	{
+		printf("class\tweight\tdemand\tallocated\tideal\r\n");
+        long duration_s = FAIR_INDEX_MIMIC_DURATION_US/1000/1000;
+		for(size_t i=0; i<(size_t)class_num; i++)
+		{
+			printf("%lld\t%lld\t%lld\t%lld\t%lld\r\n", pareto_classes[i].class_id,
+										pareto_classes[i].weight,
+										pareto_classes[i].demand_tokens/duration_s,
+										pareto_classes[i].allocated_tokens/duration_s,
+										pareto_classes[i].ideal_tokens/duration_s);
+		}
+		printf("CIR %d fairness index %f\r\n", FAIR_INDEX_CIR, fair_index);
+	}
+    printf("accuracy:%f, upper_limit:%lld, refilled:%lld, requested:%lld, consumed:%lld\n",
            accuracy,
            upper_limit,
            refilled,
            requested,
-           consumed,
-           jain_fair_index);
+           consumed);
     ransampl_free(ws);
     ftb_throttler_free(bucket);
-    EXPECT_NEAR(jain_fair_index, 1, 0.01);
+    EXPECT_NEAR(fair_index, 1, 0.1);
 }
 
-TEST(FTBT, MultiReplica)
+TEST(FTBT, SingleReplicaOneHeavy)
 {
     int class_num = 24;
-    int replica_num = 3;
-    enum flow_type ftype = PARETO;
-    size_t i,j,k;
+    enum flow_type ftype = ONEHEAVY;
     uuid_t uuid;
+    uuid_generate(uuid);
     struct timeval start;
     gettimeofday(&start, NULL);
     struct ftb_throttler_info *info = ALLOC(struct ftb_throttler_info, 1);
-    struct ftb_throttler *buckets[replica_num];
-    for(i = 0; i < (size_t)replica_num; ++i)
-    {
-        uuid_generate(uuid);
-        buckets[i]=ftb_throttler_new(uuid, start, FAIR_INDEX_CIR, FAIR_INDEX_CBS, FAIR_INDEX_CIR/10);
-    }
-
+    struct ftb_throttler *bucket=NULL;
+    bucket=ftb_throttler_new(uuid, start, FAIR_INDEX_CIR, FAIR_INDEX_CBS, FAIR_INDEX_CIR/10);
+    size_t i,j,k;
     long long tokens=0;
     long long consumed=0, requested=0, upper_limit=0, refilled=0;
     struct timeval step, now;
@@ -255,19 +257,16 @@ TEST(FTBT, MultiReplica)
     step.tv_sec=0;
     step.tv_usec=(suseconds_t)1000;
 
-    struct test_records ftbf_class_results[class_num], ftbf_result;
-    unsigned char class_weight[class_num];
     double prob[class_num];
-    memset(&ftbf_result, 0, sizeof(ftbf_result));
-    memset(ftbf_class_results, 0, sizeof(ftbf_class_results));
-    memset(class_weight, 0, sizeof(class_weight));
+    struct fstb_class one_heavy_classes[class_num];
     memset(prob, 0, sizeof(prob));
-
+    memset(one_heavy_classes, 0, sizeof(one_heavy_classes));
     for(i = 0; i < (size_t)class_num; i++)
     {
-        class_weight[i] = 1;
+        one_heavy_classes[i].class_id = i+1;
+        one_heavy_classes[i].weight = 1;
     }
-    set_flow_prob(prob, class_num, ftype);
+    long double sum_w = set_flow_prob(prob, class_num, ftype);
     ransampl_ws *ws = ransampl_init(prob, class_num);
     int round = FAIR_INDEX_MIMIC_DURATION_US/1000;
     srandom(17);
@@ -277,52 +276,141 @@ TEST(FTBT, MultiReplica)
         for(k = 0; k < (size_t)class_num; ++k)
         {
             j = ransampl_draw(ws); 
-            tokens = 0.2*FAIR_INDEX_REQ+rand()%5;
+            tokens = (long long)(sum_w*FAIR_INDEX_REQ/class_num);
             requested += tokens;
-            int rtn = ftb_throttler_control(buckets[i%replica_num], now, FTBT_CMD_CONSUME_FLEXIBLE, tokens, j, class_weight[j]);
-            ftbf_result.cnt++;
-            ftbf_class_results[j].cnt++;
+            one_heavy_classes[j].demand_tokens += tokens;
+            int rtn = ftb_throttler_control(bucket, now, FTBT_CMD_CONSUME_NORMAL, tokens, j, one_heavy_classes[j].weight);
             if(rtn > 0)
             {
-                ftbf_result.succ_cnt++;
-                ftbf_class_results[j].succ_cnt++;
-            }else
-            {
-                ftbf_result.fail_cnt++;
-                ftbf_class_results[j].fail_cnt++;
+               one_heavy_classes[j].allocated_tokens += tokens;
             }
-            ftb_throttler_sync(buckets, replica_num);
         }
     }
 
     upper_limit=FAIR_INDEX_CBS+FAIR_INDEX_CIR/1000*timeval_delta_ms(start, now);
-    ftb_throttler_info(buckets[0], info);
+    ftb_throttler_info(bucket, info);
     refilled=info->refilled;
     consumed=info->consumed;
     EXPECT_LE(consumed, requested);
     double accuracy=(double)consumed/MIN(refilled, requested);
 
-    float jain_fair_index = calculate_jain_fair_index(&ftbf_result, ftbf_class_results, class_weight, class_num);
-    printf("accuracy:%f, upper_limit:%lld, refilled:%lld, requested:%lld, consumed:%lld, jain_fair_index:%f\n",
+    float fair_index = max_min_fairness_index(refilled, one_heavy_classes, class_num);
+    int print=1;
+	if(print)
+	{
+		printf("class\tweight\tdemand\tallocated\tideal\r\n");
+        long duration_s = FAIR_INDEX_MIMIC_DURATION_US/1000/1000;
+		for(size_t i=0; i<(size_t)class_num; i++)
+		{
+			printf("%lld\t%lld\t%lld\t%lld\t%lld\r\n", one_heavy_classes[i].class_id,
+										one_heavy_classes[i].weight,
+										one_heavy_classes[i].demand_tokens/duration_s,
+										one_heavy_classes[i].allocated_tokens/duration_s,
+										one_heavy_classes[i].ideal_tokens/duration_s);
+		}
+		printf("CIR %d fairness index %f\r\n", FAIR_INDEX_CIR, fair_index);
+	}
+    printf("accuracy:%f, upper_limit:%lld, refilled:%lld, requested:%lld, consumed:%lld\n",
            accuracy,
            upper_limit,
            refilled,
            requested,
-           consumed,
-           jain_fair_index);
+           consumed);
     ransampl_free(ws);
-    for(i = 0; i < (size_t)replica_num; ++i)
-    {
-        ftb_throttler_free(buckets[i]);
-    }
-    EXPECT_NEAR(jain_fair_index, 1, 0.01);
+    ftb_throttler_free(bucket);
+    EXPECT_NEAR(fair_index, 1, 0.1);
 }
 
+TEST(FTBT, SingleReplicaShake)
+{
+    int class_num = 5;
+    enum flow_type ftype = UNIFORM;
+    uuid_t uuid;
+    uuid_generate(uuid);
+    struct timeval start;
+    gettimeofday(&start, NULL);
+    struct ftb_throttler_info *info = ALLOC(struct ftb_throttler_info, 1);
+    struct ftb_throttler *bucket=NULL;
+    bucket=ftb_throttler_new(uuid, start, FAIR_INDEX_CIR, FAIR_INDEX_CBS, FAIR_INDEX_CIR/10);
+    size_t i,j,k;
+    long long tokens=0;
+    long long consumed=0, requested=0, upper_limit=0, refilled=0;
+    struct timeval step, now;
+    memcpy(&now, &start, sizeof(now));
+    step.tv_sec=0;
+    step.tv_usec=(suseconds_t)1000;
+
+    double prob[class_num];
+    struct fstb_class shake_classes[class_num];
+    memset(prob, 0, sizeof(prob));
+    memset(shake_classes, 0, sizeof(shake_classes));
+    for(i = 0; i < (size_t)class_num; i++)
+    {
+        shake_classes[i].class_id = i+1;
+        shake_classes[i].weight = 1;
+    }
+    long double sum_w = set_flow_prob(prob, class_num, ftype);
+    ransampl_ws *ws = ransampl_init(prob, class_num);
+    int round = FAIR_INDEX_MIMIC_DURATION_US/1000;
+    srandom(17);
+    for(i=0; i<(size_t)round; i++)
+    {
+        timeradd(&now, &step, &now);
+        for(k = 0; k < (size_t)class_num; ++k)
+        {
+            j = ransampl_draw(ws);
+            if((size_t)(random()%class_num) > j)
+                continue;
+            tokens = (long long)(sum_w*FAIR_INDEX_REQ/class_num);
+            requested += tokens;
+            shake_classes[j].demand_tokens += tokens;
+            int rtn = ftb_throttler_control(bucket, now, FTBT_CMD_CONSUME_NORMAL, tokens, j, shake_classes[j].weight);
+            if(rtn > 0)
+            {
+                shake_classes[j].allocated_tokens += tokens;
+            }
+        }
+    }
+
+    upper_limit=FAIR_INDEX_CBS+FAIR_INDEX_CIR/1000*timeval_delta_ms(start, now);
+    ftb_throttler_info(bucket, info);
+    refilled=info->refilled;
+    consumed=info->consumed;
+    EXPECT_LE(consumed, requested);
+    double accuracy=(double)consumed/MIN(refilled, requested);
+
+    float fair_index = max_min_fairness_index(refilled, shake_classes, class_num);
+    int print=1;
+	if(print)
+	{
+		printf("class\tweight\tdemand\tallocated\tideal\r\n");
+        long duration_s = FAIR_INDEX_MIMIC_DURATION_US/1000/1000;
+		for(size_t i=0; i<(size_t)class_num; i++)
+		{
+			printf("%lld\t%lld\t%lld\t%lld\t%lld\r\n", shake_classes[i].class_id,
+										shake_classes[i].weight,
+										shake_classes[i].demand_tokens/duration_s,
+										shake_classes[i].allocated_tokens/duration_s,
+										shake_classes[i].ideal_tokens/duration_s);
+		}
+		printf("CIR %d fairness index %f\r\n", FAIR_INDEX_CIR, fair_index);
+	}
+    printf("accuracy:%f, upper_limit:%lld, refilled:%lld, requested:%lld, consumed:%lld\n",
+           accuracy,
+           upper_limit,
+           refilled,
+           requested,
+           consumed);
+    ransampl_free(ws);
+    ftb_throttler_free(bucket);
+    EXPECT_NEAR(fair_index, 1, 0.1);
+}
 
 int main(int argc, char ** argv)
 {
 	int ret=0;
 	::testing::InitGoogleTest(&argc, argv);
+    // ::testing::GTEST_FLAG(filter) = "FTBT.SingleReplicaShake";
 	ret=RUN_ALL_TESTS();
 	return ret;
 }

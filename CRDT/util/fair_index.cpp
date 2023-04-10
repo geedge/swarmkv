@@ -28,3 +28,67 @@ float calculate_jain_fair_index(struct test_records *result, struct test_records
     printf("total:%d, succ:%d, fail:%d\n", result->cnt, result->succ_cnt, result->fail_cnt);
     return (float)(pow(succ_sum,2))/(float)(class_num*succ_square_sum);
 }
+
+int cmp_fstb_class(const void *a, const void *b)
+{
+	struct fstb_class *ra=(struct fstb_class*)a;
+	struct fstb_class *rb=(struct fstb_class*)b;
+	return (int)(ra->demand_tokens-rb->demand_tokens);
+}
+
+float max_min_fairness_index(long long available_tokens, struct fstb_class * classes, size_t n_class)
+{
+	qsort(classes, n_class, sizeof(struct fstb_class), cmp_fstb_class);
+	long long total_weight=0;
+	for(size_t i=0; i<n_class; i++)
+	{
+		total_weight+=classes[i].weight;
+	}
+	long long left_tokens=available_tokens;
+	long long left_weight=total_weight;
+	size_t n_satisfied=0;
+
+	while(n_satisfied<n_class && left_tokens/left_weight>0 )
+	{
+		long long share=left_tokens/left_weight;
+		for(size_t i=0; i<n_class; i++)
+		{
+			long long my_share=classes[i].weight*share;
+			if(classes[i].demand_tokens == classes[i].ideal_tokens)
+			{
+				continue;
+			}
+			else if(classes[i].demand_tokens - classes[i].ideal_tokens <= my_share)
+			{
+				left_tokens -= (classes[i].demand_tokens - classes[i].ideal_tokens);
+				classes[i].ideal_tokens=classes[i].demand_tokens;
+			}
+			else
+			{
+				left_tokens -= my_share;
+				classes[i].ideal_tokens+=my_share;
+				
+			}
+		}
+		left_weight=0;
+		n_satisfied=0;
+		for(size_t i=0; i<n_class; i++)
+		{
+			if(classes[i].demand_tokens == classes[i].ideal_tokens)
+			{
+				n_satisfied++;
+				continue;
+			}
+			left_weight += classes[i].weight;
+			
+		}
+	}
+	double index=0;
+	for(size_t i=0; i<n_class; i++)
+	{
+		index += pow((double)(classes[i].ideal_tokens-classes[i].allocated_tokens)/classes[i].ideal_tokens, 2);
+	}
+	index=1-sqrt(index/n_class);
+
+	return index;
+}

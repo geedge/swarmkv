@@ -12,9 +12,10 @@ enum traffic_type
 enum flow_type
 {
     UNIFORM,
-    PARETO
+    PARETO,
+    ONEHEAVY,
 };
 
 long long get_request_tokens(long long class_num, long long CIR, size_t index, long long step_us, enum traffic_type type);
 
-void set_flow_prob(double *prob, int replica_num, enum flow_type ftype);
+double set_flow_prob(double *prob, int class_num, enum flow_type ftype);
