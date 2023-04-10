@@ -180,8 +180,8 @@ At the very beginning, the bucket is full, which means it has *CBS* tokens. You 
 
 If a network partition happens, the token bucket will be out-of-sync, and each replica has the entire CIR. And after the partition heals, replicas share the CIR again. The OC Token Bucket is robust to overuse as long as the sync interval is reasonable, i.e., 200ms.
 
-### Stochastic Fair Token Bucket
-Stochastic Fair Token Bucket is implemented with a Count-min Sketch and an OC Token Bucket. It archieves [max-min fairness](https://www.ece.rutgers.edu/~marsic/Teaching/CCN/minmax-fairsh.html) which is defined as follows:
+### Fair Split Token Bucket
+Fair Split Token Bucket is implemented with a Count-min Sketch and an OC Token Bucket. It archieves [max-min fairness](https://www.ece.rutgers.edu/~marsic/Teaching/CCN/minmax-fairsh.html) which is defined as follows:
 - Resources are allocated in order of increasing demand
 - No source gets a resource share larger than its demand
 - Sources with unsatisfied demands get an equal share of the resource
@@ -357,4 +357,6 @@ https://hermes-protocol.com/
 
 [sfq - Stochastic Fairness Queueing](https://man7.org/linux/man-pages/man8/tc-sfq.8.html)
 
-Adas, Dolev, and Roy Friedman. "[Sliding Window CRDT Sketches](https://ieeexplore.ieee.org/abstract/document/9603721)." 2021 40th International Symposium on Reliable Distributed Systems (SRDS). IEEE, 2021.
+[Max-min fairness](https://www.ece.rutgers.edu/~marsic/Teaching/CCN/minmax-fairsh.html)
+
+Cornacchia, Alessandro, et al. "[Staggered HLL: Near-continuous-time cardinality estimation with no overhead.](https://www.sciencedirect.com/science/article/abs/pii/S0140366422002407)" Computer Communications 193 (2022): 168-175.

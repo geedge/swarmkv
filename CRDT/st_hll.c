@@ -309,25 +309,7 @@ static double raw_estimate2(const struct ST_HLL *h, int *num_zero)
     harmonic_mean=m/harmonic_mean;
     return harmonic_mean;
 }
-double ST_HLL_count2(const struct ST_HLL *h)
-{
-    int num_zero=0;
-    double am=0.7;
-    double raw_est=raw_estimate2(h, &num_zero);
-    double m=NUM_REG(h->precision);
-    raw_est*=am;
-    if(raw_est<=5*m/2)
-    {
-        if(num_zero)
-            return linear_count(h, num_zero);
-    }
-    if(raw_est>INT32_MAX/30)
-    {
-        return INT32_MIN*log(1-raw_est/INT32_MAX);
-    }
-    return raw_est;
-}
-double ST_HLL_count(const struct ST_HLL *h)
+static double ST_HLL_count_no_sliding(const struct ST_HLL *h)
 {
     int num_zero = 0;
     double raw_est = raw_estimate(h, &num_zero);
@@ -353,6 +335,29 @@ double ST_HLL_count(const struct ST_HLL *h)
         return raw_est;
     }
 }
+double ST_HLL_count(const struct ST_HLL *h)
+{
+    if(h->time_window_s==0)
+    {
+        return ST_HLL_count_no_sliding(h);
+    }
+    int num_zero=0;
+    double am=0.7;
+    double raw_est=raw_estimate2(h, &num_zero);
+    double m=NUM_REG(h->precision);
+    raw_est*=am;
+    if(raw_est<=5*m/2)
+    {
+        if(num_zero)
+            return linear_count(h, num_zero);
+    }
+    if(raw_est>INT32_MAX/30)
+    {
+        return INT32_MIN*log(1-raw_est/INT32_MAX);
+    }
+    return raw_est;
+}
+
 /**
  * Computes the upper bound on variance given
  * a precision

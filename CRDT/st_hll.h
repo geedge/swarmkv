@@ -19,7 +19,6 @@ struct ST_HLL *ST_HLL_new(unsigned char precision, int time_window_seconds, cons
 void ST_HLL_free(struct ST_HLL *h);
 void ST_HLL_add(struct ST_HLL *h, const char *key, size_t keylen, const struct timeval *now);
 double ST_HLL_count(const struct ST_HLL *h);
-double ST_HLL_count2(const struct ST_HLL *h);
 double HLL_error_for_precision(unsigned char precision);
 #ifdef __cplusplus
 }
