@@ -147,4 +147,5 @@ int main(int argc, char **argv)
 Here are some specific details about the SwarmKV.
 * [Commands](./docs/commands.md)
 * [Design](./docs/design.md)
-* [CLI](./docs/cli.md)
+* [Command-line interface (CLI)](./docs/cli.md)
+* [Conflict-free Replicated Data Type (CRDT)](./docs/crdt.md)

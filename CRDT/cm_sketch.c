@@ -11,6 +11,15 @@
 
 #define CMS_MAX_DEPTH   16
 
+struct cms_opt
+{
+    int width;
+    int depth;
+};
+static const struct cms_opt cms_default_opt = {
+    .width=1024*16,
+    .depth=6
+};
 static uint64_t __fnv_1a(const char *key, size_t len, int seed)
 {
     // FNV-1a hash (http://www.isthe.com/chongo/tech/comp/fnv/)
@@ -40,11 +49,7 @@ static int32_t __safe_sub(int32_t a, int32_t b)
     c = ((int64_t) b - a < INT32_MIN) ? INT32_MAX : (a - b);
     return c;
 }
-struct cms_opt
-{
-    int width;
-    int depth;
-};
+
 struct cms_bin
 {
     uuid_t uuid;
@@ -65,7 +70,7 @@ struct cms_bin *cms_bin_new(uuid_t uuid, int width, int depth)
     bin->bins=ALLOC(int32_t, width*depth);
     return bin;
 }
-static int32_t cms_bin_check(const struct cms_bin *bin, const uint64_t *hashes, size_t n_hash)
+static int32_t cms_bin_query(const struct cms_bin *bin, const uint64_t *hashes, size_t n_hash)
 {
     if(n_hash!=bin->depth) return 0;
 
@@ -77,13 +82,83 @@ static int32_t cms_bin_check(const struct cms_bin *bin, const uint64_t *hashes, 
     }
     return added;
 }
-static int32_t cms_bin_add(struct cms_bin *bin, const uint64_t *hashes, size_t n_hash, int32_t times)
+#define CMLS16_BASE 1.00025
+double point_value(int32_t c)
+{
+    if(c==0) return 0;
+    return pow(CMLS16_BASE, c-1); 
+}
+static int32_t cms_bin_log_query(const struct cms_bin *bin, const uint64_t *hashes, size_t n_hash)
 {
     if(n_hash!=bin->depth) return 0;
-    int32_t added=INT32_MAX;
+    int32_t c=INT32_MAX;
     for(int i=0; i<bin->depth; i++)
     {
         int32_t idx=(hashes[i] % bin->width) + (i * bin->width);
+        c=MIN(c, bin->bins[idx]);
+    }
+    if(c<=1)
+    {
+        return point_value(c);
+    }
+    else
+    {
+        double v=point_value(c+1);
+        v=(1-v)/(1-CMLS16_BASE);
+        return (int32_t)v;
+    }
+}
+int increase_decision(int32_t c)
+{
+    long pr=(long)pow(CMLS16_BASE, c);
+    long r=random()%pr;
+    if(r==0) return 1;
+    else return 0;
+}
+static void cms_bin_log_add(struct cms_bin *bin, const uint64_t *hashes, size_t n_hash, int32_t times)
+{
+    if(n_hash!=bin->depth) return;
+    int32_t c=INT32_MAX;
+    for(int i=0; i<bin->depth; i++)
+    {
+        int32_t idx=(hashes[i] % bin->width) + (i * bin->width);
+        c=MIN(c, bin->bins[idx]);
+    }
+   
+    long pr=(long)pow(CMLS16_BASE, c);
+    long r=random()%pr;
+    for(int t=0; t<times; t++)
+    {
+        int increase=increase_decision(c);
+        if(!increase)
+            continue;
+        for(int i=0; i<bin->depth; i++)
+        {
+            int32_t idx=(hashes[i] % bin->width) + (i * bin->width);
+            if(bin->bins[idx] == c)
+            {
+                bin->bins[idx]++;
+            }
+        }
+        c++;
+    }
+    //bin->bins[cu_idx]+=times;
+    bin->elements_added += times;
+    bin->sequence++;
+    return;
+}
+static int32_t cms_bin_add(struct cms_bin *bin, const uint64_t *hashes, size_t n_hash, int32_t times)
+{
+    if(n_hash!=bin->depth) return 0;
+    int32_t cu_idx=-1;//conservative update idx
+    for(int i=0; i<bin->depth; i++)
+    {
+        int32_t idx=(hashes[i] % bin->width) + (i * bin->width);
+        if(cu_idx<0) cu_idx=idx;
+        if(bin->bins[cu_idx] < bin->bins[idx])
+        {
+            cu_idx=idx;
+        }
         if(times>0)
         {
             bin->bins[idx] = __safe_add(bin->bins[idx], times);
@@ -92,11 +167,11 @@ static int32_t cms_bin_add(struct cms_bin *bin, const uint64_t *hashes, size_t n
         {
             bin->bins[idx] = __safe_sub(bin->bins[idx], 0-times);
         }
-        added=MIN(added, bin->bins[idx]);
     }
+    //bin->bins[cu_idx]+=times;
     bin->elements_added += times;
     bin->sequence++;
-    return added;
+    return  bin->bins[cu_idx];
 }
 static void cms_bin_free(struct cms_bin *bin)
 {
@@ -154,10 +229,7 @@ struct CM_sketch
     int is_virgin;
 };
 
-static const struct cms_opt cms_default_opt = {
-    .width=1024,
-    .depth=8
-};
+
 struct CM_sketch *CM_sketch_new(uuid_t my_id)
 {
     struct CM_sketch *cms=ALLOC(struct CM_sketch, 1);
@@ -172,7 +244,7 @@ static int cms_query(const struct CM_sketch *cms, const uint64_t *hashes, size_t
     struct cms_bin *bin=NULL, *tmp=NULL;
     HASH_ITER(hh, cms->hash_bins, bin, tmp)
     {
-        added_global+=cms_bin_check(bin, hashes, n_hash);
+        added_global+=cms_bin_query(bin, hashes, n_hash);
     }
     return added_global;
 }
@@ -183,8 +255,8 @@ int CM_sketch_query(const struct CM_sketch *cms, const char *key, size_t len)
     assert(cms->opt.depth <= CMS_MAX_DEPTH);
     for(int i=0; i<cms->opt.depth; i++)
     {
-        //hashes[i]=XXH3_64bits_withSeed(key, len, i);
-        hashes[i]=__fnv_1a(key, len, i);
+        hashes[i]=XXH3_64bits_withSeed(key, len, i);
+        //hashes[i]=__fnv_1a(key, len, i);
     }
 
     added_global=cms_query(cms, hashes, cms->opt.depth);
@@ -203,9 +275,10 @@ int CM_sketch_add_n(struct CM_sketch *cms, const char *key, size_t len, int time
     uint64_t hashes[CMS_MAX_DEPTH]={0};
     for(int i=0; i<cms->opt.depth && i<CMS_MAX_DEPTH; i++)
 	{
-        //hashes[i]=XXH3_64bits_withSeed(key, len, i);
-        hashes[i]=__fnv_1a(key, len, i);
+        hashes[i]=XXH3_64bits_withSeed(key, len, i);
+        //hashes[i]=__fnv_1a(key, len, i);
     }
+    
     cms_bin_add(bin, hashes, cms->opt.depth, times);
     long long added=cms_query(cms, hashes, cms->opt.depth);
     long long max, min;

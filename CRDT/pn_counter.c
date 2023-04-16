@@ -16,13 +16,13 @@ struct counter_item
 	long long N;
 	UT_hash_handle hh;
 };
-struct counter_item *counter_item_new(uuid_t replica_id)
+static struct counter_item *counter_item_new(uuid_t replica_id)
 {
 	struct counter_item *item=ALLOC(struct counter_item, 1);
 	uuid_copy(item->replica_id, replica_id);
 	return item;
 }
-void counter_item_free(struct counter_item *item)
+static void counter_item_free(struct counter_item *item)
 {
 	free(item);
 }

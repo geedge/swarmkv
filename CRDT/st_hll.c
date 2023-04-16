@@ -21,9 +21,9 @@ struct ST_HLL
 {
     unsigned char precision;
     int time_window_s;
+    int reset_idx;
     uint32_t *registers;
     struct timeval reset_time;
-    int reset_idx;
 };
 struct ST_HLL *ST_HLL_new(unsigned char precision, int time_window_seconds, const struct timeval *now)
 {
@@ -120,7 +120,7 @@ void ST_HLL_add(struct ST_HLL *h, const char *key, size_t keylen, const struct t
     // Compute the hash value of the key
     uint64_t hash=0;
 
-    hash=XXH64(key, keylen, 171);
+    hash=XXH3_64bits_withSeed(key, keylen, 171);
     // Add the hashed value
     hll_add_hash(h, hash);
 }

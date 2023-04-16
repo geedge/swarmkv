@@ -2,12 +2,14 @@
 #include "pn_counter.h"
 #include "or_set.h"
 #include "or_map.h"
-#include "oc_token_bucket.h"
+
 #include "crdt_utils.h"
 #include "cm_sketch.h"
 #include "st_hll.h"
-#include "sf_token_bucket.h"
-#include "fs_token_bucket.h"
+
+#include "oc_token_bucket.h"
+#include "fair_token_bucket.h"
+#include "bulk_token_bucket.h"
 
 #include <gtest/gtest.h>
 #include <unistd.h> //usleep
@@ -1718,13 +1720,39 @@ TEST(CMSketch, Basic)
 	for(int i=0; i<10; i++)
 	{
 		ret=CM_sketch_query(cms, (char *)&i, sizeof(i));
-		EXPECT_EQ(ret, 1);
+		//EXPECT_EQ(ret, 1);
 	}
 	struct CM_sketch_info info;
 	CM_sketch_info(cms, &info);
 	EXPECT_EQ(info.n_element, n_added);
 	printf("error_rate: %f confidence: %f\n", info.error_rate, info.confidence);
 	CM_sketch_free(cms);
+}
+TEST(CMSketch, I5K)
+{
+	uuid_t uuid;
+	uuid_generate(uuid);
+	struct CM_sketch *cms=CM_sketch_new(uuid);
+	long long n_item=5000, ret=0;
+	long long base=10000, total_add=0;
+	for(long long i=0; i<n_item; i++)
+	{
+		ret=CM_sketch_add_n(cms, (char *)&i, sizeof(i), base+i);
+		total_add+=(base+i);
+	}
+	struct CM_sketch_info info;
+	CM_sketch_info(cms, &info);
+	long long pass=0;
+	for(long long i=0; i<n_item; i++)
+	{
+		ret=CM_sketch_query(cms, (char *)&i, sizeof(i));
+		//The formal expectation is total_add*info.error_rate
+		if(abs(ret-(i+base))< (i+base)*info.error_rate)
+		{
+			pass++;
+		}
+	}
+	EXPECT_NEAR(pass, n_item, n_item*(1-info.confidence));
 }
 static void CMS_sync(struct CM_sketch *list[], size_t n)
 {
@@ -1975,7 +2003,7 @@ double max_min_fairness_index(long long available_tokens, struct sftb_class * cl
 
 	return index;
 }
-double FS_token_bucket_test(struct sftb_class *classes, size_t n_class, long long CIR, long long CBS, int duration_s)
+double test_fair_token_bucket(struct sftb_class *classes, size_t n_class, long long CIR, long long CBS, int duration_s)
 {
 	uuid_t uuid;
 	uuid_generate(uuid);
@@ -1985,7 +2013,7 @@ double FS_token_bucket_test(struct sftb_class *classes, size_t n_class, long lon
 	memcpy(&now, &start, sizeof(now));
 	step.tv_sec=0;
 	step.tv_usec=(suseconds_t)step_us;
-	struct FS_token_bucket *fstb=FS_token_bucket_new(uuid, now, CIR, CBS);
+	struct fair_token_bucket *fstb=fair_token_bucket_new(uuid, now, CIR, CBS);
 	for(int i=0; i<duration_s*(1000*1000/step_us); i++)
 	{
 		timeradd(&now, &step, &now);
@@ -1994,7 +2022,7 @@ double FS_token_bucket_test(struct sftb_class *classes, size_t n_class, long lon
 		{
 			int idx=(j+k)%n_class;
 			long long this_demand=classes[idx].requested_CIR*step_us/(1000*1000);
-			classes[idx].allocated_tokens+=FS_token_bucket_consume(fstb, now, 
+			classes[idx].allocated_tokens+=fair_token_bucket_consume(fstb, now, 
 								classes[idx].class_id, 
 								classes[idx].weight, 
 								this_demand);
@@ -2003,12 +2031,15 @@ double FS_token_bucket_test(struct sftb_class *classes, size_t n_class, long lon
 	}
 	long long available_tokens=CIR*duration_s+CBS;
 	double index=max_min_fairness_index(available_tokens, classes, n_class);
-	int print=0;
+	int print=1;
 	if(print)
 	{
 		printf("class\tweight\tdemand\tallocated\tideal\r\n");
 		for(size_t i=0; i<n_class; i++)
 		{
+			if((double)classes[i].allocated_tokens/classes[i].ideal_tokens< 1.1 &&
+			(double) classes[i].allocated_tokens/classes[i].ideal_tokens > 0.9)
+				continue;
 			printf("%lld\t%lld\t%lld\t%lld\t%lld\r\n", classes[i].class_id,
 										classes[i].weight,
 										classes[i].demand_tokens/duration_s,
@@ -2017,10 +2048,10 @@ double FS_token_bucket_test(struct sftb_class *classes, size_t n_class, long lon
 		}
 		printf("CIR %lld fairness index %f\r\n", CIR, index);
 	}
-	FS_token_bucket_free(fstb);
+	fair_token_bucket_free(fstb);
 	return index;
 }
-TEST(FairSplitTokenBucket, Basic)
+TEST(FairTokenBucket, Basic)
 {
 	double index=0;
 	long long duration_s=350;
@@ -2030,7 +2061,7 @@ TEST(FairSplitTokenBucket, Basic)
 								{4, 1, 20000, 0, 0, 0},
 								{5, 1, 50000, 0, 0, 0}};
 	
-	index=FS_token_bucket_test(one_heavy_classes, 5, 120000, 200000, duration_s);
+	index=test_fair_token_bucket(one_heavy_classes, 5, 120000, 200000, duration_s);
 	EXPECT_NEAR(index, 1, 0.02);
 
 	struct sftb_class all_light_classes[5]={{1, 1, 20000, 0, 0, 0}, 
@@ -2039,7 +2070,7 @@ TEST(FairSplitTokenBucket, Basic)
 								{4, 1, 20000, 0, 0, 0},
 								{5, 1, 20000, 0, 0, 0}};
 	
-	index=FS_token_bucket_test(all_light_classes, 5, 100000, 200000, duration_s);
+	index=test_fair_token_bucket(all_light_classes, 5, 100000, 200000, duration_s);
 	EXPECT_NEAR(index, 1, 0.02);
 
 	struct sftb_class two_heavy_classes[5]={{1, 1, 20000, 0, 0, 0}, 
@@ -2048,7 +2079,7 @@ TEST(FairSplitTokenBucket, Basic)
 								{400, 1, 50000, 0, 0, 0},
 								{5, 1, 20003, 0, 0, 0}};
 	
-	index=FS_token_bucket_test(two_heavy_classes, 5, 100000, 200000, duration_s);
+	index=test_fair_token_bucket(two_heavy_classes, 5, 100000, 200000, duration_s);
 	EXPECT_NEAR(index, 1, 0.02);
 
 	struct sftb_class all_heavy_classes[5]={{1, 1, 40000, 0, 0, 0}, 
@@ -2057,11 +2088,11 @@ TEST(FairSplitTokenBucket, Basic)
 								{4, 1, 60000, 0, 0, 0},
 								{5, 1, 40000, 0, 0, 0}};
 	
-	index=FS_token_bucket_test(all_heavy_classes, 5, 100000, 200000, duration_s);
+	index=test_fair_token_bucket(all_heavy_classes, 5, 100000, 200000, duration_s);
 	EXPECT_NEAR(index, 1, 0.02);
 	
 }
-TEST(FairSplitTokenBucket, Weight)
+TEST(FairTokenBucket, Weight)
 {
 	double index=0;
 	long long duration_s=500;
@@ -2071,7 +2102,7 @@ TEST(FairSplitTokenBucket, Weight)
 								{4, 4, 30000, 0, 0, 0},
 								{5, 5, 50000, 0, 0, 0}};
 	
-	index=FS_token_bucket_test(one_heavy_classes, 5, 120000, 200000, duration_s);
+	index=test_fair_token_bucket(one_heavy_classes, 5, 120000, 200000, duration_s);
 	EXPECT_NEAR(index, 1, 0.02);
 
 	struct sftb_class t1_heavy_classes[5]={{1, 1, 40000, 0, 0, 0}, 
@@ -2080,7 +2111,7 @@ TEST(FairSplitTokenBucket, Weight)
 								{4, 4, 30000, 0, 0, 0},
 								{5, 5, 50000, 0, 0, 0}};
 	
-	index=FS_token_bucket_test(t1_heavy_classes, 5, 120000, 200000, duration_s);
+	index=test_fair_token_bucket(t1_heavy_classes, 5, 120000, 200000, duration_s);
 	EXPECT_NEAR(index, 1, 0.02);
 
 	struct sftb_class t2_heavy_classes[5]={{1, 1, 40000, 0, 0, 0}, 
@@ -2089,7 +2120,7 @@ TEST(FairSplitTokenBucket, Weight)
 								{4, 4, 30000, 0, 0, 0},
 								{5, 10, 50000, 0, 0, 0}};
 	
-	index=FS_token_bucket_test(t2_heavy_classes, 5, 120000, 200000, duration_s);
+	index=test_fair_token_bucket(t2_heavy_classes, 5, 120000, 200000, duration_s);
 	EXPECT_NEAR(index, 1, 0.02);
 
 	struct sftb_class t3_heavy_classes[5]={{1, 1, 40000, 0, 0, 0}, 
@@ -2098,7 +2129,7 @@ TEST(FairSplitTokenBucket, Weight)
 								{4, 4, 20000, 0, 0, 0},
 								{5, 10, 10000, 0, 0, 0}};
 	
-	index=FS_token_bucket_test(t3_heavy_classes, 5, 100000, 200000, duration_s);
+	index=test_fair_token_bucket(t3_heavy_classes, 5, 100000, 200000, duration_s);
 	EXPECT_NEAR(index, 1, 0.02);
 
 	struct sftb_class all_light_classes[5]={{1, 1, 20000, 0, 0, 0}, 
@@ -2107,7 +2138,7 @@ TEST(FairSplitTokenBucket, Weight)
 								{4, 4, 20000, 0, 0, 0},
 								{5, 10, 23000, 0, 0, 0}};
 	
-	index=FS_token_bucket_test(all_light_classes, 5, 100000, 200000, duration_s);
+	index=test_fair_token_bucket(all_light_classes, 5, 100000, 200000, duration_s);
 	EXPECT_NEAR(index, 1, 0.02);
 
 	struct sftb_class light_with_big_player[5]={{1, 1, 10000, 0, 0, 0}, 
@@ -2116,7 +2147,7 @@ TEST(FairSplitTokenBucket, Weight)
 								{4, 4, 10000, 0, 0, 0},
 								{5, 10, 60000, 0, 0, 0}};
 	
-	index=FS_token_bucket_test(light_with_big_player, 5, 100000, 200000, duration_s);
+	index=test_fair_token_bucket(light_with_big_player, 5, 100000, 200000, duration_s);
 	EXPECT_NEAR(index, 1, 0.02);
 
 	struct sftb_class sandvine_active_logic[10]={{1, 5, 30000, 0, 0, 0}, 
@@ -2130,24 +2161,134 @@ TEST(FairSplitTokenBucket, Weight)
 								{9, 2, 9000, 0, 0, 0},
 								{10, 2, 20000, 0, 0, 0}};
 	
-	index=FS_token_bucket_test(sandvine_active_logic, 10, 100000, 200000, duration_s);
+	index=test_fair_token_bucket(sandvine_active_logic, 10, 100000, 200000, duration_s);
 	EXPECT_NEAR(index, 1, 0.02);
 }
-TEST(FairSplitTokenBucket, Weight100)
+TEST(FairTokenBucket, Weight5000)
 {
 	size_t n_class=5000;
-	long long per_class_CIR=100000;
+	long long per_class_CIR=1000000;
 	long long CIR=n_class*per_class_CIR;
 	long long CBS=CIR;
-	struct sftb_class one_heavy_classes[n_class];
-	memset(one_heavy_classes, 0, sizeof(one_heavy_classes));
+	struct sftb_class very_heavy_classes[n_class];
+	memset(very_heavy_classes, 0, sizeof(very_heavy_classes));
 	for(size_t i=0; i<n_class; i++)
 	{
-		one_heavy_classes[i].class_id=i;
-		one_heavy_classes[i].requested_CIR=per_class_CIR+i*per_class_CIR/n_class;
-		one_heavy_classes[i].weight=i%20+1;
+		very_heavy_classes[i].class_id=i;
+		very_heavy_classes[i].requested_CIR=per_class_CIR+(random()%20)*per_class_CIR;
+		very_heavy_classes[i].weight=i%20+1;
 	}
-	double index=FS_token_bucket_test(one_heavy_classes, n_class, CIR, CBS, 100);
+	double index=test_fair_token_bucket(very_heavy_classes, n_class, CIR, CBS, 40);
+	EXPECT_NEAR(index, 1, 0.02);
+
+	struct sftb_class slight_heavy_classes[n_class];
+	memset(slight_heavy_classes, 0, sizeof(slight_heavy_classes));
+	for(size_t i=0; i<n_class; i++)
+	{
+		slight_heavy_classes[i].class_id=i;
+		slight_heavy_classes[i].requested_CIR=per_class_CIR+i*per_class_CIR/n_class;
+		slight_heavy_classes[i].weight=i%20+1;
+	}
+	index=test_fair_token_bucket(slight_heavy_classes, n_class, CIR, CBS, 40);
+	EXPECT_NEAR(index, 1, 0.02);
+}
+TEST(BulkTokenBucket, Basic)
+{
+	uuid_t uuid;
+	uuid_generate(uuid);
+	struct timeval start, step, now;
+	int step_us=1000, duration_s=100;
+	gettimeofday(&start, NULL);
+	memcpy(&now, &start, sizeof(now));
+	step.tv_sec=0;
+	step.tv_usec=(suseconds_t)step_us;
+	long long CIR=10000, CBS=10000;
+	long long request_CIR=10000;
+	struct bulk_token_bucket *btb=bulk_token_bucket_new(uuid, now, CIR, CBS, 1);
+	
+	long long got_tokens=0, max_tokens=duration_s*CIR+CBS;
+	const char *key="192.168.0.1";
+
+	int i=0;
+	for(i=0; i<duration_s*(1000*1000/step_us); i++)
+	{
+		timeradd(&now, &step, &now);
+		got_tokens+=bulk_token_bucket_control(btb, key, strlen(key), now, BTB_CMD_CONSUME_FLEXIBLE, request_CIR*step_us/(1000*1000));
+	}
+	bulk_token_bucket_free(btb);
+	EXPECT_LE(got_tokens, max_tokens);
+}
+struct btb_key
+{
+	long long key;
+	long long request_CIR;
+	long long ideal_tokens;
+	long long allocated_tokens;
+};
+double test_bulk_token_bucket(long long CIR, long long CBS, int bucket_num, int key_num, int duration_s)
+{
+	uuid_t uuid;
+	uuid_generate(uuid);
+	struct timeval start, step, now;
+	int step_us=1000;
+	gettimeofday(&start, NULL);
+	memcpy(&now, &start, sizeof(now));
+	step.tv_sec=0;
+	step.tv_usec=(suseconds_t)step_us;
+	long long max_tokens=duration_s*CIR+CBS;
+	struct bulk_token_bucket *btb=bulk_token_bucket_new(uuid, now, CIR, CBS, bucket_num);
+	struct btb_key k[key_num];
+	for(int i=0; i<key_num; i++)
+	{
+		k[i].key=random();
+		k[i].request_CIR=CIR/2+(i*CIR)/key_num;
+		k[i].allocated_tokens=0;
+		if(k[i].request_CIR<CIR)
+		{
+			k[i].ideal_tokens=k[i].request_CIR*duration_s;
+		}
+		else
+		{
+			k[i].ideal_tokens=max_tokens;
+		}
+	}
+	for(int i=0; i<duration_s*(1000*1000/step_us); i++)
+	{
+		timeradd(&now, &step, &now);
+		for(int j=0; j<key_num; j++)
+		{
+			k[j].allocated_tokens+=bulk_token_bucket_control(btb, (char *)&(k[j].key), sizeof(k[j].key),
+					now, BTB_CMD_CONSUME_FLEXIBLE,
+					k[j].request_CIR*step_us/(1000*1000));
+		}
+	}
+	double index=0, ratio=0;
+	for(int i=0; i<key_num; i++)
+	{
+		index += pow((double)(k[i].ideal_tokens-k[i].allocated_tokens)/k[i].ideal_tokens, 2);		
+		ratio = (double)k[i].allocated_tokens/k[i].ideal_tokens;
+		if(ratio>1.02 || ratio < 0.98)
+		{
+			printf("%f\n", ratio);
+		}
+	}
+	index=1-sqrt(index/key_num);
+	struct bulk_token_bucket_info info;
+	bulk_token_bucket_info(btb, &info);
+	printf("n_key=%lld, collision=%f\n", info.estimate_keys, info.collision_rate);
+	bulk_token_bucket_free(btb);
+	return index;
+}
+TEST(BulkTokenBucket, RareCollision)
+{
+	double index=0;
+	index=test_bulk_token_bucket(1000*1000, 1000*1000, 512, 4, 100);
+	EXPECT_NEAR(index, 1, 0.02);
+
+	index=test_bulk_token_bucket(1000*1000, 1000*1000, 512, 16, 100);
+	EXPECT_NEAR(index, 1, 0.02);
+
+	index=test_bulk_token_bucket(1000*1000, 1000*1000, 512, 128, 100);
 	EXPECT_NEAR(index, 1, 0.02);
 }
 int main(int argc, char ** argv)

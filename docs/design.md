@@ -153,38 +153,6 @@ When a requestor executes a command, it takes the following steps
 - Other replica executes the command, registers the requestor as one of the replica nodes, and send a reply to the requestor
 - The requestor receives the reply and invokes user callback function.
 
-## CRDT Explained
-
-Swarm KV uses state-based CRDT types to store values. 
-
-### String
-
-Swarm KV implements Last-Write-Wins Register (LWW Register) to store string values. Swarm KV didn't implement logical clock such as  [Version Vector](https://en.wikipedia.org/wiki/Version_vector) or [Lamport Clock](https://en.wikipedia.org/wiki/Lamport_timestamp),  instead,  it uses real time (man 3 gettimeofday) for simplicity.
-
-### Integer
-
-Swarm KV uses Positive-Negative Counter (PN-Counter) to store integer values.
-
-### Set and Hash
-
-Swarm KV implements Add-Wins Observed-Remove Set (OR Set) to store set and hash values. OR Set is state-based and has no tombstone. Please referrer [An optimized conflict-free replicated set](https://arxiv.org/pdf/1210.3368.pdf) for more details.
-
-### Token Bucket
-
-Swarm KV implements Observe-Consumed Token Bucket (OC Token Bucket), which has a PN-Counter to track consumed tokens and a Last-write-wins register to track refilled tokens. It is initialized with two parameters:
-
-- CIR: Committed Information Rate
-- CBS: Committed Burst Size
-
-At the very beginning, the bucket is full, which means it has *CBS* tokens. You can reconfigure the token bucket at any time. Note that the reconfiguration will not refill the token bucket to full.
-
-If a network partition happens, the token bucket will be out-of-sync, and each replica has the entire CIR. And after the partition heals, replicas share the CIR again. The OC Token Bucket is robust to overuse as long as the sync interval is reasonable, i.e., 200ms.
-
-### Fair Split Token Bucket
-Fair Split Token Bucket is implemented with a Count-min Sketch and an OC Token Bucket. It archieves [max-min fairness](https://www.ece.rutgers.edu/~marsic/Teaching/CCN/minmax-fairsh.html) which is defined as follows:
-- Resources are allocated in order of increasing demand
-- No source gets a resource share larger than its demand
-- Sources with unsatisfied demands get an equal share of the resource
 
 ## Fault tolerance
 
@@ -333,30 +301,6 @@ The source files are organized as follows:
 
 Woo, Shinae, et al. "Elastic scaling of stateful network functions." *15th {USENIX} Symposium on Networked Systems Design and Implementation ({NSDI} 18)*. 2018. [Source] (https://www.usenix.org/conference/nsdi18/presentation/woo)
 
-Bieniusa, Annette, et al. "[An optimized conflict-free replicated set](https://arxiv.org/pdf/1210.3368.pdf)." *arXiv preprint arXiv:1210.3368* (2012).
-
-[C implementation of the Raft consensus protocol](https://github.com/willemt/raft) by Willem-Hendrik Thiart.
-
 [Redis Cluster Specification](https://redis.io/topics/cluster-spec)
 
-[Conflict-free Replicated Data Type (CRDT)](https://en.wikipedia.org/wiki/Conflict-free_replicated_data_type) 
-
-https://crdt.tech/
-
-https://hermes-protocol.com/
-
-[Redis Active-Active Architecture](https://redis.com/redis-enterprise/technology/active-active-geo-distribution/)
-
-[A fast, fault-tolerant & linearizable replication protocol](https://hermes-protocol.com/)
-
-[Bucket4j 8.1.0 Reference](https://bucket4j.com/8.1.0/toc.html)
-
-[An Introduction to Computer Networks: Chapter 24 - Token Bucket Rate Limiting](https://intronetworks.cs.luc.edu/current/html/tokenbucket.html)
-
-[Deficit round robin](https://en.wikipedia.org/wiki/Deficit_round_robin)
-
-[sfq - Stochastic Fairness Queueing](https://man7.org/linux/man-pages/man8/tc-sfq.8.html)
-
-[Max-min fairness](https://www.ece.rutgers.edu/~marsic/Teaching/CCN/minmax-fairsh.html)
-
-Cornacchia, Alessandro, et al. "[Staggered HLL: Near-continuous-time cardinality estimation with no overhead.](https://www.sciencedirect.com/science/article/abs/pii/S0140366422002407)" Computer Communications 193 (2022): 168-175.
+[C implementation of the Raft consensus protocol](https://github.com/willemt/raft) by Willem-Hendrik Thiart.

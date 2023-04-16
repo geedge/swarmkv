@@ -29,7 +29,7 @@ struct FS_token_bucket
     int cms_idx;
     struct timeval start_tv;
     struct timeval last_deficit;
-    long long per_weight_share;
+    long long per_weight_quantum;
 
     long long CIR, CBS;
     long long total_weight;
@@ -99,7 +99,7 @@ long long FS_token_bucket_consume(struct FS_token_bucket *fstb, struct timeval n
     if(delta_time_ms>REFILL_INTERVAL_MS)
     {
         long long available=OC_token_bucket_control(fstb->bucket, now, OCTB_CMD_READ_AVAILABLE, 0);
-        fstb->per_weight_share=available/fstb->total_weight;
+        fstb->per_weight_quantum=available/fstb->total_weight;
         memcpy(&fstb->last_deficit, &now, sizeof(fstb->last_deficit));
     }
     delta_time_ms=timeval_delta_ms(self->last_round, now);
@@ -109,7 +109,7 @@ long long FS_token_bucket_consume(struct FS_token_bucket *fstb, struct timeval n
         self->deficit=0;
     }
     //deficit=self->deficit;
-    if(tokens + deficit > fstb->per_weight_share*weight)
+    if(tokens + deficit > fstb->per_weight_quantum*weight)
     {
         return 0;
     }
