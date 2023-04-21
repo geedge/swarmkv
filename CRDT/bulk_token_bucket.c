@@ -9,7 +9,7 @@
 #include <math.h>
 #include <assert.h>
 
-#define PERTURB_INTERVAL_MS  2000
+#define PERTURB_INTERVAL_MS  1000
 
 
 struct counter_array
@@ -107,6 +107,7 @@ struct bulk_token_bucket
     struct timeval start;
     long long perturb;
 	struct timeval perturb_timestamp;
+	long long *snapshot;
     long long n_active_bucket;
 
     struct ST_HLL *hll; //counting active bucket id with a sliding window style
@@ -116,9 +117,8 @@ struct bulk_token_bucket
 static double collision_probability(long long bucket_num, long long n_key)
 {
     //https://en.wikipedia.org/wiki/Birthday_problem#Number_of_people_with_a_shared_birthday
-    long long number_of_non_collision_keys=n_key*pow((double)(bucket_num-1)/bucket_num, n_key-1);
-    double prob=(double)number_of_non_collision_keys/n_key;
-    return 1-prob;
+  	double p_non_collsion=1-pow((double)(bucket_num-1)/bucket_num, n_key-1);
+    return p_non_collsion;
 }
 
 struct bulk_token_bucket *bulk_token_bucket_new(uuid_t my_id, struct timeval now, long long CIR, long long CBS, long long bucket_num)
@@ -133,6 +133,7 @@ struct bulk_token_bucket *bulk_token_bucket_new(uuid_t my_id, struct timeval now
     btb->consumed=g_array_new(my_id, bucket_num);
     btb->refilled=ALLOC(struct refill_array, bucket_num);
 	btb->perturb=1;
+	btb->snapshot=ALLOC(long long, bucket_num);
 	memcpy(&btb->perturb_timestamp, &now, sizeof(btb->perturb_timestamp));
 	memcpy(&btb->start, &now, sizeof(btb->start));
     uuid_copy(btb->my_id, my_id);
@@ -143,6 +144,7 @@ void bulk_token_bucket_free(struct bulk_token_bucket *btb)
 	g_array_free(btb->consumed);
 	ST_HLL_free(btb->hll);
     free(btb->refilled);
+	free(btb->snapshot);
     free(btb);
 }
 
@@ -179,44 +181,105 @@ long long bulk_token_bucket_control(struct bulk_token_bucket *btb, const char *k
 	long long now_ms=timeval_delta_ms(btb->start, now);
 	delta_time_ms=timeval_delta_ms(btb->perturb_timestamp, now);
 	ST_HLL_add(btb->hll, key, keylen, &now);
-	if(delta_time_ms>PERTURB_INTERVAL_MS)
+	//Perturb every CBS/CIR seconds, so that buckets not used after last perturb have been refilled to CBS. 
+	if(delta_time_ms>1000*btb->cfg.CBS/btb->cfg.CIR)
 	{
 		btb->perturb++;
+		long long new_refilled=0, tmp_consumed=0;
 		memcpy(&btb->perturb_timestamp, &now, sizeof(btb->perturb_timestamp));
+		for(int i=0; i<btb->cfg.bucket_num; i++)
+		{
+			tmp_consumed=g_array_get(btb->consumed, i);
+			btb->snapshot[i]=tb_available(btb->cfg.CIR, btb->cfg.CBS, 
+										tmp_consumed, btb->refilled[i].refilled, 
+										btb->refilled[i].refill_ms, now_ms, btb->cfg.refill_interval_ms, 
+										&new_refilled);
+		}
 	}
 	
-    bucket_idx=XXH3_64bits_withSeed(key, keylen, btb->perturb)%btb->cfg.bucket_num;
+	bucket_idx=XXH3_64bits_withSeed(key, keylen, btb->perturb)%btb->cfg.bucket_num;
 	consumed=g_array_get(btb->consumed, bucket_idx);
 	refilled=btb->refilled[bucket_idx].refilled;
 	assert(refilled>=0);
 	assert(consumed>=0);
 
+	long long perturb_ms=timeval_delta_ms(btb->start, btb->perturb_timestamp);
+
+	if(0 && btb->refilled[bucket_idx].refill_ms < perturb_ms)
+	{
+		long long pre_bucket_idx=0;
+		pre_bucket_idx=XXH3_64bits_withSeed(key, keylen, btb->perturb-1)%btb->cfg.bucket_num;
+		btb->refilled[bucket_idx].refilled  += btb->snapshot[pre_bucket_idx] - (btb->refilled[bucket_idx].refilled - consumed);
+		btb->refilled[bucket_idx].refill_ms = now_ms;
+		refilled = btb->refilled[bucket_idx].refilled;		
+	}
 	//If current bucket hasn't been refilled since latest perturb.
-	if(btb->refilled[bucket_idx].refill_ms < timeval_delta_ms(btb->start, btb->perturb_timestamp))
+	//find the previous bucket that the key used.
+	//set the current bucket to the same available tokens as previous bucket.
+	if(btb->refilled[bucket_idx].refill_ms < perturb_ms)
+	{
+		long long pre_bucket_idx=0;
+		pre_bucket_idx=XXH3_64bits_withSeed(key, keylen, btb->perturb-1)%btb->cfg.bucket_num;
+		if(btb->refilled[pre_bucket_idx].refill_ms < perturb_ms &&
+				pre_bucket_idx!=bucket_idx)
+		{
+			long long pre_consumed=0, pre_refilled=0;
+			pre_consumed=g_array_get(btb->consumed, pre_bucket_idx);
+			pre_refilled=btb->refilled[pre_bucket_idx].refilled;
+			long long pre_available=0, pre_new_refilled=0;
+			pre_available=tb_available(btb->cfg.CIR, btb->cfg.CBS, 
+										pre_consumed, pre_refilled, 
+										btb->refilled[pre_bucket_idx].refill_ms, now_ms, btb->cfg.refill_interval_ms, 
+										&pre_new_refilled);
+
+			btb->refilled[bucket_idx].refilled  += pre_available - (btb->refilled[bucket_idx].refilled - consumed);
+			btb->refilled[bucket_idx].refill_ms = now_ms;
+			refilled = btb->refilled[bucket_idx].refilled;
+		}
+	}
+	if(0 && btb->refilled[bucket_idx].refill_ms < perturb_ms)
 	{
 		//find the previous bucket that the key used.
-		long long pre_perturb=btb->perturb, pre_bucket_idx=0;
+		long long pre_perturb=btb->perturb, pre_bucket_idx=0, tmp=0;
 		long long rewind_max=1000*btb->cfg.CBS/btb->cfg.CIR/PERTURB_INTERVAL_MS;
+		
+		int rewind_success=0;
 		do
 		{
 			pre_perturb--;
-			pre_bucket_idx=XXH3_64bits_withSeed(key, keylen, pre_perturb)%btb->cfg.bucket_num;
-		}while(btb->refilled[pre_bucket_idx].refill_ms < now_ms - (btb->perturb - pre_perturb) * PERTURB_INTERVAL_MS &&
-			btb->perturb - pre_perturb < rewind_max);
-		
-		//set the current bucket to the same available tokens as previous bucket.
-		long long pre_consumed=0, pre_refilled=0;
-		pre_consumed=g_array_get(btb->consumed, pre_bucket_idx);
-		pre_refilled=btb->refilled[pre_bucket_idx].refilled;
-		long long pre_available=0, pre_new_refilled=0;
-		pre_available=tb_available(btb->cfg.CIR, btb->cfg.CBS, 
-									pre_consumed, pre_refilled, 
-									btb->refilled[pre_bucket_idx].refill_ms, now_ms, btb->cfg.refill_interval_ms, 
-									&pre_new_refilled);
+			tmp=XXH3_64bits_withSeed(key, keylen, pre_perturb)%btb->cfg.bucket_num;
 
-		btb->refilled[bucket_idx].refilled  += pre_available - (btb->refilled[bucket_idx].refilled - consumed);
-		btb->refilled[bucket_idx].refill_ms = now_ms;
-		refilled = btb->refilled[bucket_idx].refilled;
+			if(btb->refilled[tmp].refill_ms < perturb_ms - (btb->perturb - pre_perturb - 1) * PERTURB_INTERVAL_MS &&
+			//if(btb->refilled[tmp].refill_ms < timeval_delta_ms(btb->start, btb->perturb_timestamp) &&
+				tmp!=bucket_idx)
+			{
+				rewind_success=1;
+				pre_bucket_idx=tmp;
+				break;
+			}
+			else
+			{
+				break;
+			}
+			
+		}while(btb->perturb - pre_perturb < rewind_max );
+		
+		if(rewind_success)
+		{
+			//set the current bucket to the same available tokens as previous bucket.
+			long long pre_consumed=0, pre_refilled=0;
+			pre_consumed=g_array_get(btb->consumed, pre_bucket_idx);
+			pre_refilled=btb->refilled[pre_bucket_idx].refilled;
+			long long pre_available=0, pre_new_refilled=0;
+			pre_available=tb_available(btb->cfg.CIR, btb->cfg.CBS, 
+										pre_consumed, pre_refilled, 
+										btb->refilled[pre_bucket_idx].refill_ms, now_ms, btb->cfg.refill_interval_ms, 
+										&pre_new_refilled);
+
+			btb->refilled[bucket_idx].refilled  += pre_available - (btb->refilled[bucket_idx].refilled - consumed);
+			btb->refilled[bucket_idx].refill_ms = now_ms;
+			refilled = btb->refilled[bucket_idx].refilled;
+		}
 	}
 	long long new_refilled=0, global_available=0;
 	int infinite_flag=0;
@@ -293,4 +356,8 @@ void bulk_token_bucket_info(const struct bulk_token_bucket *btb, struct bulk_tok
 	info->estimate_keys=ST_HLL_count(btb->hll);
 	info->collision_rate=collision_probability(info->bucket_number, info->estimate_keys);
 	return;
+}
+void bulk_token_bucket_serialize(struct OC_token_bucket *bucket, char **blob, size_t *blob_sz)
+{
+
 }

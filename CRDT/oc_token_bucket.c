@@ -159,7 +159,7 @@ void OC_token_bucket_info(struct OC_token_bucket *bucket, struct OC_token_bucket
 	return;
 }
 
-void OC_token_bucket_serialize(struct OC_token_bucket *bucket, char **blob, size_t *blob_sz)
+void OC_token_bucket_serialize(const struct OC_token_bucket *bucket, char **blob, size_t *blob_sz)
 {
 	char *pnc_blob=NULL;
 	size_t pnc_blob_sz=0;
@@ -188,7 +188,7 @@ struct OC_token_bucket *OC_token_bucket_deserialize(const char *blob, size_t blo
 	bucket->consumed=PN_counter_deserialize(blob+offset, blob_sz-offset);
 	return bucket;
 }
-void OC_token_bucket_merge(struct OC_token_bucket *dst, struct OC_token_bucket *src)
+void OC_token_bucket_merge(struct OC_token_bucket *dst, const struct OC_token_bucket *src)
 {
 	if(timercmp(&(dst->cfg.write_timestamp), &(src->cfg.write_timestamp), <))//Last-Write-Wins
 	{

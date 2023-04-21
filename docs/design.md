@@ -304,3 +304,4 @@ Woo, Shinae, et al. "Elastic scaling of stateful network functions." *15th {USEN
 [Redis Cluster Specification](https://redis.io/topics/cluster-spec)
 
 [C implementation of the Raft consensus protocol](https://github.com/willemt/raft) by Willem-Hendrik Thiart.
+

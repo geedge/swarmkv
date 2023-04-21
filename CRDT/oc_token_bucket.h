@@ -43,10 +43,10 @@ enum OC_token_bucket_command
 };
 long long OC_token_bucket_control(struct OC_token_bucket *bucket, struct timeval now, enum OC_token_bucket_command cmd, long long tokens);
 
-void OC_token_bucket_serialize(struct OC_token_bucket *bucket, char **blob, size_t *blob_sz);
+void OC_token_bucket_serialize(const struct OC_token_bucket *bucket, char **blob, size_t *blob_sz);
 struct OC_token_bucket *OC_token_bucket_deserialize(const char *blob, size_t blob_sz);
 
-void OC_token_bucket_merge(struct OC_token_bucket *dst, struct OC_token_bucket *src);
+void OC_token_bucket_merge(struct OC_token_bucket *dst, const struct OC_token_bucket *src);
 void OC_token_bucket_merge_blob(struct OC_token_bucket *bucket,  const char *blob, size_t blob_sz);
 size_t OC_token_bucket_size(const struct OC_token_bucket *bucket);
 #ifdef __cplusplus
