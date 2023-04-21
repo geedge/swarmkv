@@ -29,7 +29,7 @@ struct fair_token_bucket_info
     struct OC_token_bucket_info bucket_info;
     long long active_classes_number;
 };
-void fair_token_bucket_info(const struct fair_token_bucket *fstb, struct fair_token_bucket_info *info);
+void fair_token_bucket_info(const struct fair_token_bucket *fstb, struct timeval now, struct fair_token_bucket_info *info);
 
 #ifdef __cplusplus
 }

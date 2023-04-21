@@ -1,16 +1,19 @@
 #include "crdt_utils.h"
+#include "token_bucket_common.h"
 
-long long tb_available(long long CIR, long long CBS, long long consumed, long long refilled, long long last_refill_ms, long long now_ms, long long refill_interval_ms, long long *new_refilled)
+#include <assert.h>
+
+long long tb_available(long long CIR, long long CBS, long long consumed, long long refilled, long long delta_ms, long long refill_interval_ms, long long *new_refilled)
 {
-	long long eplapse_ms = now_ms - last_refill_ms;
-	long long to_add = CIR*eplapse_ms/1000;
+
+	long long to_add = CIR*delta_ms/1000;
 	*new_refilled = refilled;
 	if(refilled==0 && consumed==0)
 	{
 		*new_refilled=CBS;
 		return *new_refilled;
 	}
-	if(eplapse_ms > refill_interval_ms && to_add>0)
+	if(delta_ms > refill_interval_ms && to_add>0)
 	{
 		if(refilled < consumed)
 		{
@@ -26,4 +29,29 @@ long long tb_available(long long CIR, long long CBS, long long consumed, long lo
 		}
 	}
 	return MAX(*new_refilled-consumed, 0);
+}
+long long tb_consume(long long CIR, long long available, size_t n_replica, enum token_bucket_command cmd, long long tokens)
+{
+	long long reserved=CIR*(n_replica-1)/n_replica;
+	long long local_available=MAX(available-reserved, 0);
+	long long assigned=0;
+	switch(cmd)
+	{
+		case TB_CMD_CONSUME_AS_MUCH_AS_POSSIBLE:
+			assigned=available;
+			break;
+		case TB_CMD_CONSUME_FORCE:
+			assigned=tokens;
+			break;
+		case TB_CMD_CONSUME_FLEXIBLE:
+			assigned=MIN(tokens, local_available);;
+			break;
+		case TB_CMD_CONSUME_NORMAL:
+			assigned=(tokens<=local_available) ? tokens:0;			
+			break;
+		default:
+			assert(0);
+			break;
+	}
+    return assigned;
 }

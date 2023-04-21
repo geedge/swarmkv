@@ -69,7 +69,9 @@ static void ftb_refill(struct fair_token_bucket *fstb, struct timeval now)
         n_active_class+=count;
         fstb->n_class_per_weight[i]=count;
     }
-    long long available=OC_token_bucket_control(fstb->bucket, now, TB_CMD_READ_AVAILABLE, 0);        
+    struct OC_token_bucket_info info;
+    OC_token_bucket_info(fstb->bucket, now, &info);
+    long long available=info.available;     
     fstb->per_weight_quantum=available/total_weight;
     fstb->n_active_class=n_active_class;
     
@@ -95,16 +97,16 @@ long long fair_token_bucket_consume(struct fair_token_bucket *ftb, struct timeva
     {
         return 0;
     }
-    long long got_tokens=OC_token_bucket_control(ftb->bucket, now, TB_CMD_CONSUME_NORMAL, tokens);
+    long long got_tokens=OC_token_bucket_consume(ftb->bucket, now, TB_CMD_CONSUME_NORMAL, tokens);
     //CM_sketch_add_n(fstb->cms_deficit, (char *)&class_id, sizeof(class_id), got_tokens);
     ftb->deficit_array[class_id] += got_tokens;
     ftb->sfq[sfq_idx] += got_tokens;
     return got_tokens;
 }
 
-void fair_token_bucket_info(const struct fair_token_bucket *fstb, struct fair_token_bucket_info *info)
+void fair_token_bucket_info(const struct fair_token_bucket *fstb, struct timeval now, struct fair_token_bucket_info *info)
 {
     info->active_classes_number=fstb->n_active_class;
-    OC_token_bucket_info(fstb->bucket, &info->bucket_info);
+    OC_token_bucket_info(fstb->bucket, now, &info->bucket_info);
     return;
 }

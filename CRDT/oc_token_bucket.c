@@ -50,112 +50,59 @@ void OC_token_bucket_configure(struct OC_token_bucket *bucket, struct timeval no
 }
 
 
-long long OC_token_bucket_control(struct OC_token_bucket *bucket, struct timeval now, enum token_bucket_command cmd, long long tokens)
+long long OC_token_bucket_consume(struct OC_token_bucket *bucket, struct timeval now, enum token_bucket_command cmd, long long tokens)
 {
 	long long delta_time_ms=timeval_delta_ms(bucket->refill_timestamp, now);
 	long long consumed=PN_counter_get(bucket->consumed);
-	long long to_add=0;
 	long long refilled=bucket->refilled;
 	assert(refilled>=0);
 	assert(consumed>=0);
-	int refill_flag=0;
+
+	long long new_refilled=0;
+	long long available=tb_available(bucket->cfg.CIR, bucket->cfg.CBS, consumed, 
+				refilled, delta_time_ms, bucket->cfg.refill_duration_ms, &new_refilled);
+
 	int infinite_flag=0;
     if(bucket->cfg.CBS==0 && bucket->cfg.CIR==0)
     {
 		infinite_flag=1;
-		refilled+=tokens;
-		refill_flag=1;
+		new_refilled += tokens;
     }
-
-    to_add=bucket->cfg.CIR*delta_time_ms/1000;
-	if(delta_time_ms>=bucket->cfg.refill_duration_ms && to_add>0)
-	{
-		if(refilled<consumed)
-		{
-			refilled=consumed;
-		}
-		if(to_add + refilled - consumed < bucket->cfg.CBS)
-		{
-			refilled+=to_add;
-		}
-		else
-		{
-			refilled+=bucket->cfg.CBS - (refilled - consumed);
-		}
-		refill_flag=1;
-	}
 	size_t n_replica=PN_counter_replica_num(bucket->consumed);
 
-	
-	long long global_available=MAX(refilled-consumed, 0);
-	long long reserved=bucket->cfg.CIR*(n_replica-1)/n_replica;
-	long long local_available=MAX(global_available-reserved, 0);
-//	long long local_available=global_available;
 	long long assigned=0;
-	switch(cmd)
+	if(infinite_flag)
 	{
-		case TB_CMD_CONSUME_AS_MUCH_AS_POSSIBLE:
-			assigned=infinite_flag?tokens:global_available;
-			break;
-		case TB_CMD_CONSUME_FORCE:
-			assigned=tokens;
-			break;
-		case TB_CMD_CONSUME_FLEXIBLE:
-			assigned=infinite_flag?tokens:MIN(tokens, local_available);;
-			break;
-		case TB_CMD_CONSUME_NORMAL:
-			if(infinite_flag)
-			{
-				assigned=tokens;
-			}
-			else
-			{
-				assigned=(tokens<=local_available) ? tokens:0;
-			}
-			break;
-		case TB_CMD_READ_AVAILABLE:
-			return global_available;
-		case TB_CMD_READ_REFILLED:
-			return refilled;
-		case TB_CMD_READ_CONSUEMD:
-			return consumed;
-		default:
-			assert(0);
-			break;
+		assigned=tokens;
 	}
-	if(refill_flag)
+	else
 	{
-		bucket->refilled=refilled;		
+		assigned=tb_consume(bucket->cfg.CIR, available, n_replica, cmd, tokens);
+	}
+	if(assigned>0)
+	{
+		PN_counter_incrby(bucket->consumed, assigned);
+	}
+	if(refilled!=new_refilled)
+	{
+		bucket->refilled=new_refilled;		
 		memcpy(&bucket->refill_timestamp, &now, sizeof(bucket->refill_timestamp));
 	}
 	assert(assigned>=0);
-	PN_counter_incrby(bucket->consumed, assigned);
+	
 	return assigned;
 }
-long long OC_token_bucket_read_refilled(struct OC_token_bucket *bucket)
-{
-	struct timeval now;
-	gettimeofday(&now, NULL);
-	return OC_token_bucket_control(bucket, now, TB_CMD_READ_REFILLED, 0);
 
-}
-long long OC_token_bucket_read_available(struct OC_token_bucket *bucket)
+void OC_token_bucket_info(struct OC_token_bucket *bucket, struct timeval now, struct OC_token_bucket_info *info)
 {
-	struct timeval now;
-	gettimeofday(&now, NULL);
-	return OC_token_bucket_control(bucket, now, TB_CMD_READ_AVAILABLE, 0);
-}
-void OC_token_bucket_info(struct OC_token_bucket *bucket, struct OC_token_bucket_info *info)
-{
-	struct timeval now;
-	gettimeofday(&now, NULL);
+	long long delta_time_ms=timeval_delta_ms(bucket->refill_timestamp, now);
 
 	info->CIR=bucket->cfg.CIR;
 	info->CBS=bucket->cfg.CBS;
 	info->refill_duration_ms=bucket->cfg.refill_duration_ms;
-	info->consumed=OC_token_bucket_control(bucket, now, TB_CMD_READ_CONSUEMD, 0);
-	info->refilled=OC_token_bucket_control(bucket, now, TB_CMD_READ_REFILLED, 0);
-	info->available=OC_token_bucket_control(bucket, now, TB_CMD_READ_AVAILABLE, 0);
+	info->consumed=PN_counter_get(bucket->consumed);
+	info->available=tb_available(bucket->cfg.CIR, bucket->cfg.CBS, info->consumed, 
+				 bucket->refilled, delta_time_ms, bucket->cfg.refill_duration_ms, &info->refilled);
 	return;
 }
 

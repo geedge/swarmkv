@@ -97,7 +97,9 @@ enum cmd_exec_result tinfo_command(struct swarmkv_module *mod_store, const struc
 	}
 	struct OC_token_bucket_info info;
 	memset(&info, 0, sizeof(info));
-	OC_token_bucket_info(obj->bucket,&info);
+	struct timeval now;
+	gettimeofday(&now, NULL);
+	OC_token_bucket_info(obj->bucket, now, &info);
 	int i=0;
 	*reply=swarmkv_reply_new_array(10);
 	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("Capacity");
@@ -143,21 +145,21 @@ enum cmd_exec_result tconsume_command(struct swarmkv_module *mod_store, const st
 	}
 	struct timeval now;
 	gettimeofday(&now, NULL);
-	enum OC_token_bucket_command oc_cmd=OCTB_CMD_CONSUME_NORMAL;
+	enum token_bucket_command oc_cmd=TB_CMD_CONSUME_NORMAL;
 	if(cmd->argc==4)
 	{
 		const sds mode=cmd->argv[3];
 		if(0==strncasecmp(mode, "NORMAL", sdslen(mode)))
 		{
-			oc_cmd=OCTB_CMD_CONSUME_NORMAL;
+			oc_cmd=TB_CMD_CONSUME_NORMAL;
 		}
 		if(0==strncasecmp(mode, "FORCE", sdslen(mode)))
 		{
-			oc_cmd=OCTB_CMD_CONSUME_FORCE;
+			oc_cmd=TB_CMD_CONSUME_FORCE;
 		}
 		else if(0==strncasecmp(mode, "FLEXIBLE", sdslen(mode)))
 		{
-			oc_cmd=OCTB_CMD_CONSUME_FLEXIBLE;
+			oc_cmd=TB_CMD_CONSUME_FLEXIBLE;
 		}
 		else
 		{
@@ -165,7 +167,7 @@ enum cmd_exec_result tconsume_command(struct swarmkv_module *mod_store, const st
 			return FINISHED;
 		}
 	}
-	got=OC_token_bucket_control(obj->bucket, now, oc_cmd, request);
+	got=OC_token_bucket_consume(obj->bucket, now, oc_cmd, request);
 	*reply=swarmkv_reply_new_integer(got);
 	sobj_need_sync(mod_store, obj);
 	return FINISHED;

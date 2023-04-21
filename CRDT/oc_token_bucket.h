@@ -29,11 +29,11 @@ struct OC_token_bucket_info
 	long long available;
 	long long number_of_consumers;
 };
-void OC_token_bucket_info(struct OC_token_bucket *bucket, struct OC_token_bucket_info *info);
+void OC_token_bucket_info(struct OC_token_bucket *bucket, struct timeval now, struct OC_token_bucket_info *info);
 void OC_token_bucket_free(struct OC_token_bucket *bucket);
 
 
-long long OC_token_bucket_control(struct OC_token_bucket *bucket, struct timeval now, enum token_bucket_command cmd, long long tokens);
+long long OC_token_bucket_consume(struct OC_token_bucket *bucket, struct timeval now, enum token_bucket_command cmd, long long tokens);
 
 void OC_token_bucket_serialize(const struct OC_token_bucket *bucket, char **blob, size_t *blob_sz);
 struct OC_token_bucket *OC_token_bucket_deserialize(const char *blob, size_t blob_sz);

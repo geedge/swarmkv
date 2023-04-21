@@ -108,7 +108,7 @@ long long bulk_token_bucket_control(struct bulk_token_bucket *btb, const char *k
 			long long pre_available=0, pre_new_refilled=0;
 			pre_available=tb_available(btb->cfg.CIR, btb->cfg.CBS, 
 										pre_consumed, pre_refilled, 
-										btb->refilled[pre_bucket_idx].refill_ms, now_ms, btb->cfg.refill_interval_ms, 
+										now_ms - btb->refilled[pre_bucket_idx].refill_ms, btb->cfg.refill_interval_ms, 
 										&pre_new_refilled);
 
 			btb->refilled[bucket_idx].refilled  += pre_available - (btb->refilled[bucket_idx].refilled - consumed);
@@ -126,45 +126,21 @@ long long bulk_token_bucket_control(struct bulk_token_bucket *btb, const char *k
     }
 	else
 	{
-		global_available=tb_available(btb->cfg.CIR, btb->cfg.CBS, consumed, refilled, btb->refilled[bucket_idx].refill_ms, now_ms, btb->cfg.refill_interval_ms, &new_refilled);
+		long long delta_ms= now_ms - btb->refilled[bucket_idx].refill_ms;
+		global_available=tb_available(btb->cfg.CIR, btb->cfg.CBS, consumed, refilled, delta_ms, btb->cfg.refill_interval_ms, &new_refilled);
 	}
 
 	size_t n_replica=MAX(1, g_array_replicas(btb->consumed));
-
-	long long reserved=btb->cfg.CIR*(n_replica-1)/n_replica;
-	long long local_available=MAX(global_available-reserved, 0);
 	long long assigned=0;
-	switch(cmd)
+	if(infinite_flag)
 	{
-		case TB_CMD_CONSUME_AS_MUCH_AS_POSSIBLE:
-			assigned=infinite_flag?tokens:global_available;
-			break;
-		case TB_CMD_CONSUME_FORCE:
-			assigned=tokens;
-			break;
-		case TB_CMD_CONSUME_FLEXIBLE:
-			assigned=infinite_flag?tokens:MIN(tokens, local_available);;
-			break;
-		case TB_CMD_CONSUME_NORMAL:
-			if(infinite_flag)
-			{
-				assigned=tokens;
-			}
-			else
-			{
-				assigned=(tokens<=local_available) ? tokens:0;
-			}
-			break;
-		case TB_CMD_READ_AVAILABLE:
-			return global_available;
-		case TB_CMD_READ_REFILLED:
-			return refilled;
-		case TB_CMD_READ_CONSUEMD:
-			return consumed;
-		default:
-			assert(0);
-			break;
+		assigned=tokens;
 	}
+	else
+	{
+		assigned=tb_consume(btb->cfg.CIR, global_available, n_replica, cmd, tokens);
+	}
+
 	if(new_refilled!=refilled)
 	{
 		btb->refilled[bucket_idx].refilled=new_refilled;

@@ -8,7 +8,12 @@ include_directories(${PROJECT_SOURCE_DIR}/deps/mpack
 					${PROJECT_SOURCE_DIR}/deps/uthash
 					${PROJECT_SOURCE_DIR}/deps/xxhash)
 
-add_executable(CRDT_gtest crdt_gtest.cpp 
+add_executable(CRDT_base_gtest crdt_base_gtest.cpp 
 				${PROJECT_SOURCE_DIR}/deps/mpack/mpack.c
 				${PROJECT_SOURCE_DIR}/deps/xxhash/xxhash.c)
-target_link_libraries(CRDT_gtest CRDT gtest-static uuid)
+target_link_libraries(CRDT_base_gtest CRDT gtest-static uuid)
+
+add_executable(CRDT_tb_gtest crdt_tb_gtest.cpp 
+				${PROJECT_SOURCE_DIR}/deps/mpack/mpack.c
+				${PROJECT_SOURCE_DIR}/deps/xxhash/xxhash.c)
+target_link_libraries(CRDT_tb_gtest CRDT gtest-static uuid)
