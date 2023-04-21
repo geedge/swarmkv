@@ -50,7 +50,7 @@ void OC_token_bucket_configure(struct OC_token_bucket *bucket, struct timeval no
 }
 
 
-long long OC_token_bucket_control(struct OC_token_bucket *bucket, struct timeval now, enum OC_token_bucket_command cmd, long long tokens)
+long long OC_token_bucket_control(struct OC_token_bucket *bucket, struct timeval now, enum token_bucket_command cmd, long long tokens)
 {
 	long long delta_time_ms=timeval_delta_ms(bucket->refill_timestamp, now);
 	long long consumed=PN_counter_get(bucket->consumed);
@@ -94,16 +94,16 @@ long long OC_token_bucket_control(struct OC_token_bucket *bucket, struct timeval
 	long long assigned=0;
 	switch(cmd)
 	{
-		case OCTB_CMD_CONSUME_AS_MUCH_AS_POSSIBLE:
+		case TB_CMD_CONSUME_AS_MUCH_AS_POSSIBLE:
 			assigned=infinite_flag?tokens:global_available;
 			break;
-		case OCTB_CMD_CONSUME_FORCE:
+		case TB_CMD_CONSUME_FORCE:
 			assigned=tokens;
 			break;
-		case OCTB_CMD_CONSUME_FLEXIBLE:
+		case TB_CMD_CONSUME_FLEXIBLE:
 			assigned=infinite_flag?tokens:MIN(tokens, local_available);;
 			break;
-		case OCTB_CMD_CONSUME_NORMAL:
+		case TB_CMD_CONSUME_NORMAL:
 			if(infinite_flag)
 			{
 				assigned=tokens;
@@ -113,11 +113,11 @@ long long OC_token_bucket_control(struct OC_token_bucket *bucket, struct timeval
 				assigned=(tokens<=local_available) ? tokens:0;
 			}
 			break;
-		case OCTB_CMD_READ_AVAILABLE:
+		case TB_CMD_READ_AVAILABLE:
 			return global_available;
-		case OCTB_CMD_READ_REFILLED:
+		case TB_CMD_READ_REFILLED:
 			return refilled;
-		case OCTB_CMD_READ_CONSUEMD:
+		case TB_CMD_READ_CONSUEMD:
 			return consumed;
 		default:
 			assert(0);
@@ -136,14 +136,14 @@ long long OC_token_bucket_read_refilled(struct OC_token_bucket *bucket)
 {
 	struct timeval now;
 	gettimeofday(&now, NULL);
-	return OC_token_bucket_control(bucket, now, OCTB_CMD_READ_REFILLED, 0);
+	return OC_token_bucket_control(bucket, now, TB_CMD_READ_REFILLED, 0);
 
 }
 long long OC_token_bucket_read_available(struct OC_token_bucket *bucket)
 {
 	struct timeval now;
 	gettimeofday(&now, NULL);
-	return OC_token_bucket_control(bucket, now, OCTB_CMD_READ_AVAILABLE, 0);
+	return OC_token_bucket_control(bucket, now, TB_CMD_READ_AVAILABLE, 0);
 }
 void OC_token_bucket_info(struct OC_token_bucket *bucket, struct OC_token_bucket_info *info)
 {
@@ -153,9 +153,9 @@ void OC_token_bucket_info(struct OC_token_bucket *bucket, struct OC_token_bucket
 	info->CIR=bucket->cfg.CIR;
 	info->CBS=bucket->cfg.CBS;
 	info->refill_duration_ms=bucket->cfg.refill_duration_ms;
-	info->consumed=OC_token_bucket_control(bucket, now, OCTB_CMD_READ_CONSUEMD, 0);
-	info->refilled=OC_token_bucket_control(bucket, now, OCTB_CMD_READ_REFILLED, 0);
-	info->available=OC_token_bucket_control(bucket, now, OCTB_CMD_READ_AVAILABLE, 0);
+	info->consumed=OC_token_bucket_control(bucket, now, TB_CMD_READ_CONSUEMD, 0);
+	info->refilled=OC_token_bucket_control(bucket, now, TB_CMD_READ_REFILLED, 0);
+	info->available=OC_token_bucket_control(bucket, now, TB_CMD_READ_AVAILABLE, 0);
 	return;
 }
 

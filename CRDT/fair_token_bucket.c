@@ -1,6 +1,6 @@
 #include "fair_token_bucket.h"
 #include "oc_token_bucket.h"
-#include "st_hll.h"
+#include "st_hyperloglog.h"
 #include "cm_sketch.h"
 #include "crdt_utils.h"
 #include "xxhash.h"
@@ -25,7 +25,7 @@ struct fair_token_bucket
     long long per_weight_quantum; //updated every REFILL_INTERVAL_MS
     long long n_active_class;
     
-    struct ST_HLL *hll[FSTB_WEIGHT_MAX]; //counting active classes
+    struct ST_hyperloglog *hll[FSTB_WEIGHT_MAX]; //counting active classes
     struct OC_token_bucket *bucket;
     long long deficit_array[CLASS_ID_MAX];//for debugging
     long long sfq[SFQ_BUCKET_MAX];
@@ -40,7 +40,7 @@ struct fair_token_bucket *fair_token_bucket_new(uuid_t uuid, struct timeval now,
     uuid_copy(ftb->uuid, uuid);
     for(int i=0; i<FSTB_WEIGHT_MAX; i++)
     {
-        ftb->hll[i]=ST_HLL_new(STHLL_PRECISION, STHLL_TIMEOUT_S, &now);
+        ftb->hll[i]=ST_hyperloglog_new(STHLL_PRECISION, STHLL_TIMEOUT_S, now);
     }
     ftb->bucket=OC_token_bucket_new(uuid, now, CIR, CBS);
     return ftb;
@@ -49,7 +49,7 @@ void fair_token_bucket_free(struct fair_token_bucket *fstb)
 {
     for(int i=0; i<FSTB_WEIGHT_MAX; i++)
     {
-        ST_HLL_free(fstb->hll[i]);
+        ST_hyperloglog_free(fstb->hll[i]);
     }
     OC_token_bucket_free(fstb->bucket);
     free(fstb);
@@ -64,12 +64,12 @@ static void ftb_refill(struct fair_token_bucket *fstb, struct timeval now)
     long long total_weight=0, n_active_class=0, count=0;
     for(int i=0; i<FSTB_WEIGHT_MAX; i++)
     {
-        count = ST_HLL_count(fstb->hll[i]);
+        count = ST_hyperloglog_count(fstb->hll[i]);
         total_weight += (i+1)*count;
         n_active_class+=count;
         fstb->n_class_per_weight[i]=count;
     }
-    long long available=OC_token_bucket_control(fstb->bucket, now, OCTB_CMD_READ_AVAILABLE, 0);        
+    long long available=OC_token_bucket_control(fstb->bucket, now, TB_CMD_READ_AVAILABLE, 0);        
     fstb->per_weight_quantum=available/total_weight;
     fstb->n_active_class=n_active_class;
     
@@ -82,7 +82,7 @@ long long fair_token_bucket_consume(struct fair_token_bucket *ftb, struct timeva
 {
     assert(weight<=FSTB_WEIGHT_MAX && weight>0);
     assert(class_id<CLASS_ID_MAX);
-    ST_HLL_add(ftb->hll[weight-1], (char *)&class_id, sizeof(class_id), &now);
+    ST_hyperloglog_add(ftb->hll[weight-1], (char *)&class_id, sizeof(class_id), now);
     ftb_refill(ftb, now);
     long long deficit_exact=0, deficit_est=0;
     //deficit_est=CM_sketch_query(fstb->cms_deficit, (char *)&class_id, sizeof(class_id));
@@ -95,7 +95,7 @@ long long fair_token_bucket_consume(struct fair_token_bucket *ftb, struct timeva
     {
         return 0;
     }
-    long long got_tokens=OC_token_bucket_control(ftb->bucket, now, OCTB_CMD_CONSUME_NORMAL, tokens);
+    long long got_tokens=OC_token_bucket_control(ftb->bucket, now, TB_CMD_CONSUME_NORMAL, tokens);
     //CM_sketch_add_n(fstb->cms_deficit, (char *)&class_id, sizeof(class_id), got_tokens);
     ftb->deficit_array[class_id] += got_tokens;
     ftb->sfq[sfq_idx] += got_tokens;

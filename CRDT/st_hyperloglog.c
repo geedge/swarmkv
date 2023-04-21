@@ -1,10 +1,16 @@
-#include "st_hll.h"
+/*
+ * The HyperLogLog uses 6 bits for register, and a 64bit hash function. 
+ * For our needs, we always use a dense representation and avoid the sparse/dense conversions.
+ *
+ */
+#include "st_hyperloglog.h"
 #include "xxhash.h"
 #include "mpack.h"
 #include "crdt_utils.h"
 
 #include <stdint.h>
 #include <math.h>
+#include <assert.h>
 
 #define REG_WIDTH 6     // Bits per register
 #define INT_WIDTH 32    // Bits in an int
@@ -13,55 +19,83 @@
 #define NUM_REG(precision) ((1 << precision))
 #define INT_CEIL(num, denom) (((num) + (denom) - 1) / (denom))
 
-// Ensure precision in a sane bound
-#define HLL_MIN_PRECISION 4      // 16 registers
-#define HLL_MAX_PRECISION 18     // 262,144 registers
 
-struct ST_HLL
+
+struct ST_HLL_configuration
 {
     unsigned char precision;
-    int time_window_s;
-    int reset_idx;
-    uint32_t *registers;
-    struct timeval reset_time;
+    unsigned char pad;
+    unsigned short time_window_s;
+    struct timeval timestamp;
 };
-struct ST_HLL *ST_HLL_new(unsigned char precision, int time_window_seconds, const struct timeval *now)
+struct ST_hyperloglog
 {
-    struct ST_HLL *h=ALLOC(struct ST_HLL, 1);
+    struct ST_HLL_configuration cfg;
+    int reset_idx;
+    struct timeval reset_time;
+    uint32_t *registers;
+};
+const size_t BLOB_HDR_SIZE= offsetof(struct ST_hyperloglog, registers);
+#define REGISTER_SIZE(precision) INT_WIDTH*INT_CEIL(NUM_REG(precision), REG_PER_WORD)
+
+struct ST_hyperloglog *ST_hyperloglog_new(unsigned char precision, int time_window_seconds, const struct timeval now)
+{
+    struct ST_hyperloglog *h=ALLOC(struct ST_hyperloglog, 1);
     // Ensure the precision is somewhat sane
     if (precision < HLL_MIN_PRECISION || precision > HLL_MAX_PRECISION)
         return NULL;
 
     // Store precision
-    h->precision = precision;
-    h->time_window_s=time_window_seconds;
-    if(now) memcpy(&h->reset_time, now, sizeof(h->reset_time));
+    h->cfg.precision = precision;
+    h->cfg.time_window_s=time_window_seconds;
+    memcpy(&h->cfg.timestamp, &now, sizeof(h->cfg.timestamp));
+
+    memcpy(&h->reset_time, &now, sizeof(h->reset_time));
 
     // Determine how many registers are needed
-    int reg = NUM_REG(precision);
+    int num_reg = NUM_REG(precision);
 
     // Get the full words required
-    int words = INT_CEIL(reg, REG_PER_WORD);
+    int words = INT_CEIL(num_reg, REG_PER_WORD);
 
     // Allocate and zero out the registers
     h->registers = ALLOC(uint32_t, words);
-    
     return h;
 }
-void ST_HLL_free(struct ST_HLL *h)
+void ST_hyperloglog_configure(struct ST_hyperloglog *h, unsigned char precision, int time_window_seconds, const struct timeval now)
+{
+    h->cfg.time_window_s=time_window_seconds;
+    if(h->cfg.precision != precision)
+    {
+        free(h->registers);
+        // Determine how many registers are needed
+        int reg = NUM_REG(precision);
+
+        // Get the full words required
+        int words = INT_CEIL(reg, REG_PER_WORD);
+
+        // Allocate and zero out the registers
+        h->registers = ALLOC(uint32_t, words);
+        h->cfg.precision=precision;
+    }
+    memcpy(&h->cfg.timestamp, &now, sizeof(h->cfg.timestamp));
+    return;
+}
+void ST_hyperloglog_free(struct ST_hyperloglog *h)
 {
     free(h->registers);
     h->registers=NULL;
     free(h);
     return;
 }
-static int get_register(const struct ST_HLL *h, int idx) {
+
+static int get_register(const struct ST_hyperloglog *h, int idx) {
     uint32_t word = *(h->registers + (idx / REG_PER_WORD));
     word = word >> REG_WIDTH * (idx % REG_PER_WORD);
     return word & ((1 << REG_WIDTH) - 1);
 }
 
-static void set_register(const struct ST_HLL *h, int idx, int val) {
+static void set_register(const struct ST_hyperloglog *h, int idx, int val) {
     uint32_t *word = h->registers + (idx / REG_PER_WORD);
 
     // Shift the val into place
@@ -73,7 +107,7 @@ static void set_register(const struct ST_HLL *h, int idx, int val) {
     *word = (*word & ~val_mask) | val;
     return;
 }
-static void reset_register(const struct ST_HLL *h, int idx)
+static void reset_register(const struct ST_hyperloglog *h, int idx)
 {
     uint32_t *word = h->registers + (idx / REG_PER_WORD);
     unsigned shift = REG_WIDTH * (idx % REG_PER_WORD);
@@ -81,13 +115,13 @@ static void reset_register(const struct ST_HLL *h, int idx)
     *word &= ~val_mask;
 
 }
-void hll_add_hash(struct ST_HLL *h, uint64_t hash)
+int hll_add_hash(struct ST_hyperloglog *h, uint64_t hash)
 {
     // Determine the index using the first p bits
-    int idx = hash >> (64 - h->precision);
+    int idx = hash >> (64 - h->cfg.precision);
 
     // Shift out the index bits
-    hash = hash << h->precision | (1 << (h->precision -1));
+    hash = hash << h->cfg.precision | (1 << (h->cfg.precision -1));
 
     // Determine the count of leading zeros. The __builtin_clzll() is provided by GCC
     int leading = __builtin_clzll(hash) + 1;
@@ -95,26 +129,31 @@ void hll_add_hash(struct ST_HLL *h, uint64_t hash)
     // Update the register if the new value is larger
     if (leading > get_register(h, idx)) {
         set_register(h, idx, leading);
+        return 1;
     }
+    return 0;
 }
-static void periodic_reset(struct ST_HLL *h, const struct timeval *now)
+static void periodic_reset(struct ST_hyperloglog *h, const struct timeval now)
 {
-    if(h->time_window_s==0 || !now) return;
-    int reset_time_slot_ms=h->time_window_s*2*1000/NUM_REG(h->precision);
-    long long delta_ms=timeval_delta_ms(h->reset_time, (*now));
-
-    if(delta_ms>reset_time_slot_ms)
+    if(h->cfg.time_window_s==0) return;
+    int num_reg=NUM_REG(h->cfg.precision);
+    int reset_time_slot_us=h->cfg.time_window_s*2*1000*1000/num_reg;
+    long long delta_us=timeval_delta_us(h->reset_time, now);
+    struct timeval step;
+    //reset_time_slot_us+=1000;
+    step.tv_sec=reset_time_slot_us/1000/1000;
+    step.tv_usec=reset_time_slot_us%(1000*1000);
+    if(delta_us>reset_time_slot_us)
     {
-        for(int i=0; i<delta_ms/reset_time_slot_ms; i++)
+        for(int i=0; i<delta_us/reset_time_slot_us; i++)
         {
             reset_register(h, h->reset_idx);
-            h->reset_idx = (h->reset_idx+1)%NUM_REG(h->precision);
+            h->reset_idx = (h->reset_idx+1)%num_reg;
+            timeradd(&h->reset_time, &step, &h->reset_time);
         }
-        memcpy(&h->reset_time, now, sizeof(h->reset_time));
     }
-    
 }
-void ST_HLL_add(struct ST_HLL *h, const char *key, size_t keylen, const struct timeval *now)
+int ST_hyperloglog_add(struct ST_hyperloglog *h, const char *key, size_t keylen, const struct timeval now)
 {
     periodic_reset(h, now);
     // Compute the hash value of the key
@@ -122,7 +161,79 @@ void ST_HLL_add(struct ST_HLL *h, const char *key, size_t keylen, const struct t
 
     hash=XXH3_64bits_withSeed(key, keylen, 171);
     // Add the hashed value
-    hll_add_hash(h, hash);
+   return hll_add_hash(h, hash);
+}
+void ST_hyperloglog_merge(struct ST_hyperloglog *dst, const struct ST_hyperloglog *src)
+{
+    if(timercmp(&(dst->cfg.timestamp), &(src->cfg.timestamp), <))//Last-Write-Wins
+    {
+        ST_hyperloglog_configure(dst, src->cfg.precision, src->cfg.time_window_s, src->cfg.timestamp);
+    }
+    if(dst->cfg.precision != src->cfg.precision) return;
+    int n_register=NUM_REG(dst->cfg.precision);
+    int s_reg=0, d_reg=0;
+    for(int i=0; i<n_register; i++)
+    {
+        s_reg=get_register(src, i);
+        d_reg=get_register(dst, i);
+        set_register(dst, i, MAX(s_reg, d_reg));
+    }
+    if(timercmp(&(dst->reset_time), &(src->reset_time), <))//Last-Write-Wins
+    {
+        dst->reset_idx=src->reset_idx;
+        memcpy(&dst->reset_time, &src->reset_time, sizeof(src->reset_time));
+    }
+    
+    return;
+}
+size_t ST_hyperloglog_serialized_size(const struct ST_hyperloglog *h)
+{
+    size_t sz=0, offset=0;
+    size_t num_reg = NUM_REG(h->cfg.precision);
+    size_t words = INT_CEIL(num_reg, REG_PER_WORD);
+
+    sz += BLOB_HDR_SIZE;
+    sz += words*sizeof(int32_t);
+    return sz;
+}
+void ST_hyperloglog_serialize(const struct ST_hyperloglog *h, char **blob, size_t *blob_sz)
+{
+    size_t sz=0, offset=0;
+    size_t num_reg = NUM_REG(h->cfg.precision);
+    size_t words = INT_CEIL(num_reg, REG_PER_WORD);
+
+    sz = ST_hyperloglog_serialized_size(h);
+    
+    char *buffer = ALLOC(char, sz);
+    memcpy(buffer+offset, h, BLOB_HDR_SIZE);
+    offset += BLOB_HDR_SIZE;
+    
+    memcpy(buffer+offset, h->registers,  words*sizeof(int32_t));
+    offset +=  words*sizeof(int32_t);
+    *blob_sz=sz;
+    *blob=buffer;
+    return;
+}
+struct ST_hyperloglog *ST_hyperloglog_deserialize(const char *blob, size_t blob_sz)
+{
+    struct ST_hyperloglog *h=ALLOC(struct ST_hyperloglog, 1);
+    size_t offset=0;
+    memcpy(h, blob, BLOB_HDR_SIZE);
+    offset += BLOB_HDR_SIZE;
+
+    size_t num_reg = NUM_REG(h->cfg.precision);
+    size_t words = INT_CEIL(num_reg, REG_PER_WORD);
+
+    h->registers=ALLOC(uint32_t, words);
+    memcpy(h->registers, blob+offset, words*sizeof(int32_t));
+    return h;
+}
+void ST_hyperloglog_merge_blob(struct ST_hyperloglog *dst, const char *blob, size_t blob_sz)
+{
+    struct ST_hyperloglog *src=ST_hyperloglog_deserialize(blob, blob_sz);
+    ST_hyperloglog_merge(dst, src);
+    ST_hyperloglog_free(src);
+    return;
 }
 double g_switchThreshold[15] = {10, 20, 40, 80, 220, 400, 900, 1800, 3100, 6500,
     11500, 20000, 50000, 120000, 350000};
@@ -212,9 +323,9 @@ static double alpha(unsigned char precision) {
 /*
  * Computes the raw cardinality estimate
  */
-static double raw_estimate(const struct ST_HLL *h, int *num_zero)
+static double raw_estimate(const struct ST_hyperloglog *h, int *num_zero)
 {
-    unsigned char precision = h->precision;
+    unsigned char precision = h->cfg.precision;
     int num_reg = NUM_REG(precision);
     double multi = alpha(precision) * num_reg * num_reg;
 
@@ -232,11 +343,34 @@ static double raw_estimate(const struct ST_HLL *h, int *num_zero)
  * Estimates cardinality using a linear counting.
  * Used when some registers still have a zero value.
  */
-static double linear_count(const struct ST_HLL *h, int num_zero)
+static double linear_count(const struct ST_hyperloglog *h, int num_zero)
 {
-    int registers = NUM_REG(h->precision);
+    int registers = NUM_REG(h->cfg.precision);
     return registers *
         log((double)registers / (double)num_zero);
+}
+static double linear_count2(const struct ST_hyperloglog *h, int num_zero)
+{
+    int m = NUM_REG(h->cfg.precision);
+    int n_calc=0, n_zero=0;
+
+    double Mi=0, Wi=0;
+    for (int i=0; i < m; i++) 
+    {
+        Wi=(i>=h->reset_idx)?(m+h->reset_idx-i):(h->reset_idx-i)+1;
+        Mi = get_register(h, i);
+        if(Wi>m/8)
+        {
+            n_calc++;
+            if(Mi==0)
+            {
+                n_zero++;
+            }
+        }
+
+    }
+    double est=m* log((double)n_calc / (double)n_zero);
+    return est;
 }
 /**
  * Binary searches for the nearest matching index
@@ -261,10 +395,10 @@ static int binary_search(double val, int num, const double *array) {
  * empircal data collected by Google, from the
  * paper mentioned above.
  */
-static double bias_estimate(const struct ST_HLL *h, double raw_est) {
+static double bias_estimate(const struct ST_hyperloglog *h, double raw_est) {
     // Determine the samples available
     int samples;
-    int precision = h->precision;
+    int precision = h->cfg.precision;
     switch (precision) {
         case 4:
             samples = 80;
@@ -290,32 +424,42 @@ static double bias_estimate(const struct ST_HLL *h, double raw_est) {
     else
         return (biases[idx] + biases[idx-1]) / 2;
 }
-static double raw_estimate2(const struct ST_HLL *h, int *num_zero)
+static double raw_estimate2(const struct ST_hyperloglog *h, int *num_zero)
 {
-    unsigned char precision = h->precision;
+    unsigned char precision = h->cfg.precision;
     int m = NUM_REG(precision);
+    int n_calc=0;
 
     double Mi=0, Wi=0;
     double lambda=0;
     double harmonic_mean=0;
     for (int i=0; i < m; i++) 
     {
-        Wi=(i>h->reset_idx)?(m+h->reset_idx-i):(h->reset_idx-i)+1;
+        Wi=(i>=h->reset_idx)?(m+h->reset_idx-i):(h->reset_idx-i)+1;
         Mi = get_register(h, i);
+        if(!Mi)
+            *num_zero += 1;
+        //if (!Mi) *num_zero += 1;
+        if( Wi < m/8 && h->cfg.time_window_s)
+        {
+            continue;
+        }
+        
         lambda=pow(2.0, Mi-1)*m*m/Wi;
-        harmonic_mean += 1/lambda;
-        if (!Mi) *num_zero += 1;
+        harmonic_mean += 1/lambda;        
+        n_calc++;
     }
-    harmonic_mean=m/harmonic_mean;
+    harmonic_mean=n_calc/harmonic_mean;
     return harmonic_mean;
 }
-static double ST_HLL_count_no_sliding(const struct ST_HLL *h)
+static double ST_HLL_count_no_sliding(const struct ST_hyperloglog *h)
 {
     int num_zero = 0;
+    int num_reg = NUM_REG(h->cfg.precision);
     double raw_est = raw_estimate(h, &num_zero);
 
     // Check if we need to apply bias correction
-    int num_reg = NUM_REG(h->precision);
+    
     if (raw_est <= 5 * num_reg) {
         raw_est -= bias_estimate(h, raw_est);
     }
@@ -329,27 +473,26 @@ static double ST_HLL_count_no_sliding(const struct ST_HLL *h)
     }
 
     // Determine which estimate to use
-    if (alt_est <= g_switchThreshold[h->precision-4]) {
+    if (alt_est <= g_switchThreshold[h->cfg.precision-4]) {
         return alt_est;
     } else {
         return raw_est;
     }
 }
-double ST_HLL_count(const struct ST_HLL *h)
+double ST_hyperloglog_count(const struct ST_hyperloglog *h)
 {
-    if(h->time_window_s==0)
-    {
-        return ST_HLL_count_no_sliding(h);
-    }
     int num_zero=0;
-    double am=0.7;
     double raw_est=raw_estimate2(h, &num_zero);
-    double m=NUM_REG(h->precision);
-    raw_est*=am;
-    if(raw_est<=5*m/2)
+    raw_est*=alpha(h->cfg.precision);
+
+    double num_reg=NUM_REG(h->cfg.precision);
+    if (raw_est <= 5 * num_reg) {
+        raw_est -= bias_estimate(h, raw_est);
+    }
+    if(raw_est<=5*num_reg/2)
     {
         if(num_zero)
-            return linear_count(h, num_zero);
+            return linear_count2(h, num_zero);
     }
     if(raw_est>INT32_MAX/30)
     {
@@ -365,7 +508,7 @@ double ST_HLL_count(const struct ST_HLL *h)
  * @return The expected variance in the count,
  * or zero on error.
  */
-double HLL_error_for_precision(unsigned char precision)
+double ST_hyperloglog_error_for_precision(unsigned char precision)
 {
     // Check that the error bound is sane
     if (precision < HLL_MIN_PRECISION || precision > HLL_MAX_PRECISION)
@@ -375,6 +518,6 @@ double HLL_error_for_precision(unsigned char precision)
      * Error of HLL is 1.04 / sqrt(m)
      * m is given by 2^p
      */
-    int registers = pow(2, precision);
-    return 1.04 / sqrt(registers);
+
+    return 1.04 / sqrt(NUM_REG(precision));
 }

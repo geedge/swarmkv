@@ -5,7 +5,8 @@
 
 #include "crdt_utils.h"
 #include "cm_sketch.h"
-#include "st_hll.h"
+#include "st_hyperloglog.h"
+#include "g_array.h"
 
 #include "oc_token_bucket.h"
 #include "fair_token_bucket.h"
@@ -126,7 +127,7 @@ void traffic_distribution(traffic_type type)
 		j = i % 3; // sequence selection
 		timeradd(&now, &step, &now);
 		tokens = get_request_tokens(j, type, step_us, CIR, CBS);
-		flexible_tokens = OC_token_bucket_control(buckets[j], now, OCTB_CMD_CONSUME_FLEXIBLE, tokens);
+		flexible_tokens = OC_token_bucket_control(buckets[j], now, TB_CMD_CONSUME_FLEXIBLE, tokens);
 		requested += tokens;
 		consumed += flexible_tokens;
 		if(i%100==0)
@@ -135,7 +136,7 @@ void traffic_distribution(traffic_type type)
 		}
 	}
 	upper_limit = CBS + CIR * timeval_delta_ms(start, now) / 1000;
-	refilled = OC_token_bucket_control(buckets[0], now, OCTB_CMD_READ_REFILLED, 0);
+	refilled = OC_token_bucket_control(buckets[0], now, TB_CMD_READ_REFILLED, 0);
 	EXPECT_LE(consumed, requested);
 	double accuracy = (double)consumed / MIN(refilled, requested);
 	EXPECT_NEAR(accuracy, 1, 0.01);
@@ -169,24 +170,24 @@ TEST(OCTokenBucket, Basic)
 	bucket=OC_token_bucket_new(uuid, now, CIR, CBS);
 	long long tokens=0;
 
-	tokens=OC_token_bucket_control(bucket, now, OCTB_CMD_CONSUME_NORMAL, 140);
+	tokens=OC_token_bucket_control(bucket, now, TB_CMD_CONSUME_NORMAL, 140);
 	EXPECT_EQ(tokens, 140);
 	
-	tokens=OC_token_bucket_control(bucket, now, OCTB_CMD_CONSUME_NORMAL, 61);
+	tokens=OC_token_bucket_control(bucket, now, TB_CMD_CONSUME_NORMAL, 61);
 	EXPECT_EQ(tokens, 0);
 
-	tokens=OC_token_bucket_control(bucket, now, OCTB_CMD_CONSUME_NORMAL, 60);
+	tokens=OC_token_bucket_control(bucket, now, TB_CMD_CONSUME_NORMAL, 60);
 	EXPECT_EQ(tokens, 60);
 
 	now.tv_sec++;
-	tokens=OC_token_bucket_control(bucket, now, OCTB_CMD_CONSUME_NORMAL, 90);
+	tokens=OC_token_bucket_control(bucket, now, TB_CMD_CONSUME_NORMAL, 90);
 	EXPECT_EQ(tokens, 90);
 	
-	tokens=OC_token_bucket_control(bucket, now, OCTB_CMD_READ_AVAILABLE, 0);
+	tokens=OC_token_bucket_control(bucket, now, TB_CMD_READ_AVAILABLE, 0);
 	EXPECT_GE(tokens, 10);
 //	printf("avail=%lld\n", tokens);
 	
-	tokens=OC_token_bucket_control(bucket, now, OCTB_CMD_CONSUME_NORMAL, 10);
+	tokens=OC_token_bucket_control(bucket, now, TB_CMD_CONSUME_NORMAL, 10);
 	EXPECT_EQ(tokens, 10);
 	OC_token_bucket_free(bucket);
 
@@ -204,49 +205,49 @@ TEST(OCTokenBucket, Boundary)
 
 	//Zero CIR
 	bucket=OC_token_bucket_new(uuid, now, 0, 1000);
-	tokens=OC_token_bucket_control(bucket, now, OCTB_CMD_CONSUME_NORMAL, 1000);
+	tokens=OC_token_bucket_control(bucket, now, TB_CMD_CONSUME_NORMAL, 1000);
 	EXPECT_EQ(tokens, 1000);
 
 	now.tv_sec++;
-	tokens=OC_token_bucket_control(bucket, now, OCTB_CMD_CONSUME_NORMAL, 1);
+	tokens=OC_token_bucket_control(bucket, now, TB_CMD_CONSUME_NORMAL, 1);
 	EXPECT_EQ(tokens, 0);
 	OC_token_bucket_free(bucket);
 
 	//Zero CBS
 	bucket=OC_token_bucket_new(uuid, now, 1000, 0);
-	tokens=OC_token_bucket_control(bucket, now, OCTB_CMD_CONSUME_NORMAL, 1);
+	tokens=OC_token_bucket_control(bucket, now, TB_CMD_CONSUME_NORMAL, 1);
 	EXPECT_EQ(tokens, 0);
 	OC_token_bucket_free(bucket);
 
 	//Infinite Tokens
 	bucket=OC_token_bucket_new(uuid, now, 0, 0);
-	tokens=OC_token_bucket_control(bucket, now, OCTB_CMD_CONSUME_NORMAL, 140);
+	tokens=OC_token_bucket_control(bucket, now, TB_CMD_CONSUME_NORMAL, 140);
 	consumed+=tokens;
 	EXPECT_EQ(tokens, 140);
 
 
-	tokens=OC_token_bucket_control(bucket, now, OCTB_CMD_CONSUME_NORMAL, 65535);
+	tokens=OC_token_bucket_control(bucket, now, TB_CMD_CONSUME_NORMAL, 65535);
 	consumed+=tokens;
 	EXPECT_EQ(tokens, 65535);
 
-	tokens=OC_token_bucket_control(bucket, now, OCTB_CMD_READ_CONSUEMD, 0);
+	tokens=OC_token_bucket_control(bucket, now, TB_CMD_READ_CONSUEMD, 0);
 	EXPECT_EQ(tokens, consumed);
 
-	tokens=OC_token_bucket_control(bucket, now, OCTB_CMD_READ_REFILLED, 0);
+	tokens=OC_token_bucket_control(bucket, now, TB_CMD_READ_REFILLED, 0);
 	EXPECT_EQ(tokens, consumed);
 
 	now.tv_sec++;
 	OC_token_bucket_configure(bucket, now, 100, 500, 10);
 	
 	now.tv_sec+=500/100;
-	tokens=OC_token_bucket_control(bucket, now, OCTB_CMD_CONSUME_NORMAL, 500);
+	tokens=OC_token_bucket_control(bucket, now, TB_CMD_CONSUME_NORMAL, 500);
 	consumed+=tokens;
 	EXPECT_EQ(tokens, 500);
 
-	tokens=OC_token_bucket_control(bucket, now, OCTB_CMD_READ_CONSUEMD, 0);
+	tokens=OC_token_bucket_control(bucket, now, TB_CMD_READ_CONSUEMD, 0);
 	EXPECT_EQ(tokens, consumed);
 
-	tokens=OC_token_bucket_control(bucket, now, OCTB_CMD_READ_REFILLED, 0);
+	tokens=OC_token_bucket_control(bucket, now, TB_CMD_READ_REFILLED, 0);
 	EXPECT_EQ(tokens, consumed);
 
 	OC_token_bucket_free(bucket);
@@ -268,17 +269,17 @@ TEST(OCTokenBucket, Merge)
 	}
 	long long tokens=0;
 	OC_token_bucket_sync(buckets, 2);
-	tokens=OC_token_bucket_control(buckets[0], now, OCTB_CMD_CONSUME_NORMAL, 130);
+	tokens=OC_token_bucket_control(buckets[0], now, TB_CMD_CONSUME_NORMAL, 130);
 	EXPECT_EQ(tokens, 130);
-	tokens=OC_token_bucket_control(buckets[1], now, OCTB_CMD_CONSUME_NORMAL, 30);
+	tokens=OC_token_bucket_control(buckets[1], now, TB_CMD_CONSUME_NORMAL, 30);
 	EXPECT_EQ(tokens, 30);
 
 	OC_token_bucket_sync(buckets, 2);
 	now.tv_sec++;
 	//each has 200-130-30+100/2=90 avaliable tokens
-	tokens=OC_token_bucket_control(buckets[0], now, OCTB_CMD_CONSUME_NORMAL, 91);
+	tokens=OC_token_bucket_control(buckets[0], now, TB_CMD_CONSUME_NORMAL, 91);
 	EXPECT_EQ(tokens, 0);
-	tokens=OC_token_bucket_control(buckets[1], now, OCTB_CMD_CONSUME_FLEXIBLE, 90);
+	tokens=OC_token_bucket_control(buckets[1], now, TB_CMD_CONSUME_FLEXIBLE, 90);
 	EXPECT_EQ(tokens, 90);
 	OC_token_bucket_sync(buckets, 2);
 	
@@ -318,14 +319,14 @@ double OC_token_bucket_test(size_t replica_num, long long mimic_duration_s, long
 		tokens=tokens*saturation_percent/100;
 		tokens=tokens/2+random()%tokens;
 		requested+=tokens;
-		consumed+=OC_token_bucket_control(buckets[j], now, OCTB_CMD_CONSUME_NORMAL, tokens);
+		consumed+=OC_token_bucket_control(buckets[j], now, TB_CMD_CONSUME_NORMAL, tokens);
 		if((step_us*i)%sync_interval_us==0)
 		{
 			OC_token_bucket_sync(buckets, replica_num);
 		}
 	}
 	upper_limit=CBS+CIR*timeval_delta_ms(start, now)/1000;
-	refilled=OC_token_bucket_control(buckets[0], now, OCTB_CMD_READ_REFILLED, 0);
+	refilled=OC_token_bucket_control(buckets[0], now, TB_CMD_READ_REFILLED, 0);
 	EXPECT_NEAR((double)consumed/MIN(refilled, requested), 1, 0.03);
 //	EXPECT_LE(consumed, requested);
 	double accuracy=(double)consumed/MIN(upper_limit, requested);
@@ -403,7 +404,7 @@ TEST(OCTokenBucket, ConcurrentHeavyConsumer)
 		for(j=0; j<REPLICA_NUMBER; j++)
 		{
 			requested+=tokens;			
-			consumed+=OC_token_bucket_control(buckets[j], now, OCTB_CMD_CONSUME_FLEXIBLE, tokens);
+			consumed+=OC_token_bucket_control(buckets[j], now, TB_CMD_CONSUME_FLEXIBLE, tokens);
 		}
 		if(i%100==0)
 		{
@@ -411,7 +412,7 @@ TEST(OCTokenBucket, ConcurrentHeavyConsumer)
 		}
 	}
 	upper_limit=CBS+CIR*timeval_delta_ms(start, now)/1000;
-	refilled=OC_token_bucket_control(buckets[0], now, OCTB_CMD_READ_REFILLED, 0);
+	refilled=OC_token_bucket_control(buckets[0], now, TB_CMD_READ_REFILLED, 0);
 	EXPECT_NEAR((double)consumed/MIN(refilled, requested), 1, 0.01);
 	EXPECT_NEAR((double)refilled/upper_limit, 1, 0.01);
 	EXPECT_LE(consumed, requested);
@@ -454,7 +455,7 @@ TEST(OCTokenBucket, Reconfigure)
 		for(j=0; j<REPLICA_NUMBER; j++)
 		{
 			requested+=tokens;			
-			consumed+=OC_token_bucket_control(buckets[j], now, OCTB_CMD_CONSUME_FLEXIBLE, tokens);
+			consumed+=OC_token_bucket_control(buckets[j], now, TB_CMD_CONSUME_FLEXIBLE, tokens);
 		}
 		if(i%100==0)
 		{
@@ -462,7 +463,7 @@ TEST(OCTokenBucket, Reconfigure)
 		}
 	}
 	upper_limit=CBS+CIR*timeval_delta_ms(start, now)/1000;
-	refilled=OC_token_bucket_control(buckets[0], now, OCTB_CMD_READ_REFILLED, 0);
+	refilled=OC_token_bucket_control(buckets[0], now, TB_CMD_READ_REFILLED, 0);
 	EXPECT_NEAR((double)consumed/MIN(refilled, requested), 1, 0.01);
 	EXPECT_NEAR((double)refilled/upper_limit, 1, 0.01);
 	EXPECT_LE(consumed, requested);
@@ -483,7 +484,7 @@ TEST(OCTokenBucket, Reconfigure)
 		for(j=0; j<REPLICA_NUMBER; j++)
 		{
 			requested+=tokens;			
-			consumed+=OC_token_bucket_control(buckets[j], now, OCTB_CMD_CONSUME_FLEXIBLE, tokens);
+			consumed+=OC_token_bucket_control(buckets[j], now, TB_CMD_CONSUME_FLEXIBLE, tokens);
 		}
 		if(i%100==0)
 		{
@@ -491,7 +492,7 @@ TEST(OCTokenBucket, Reconfigure)
 		}
 	}
 	upper_limit=CIR*timeval_delta_ms(start, now)/1000;//not + CBS, becasue reconfiguration will not refill the bucket to full.
-	refilled=OC_token_bucket_control(buckets[0], now, OCTB_CMD_READ_REFILLED, 0)-refilled;
+	refilled=OC_token_bucket_control(buckets[0], now, TB_CMD_READ_REFILLED, 0)-refilled;
 	EXPECT_NEAR((double)consumed/MIN(refilled, requested), 1, 0.01);
 	EXPECT_NEAR((double)refilled/upper_limit, 1, 0.01);
 	EXPECT_LE(consumed, requested);
@@ -535,7 +536,7 @@ TEST(OCTokenBucket, PartitionTolerance)
 		for(j=0; j<REPLICA_NUMBER; j++)
 		{
 			requested+=tokens;			
-			consumed+=OC_token_bucket_control(buckets[j], now, OCTB_CMD_CONSUME_FLEXIBLE, tokens);
+			consumed+=OC_token_bucket_control(buckets[j], now, TB_CMD_CONSUME_FLEXIBLE, tokens);
 		}
 		//network partition at time (t/3, t*2/3]
 		if((long long)i>mimic_duration_us/step_us/3 && (long long)i<= 2*mimic_duration_us/step_us/3)
@@ -548,7 +549,7 @@ TEST(OCTokenBucket, PartitionTolerance)
 		}
 	}
 	upper_limit=CBS+(CIR*timeval_delta_ms(start, now)/1000)*2/3 + (CIR*timeval_delta_ms(start, now)/1000)*REPLICA_NUMBER/3;
-	refilled=OC_token_bucket_control(buckets[0], now, OCTB_CMD_READ_REFILLED, 0);
+	refilled=OC_token_bucket_control(buckets[0], now, TB_CMD_READ_REFILLED, 0);
 	EXPECT_NEAR((double)consumed/MIN(refilled, requested), 1, 0.01);
 	EXPECT_LE(consumed, requested);
 	double accuracy=(double)consumed/MIN(upper_limit, requested);
@@ -1841,19 +1842,20 @@ void st_hll_test(unsigned char precision, int actual_count)
 {
 	int count=0;
 	int key=random();
-	struct ST_HLL *h=ST_HLL_new(precision, 0, NULL);
+	struct timeval nouse;
+	struct ST_hyperloglog *h=ST_hyperloglog_new(precision, 0, nouse);
 	for(int i=0; i<actual_count; i++)
 	{
 		key++;
-		ST_HLL_add(h, (const char *)&key, sizeof(key), NULL);
+		ST_hyperloglog_add(h, (const char *)&key, sizeof(key), nouse);
 	}
-	count=ST_HLL_count(h);
-	double error=HLL_error_for_precision(precision);
+	count=ST_hyperloglog_count(h);
+	double error=ST_hyperloglog_error_for_precision(precision);
 	EXPECT_NEAR(count, actual_count, error*actual_count);
-	ST_HLL_free(h);
+	ST_hyperloglog_free(h);
 }
 
-TEST(STHLL, Basic)
+TEST(STHyperLogLog, Basic)
 {
 	st_hll_test(6, 100);
 	st_hll_test(8, 100);
@@ -1862,74 +1864,372 @@ TEST(STHLL, Basic)
 	st_hll_test(8, 10000);
 	st_hll_test(12, 10000);
 	st_hll_test(13, 10000);
+	st_hll_test(18, 100*1000);
 }
-int st_hll_test_sliding_window(unsigned char precision, int actual_window_count, int time_window_s)
+struct st_hll_case
 {
-	
+	unsigned char precision;
+	int time_window_s;
+	int ideal_count;
+	int est_count;
+	int n_replica;
+};
+int st_hll_case_print(const struct st_hll_case *st_case, int n_case)
+{
+	int success=0;
+	double real_error=0, est_error=0;
+	printf("prcs\twin\tideal\test\test_err\treal_err\n");
+	for(int j=0; j<n_case; j++)
+	{
+		est_error=ST_hyperloglog_error_for_precision(st_case[j].precision);
+		real_error=(double)abs(st_case[j].est_count-st_case[j].ideal_count)/st_case[j].ideal_count;
+		printf("%d\t%d\t%d\t%d\t%f\t%f\n", st_case[j].precision,
+										st_case[j].time_window_s,
+										st_case[j].ideal_count,
+										st_case[j].est_count,
+										est_error,
+										real_error);
+		if(real_error <= MAX(0.1, est_error))
+		{
+			success++;
+		}
+	}
+	return success;
+}
+int st_hll_test_sliding_window(const struct st_hll_case *mycase)
+{
+	unsigned char precision=mycase->precision;
+	int n_replica=mycase->n_replica;
+	int actual_window_count=mycase->ideal_count;
+	int time_window_s=mycase->time_window_s;
 	int count=0, add_per_step=0;
 
 	struct timeval start, step, now;
 	gettimeofday(&start, NULL);
 	memcpy(&now, &start, sizeof(now));
-	struct ST_HLL *h=ST_HLL_new(precision, time_window_s, &start);
-
-	int per_second_count=actual_window_count/time_window_s;
-	if(per_second_count>1000*1000)
+	struct ST_hyperloglog *h[n_replica];
+	for(int i=0; i<n_replica; i++)
 	{
-		step.tv_sec=0;
-		step.tv_usec=1;
-		add_per_step=per_second_count/1000/1000;
+		h[i]=ST_hyperloglog_new(precision, time_window_s, start);
+	}
+
+	int key=1319823, j=0;
+	size_t n_add=0;
+	if(time_window_s>0)
+	{
+		int per_second_count=actual_window_count/time_window_s;
+		if(per_second_count>1000*1000)
+		{
+			step.tv_sec=0;
+			step.tv_usec=1;
+			add_per_step=per_second_count/1000/1000;
+		}
+		else
+		{
+			step.tv_sec=0;
+			step.tv_usec=(suseconds_t)1000*1000/per_second_count;
+			add_per_step=1;
+		}
+		while(now.tv_sec-start.tv_sec<time_window_s*10)
+		{
+			timeradd(&now, &step, &now);
+			for(int i=0; i<add_per_step; i++)
+			{
+				j=random()%n_replica;
+				key++;
+				ST_hyperloglog_add(h[j], (const char *)&key, sizeof(key), now);
+				n_add++;
+			}
+		}
 	}
 	else
 	{
-		step.tv_sec=0;
-		step.tv_usec=(suseconds_t)1000*1000/per_second_count;
-		add_per_step=1;
+		for(int i=0; i<actual_window_count; i++)
+		{
+			j=random()%n_replica;
+			key++;
+			ST_hyperloglog_add(h[j], (const char *)&key, sizeof(key), now);
+			n_add++;
+		}
 	}
-	int key=1319823;
-	size_t n_add=0;
-	while(now.tv_sec-start.tv_sec<time_window_s*10)
+	char *blob=NULL;
+	size_t blob_sz=0;
+	for(int i=1; i<n_replica; i++)
+	{
+		ST_hyperloglog_serialize(h[i], &blob, &blob_sz);
+		ST_hyperloglog_merge_blob(h[0], blob, blob_sz);
+		free(blob);
+		blob=NULL;
+	}
+	count=ST_hyperloglog_count(h[0]);
+
+	for(int i=0; i<n_replica; i++)
+	{
+		ST_hyperloglog_free(h[i]);
+	}
+	return count;
+}
+TEST(STHyperLogLog, NoSliding)
+{
+	struct st_hll_case st_case[128];
+	int i=0;
+	for(int j=6; j<19; j++)
+	{
+		st_case[i].precision=j;
+		st_case[i].time_window_s=0;
+		st_case[i].ideal_count=100*100;
+		st_case[i].n_replica=1;
+		st_case[i].est_count=st_hll_test_sliding_window(st_case+i);
+		i++;
+	}
+	int success=st_hll_case_print(st_case, i);
+	EXPECT_EQ(success, i);
+}
+TEST(STHyperLogLog, VariousPrecision)
+{
+	int n_case=HLL_MAX_PRECISION-HLL_MIN_PRECISION+1;
+	struct st_hll_case st_case[n_case];
+	for(int i=0; i<n_case; i++)
+	{
+		st_case[i].precision=HLL_MIN_PRECISION+i;
+		st_case[i].time_window_s=5;
+		st_case[i].ideal_count=70000;
+		st_case[i].n_replica=1;
+		st_case[i].est_count=st_hll_test_sliding_window(st_case+i);
+	}
+	int success=st_hll_case_print(st_case, n_case);
+	EXPECT_EQ(success, n_case);
+
+}
+TEST(STHyperLogLog, VairousCount)
+{
+	int n_case=20;
+	struct st_hll_case st_case[n_case];
+	int i=0;
+	for(i=0; i<n_case; i++)
+	{
+		st_case[i].precision=15;
+		st_case[i].time_window_s=300;
+		st_case[i].ideal_count=10000*(i+1);
+		st_case[i].n_replica=1;
+		st_case[i].est_count=st_hll_test_sliding_window(st_case+i);		
+	}
+	int success=st_hll_case_print(st_case, n_case);
+	EXPECT_EQ(success, n_case);
+}
+TEST(STHyperLogLog, VairousWindow)
+{
+	int n_case=10;
+	struct st_hll_case st_case[n_case];
+	int i=0;
+	for(i=0; i<n_case; i++)
+	{
+		st_case[i].precision=15;
+		st_case[i].time_window_s=5*(i*i+1);
+		st_case[i].ideal_count=70000;
+		st_case[i].n_replica=1;
+		st_case[i].est_count=st_hll_test_sliding_window(st_case+i);		
+	}
+	int success=st_hll_case_print(st_case, n_case);
+	EXPECT_EQ(success, n_case);
+}
+TEST(STHyperLogLog, Debug)
+{
+	struct st_hll_case st_case[64];
+	int i=0;
+
+	st_case[i].precision=15;
+	st_case[i].time_window_s=0;
+	st_case[i].ideal_count=70000;
+	st_case[i].n_replica=1;
+	st_case[i].est_count=st_hll_test_sliding_window(st_case+i);		
+	i++;
+
+	st_case[i].precision=15;
+	st_case[i].time_window_s=300;
+	st_case[i].ideal_count=70000;
+	st_case[i].n_replica=1;
+	st_case[i].est_count=st_hll_test_sliding_window(st_case+i);
+	i++;
+
+	st_case[i].precision=14;
+	st_case[i].time_window_s=0;
+	st_case[i].ideal_count=40000;
+	st_case[i].n_replica=1;
+	st_case[i].est_count=st_hll_test_sliding_window(st_case+i);		
+	i++;
+
+	st_case[i].precision=14;
+	st_case[i].time_window_s=300;
+	st_case[i].ideal_count=40000;
+	st_case[i].n_replica=1;
+	st_case[i].est_count=st_hll_test_sliding_window(st_case+i);
+	i++;
+
+	st_case[i].precision=15;
+	st_case[i].time_window_s=300;
+	st_case[i].ideal_count=10000;
+	st_case[i].n_replica=1;
+	st_case[i].est_count=st_hll_test_sliding_window(st_case+i);
+	i++;
+
+	int success=st_hll_case_print(st_case, i);
+	EXPECT_EQ(success, i);
+}
+TEST(STHyperLogLog, Replicas)
+{
+	struct st_hll_case st_case[128];
+	int i=0;
+	st_case[i].precision=9;
+	st_case[i].time_window_s=1;
+	st_case[i].ideal_count=100;
+	st_case[i].n_replica=2;
+
+	st_case[i].est_count=st_hll_test_sliding_window(st_case+i);
+	double est_error=ST_hyperloglog_error_for_precision(st_case[i].precision);
+	EXPECT_NEAR(st_case[i].est_count, st_case[i].ideal_count, est_error*st_case[i].ideal_count);
+	i++;
+}
+void g_array_sync(struct g_array **replicas, size_t n_replica)
+{
+	char *blob=NULL;
+	size_t blob_sz=0;
+	for(size_t i=0; i<n_replica; i++)
+	{
+		for(size_t j=0; j<n_replica; j++)
+		{
+			if(i==j) continue;
+			g_array_serialize(replicas[j], &blob, &blob_sz);
+			g_array_merge_blob(replicas[i], blob, blob_sz);
+			free(blob);
+		}
+	}
+	return;
+}
+TEST(GArray, Basic)
+{
+	uuid_t uuid;
+	size_t n_replica=4;
+	int array_sz=1024;
+	struct g_array *a[n_replica];
+	for(size_t i=0; i<n_replica; i++)
+	{
+		uuid_generate(uuid);
+		a[i]=g_array_new(uuid, array_sz);
+	}
+	int r=0, round=100;
+	long long increment=77;
+	for(int i=0; i<round; i++)
+	{
+		r=random()%n_replica;
+		for(int j=0; j<array_sz; j++)
+		{
+			g_array_incrby(a[r], j, increment);
+		}
+		if(i%7==0)
+		{
+			g_array_sync(a, n_replica);
+		}
+	}
+	g_array_sync(a, n_replica);
+
+	long long value=0, success=0;
+	for(int i=0; i<array_sz; i++)
+	{
+		r=random()%n_replica;
+		value=g_array_get(a[r], i);
+		if(value == (long long)round*increment) success++;
+	}
+	EXPECT_EQ(success, array_sz);
+	for(size_t i=0; i<n_replica; i++)
+	{
+		g_array_free(a[i]);
+	}
+}
+TEST(STHyperLogLog, Reconfigure)
+{
+	struct timeval start, step, now;
+	gettimeofday(&start, NULL);
+	memcpy(&now, &start, sizeof(now));
+	int n_replica=2;
+	struct ST_hyperloglog *h[n_replica];
+	int time_window_s=10;
+	unsigned char precision=6;
+	for(int i=0; i<n_replica; i++)
+	{
+		h[i]=ST_hyperloglog_new(precision, time_window_s, start);
+	}
+	int key=1319823, j=0;
+	int n_add=0;
+	int add_per_step=100;
+	step.tv_sec=0;
+	step.tv_usec=1000;
+	int item_per_second=add_per_step*1000*1000/step.tv_usec;
+	while(now.tv_sec-start.tv_sec<time_window_s*5)
 	{
 		timeradd(&now, &step, &now);
 		for(int i=0; i<add_per_step; i++)
 		{
+			j=random()%n_replica;
 			key++;
-			ST_HLL_add(h, (const char *)&key, sizeof(key), &now);
+			ST_hyperloglog_add(h[j], (const char *)&key, sizeof(key), now);
 			n_add++;
 		}
 	}
+	for(int i=0; i<n_replica; i++)
+	{
+		for(int j=0; j<n_replica; j++)
+		{
+			if(i==j) continue;
+			ST_hyperloglog_merge(h[i], h[j]);
+		}
+	}
+	double hll_count=0, error=0;
+	hll_count=ST_hyperloglog_count(h[0]);
+	error=ST_hyperloglog_error_for_precision(precision);
+	EXPECT_NEAR(hll_count, item_per_second*time_window_s, error*item_per_second*time_window_s);
 
-	count=ST_HLL_count(h);
 
-	ST_HLL_free(h);
-	return count;
-}
-TEST(STHLL, SlidingWindow)
-{
-	int hll_count=0;
-	char hll_precision=0;
-	int actual_count=0;
-	double error=0;
-	
-	hll_precision=5;
-	actual_count=100;
-	hll_count=st_hll_test_sliding_window(hll_precision, actual_count, 1);
-	error=HLL_error_for_precision(hll_precision);
-	EXPECT_NEAR(hll_count, actual_count, error*actual_count);
+	time_window_s=20;
+	precision=9;
+	ST_hyperloglog_configure(h[0], precision, time_window_s, now);
+	for(int i=0; i<n_replica; i++)
+	{
+		for(int j=0; j<n_replica; j++)
+		{
+			if(i==j) continue;
+			ST_hyperloglog_merge(h[i], h[j]);
+		}
+	}
+	memcpy(&start, &now, sizeof(start));
+	n_add=0;
+	while(now.tv_sec-start.tv_sec<time_window_s*5)
+	{
+		timeradd(&now, &step, &now);
+		for(int i=0; i<add_per_step; i++)
+		{
+			j=random()%n_replica;
+			key++;
+			ST_hyperloglog_add(h[j], (const char *)&key, sizeof(key), now);
+			n_add++;
+		}
+	}
+	for(int i=0; i<n_replica; i++)
+	{
+		for(int j=0; j<n_replica; j++)
+		{
+			if(i==j) continue;
+			ST_hyperloglog_merge(h[i], h[j]);
+		}
+	}
+	hll_count=ST_hyperloglog_count(h[0]);
+	error=ST_hyperloglog_error_for_precision(precision);
+	EXPECT_NEAR(hll_count, item_per_second*time_window_s, error*item_per_second*time_window_s);
 
-	
-	hll_precision=8;
-	actual_count=100*1000;
-	hll_count=st_hll_test_sliding_window(hll_precision, actual_count, 10);
-	error=HLL_error_for_precision(hll_precision);
-	EXPECT_NEAR(hll_count, actual_count, error*actual_count);
-
-	hll_precision=8;
-	actual_count=100*1000;
-	hll_count=st_hll_test_sliding_window(hll_precision, actual_count, 300);
-	error=HLL_error_for_precision(hll_precision);
-	EXPECT_NEAR(hll_count, actual_count, error*actual_count);
-
+	for(int i=0; i<n_replica; i++)
+	{
+		ST_hyperloglog_free(h[i]);
+	}
 }
 struct sftb_class
 {
@@ -2213,7 +2513,7 @@ TEST(BulkTokenBucket, Basic)
 	for(i=0; i<duration_s*(1000*1000/step_us); i++)
 	{
 		timeradd(&now, &step, &now);
-		got_tokens+=bulk_token_bucket_control(btb, key, strlen(key), now, BTB_CMD_CONSUME_FLEXIBLE, request_CIR*step_us/(1000*1000));
+		got_tokens+=bulk_token_bucket_control(btb, key, strlen(key), now, TB_CMD_CONSUME_FLEXIBLE, request_CIR*step_us/(1000*1000));
 	}
 	bulk_token_bucket_free(btb);
 	EXPECT_LE(got_tokens, max_tokens);
@@ -2225,7 +2525,49 @@ struct btb_key
 	long long ideal_tokens;
 	long long allocated_tokens;
 };
-double test_bulk_token_bucket(long long CIR, long long CBS, int bucket_num, int key_num, int duration_s)
+void btb_sync(struct bulk_token_bucket **btb, size_t n_btb)
+{
+	char *blob=NULL;
+	size_t blob_sz=0;
+	for(size_t i=0; i<n_btb; i++)
+	{
+		for(size_t j=0; j<n_btb; j++)
+		{
+			if(i==j) continue;
+			bulk_token_bucket_serialize(btb[j], &blob, &blob_sz);
+			bulk_token_bucket_merge_blob(btb[i], blob, blob_sz);
+			free(blob);
+			blob=NULL;
+		}
+	}
+	return;
+}
+struct btb_case
+{
+	long long CIR;
+	long long CBS;
+	int n_replica;
+	int bucket_num;
+	int key_num;
+	int duration_s;
+	
+	long long estimate_keys;
+	long long more;
+	long long less;
+	double collision_rate;
+	double index;
+};
+void bulk_token_bucket_test_print_result(const struct btb_case *results, size_t n_result)
+{
+	printf("bkt\trepl\tkey\testk\tmore\tless\tcoll\tindex\n");
+	for(size_t i=0; i<n_result; i++)
+	{
+		printf("%d\t%d\t%d\t%lld\t%lld\t%lld\t%.4f\t%.4f\n", results[i].bucket_num, results[i].n_replica,
+						results[i].key_num, results[i].estimate_keys, results[i].more, results[i].less,
+						results[i].collision_rate, results[i].index);
+	} 
+}
+void bulk_token_bucket_test(struct btb_case *mycase)
 {
 	uuid_t uuid;
 	uuid_generate(uuid);
@@ -2235,39 +2577,53 @@ double test_bulk_token_bucket(long long CIR, long long CBS, int bucket_num, int 
 	memcpy(&now, &start, sizeof(now));
 	step.tv_sec=0;
 	step.tv_usec=(suseconds_t)step_us;
-	long long max_tokens=duration_s*CIR+CBS;
-	struct bulk_token_bucket *btb=bulk_token_bucket_new(uuid, now, CIR, CBS, bucket_num);
-	struct btb_key k[key_num];
+	long long max_tokens=mycase->duration_s*mycase->CIR+mycase->CBS;
+	struct bulk_token_bucket *btb[mycase->n_replica];
+	int n_replica=mycase->n_replica;
+	int key_num=mycase->key_num;
+	for(int i=0; i<n_replica; i++)
+	{
+		uuid_generate(uuid);
+		btb[i]=bulk_token_bucket_new(uuid, now, mycase->CIR, mycase->CBS, mycase->bucket_num);
+	}
+	
+	struct btb_key bk[key_num];
 	for(int i=0; i<key_num; i++)
 	{
-		k[i].key=random();
-		k[i].request_CIR=CIR/2+(i*CIR)/key_num;
-		k[i].allocated_tokens=0;
-		if(k[i].request_CIR<CIR)
+		bk[i].key=random();
+		bk[i].request_CIR=mycase->CIR/2+(i*mycase->CIR)/key_num;
+		bk[i].allocated_tokens=0;
+		if(bk[i].request_CIR<mycase->CIR)
 		{
-			k[i].ideal_tokens=k[i].request_CIR*duration_s;
+			bk[i].ideal_tokens=bk[i].request_CIR*mycase->duration_s;
 		}
 		else
 		{
-			k[i].ideal_tokens=max_tokens;
+			bk[i].ideal_tokens=max_tokens;
 		}
 	}
-	for(int i=0; i<duration_s*(1000*1000/step_us); i++)
+	int sync_interval_ms=2000;
+	for(int i=0; i<mycase->duration_s*(1000*1000/step_us); i++)
 	{
 		timeradd(&now, &step, &now);
 		for(int j=0; j<key_num; j++)
 		{
-			k[j].allocated_tokens+=bulk_token_bucket_control(btb, (char *)&(k[j].key), sizeof(k[j].key),
-					now, BTB_CMD_CONSUME_FLEXIBLE,
-					k[j].request_CIR*step_us/(1000*1000));
+			int r=random()%mycase->n_replica;
+			bk[j].allocated_tokens+=bulk_token_bucket_control(btb[r], (char *)&(bk[j].key), sizeof(bk[j].key),
+					now, TB_CMD_CONSUME_FLEXIBLE,
+					bk[j].request_CIR*step_us/(1000*1000));
+		}
+		if(0==i%(sync_interval_ms*1000/step_us))
+		{
+			btb_sync(btb, mycase->n_replica);
 		}
 	}
 	double index=0, ratio=0;
 	long long more=0, less=0;
 	for(int i=0; i<key_num; i++)
 	{
-		index += pow((double)(k[i].ideal_tokens-k[i].allocated_tokens)/k[i].ideal_tokens, 2);		
-		ratio = (double)k[i].allocated_tokens/k[i].ideal_tokens;
+		index += pow((double)(bk[i].ideal_tokens-bk[i].allocated_tokens)/bk[i].ideal_tokens, 2);		
+		ratio = (double)bk[i].allocated_tokens/bk[i].ideal_tokens;
 		if(ratio > 1.02) more++;
 		if (ratio <0.98) less++;
 		if(ratio>1.02 || ratio < 0.98)
@@ -2277,42 +2633,117 @@ double test_bulk_token_bucket(long long CIR, long long CBS, int bucket_num, int 
 	}
 	index=1-sqrt(index/key_num);
 	struct bulk_token_bucket_info info;
-	bulk_token_bucket_info(btb, &info);
-	printf("n_bucket=%lld, n_key=%d, est_keys=%lld, more=%lld, less=%lld, collision=%f, index=%f\n", 
-			info.bucket_number, key_num, info.estimate_keys, more, less, info.collision_rate, index);
-	bulk_token_bucket_free(btb);
-	return index;
+	bulk_token_bucket_info(btb[0], &info);
+	mycase->index=index;
+	mycase->estimate_keys=info.estimate_keys;
+	mycase->more=more;
+	mycase->less=less;
+	mycase->collision_rate=info.collision_rate;
+
+	for(int i=0; i<n_replica; i++)
+	{
+		bulk_token_bucket_free(btb[i]);
+	}
+	return;
 }
 TEST(BulkTokenBucket, RareCollision)
 {
-	double index=0;
-	index=test_bulk_token_bucket(1000*1000, 1000*1000, 512, 4, 100);
-	//EXPECT_NEAR(index, 1, 0.02);
+	int n_case=7;
+	struct btb_case test[n_case];
+	for(int i=0; i<n_case; i++)
+	{
+		test[i].CIR=1000*1000;
+		test[i].CBS=1000*1000;
+		test[i].bucket_num=512;
+		test[i].n_replica=1;
+		test[i].key_num=(1<<i);
+		test[i].duration_s=100;
+		bulk_token_bucket_test(test+i);
+	}
+	bulk_token_bucket_test_print_result(test, n_case);
 
-	index=test_bulk_token_bucket(1000*1000, 1000*1000, 512, 16, 100);
-	//EXPECT_NEAR(index, 1, 0.02);
-	index=test_bulk_token_bucket(1000*1000, 1000*1000, 512, 32, 100);
-	index=test_bulk_token_bucket(1000*1000, 1000*1000, 512, 64, 100);
-	index=test_bulk_token_bucket(1000*1000, 1000*1000, 1024*1024, 1024, 100);
-	//EXPECT_NEAR(index, 1, 0.02);
-	index=0;
 }
 TEST(BulkTokenBucket, HighCollision)
 {
-	double index=0;
-	index=test_bulk_token_bucket(1000*1000, 1000*1000, 512, 128, 100);
-	//EXPECT_NEAR(index, 1, 0.02);
-	index=test_bulk_token_bucket(1000*1000, 1000*1000, 512, 256, 100);
-	index=test_bulk_token_bucket(1000*1000, 1000*1000, 512, 512, 100);
-	index=test_bulk_token_bucket(1000*1000, 1000*1000, 1024, 256, 100);
+	int n_case=4;
+	struct btb_case test[n_case];
+	for(int i=0; i<n_case; i++)
+	{
+		test[i].CIR=1000*1000;
+		test[i].CBS=1000*1000;
+		test[i].bucket_num=512;
+		test[i].n_replica=1;
+		test[i].key_num=128*(i+1);
+		test[i].duration_s=100;
+		bulk_token_bucket_test(test+i);
+	}
+	bulk_token_bucket_test_print_result(test, n_case);
 }
 TEST(BulkTokenBucket, VariousCIR)
 {
-	test_bulk_token_bucket(400*1000, 1000*1000, 512, 32, 100);
-	test_bulk_token_bucket(500*1000, 1000*1000, 512, 32, 100);
-	test_bulk_token_bucket(1000*1000, 1000*1000, 512, 32, 100);
-	test_bulk_token_bucket(2000*1000, 1000*1000, 512, 32, 100);
-	test_bulk_token_bucket(4000*1000, 1000*1000, 512, 32, 100);
+	int n_case=5;
+	struct btb_case test[n_case];
+	for(int i=0; i<n_case; i++)
+	{
+		test[i].CIR=400*1000*(i+1);
+		test[i].CBS=1000*1000;
+		test[i].bucket_num=512;
+		test[i].n_replica=1;
+		test[i].key_num=32;
+		test[i].duration_s=100;
+		bulk_token_bucket_test(test+i);
+	}
+	bulk_token_bucket_test_print_result(test, n_case);
+}
+TEST(BulkTokenBucket, Bucket1M)
+{
+	int n_case=2;
+	struct btb_case test[n_case];
+	for(int i=0; i<n_case; i++)
+	{
+		test[i].CIR=1000*1000;
+		test[i].CBS=1000*1000;
+		test[i].bucket_num=1024*1024;
+		test[i].n_replica=1;
+		test[i].key_num=1024*(i+1);
+		test[i].duration_s=100;
+		bulk_token_bucket_test(test+i);
+	}
+	bulk_token_bucket_test_print_result(test, n_case);
+}
+TEST(BulkTokenBucket, Replicas)
+{
+	int n_case=5;
+	struct btb_case test[n_case];
+	for(int i=0; i<n_case; i++)
+	{
+		test[i].CIR=1000*1000;
+		test[i].CBS=2*1000*1000;
+		test[i].bucket_num=512;
+		test[i].n_replica=2;
+		test[i].key_num=1<<i;
+		//test[i].key_num=16*(i+1);
+		test[i].duration_s=100;
+		bulk_token_bucket_test(test+i);
+	}
+	bulk_token_bucket_test_print_result(test, n_case);
+}
+TEST(BulkTokenBucket, Replica4)
+{
+	int n_case=8;
+	struct btb_case test[n_case];
+	for(int i=0; i<n_case; i++)
+	{
+		test[i].CIR=1000*1000;
+		test[i].CBS=2*1000*1000;
+		test[i].bucket_num=512;
+		test[i].n_replica=4;
+		test[i].key_num=1<<i;
+		//test[i].key_num=16*(i+1);
+		test[i].duration_s=100;
+		bulk_token_bucket_test(test+i);
+	}
+	bulk_token_bucket_test_print_result(test, n_case);
 }
 int main(int argc, char ** argv)
 {

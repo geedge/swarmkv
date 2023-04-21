@@ -1,3 +1,13 @@
+/*
+* A Fair Split Token Bucket CRDT
+* Reference: Unpublished paper, Chao Zheng, "A Stochastic Fair Token Bucket CRDT for Distritubted Rate-limiting"
+* The fair token bucket archieves max-min fairness with Deficit-Round-Robin and SFQ.
+* - Resources are allocated in order of increasing demand
+* - No source gets a resource share larger than its demand
+* - Sources with unsatisfied demands get an equal share of the resource
+* Author: contact@zhengchao.io
+*/
+
 #pragma once
 #include <stddef.h>
 #include <sys/time.h>

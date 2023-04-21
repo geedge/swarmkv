@@ -4,6 +4,7 @@
 * 2022-9-7
 */
 #pragma once
+#include "token_bucket_common.h"
 #include <stddef.h>
 #include <sys/time.h>
 #include <uuid/uuid.h>
@@ -31,17 +32,8 @@ struct OC_token_bucket_info
 void OC_token_bucket_info(struct OC_token_bucket *bucket, struct OC_token_bucket_info *info);
 void OC_token_bucket_free(struct OC_token_bucket *bucket);
 
-enum OC_token_bucket_command
-{
-	OCTB_CMD_CONSUME_NORMAL,
-	OCTB_CMD_CONSUME_FORCE,
-	OCTB_CMD_CONSUME_FLEXIBLE,
-	OCTB_CMD_CONSUME_AS_MUCH_AS_POSSIBLE,
-	OCTB_CMD_READ_AVAILABLE,
-	OCTB_CMD_READ_REFILLED,
-	OCTB_CMD_READ_CONSUEMD
-};
-long long OC_token_bucket_control(struct OC_token_bucket *bucket, struct timeval now, enum OC_token_bucket_command cmd, long long tokens);
+
+long long OC_token_bucket_control(struct OC_token_bucket *bucket, struct timeval now, enum token_bucket_command cmd, long long tokens);
 
 void OC_token_bucket_serialize(const struct OC_token_bucket *bucket, char **blob, size_t *blob_sz);
 struct OC_token_bucket *OC_token_bucket_deserialize(const char *blob, size_t blob_sz);
