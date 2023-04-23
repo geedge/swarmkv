@@ -937,7 +937,7 @@ enum cmd_exec_result crdt_info_command(struct swarmkv_module *mod_store, const s
 			sz+=LWW_regeister_size(ctr->obj.string);
 			break;
 		case OBJ_TYPE_INTEGER:
-			sz+=PN_counter_size(ctr->obj.counter);
+			sz+=PN_counter_serialized_size(ctr->obj.counter);
 			break;
 		case OBJ_TYPE_SET:
 			sz+=OR_set_size(ctr->obj.set);
@@ -946,7 +946,7 @@ enum cmd_exec_result crdt_info_command(struct swarmkv_module *mod_store, const s
 			sz+=OR_map_size(ctr->obj.hash);
 			break;
 		case OBJ_TYPE_TOKEN_BUCKET:
-			sz+=OC_token_bucket_size(ctr->obj.bucket);
+			sz+=OC_token_bucket_serialized_size(ctr->obj.bucket);
 			break;
 		case OBJ_TYPE_UNDEFINED:
 			sz+=0;

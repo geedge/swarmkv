@@ -35,6 +35,9 @@ struct PN_counter
 	long long _P, _N; //observed value at PN_counter_set;
 	struct counter_item *hash_item;
 };
+const size_t PNC_BLOB_HDR_SZ=offsetof(struct PN_counter, hash_item);
+const size_t PNC_BLOB_ITEM_SZ=offsetof(struct counter_item, hh);
+
 struct PN_counter *PN_counter_new(uuid_t my_id)
 {
 	struct PN_counter *pnc=ALLOC(struct PN_counter, 1);
@@ -97,24 +100,30 @@ long long PN_counter_incrby(struct PN_counter *pnc, long long increment)
 	}
 	return PN_counter_get(pnc);
 }
-
+size_t PN_counter_serialized_size(const struct PN_counter *pnc)
+{
+	size_t sz=0;
+	sz+=PNC_BLOB_HDR_SZ;
+	sz+=HASH_COUNT(pnc->hash_item) * PNC_BLOB_ITEM_SZ;
+	return sz;
+}
 void PN_counter_serialize(const struct PN_counter *pnc, char **blob, size_t *blob_sz)
 {
 	struct counter_item *c=NULL, *tmp=NULL;
-	size_t mpack_sz=sizeof(struct PN_counter)-sizeof(pnc->hash_item);
-	mpack_sz+=HASH_COUNT(pnc->hash_item)*(sizeof(struct counter_item)-sizeof(UT_hash_handle));
-	char *mpack_buff=(char*)malloc(mpack_sz);
+	size_t sz=PN_counter_serialized_size(pnc);
+
+	char *buffer=ALLOC(char, sz);
 	size_t offset=0;
-	memcpy(mpack_buff, pnc, sizeof(struct PN_counter)-sizeof(pnc->hash_item));
-	offset+=sizeof(struct PN_counter)-sizeof(pnc->hash_item);
+	memcpy(buffer, pnc, PNC_BLOB_HDR_SZ);
+	offset+=PNC_BLOB_HDR_SZ;
 	HASH_ITER(hh, pnc->hash_item, c, tmp)
 	{
-		memcpy(mpack_buff+offset, c, sizeof(struct counter_item)-sizeof(UT_hash_handle));
-		offset+=sizeof(struct counter_item)-sizeof(UT_hash_handle);
+		memcpy(buffer+offset, c, PNC_BLOB_ITEM_SZ);
+		offset+=PNC_BLOB_ITEM_SZ;
 	}
-	assert(offset==mpack_sz);
-	*blob_sz=mpack_sz;
-	*blob=mpack_buff;
+	assert(offset==sz);
+	*blob_sz=sz;
+	*blob=buffer;
 	return;
 }
 struct PN_counter *PN_counter_deserialize(const char *blob, size_t blob_sz)
@@ -122,15 +131,15 @@ struct PN_counter *PN_counter_deserialize(const char *blob, size_t blob_sz)
 	struct PN_counter *pnc=ALLOC(struct PN_counter, 1);
 	struct counter_item *c=NULL, *tmp=NULL;
 	size_t offset=0;
-	memcpy(pnc, blob, sizeof(struct PN_counter)-sizeof(pnc->hash_item));
-	offset+=sizeof(struct PN_counter)-sizeof(pnc->hash_item);
+	memcpy(pnc, blob, PNC_BLOB_HDR_SZ);
+	offset+=PNC_BLOB_HDR_SZ;
 	while(offset<blob_sz)
 	{
 		tmp=(struct counter_item *)(blob+offset);
 		c=ALLOC(struct counter_item, 1);
-		memcpy(c, tmp, sizeof(struct counter_item)-sizeof(UT_hash_handle));
+		memcpy(c, tmp, PNC_BLOB_ITEM_SZ);
 		HASH_ADD_KEYPTR(hh, pnc->hash_item, c->replica_id, sizeof(c->replica_id), c);
-		offset+=sizeof(struct counter_item)-sizeof(UT_hash_handle);
+		offset += PNC_BLOB_ITEM_SZ;
 	}
 	return pnc;
 }
@@ -167,11 +176,4 @@ void PN_counter_merge_blob(struct PN_counter *pnc, const char *blob, size_t blob
 size_t PN_counter_replica_num(const struct PN_counter *pnc)
 {
 	return MAX(HASH_COUNT(pnc->hash_item), 1);
-}
-size_t PN_counter_size(const struct PN_counter *pnc)
-{
-	size_t sz=0;
-	sz+=HASH_COUNT(pnc->hash_item) * sizeof(struct counter_item);
-	sz+=sizeof(struct PN_counter);
-	return sz;
 }

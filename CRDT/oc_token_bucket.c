@@ -21,6 +21,7 @@ struct OC_token_bucket
 	struct timeval refill_timestamp;
 	struct PN_counter *consumed;
 };
+const size_t OCTB_BLOB_HDR_SIZE= offsetof(struct OC_token_bucket, consumed);
 struct OC_token_bucket *OC_token_bucket_new(uuid_t my_id, struct timeval now, long long CIR, long long CBS)
 {
 	struct OC_token_bucket *bucket=ALLOC(struct OC_token_bucket, 1);
@@ -70,27 +71,27 @@ long long OC_token_bucket_consume(struct OC_token_bucket *bucket, struct timeval
     }
 	size_t n_replica=PN_counter_replica_num(bucket->consumed);
 
-	long long assigned=0;
+	long long allocated=0;
 	if(infinite_flag)
 	{
-		assigned=tokens;
+		allocated=tokens;
 	}
 	else
 	{
-		assigned=tb_consume(bucket->cfg.CIR, available, n_replica, cmd, tokens);
+		allocated=tb_consume(bucket->cfg.CIR, available, n_replica, cmd, tokens);
 	}
-	if(assigned>0)
+	if(allocated>0)
 	{
-		PN_counter_incrby(bucket->consumed, assigned);
+		PN_counter_incrby(bucket->consumed, allocated);
 	}
 	if(refilled!=new_refilled)
 	{
 		bucket->refilled=new_refilled;		
 		memcpy(&bucket->refill_timestamp, &now, sizeof(bucket->refill_timestamp));
 	}
-	assert(assigned>=0);
+	assert(allocated>=0);
 	
-	return assigned;
+	return allocated;
 }
 
 void OC_token_bucket_info(struct OC_token_bucket *bucket, struct timeval now, struct OC_token_bucket_info *info)
@@ -105,34 +106,41 @@ void OC_token_bucket_info(struct OC_token_bucket *bucket, struct timeval now, st
 				 bucket->refilled, delta_time_ms, bucket->cfg.refill_duration_ms, &info->refilled);
 	return;
 }
-
+size_t OC_token_bucket_serialized_size(const struct OC_token_bucket *bucket)
+{
+	size_t sz=0;
+	sz += OCTB_BLOB_HDR_SIZE;
+	sz += PN_counter_serialized_size(bucket->consumed);
+	return sz;
+}
 void OC_token_bucket_serialize(const struct OC_token_bucket *bucket, char **blob, size_t *blob_sz)
 {
+	size_t offset=0;
+	size_t sz=OC_token_bucket_serialized_size(bucket);
+	char *buffer=ALLOC(char, sz);
+	memcpy(buffer, bucket, OCTB_BLOB_HDR_SIZE);
+	offset += OCTB_BLOB_HDR_SIZE;
+
 	char *pnc_blob=NULL;
 	size_t pnc_blob_sz=0;
 	PN_counter_serialize(bucket->consumed, &pnc_blob, &pnc_blob_sz);
-
-	size_t offset=0;
-	size_t mpack_sz=sizeof(struct OC_token_bucket)-sizeof(struct PN_counter*)+pnc_blob_sz;
-	char *mpack_buff=(char*)malloc(mpack_sz);
-	memcpy(mpack_buff, bucket, sizeof(struct OC_token_bucket)-sizeof(struct PN_counter*));
-	offset+=sizeof(struct OC_token_bucket)-sizeof(struct PN_counter*);
-	memcpy(mpack_buff+offset, pnc_blob, pnc_blob_sz);
-
-	*blob_sz=mpack_sz;
-	*blob=mpack_buff;
-
+	memcpy(buffer+offset, pnc_blob, pnc_blob_sz);
+	offset+=pnc_blob_sz;
 	free(pnc_blob);
-	pnc_blob=NULL;
+	assert(offset==sz);
+	*blob_sz=sz;
+	*blob=buffer;
 	return;
 }
 struct OC_token_bucket *OC_token_bucket_deserialize(const char *blob, size_t blob_sz)
 {
 	struct OC_token_bucket *bucket=ALLOC(struct OC_token_bucket, 1);
 	size_t offset=0;
-	memcpy(bucket, blob, sizeof(struct OC_token_bucket)-sizeof(struct PN_counter*));
-	offset+=sizeof(struct OC_token_bucket)-sizeof(struct PN_counter*);
+	memcpy(bucket, blob+offset, OCTB_BLOB_HDR_SIZE);
+	offset += OCTB_BLOB_HDR_SIZE;
 	bucket->consumed=PN_counter_deserialize(blob+offset, blob_sz-offset);
+	offset += PN_counter_serialized_size(bucket->consumed);
+	assert(offset <= blob_sz);
 	return bucket;
 }
 void OC_token_bucket_merge(struct OC_token_bucket *dst, const struct OC_token_bucket *src)
@@ -158,10 +166,4 @@ void OC_token_bucket_merge_blob(struct OC_token_bucket *bucket, const char *blob
 	OC_token_bucket_free(to_merge);
 	return;
 }
-size_t OC_token_bucket_size(const struct OC_token_bucket *bucket)
-{
-	size_t sz=0;
-	sz=sizeof(struct OC_token_bucket);
-	sz+=PN_counter_size(bucket->consumed);
-	return sz;
-}
+

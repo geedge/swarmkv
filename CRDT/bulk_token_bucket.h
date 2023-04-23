@@ -16,7 +16,7 @@ struct bulk_token_bucket *bulk_token_bucket_new(uuid_t my_id, struct timeval now
 void bulk_token_bucket_free(struct bulk_token_bucket *btb);
 
 
-long long bulk_token_bucket_control(struct bulk_token_bucket *btb, const char *key, size_t key_len, struct timeval now, enum token_bucket_command cmd, long long tokens);
+long long bulk_token_bucket_consume(struct bulk_token_bucket *btb, const char *key, size_t key_len, struct timeval now, enum token_bucket_command cmd, long long tokens);
 struct bulk_token_bucket_info
 {
 	long long CIR;

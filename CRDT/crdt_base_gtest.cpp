@@ -305,7 +305,7 @@ TEST(PNCounter, Replica100)
 	}
 	EXPECT_EQ(success, test_replica_num);
 	size_t sz=0;
-	sz=PN_counter_size(pnc[0]);
+	sz=PN_counter_serialized_size(pnc[0]);
 	EXPECT_EQ(sz, 8864);
 	for(i=0; i<test_replica_num; i++)
 	{
@@ -1543,6 +1543,23 @@ TEST(STHyperLogLog, Replicas)
 	EXPECT_NEAR(st_case[i].est_count, st_case[i].ideal_count, est_error*st_case[i].ideal_count);
 	i++;
 }
+TEST(STHyperLogLog, Serialize)
+{
+	struct timeval start;
+	gettimeofday(&start, NULL);
+	struct ST_hyperloglog *h=ST_hyperloglog_new(9, 5, start);
+	size_t sz=ST_hyperloglog_serialized_size(h);
+	char *blob=NULL;
+	size_t blob_sz=0;
+	ST_hyperloglog_serialize(h, &blob, &blob_sz);
+	EXPECT_EQ(sz, blob_sz);
+	struct ST_hyperloglog *h2=ST_hyperloglog_deserialize(blob, blob_sz);
+	free(blob);
+	sz=ST_hyperloglog_serialized_size(h2);
+	EXPECT_EQ(sz, blob_sz);
+	ST_hyperloglog_free(h);
+	ST_hyperloglog_free(h2);
+}
 void g_array_sync(struct g_array **replicas, size_t n_replica)
 {
 	char *blob=NULL;
@@ -1558,46 +1575,6 @@ void g_array_sync(struct g_array **replicas, size_t n_replica)
 		}
 	}
 	return;
-}
-TEST(GArray, Basic)
-{
-	uuid_t uuid;
-	size_t n_replica=4;
-	int array_sz=1024;
-	struct g_array *a[n_replica];
-	for(size_t i=0; i<n_replica; i++)
-	{
-		uuid_generate(uuid);
-		a[i]=g_array_new(uuid, array_sz);
-	}
-	int r=0, round=100;
-	long long increment=77;
-	for(int i=0; i<round; i++)
-	{
-		r=random()%n_replica;
-		for(int j=0; j<array_sz; j++)
-		{
-			g_array_incrby(a[r], j, increment);
-		}
-		if(i%7==0)
-		{
-			g_array_sync(a, n_replica);
-		}
-	}
-	g_array_sync(a, n_replica);
-
-	long long value=0, success=0;
-	for(int i=0; i<array_sz; i++)
-	{
-		r=random()%n_replica;
-		value=g_array_get(a[r], i);
-		if(value == (long long)round*increment) success++;
-	}
-	EXPECT_EQ(success, array_sz);
-	for(size_t i=0; i<n_replica; i++)
-	{
-		g_array_free(a[i]);
-	}
 }
 TEST(STHyperLogLog, Reconfigure)
 {
@@ -1684,7 +1661,88 @@ TEST(STHyperLogLog, Reconfigure)
 		ST_hyperloglog_free(h[i]);
 	}
 }
+TEST(GArray, Basic)
+{
+	uuid_t uuid;
+	size_t n_replica=4;
+	int array_sz=1024;
+	struct g_array *a[n_replica];
+	for(size_t i=0; i<n_replica; i++)
+	{
+		uuid_generate(uuid);
+		a[i]=g_array_new(uuid, array_sz);
+	}
+	int r=0, round=100;
+	long long increment=77;
+	for(int i=0; i<round; i++)
+	{
+		r=random()%n_replica;
+		for(int j=0; j<array_sz; j++)
+		{
+			g_array_incrby(a[r], j, increment);
+		}
+		if(i%7==0)
+		{
+			g_array_sync(a, n_replica);
+		}
+	}
+	g_array_sync(a, n_replica);
+	g_array_sync(a, n_replica);
+	
+	long long value=0, success=0;
+	for(int i=0; i<array_sz; i++)
+	{
+		r=random()%n_replica;
+		value=g_array_get(a[r], i);
+		if(value == (long long)round*increment) success++;
+	}
+	EXPECT_EQ(success, array_sz);
+	g_array_reset(a[0]);
+	value=g_array_get(a[0], 0);
+	EXPECT_EQ(value, 0);
+	g_array_sync(a, n_replica);
+	r=random()%n_replica;
+	value=g_array_get(a[r], 0);
+	EXPECT_EQ(value, 0);
 
+	for(size_t i=0; i<n_replica; i++)
+	{
+		g_array_free(a[i]);
+	}
+}
+TEST(GArray, Serialize)
+{
+	uuid_t uuid;
+	int n_replica=4;
+	int array_sz=1024;
+	struct g_array *a[n_replica], *a2=NULL;
+	for(int i=0; i<n_replica; i++)
+	{
+		uuid_generate(uuid);
+		a[i]=g_array_new(uuid, array_sz);
+		g_array_incrby(a[i], 0, 30);
+	}
+	g_array_sync(a, n_replica);
+
+	size_t sz=g_array_serialized_size(a[0]);
+	char *blob=NULL;
+	size_t blob_sz=0;
+	g_array_serialize(a[0], &blob, &blob_sz);
+	EXPECT_EQ(sz, blob_sz);
+	a2=g_array_deserialize(blob, blob_sz);
+	sz=g_array_serialized_size(a2);
+	EXPECT_EQ(sz, blob_sz);
+	free(blob);
+	for(int i=0; i<n_replica; i++)
+	{
+		g_array_free(a[i]);
+	}
+	g_array_free(a2);
+}
+TEST(GArray, Idempotent)
+{
+
+}
 int main(int argc, char ** argv)
 {
 	int ret=0;

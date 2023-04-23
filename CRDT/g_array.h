@@ -15,6 +15,7 @@ void g_array_free(struct g_array *ga);
 long long g_array_incrby(struct g_array *ga, long long idx, long long increment);
 long long g_array_get(const struct g_array *ga, long long idx);
 void g_array_resize(struct g_array *ga, long long new_size);
+void g_array_reset(struct g_array *ga);
 size_t g_array_replicas(const struct g_array *ga);
 size_t g_array_serialized_size(const struct g_array *ga);
 void g_array_serialize(const struct g_array *ga, char **blob, size_t *blob_sz);

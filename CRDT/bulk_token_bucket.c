@@ -71,7 +71,7 @@ void bulk_token_bucket_free(struct bulk_token_bucket *btb)
     free(btb);
 }
 
-long long bulk_token_bucket_control(struct bulk_token_bucket *btb, const char *key, size_t keylen, struct timeval now, enum token_bucket_command cmd, long long tokens)
+long long bulk_token_bucket_consume(struct bulk_token_bucket *btb, const char *key, size_t keylen, struct timeval now, enum token_bucket_command cmd, long long tokens)
 {
 	long long delta_time_ms=0, bucket_idx=0, consumed=0, refilled=0;
 	long long now_ms=timeval_delta_ms(btb->start, now);
@@ -229,6 +229,11 @@ void bulk_token_bucket_merge(struct bulk_token_bucket *dst, const struct bulk_to
     {
 		bulk_token_bucket_configure(dst, src->cfg.timestamp, src->cfg.CIR, src->cfg.CBS, src->cfg.bucket_num);
     }
+    if(timercmp(&(dst->perturb_timestamp), &(src->perturb_timestamp), <))//Last-Write-Wins
+	{
+		dst->perturb=src->perturb;
+		memcpy(&dst->perturb_timestamp, &src->perturb_timestamp, sizeof(dst->perturb_timestamp));
+	}
 	//Stop to proceed when src is older than dst, and has a different bucket_num.
 	if(dst->cfg.bucket_num != src->cfg.bucket_num) return;
 	ST_hyperloglog_merge(dst->hll, src->hll);

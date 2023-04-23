@@ -34,24 +34,24 @@ long long tb_consume(long long CIR, long long available, size_t n_replica, enum 
 {
 	long long reserved=CIR*(n_replica-1)/n_replica;
 	long long local_available=MAX(available-reserved, 0);
-	long long assigned=0;
+	long long allocated=0;
 	switch(cmd)
 	{
 		case TB_CMD_CONSUME_AS_MUCH_AS_POSSIBLE:
-			assigned=available;
+			allocated=available;
 			break;
 		case TB_CMD_CONSUME_FORCE:
-			assigned=tokens;
+			allocated=tokens;
 			break;
 		case TB_CMD_CONSUME_FLEXIBLE:
-			assigned=MIN(tokens, local_available);;
+			allocated=MIN(tokens, local_available);;
 			break;
 		case TB_CMD_CONSUME_NORMAL:
-			assigned=(tokens<=local_available) ? tokens:0;			
+			allocated=(tokens<=local_available) ? tokens:0;			
 			break;
 		default:
 			assert(0);
 			break;
 	}
-    return assigned;
+    return allocated;
 }

@@ -477,7 +477,7 @@ size_t OR_record_size(const struct OR_record *record)
 	switch(record->type)
 	{
 		case TYPE_INTEGER:
-			sz+=PN_counter_size(record->counter);				
+			sz+=PN_counter_serialized_size(record->counter);				
 			break;
 		case TYPE_STRING:
 			sz+=LWW_regeister_size(record->string);		
