@@ -12,12 +12,13 @@
 
 
 #define REFILL_INTERVAL_MS  200
-#define SFQ_BUCKET_MAX  8192
+
 
 struct fair_token_bucket
 {
     /* Sync Variables*/
     uuid_t uuid;
+    long long divisor;
     long long perturb_seed;
     struct g_array *sfq;  //per-key deficit estimation
     struct ST_hyperloglog *hll[FAIR_TB_WEIGHT_MAX]; //counting active keys
@@ -28,18 +29,29 @@ struct fair_token_bucket
     long long per_weight_quantum; //updated every REFILL_INTERVAL_MS
     long long n_active_key;   
 };
-struct fair_token_bucket *fair_token_bucket_new(uuid_t uuid, struct timeval now, long long CIR, long long CBS)
+struct fair_token_bucket *fair_token_bucket_new(uuid_t uuid, struct timeval now, long long CIR, long long CBS, long long divisor)
 {
     struct fair_token_bucket *ftb=ALLOC(struct fair_token_bucket, 1);
 
     uuid_copy(ftb->uuid, uuid);
+    ftb->divisor=divisor;
     for(int i=0; i<FAIR_TB_WEIGHT_MAX; i++)
     {
         ftb->hll[i]=ST_hyperloglog_new(9, 5, now);
     }
-    ftb->sfq=g_array_new(uuid, SFQ_BUCKET_MAX);
+    ftb->sfq=g_array_new(uuid, ftb->divisor);
     ftb->bucket=OC_token_bucket_new(uuid, now, CIR, CBS);
     return ftb;
+}
+void fair_token_bucket_configure(struct fair_token_bucket *ftb, struct timeval now, long long CIR, long long CBS, long long divisor)
+{
+    if(divisor>ftb->divisor)
+    {
+        ftb->divisor=divisor;
+        g_array_resize(ftb->sfq, ftb->divisor);
+    }
+    OC_token_bucket_configure(ftb->bucket, now, CIR, CBS);
+    return;
 }
 void fair_token_bucket_free(struct fair_token_bucket *ftb)
 {
@@ -78,7 +90,7 @@ static void ftb_refill(struct fair_token_bucket *ftb, struct timeval now)
     ftb->perturb_seed++;
 }
 
-long long fair_token_bucket_consume(struct fair_token_bucket *ftb, struct timeval now, const char *key, size_t keylen, long long weight, enum token_bucket_command cmd, long long tokens)
+long long fair_token_bucket_consume(struct fair_token_bucket *ftb, struct timeval now, const char *key, size_t keylen, long long weight, enum tb_consume_type cmd, long long tokens)
 {
     if(weight>FAIR_TB_WEIGHT_MAX || weight<0)
         return -1;
@@ -86,11 +98,11 @@ long long fair_token_bucket_consume(struct fair_token_bucket *ftb, struct timeva
     ftb_refill(ftb, now);
 
     int sfq_idx=0;
-    sfq_idx=XXH3_64bits_withSeed(key, keylen, ftb->perturb_seed)%SFQ_BUCKET_MAX;
+    sfq_idx=XXH3_64bits_withSeed(key, keylen, ftb->perturb_seed)%ftb->divisor;
     
     long long deficit_est=0;
     deficit_est=g_array_get(ftb->sfq, sfq_idx);
-    deficit_est/=MAX(1, ftb->n_active_key/SFQ_BUCKET_MAX);
+    deficit_est/=MAX(1, ftb->n_active_key/ftb->divisor);
     if(tokens + deficit_est > ftb->per_weight_quantum*weight)
     {
         return 0;
@@ -100,16 +112,17 @@ long long fair_token_bucket_consume(struct fair_token_bucket *ftb, struct timeva
     return allocated_tokens;
 }
 
-void fair_token_bucket_info(const struct fair_token_bucket *fstb, struct timeval now, struct fair_token_bucket_info *info)
+void fair_token_bucket_info(const struct fair_token_bucket *ftb, struct timeval now, struct fair_token_bucket_info *info)
 {
-    info->active_classes_number=fstb->n_active_key;
-    OC_token_bucket_info(fstb->bucket, now, &info->bucket_info);
+    info->active_key_number=ftb->n_active_key;
+    OC_token_bucket_info(ftb->bucket, now, &info->bucket_info);
     return;
 }
 struct ftb_header
 {
     long long magic;
     long long payload_sz;
+    long long divisor;
     long long pertub_seed;
 };
 size_t fair_token_bucket_serialized_size(const struct fair_token_bucket *ftb)
@@ -131,6 +144,7 @@ void fair_token_bucket_serialize(const struct fair_token_bucket *ftb, char **blo
     struct ftb_header hdr;
     hdr.magic=0x5210;
     hdr.payload_sz=sz;
+    hdr.divisor=ftb->divisor;
     hdr.pertub_seed=ftb->perturb_seed;
 
     char *buffer=ALLOC(char, sz);
@@ -169,6 +183,7 @@ struct fair_token_bucket *fair_token_bucket_deserialize(const char *blob, size_t
     assert(hdr.payload_sz<=blob_sz);
     struct fair_token_bucket *ftb=ALLOC(struct fair_token_bucket, 1);
     ftb->perturb_seed=hdr.pertub_seed;
+    ftb->divisor=hdr.divisor;
     for(int i=0; i<FAIR_TB_WEIGHT_MAX; i++)
     {
         ftb->hll[i]=ST_hyperloglog_deserialize(blob+offset, blob_sz-offset);
@@ -184,6 +199,7 @@ struct fair_token_bucket *fair_token_bucket_deserialize(const char *blob, size_t
 void fair_token_bucket_merge(struct fair_token_bucket *dst, const struct fair_token_bucket *src)
 {
     dst->perturb_seed=MAX(dst->perturb_seed, src->perturb_seed);
+    dst->divisor=MAX(dst->divisor, src->divisor);
     for(int i=0; i<FAIR_TB_WEIGHT_MAX; i++)
     {
         ST_hyperloglog_merge(dst->hll[i], src->hll[i]);
@@ -198,4 +214,11 @@ void fair_token_bucket_merge_blob(struct fair_token_bucket *ftb, const char *blo
     fair_token_bucket_merge(ftb, src);
     fair_token_bucket_free(src);
     return;
+}
+size_t fair_token_bucket_mem_size(const struct fair_token_bucket *ftb)
+{
+    size_t sz=0;
+    sz += sizeof(struct fair_token_bucket);
+    //to do
+    return sz;
 }

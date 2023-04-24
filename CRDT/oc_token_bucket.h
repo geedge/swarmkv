@@ -18,7 +18,7 @@ struct OC_token_bucket;
 // CBS: Committed Burst Size
 struct OC_token_bucket *OC_token_bucket_new(uuid_t my_id, struct timeval now, long long CIR, long long CBS);
 
-void OC_token_bucket_configure(struct OC_token_bucket *bucket, struct timeval now, long long CIR, long long CBS, long long refill_duration_ms);
+void OC_token_bucket_configure(struct OC_token_bucket *bucket, struct timeval now, long long CIR, long long CBS);
 struct OC_token_bucket_info
 {
 	long long CIR;
@@ -33,7 +33,7 @@ void OC_token_bucket_info(struct OC_token_bucket *bucket, struct timeval now, st
 void OC_token_bucket_free(struct OC_token_bucket *bucket);
 
 
-long long OC_token_bucket_consume(struct OC_token_bucket *bucket, struct timeval now, enum token_bucket_command cmd, long long tokens);
+long long OC_token_bucket_consume(struct OC_token_bucket *bucket, struct timeval now, enum tb_consume_type cmd, long long tokens);
 
 void OC_token_bucket_serialize(const struct OC_token_bucket *bucket, char **blob, size_t *blob_sz);
 struct OC_token_bucket *OC_token_bucket_deserialize(const char *blob, size_t blob_sz);
@@ -41,6 +41,7 @@ struct OC_token_bucket *OC_token_bucket_deserialize(const char *blob, size_t blo
 void OC_token_bucket_merge(struct OC_token_bucket *dst, const struct OC_token_bucket *src);
 void OC_token_bucket_merge_blob(struct OC_token_bucket *bucket,  const char *blob, size_t blob_sz);
 size_t OC_token_bucket_serialized_size(const struct OC_token_bucket *bucket);
+size_t OC_token_bucket_mem_size(const struct OC_token_bucket *bucket);
 #ifdef __cplusplus
 }
 #endif

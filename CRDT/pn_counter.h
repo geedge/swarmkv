@@ -29,6 +29,7 @@ void PN_counter_merge(struct PN_counter *dst, const struct PN_counter *src);
 void PN_counter_serialize(const struct PN_counter *pnc, char **blob, size_t *blob_sz);
 struct PN_counter *PN_counter_deserialize(const char *blob, size_t blob_sz);
 size_t PN_counter_serialized_size(const struct PN_counter *pnc);
+size_t PN_counter_mem_size(const struct PN_counter *pnc);
 #ifdef __cplusplus
 }
 #endif

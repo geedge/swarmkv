@@ -28,7 +28,6 @@ static void counter_item_free(struct counter_item *item)
 }
 struct PN_counter
 {
-
 	uuid_t my_id;
 	struct timeval write_timestamp;
 	long long W; //value wrote by PN_counter_set
@@ -176,4 +175,11 @@ void PN_counter_merge_blob(struct PN_counter *pnc, const char *blob, size_t blob
 size_t PN_counter_replica_num(const struct PN_counter *pnc)
 {
 	return MAX(HASH_COUNT(pnc->hash_item), 1);
+}
+size_t PN_counter_mem_size(const struct PN_counter *pnc)
+{
+	size_t sz=0;
+	sz += sizeof(struct PN_counter);
+	sz += HASH_COUNT(pnc->hash_item)*sizeof(struct counter_item);
+	return sz;
 }

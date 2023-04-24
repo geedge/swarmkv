@@ -42,16 +42,15 @@ void OC_token_bucket_free(struct OC_token_bucket *bucket)
 	PN_counter_free(bucket->consumed);
 	free(bucket);
 }
-void OC_token_bucket_configure(struct OC_token_bucket *bucket, struct timeval now, long long CIR, long long CBS, long long refill_duration_ms)
+void OC_token_bucket_configure(struct OC_token_bucket *bucket, struct timeval now, long long CIR, long long CBS)
 {
 	memcpy(&bucket->cfg.write_timestamp, &now, sizeof(bucket->cfg.write_timestamp));
 	if(CIR>=0) bucket->cfg.CIR=CIR;
 	if(CBS>=0) bucket->cfg.CBS=CBS;
-	if(refill_duration_ms>0) bucket->cfg.refill_duration_ms=refill_duration_ms;
 }
 
 
-long long OC_token_bucket_consume(struct OC_token_bucket *bucket, struct timeval now, enum token_bucket_command cmd, long long tokens)
+long long OC_token_bucket_consume(struct OC_token_bucket *bucket, struct timeval now, enum tb_consume_type cmd, long long tokens)
 {
 	long long delta_time_ms=timeval_delta_ms(bucket->refill_timestamp, now);
 	long long consumed=PN_counter_get(bucket->consumed);
@@ -166,4 +165,10 @@ void OC_token_bucket_merge_blob(struct OC_token_bucket *bucket, const char *blob
 	OC_token_bucket_free(to_merge);
 	return;
 }
-
+size_t OC_token_bucket_mem_size(const struct OC_token_bucket *bucket)
+{
+	size_t sz=0;
+	sz += sizeof(struct OC_token_bucket);
+	sz += PN_counter_mem_size(bucket->consumed);
+	return sz;
+}

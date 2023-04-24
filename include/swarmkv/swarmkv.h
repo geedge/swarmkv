@@ -22,6 +22,7 @@ enum swarmkv_reply_type
 	SWARMKV_REPLY_STRING=0,
 	SWARMKV_REPLY_ARRAY,
 	SWARMKV_REPLY_INTEGER,
+	SWARMKV_REPLY_DOUBLE,
 	SWARMKV_REPLY_NIL,
 	SWARMKV_REPLY_STATUS,
 	SWARMKV_REPLY_ERROR,
@@ -32,6 +33,7 @@ struct swarmkv_reply
 {
 	enum swarmkv_reply_type type;
 	long long integer;	/* The integer when type is SWARMKV_REPLY_INTEGER */
+	double dval;		/* The double when type is SWARMKV_REPLY_DOUBLE */
 	int len; 			/* Length of string */
 	char *str; 			/* Used for SWARMKV_REPLY_ERROR, SWARMKV_REPLY_STATUS, SWARMKV_NODE, SWARMKV_REPLY_STRING and SWARMKV_REPLY_VERBATIM */
 	char vtype[4]; 		/* Used for SWARMKV_REPLY_VERBATIM, contains the null

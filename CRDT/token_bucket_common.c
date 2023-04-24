@@ -30,23 +30,23 @@ long long tb_available(long long CIR, long long CBS, long long consumed, long lo
 	}
 	return MAX(*new_refilled-consumed, 0);
 }
-long long tb_consume(long long CIR, long long available, size_t n_replica, enum token_bucket_command cmd, long long tokens)
+long long tb_consume(long long CIR, long long available, size_t n_replica, enum tb_consume_type cmd, long long tokens)
 {
 	long long reserved=CIR*(n_replica-1)/n_replica;
 	long long local_available=MAX(available-reserved, 0);
 	long long allocated=0;
 	switch(cmd)
 	{
-		case TB_CMD_CONSUME_AS_MUCH_AS_POSSIBLE:
+		case TB_CONSUME_AS_MUCH_AS_POSSIBLE:
 			allocated=available;
 			break;
-		case TB_CMD_CONSUME_FORCE:
+		case TB_CONSUME_FORCE:
 			allocated=tokens;
 			break;
-		case TB_CMD_CONSUME_FLEXIBLE:
+		case TB_CONSUME_FLEXIBLE:
 			allocated=MIN(tokens, local_available);;
 			break;
-		case TB_CMD_CONSUME_NORMAL:
+		case TB_CONSUME_NORMAL:
 			allocated=(tokens<=local_available) ? tokens:0;			
 			break;
 		default:

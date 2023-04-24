@@ -98,7 +98,7 @@ void OR_set_merge_blob(struct OR_set *set, const char *blob, size_t blob_sz)
 	OR_map_merge_blob(set->map, blob, blob_sz);
 	return;
 }
-size_t OR_set_size(const struct OR_set *set)
+size_t OR_set_mem_size(const struct OR_set *set)
 {
-	return sizeof(struct OR_set)+OR_map_size(set->map);
+	return sizeof(struct OR_set)+OR_map_mem_size(set->map);
 }

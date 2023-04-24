@@ -7,15 +7,15 @@ extern "C"
 {
 #endif
 
-enum token_bucket_command
+enum tb_consume_type
 {
-	TB_CMD_CONSUME_NORMAL,
-	TB_CMD_CONSUME_FORCE,
-	TB_CMD_CONSUME_FLEXIBLE,
-	TB_CMD_CONSUME_AS_MUCH_AS_POSSIBLE,
+	TB_CONSUME_NORMAL,
+	TB_CONSUME_FORCE,
+	TB_CONSUME_FLEXIBLE,
+	TB_CONSUME_AS_MUCH_AS_POSSIBLE,
 };
 long long tb_available(long long CIR, long long CBS, long long consumed, long long refilled, long long delta_ms, long long refill_interval_ms, long long *new_refilled);
-long long tb_consume(long long CIR, long long available, size_t n_replica, enum token_bucket_command cmd, long long tokens);
+long long tb_consume(long long CIR, long long available, size_t n_replica, enum tb_consume_type cmd, long long tokens);
 #ifdef __cplusplus
 }
 #endif

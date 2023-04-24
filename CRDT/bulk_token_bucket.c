@@ -71,7 +71,7 @@ void bulk_token_bucket_free(struct bulk_token_bucket *btb)
     free(btb);
 }
 
-long long bulk_token_bucket_consume(struct bulk_token_bucket *btb, const char *key, size_t keylen, struct timeval now, enum token_bucket_command cmd, long long tokens)
+long long bulk_token_bucket_consume(struct bulk_token_bucket *btb, struct timeval now, const char *key, size_t keylen, enum tb_consume_type cmd, long long tokens)
 {
 	long long delta_time_ms=0, bucket_idx=0, consumed=0, refilled=0;
 	long long now_ms=timeval_delta_ms(btb->start, now);
@@ -160,7 +160,7 @@ void bulk_token_bucket_configure(struct bulk_token_bucket *btb, struct timeval n
 	btb->refilled=realloc(btb->refilled, btb->cfg.bucket_num*sizeof(struct refill_mark));
     return;
 }
-void bulk_token_bucket_info(const struct bulk_token_bucket *btb, struct bulk_token_bucket_info *info)
+void bulk_token_bucket_info(const struct bulk_token_bucket *btb, struct timeval now, struct bulk_token_bucket_info *info)
 {
 	info->CIR=btb->cfg.CIR;
 	info->CBS=btb->cfg.CBS;
@@ -254,4 +254,9 @@ void bulk_token_bucket_merge_blob(struct bulk_token_bucket *btb, const char * bl
 	bulk_token_bucket_merge(btb, src);
 	bulk_token_bucket_free(src);
 	return;
+}
+size_t bulk_token_bucket_mem_size(const struct bulk_token_bucket *btb)
+{
+	//to do
+    return 0;
 }

@@ -94,6 +94,7 @@ struct swarmkv_reply *swarmkv_reply_new_string_from_integer(long long integer);
 struct swarmkv_reply *swarmkv_reply_new_verbatim(const char *str, size_t sz, const char *ext);
 
 struct swarmkv_reply *swarmkv_reply_new_integer(long long integer);
+struct swarmkv_reply *swarmkv_reply_new_double(double dval);
 struct swarmkv_reply *swarmkv_reply_new_array(size_t n_element);
 struct swarmkv_reply *swarmkv_reply_new_node(node_t *node, int is_ask);
 struct swarmkv_reply *swarmkv_reply_new_nil(void);

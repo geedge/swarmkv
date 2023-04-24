@@ -120,7 +120,7 @@ void traffic_distribution(traffic_type type)
 		j = i % 3; // sequence selection
 		timeradd(&now, &step, &now);
 		tokens = get_request_tokens(j, type, step_us, CIR, CBS);
-		flexible_tokens = OC_token_bucket_consume(buckets[j], now, TB_CMD_CONSUME_FLEXIBLE, tokens);
+		flexible_tokens = OC_token_bucket_consume(buckets[j], now, TB_CONSUME_FLEXIBLE, tokens);
 		requested += tokens;
 		consumed += flexible_tokens;
 		if(i%100==0)
@@ -165,17 +165,17 @@ TEST(OCTokenBucket, Basic)
 	bucket=OC_token_bucket_new(uuid, now, CIR, CBS);
 	long long tokens=0;
 
-	tokens=OC_token_bucket_consume(bucket, now, TB_CMD_CONSUME_NORMAL, 140);
+	tokens=OC_token_bucket_consume(bucket, now, TB_CONSUME_NORMAL, 140);
 	EXPECT_EQ(tokens, 140);
 	
-	tokens=OC_token_bucket_consume(bucket, now, TB_CMD_CONSUME_NORMAL, 61);
+	tokens=OC_token_bucket_consume(bucket, now, TB_CONSUME_NORMAL, 61);
 	EXPECT_EQ(tokens, 0);
 
-	tokens=OC_token_bucket_consume(bucket, now, TB_CMD_CONSUME_NORMAL, 60);
+	tokens=OC_token_bucket_consume(bucket, now, TB_CONSUME_NORMAL, 60);
 	EXPECT_EQ(tokens, 60);
 
 	now.tv_sec++;
-	tokens=OC_token_bucket_consume(bucket, now, TB_CMD_CONSUME_NORMAL, 90);
+	tokens=OC_token_bucket_consume(bucket, now, TB_CONSUME_NORMAL, 90);
 	EXPECT_EQ(tokens, 90);
 
 	struct OC_token_bucket_info info;
@@ -183,7 +183,7 @@ TEST(OCTokenBucket, Basic)
 	EXPECT_GE(info.available, 10);
 //	printf("avail=%lld\n", tokens);
 	
-	tokens=OC_token_bucket_consume(bucket, now, TB_CMD_CONSUME_NORMAL, 10);
+	tokens=OC_token_bucket_consume(bucket, now, TB_CONSUME_NORMAL, 10);
 	EXPECT_EQ(tokens, 10);
 	OC_token_bucket_free(bucket);
 }
@@ -200,7 +200,7 @@ TEST(OCTokenBucket, Serialize)
 	{
 		uuid_generate(uuid);
 		b[i]=OC_token_bucket_new(uuid, now, CIR, CBS);
-		OC_token_bucket_consume(b[i], now, TB_CMD_CONSUME_NORMAL, 10);
+		OC_token_bucket_consume(b[i], now, TB_CONSUME_NORMAL, 10);
 	}
 	OC_token_bucket_sync(b, n_replica);
 	size_t sz=OC_token_bucket_serialized_size(b[0]);
@@ -231,28 +231,28 @@ TEST(OCTokenBucket, Boundary)
 
 	//Zero CIR
 	bucket=OC_token_bucket_new(uuid, now, 0, 1000);
-	tokens=OC_token_bucket_consume(bucket, now, TB_CMD_CONSUME_NORMAL, 1000);
+	tokens=OC_token_bucket_consume(bucket, now, TB_CONSUME_NORMAL, 1000);
 	EXPECT_EQ(tokens, 1000);
 
 	now.tv_sec++;
-	tokens=OC_token_bucket_consume(bucket, now, TB_CMD_CONSUME_NORMAL, 1);
+	tokens=OC_token_bucket_consume(bucket, now, TB_CONSUME_NORMAL, 1);
 	EXPECT_EQ(tokens, 0);
 	OC_token_bucket_free(bucket);
 
 	//Zero CBS
 	bucket=OC_token_bucket_new(uuid, now, 1000, 0);
-	tokens=OC_token_bucket_consume(bucket, now, TB_CMD_CONSUME_NORMAL, 1);
+	tokens=OC_token_bucket_consume(bucket, now, TB_CONSUME_NORMAL, 1);
 	EXPECT_EQ(tokens, 0);
 	OC_token_bucket_free(bucket);
 
 	//Infinite Tokens
 	bucket=OC_token_bucket_new(uuid, now, 0, 0);
-	tokens=OC_token_bucket_consume(bucket, now, TB_CMD_CONSUME_NORMAL, 140);
+	tokens=OC_token_bucket_consume(bucket, now, TB_CONSUME_NORMAL, 140);
 	consumed+=tokens;
 	EXPECT_EQ(tokens, 140);
 
 
-	tokens=OC_token_bucket_consume(bucket, now, TB_CMD_CONSUME_NORMAL, 65535);
+	tokens=OC_token_bucket_consume(bucket, now, TB_CONSUME_NORMAL, 65535);
 	consumed+=tokens;
 	EXPECT_EQ(tokens, 65535);
 
@@ -263,10 +263,10 @@ TEST(OCTokenBucket, Boundary)
 	EXPECT_EQ(info.refilled, consumed);
 	
 	now.tv_sec++;
-	OC_token_bucket_configure(bucket, now, 100, 500, 10);
+	OC_token_bucket_configure(bucket, now, 100, 500);
 	
 	now.tv_sec+=500/100;
-	tokens=OC_token_bucket_consume(bucket, now, TB_CMD_CONSUME_NORMAL, 500);
+	tokens=OC_token_bucket_consume(bucket, now, TB_CONSUME_NORMAL, 500);
 	consumed+=tokens;
 	EXPECT_EQ(tokens, 500);
 
@@ -293,17 +293,17 @@ TEST(OCTokenBucket, Merge)
 	}
 	long long tokens=0;
 	OC_token_bucket_sync(buckets, 2);
-	tokens=OC_token_bucket_consume(buckets[0], now, TB_CMD_CONSUME_NORMAL, 130);
+	tokens=OC_token_bucket_consume(buckets[0], now, TB_CONSUME_NORMAL, 130);
 	EXPECT_EQ(tokens, 130);
-	tokens=OC_token_bucket_consume(buckets[1], now, TB_CMD_CONSUME_NORMAL, 30);
+	tokens=OC_token_bucket_consume(buckets[1], now, TB_CONSUME_NORMAL, 30);
 	EXPECT_EQ(tokens, 30);
 
 	OC_token_bucket_sync(buckets, 2);
 	now.tv_sec++;
 	//each has 200-130-30+100/2=90 avaliable tokens
-	tokens=OC_token_bucket_consume(buckets[0], now, TB_CMD_CONSUME_NORMAL, 91);
+	tokens=OC_token_bucket_consume(buckets[0], now, TB_CONSUME_NORMAL, 91);
 	EXPECT_EQ(tokens, 0);
-	tokens=OC_token_bucket_consume(buckets[1], now, TB_CMD_CONSUME_FLEXIBLE, 90);
+	tokens=OC_token_bucket_consume(buckets[1], now, TB_CONSUME_FLEXIBLE, 90);
 	EXPECT_EQ(tokens, 90);
 	OC_token_bucket_sync(buckets, 2);
 	
@@ -343,7 +343,7 @@ double OC_token_bucket_test(size_t replica_num, long long mimic_duration_s, long
 		tokens=tokens*saturation_percent/100;
 		tokens=tokens/2+random()%tokens;
 		requested+=tokens;
-		consumed+=OC_token_bucket_consume(buckets[j], now, TB_CMD_CONSUME_NORMAL, tokens);
+		consumed+=OC_token_bucket_consume(buckets[j], now, TB_CONSUME_NORMAL, tokens);
 		if((step_us*i)%sync_interval_us==0)
 		{
 			OC_token_bucket_sync(buckets, replica_num);
@@ -432,7 +432,7 @@ TEST(OCTokenBucket, ConcurrentHeavyConsumer)
 		for(j=0; j<REPLICA_NUMBER; j++)
 		{
 			requested+=tokens;			
-			consumed+=OC_token_bucket_consume(buckets[j], now, TB_CMD_CONSUME_FLEXIBLE, tokens);
+			consumed+=OC_token_bucket_consume(buckets[j], now, TB_CONSUME_FLEXIBLE, tokens);
 		}
 		if(i%100==0)
 		{
@@ -486,7 +486,7 @@ TEST(OCTokenBucket, Reconfigure)
 		for(j=0; j<REPLICA_NUMBER; j++)
 		{
 			requested+=tokens;			
-			consumed+=OC_token_bucket_consume(buckets[j], now, TB_CMD_CONSUME_FLEXIBLE, tokens);
+			consumed+=OC_token_bucket_consume(buckets[j], now, TB_CONSUME_FLEXIBLE, tokens);
 		}
 		if(i%100==0)
 		{
@@ -508,7 +508,7 @@ TEST(OCTokenBucket, Reconfigure)
 	CBS*=5;
 	requested=0;
 	consumed=0;
-	OC_token_bucket_configure(buckets[0], start, CIR, CBS, 0);
+	OC_token_bucket_configure(buckets[0], start, CIR, CBS);
 	for(i=0; (long long)i<mimic_duration_us/step_us; i++)
 	{
 		timeradd(&now, &step, &now);		
@@ -517,7 +517,7 @@ TEST(OCTokenBucket, Reconfigure)
 		for(j=0; j<REPLICA_NUMBER; j++)
 		{
 			requested+=tokens;			
-			consumed+=OC_token_bucket_consume(buckets[j], now, TB_CMD_CONSUME_FLEXIBLE, tokens);
+			consumed+=OC_token_bucket_consume(buckets[j], now, TB_CONSUME_FLEXIBLE, tokens);
 		}
 		if(i%100==0)
 		{
@@ -572,7 +572,7 @@ TEST(OCTokenBucket, PartitionTolerance)
 		for(j=0; j<REPLICA_NUMBER; j++)
 		{
 			requested+=tokens;			
-			consumed+=OC_token_bucket_consume(buckets[j], now, TB_CMD_CONSUME_FLEXIBLE, tokens);
+			consumed+=OC_token_bucket_consume(buckets[j], now, TB_CONSUME_FLEXIBLE, tokens);
 		}
 		//network partition at time (t/3, t*2/3]
 		if((long long)i>mimic_duration_us/step_us/3 && (long long)i<= 2*mimic_duration_us/step_us/3)
@@ -702,7 +702,7 @@ double test_fair_token_bucket(struct sftb_class *classes, size_t n_class, long l
 	struct fair_token_bucket *ftb[n_replica];
 	for(int i=0; i<n_replica; i++)
 	{
-		ftb[i]=fair_token_bucket_new(uuid, now, CIR, CBS);
+		ftb[i]=fair_token_bucket_new(uuid, now, CIR, CBS, 8192);
 	}
 	int sync_interval_ms=400;
 	for(int i=0; i<duration_s*(1000*1000/step_us); i++)
@@ -718,7 +718,7 @@ double test_fair_token_bucket(struct sftb_class *classes, size_t n_class, long l
 								(const char*) &(classes[idx].class_id),
 								sizeof(classes[idx].class_id),
 								classes[idx].weight,
-								TB_CMD_CONSUME_NORMAL,
+								TB_CONSUME_NORMAL,
 								this_demand);
 			classes[idx].demand_tokens+=this_demand;
 		}
@@ -1009,8 +1009,8 @@ void bulk_token_bucket_test(struct btb_case *mycase)
 		for(int j=0; j<key_num; j++)
 		{
 			int r=random()%mycase->n_replica;
-			bk[j].allocated_tokens+=bulk_token_bucket_consume(btb[r], (char *)&(bk[j].key), sizeof(bk[j].key),
-					now, TB_CMD_CONSUME_FLEXIBLE,
+			bk[j].allocated_tokens+=bulk_token_bucket_consume(btb[r], now, (char *)&(bk[j].key), sizeof(bk[j].key),
+					TB_CONSUME_FLEXIBLE,
 					bk[j].request_CIR*step_us/(1000*1000));
 		}
 		if(0==i%(sync_interval_ms*1000/step_us))
@@ -1033,7 +1033,7 @@ void bulk_token_bucket_test(struct btb_case *mycase)
 	}
 	index=1-sqrt(index/key_num);
 	struct bulk_token_bucket_info info;
-	bulk_token_bucket_info(btb[0], &info);
+	bulk_token_bucket_info(btb[0], now, &info);
 	mycase->index=index;
 	mycase->estimate_keys=info.estimate_keys;
 	mycase->more=more;
@@ -1067,7 +1067,7 @@ TEST(BulkTokenBucket, Basic)
 	for(i=0; i<duration_s*(1000*1000/step_us); i++)
 	{
 		timeradd(&now, &step, &now);
-		got_tokens+=bulk_token_bucket_consume(btb, key, strlen(key), now, TB_CMD_CONSUME_FLEXIBLE, request_CIR*step_us/(1000*1000));
+		got_tokens+=bulk_token_bucket_consume(btb, now, key, strlen(key), TB_CONSUME_FLEXIBLE, request_CIR*step_us/(1000*1000));
 	}
 	bulk_token_bucket_free(btb);
 	EXPECT_LE(got_tokens, max_tokens);
