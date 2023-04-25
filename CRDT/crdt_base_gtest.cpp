@@ -1739,9 +1739,28 @@ TEST(GArray, Serialize)
 	}
 	g_array_free(a2);
 }
-TEST(GArray, Idempotent)
+TEST(GArray, Merge)
 {
-
+	uuid_t uuid;
+	int n_replica=2;
+	int array_sz=1024;
+	struct g_array *a[n_replica];
+	for(int i=0; i<n_replica; i++)
+	{
+		uuid_generate(uuid);
+		a[i]=g_array_new(uuid, array_sz*(i+1));
+		g_array_incrby(a[i], 0, 30);
+	}
+	g_array_sync(a, n_replica);
+	long long value=0;
+	value=g_array_get(a[0], 0);
+	EXPECT_EQ(value, 30*n_replica);
+	value=g_array_incrby(a[0], array_sz*n_replica-1, 1);
+	EXPECT_EQ(value, 1);
+	for(int i=0; i<n_replica; i++)
+	{
+		g_array_free(a[i]);
+	}
 }
 int main(int argc, char ** argv)
 {

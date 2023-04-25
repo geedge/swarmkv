@@ -27,7 +27,7 @@ struct swarmkv_obj_specs
 	void (*obj_merge_blob) (void *obj, const char *blob, size_t blob_sz);
 	size_t (*obj_size)(const void *obj);
 };
-void *__wrap_OC_token_bucket_new(uuid_t uuid)
+static void *__wrap_OC_token_bucket_new(uuid_t uuid)
 {
 	struct OC_token_bucket *bucket=NULL;
 	struct timeval beginning_of_history;
@@ -35,20 +35,20 @@ void *__wrap_OC_token_bucket_new(uuid_t uuid)
 	bucket=OC_token_bucket_new(uuid, beginning_of_history, 0, 0);
 	return bucket;
 }
-void *__wrap_fair_token_bucket_new(uuid_t uuid)
+static void *__wrap_fair_token_bucket_new(uuid_t uuid)
 {
 	struct fair_token_bucket *bucket=NULL;
 	struct timeval beginning_of_history;
 	memset(&beginning_of_history, 0, sizeof(beginning_of_history));
-	bucket=fair_token_bucket_new(uuid, beginning_of_history, 0, 0, 8192);
+	bucket=fair_token_bucket_new(uuid, beginning_of_history, 0, 0, 0);
 	return bucket;
 }
-void *__wrap_bulk_token_bucket_new(uuid_t uuid)
+static void *__wrap_bulk_token_bucket_new(uuid_t uuid)
 {
 	struct bulk_token_bucket *bucket=NULL;
 	struct timeval beginning_of_history;
 	memset(&beginning_of_history, 0, sizeof(beginning_of_history));
-	bucket=bulk_token_bucket_new(uuid, beginning_of_history, 0, 0, 8192);
+	bucket=bulk_token_bucket_new(uuid, beginning_of_history, 0, 0, 0);
 	return bucket;
 }
 size_t undefined_obj_mem_size(void *obj)

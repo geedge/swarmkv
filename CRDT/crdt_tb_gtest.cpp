@@ -970,7 +970,6 @@ void bulk_token_bucket_test_print_result(const struct btb_case *results, size_t 
 void bulk_token_bucket_test(struct btb_case *mycase)
 {
 	uuid_t uuid;
-	uuid_generate(uuid);
 	struct timeval start, step, now;
 	int step_us=1000;
 	gettimeofday(&start, NULL);
@@ -1060,17 +1059,69 @@ TEST(BulkTokenBucket, Basic)
 	long long request_CIR=10000;
 	struct bulk_token_bucket *btb=bulk_token_bucket_new(uuid, now, CIR, CBS, 4);
 	
-	long long got_tokens=0, max_tokens=duration_s*CIR+CBS;
+
+	long long allocated=0, max_tokens=duration_s*CIR+CBS, available=0;
 	const char *key="192.168.0.1";
+	available=bulk_token_bucket_read_available(btb, now, key, strlen(key));
+	EXPECT_EQ(available, CBS);
+	allocated+=bulk_token_bucket_consume(btb, now, key, strlen(key), TB_CONSUME_FLEXIBLE, 100);
+	EXPECT_EQ(allocated, 100);
+	available=bulk_token_bucket_read_available(btb, now, key, strlen(key));
+	EXPECT_EQ(available, CBS-allocated);
 
 	int i=0;
 	for(i=0; i<duration_s*(1000*1000/step_us); i++)
 	{
 		timeradd(&now, &step, &now);
-		got_tokens+=bulk_token_bucket_consume(btb, now, key, strlen(key), TB_CONSUME_FLEXIBLE, request_CIR*step_us/(1000*1000));
+		allocated+=bulk_token_bucket_consume(btb, now, key, strlen(key), TB_CONSUME_FLEXIBLE, request_CIR*step_us/(1000*1000));
 	}
 	bulk_token_bucket_free(btb);
-	EXPECT_LE(got_tokens, max_tokens);
+	EXPECT_LE(allocated, max_tokens);
+}
+TEST(BulkTokenBucket, Merge)
+{
+	int n_replica=5;
+	struct bulk_token_bucket *btb[n_replica];
+	long long allocated[n_replica]={0};
+	uuid_t uuid;
+	struct timeval start, step, now;
+	int step_us=1000;
+	gettimeofday(&start, NULL);
+	memcpy(&now, &start, sizeof(now));
+	step.tv_sec=0;
+	step.tv_usec=(suseconds_t)step_us;
+	long long CIR=8*1024, CBS=10*1024;
+	char key[128];
+	for(int i=0; i<n_replica; i++)
+	{
+		uuid_generate(uuid);
+		timeradd(&now, &step, &now);
+		btb[i]=bulk_token_bucket_new(uuid, now, CIR, CBS, 128*i);
+	}
+	int r=0;
+	int duration_s=100, sync_interval_ms=400;
+	for(int i=0; i<duration_s*(1000*1000/step_us); i++)
+	{
+		r=i%n_replica;
+		snprintf(key, sizeof(key), "192.168.0.%d", r);
+		timeradd(&now, &step, &now);
+		allocated[r]+=bulk_token_bucket_consume(btb[r], now, key, strlen(key), TB_CONSUME_FLEXIBLE, 1024*4);
+		if(0==i%(sync_interval_ms*1000/step_us))
+		{
+			btb_sync(btb, n_replica);
+		}
+	}
+	struct bulk_token_bucket_info info;
+	bulk_token_bucket_info(btb[0], now, &info);
+	EXPECT_NEAR(info.estimate_keys, n_replica, n_replica/5);
+	long long upper_limit=CIR*duration_s+CBS;
+	int success=0;
+	for(int i=0; i<n_replica; i++)
+	{
+		if((double)allocated[i]/upper_limit>0.95 &&(double)allocated[i]/upper_limit <1.05) success++;
+		bulk_token_bucket_free(btb[i]);
+	}
+	EXPECT_EQ(success, n_replica);
 }
 TEST(BulkTokenBucket, RareCollision)
 {

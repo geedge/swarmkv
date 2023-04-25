@@ -115,6 +115,7 @@ long long fair_token_bucket_consume(struct fair_token_bucket *ftb, struct timeva
 void fair_token_bucket_info(const struct fair_token_bucket *ftb, struct timeval now, struct fair_token_bucket_info *info)
 {
     info->active_key_number=ftb->n_active_key;
+    info->divisor=ftb->divisor;
     OC_token_bucket_info(ftb->bucket, now, &info->bucket_info);
     return;
 }

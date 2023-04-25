@@ -79,6 +79,7 @@ long long g_array_incrby(struct g_array *ga, long long idx, long long increment)
 		a=counter_array_new(ga->my_id, ga->array_sz);
 		HASH_ADD_KEYPTR(hh, ga->hash, a->replica_id, sizeof(a->replica_id), a);
 	}
+	assert(idx < a->array_sz);
 	if(a->array[idx].epoch != TO_LOCAL_EPOCH(ga->epoch))
 	{
 		a->array[idx].epoch = TO_LOCAL_EPOCH(ga->epoch);
@@ -100,9 +101,10 @@ void g_array_resize(struct g_array *ga, long long new_size)
 	{
         a->array=(struct counter_item *)realloc(a->array, sizeof(struct counter_item)*new_size);
         a->array_sz=new_size;
+		a->sequence++;
 	}
 	ga->array_sz=new_size;
-	a->sequence++;
+	
     return;
 }
 size_t g_array_replicas(const struct g_array *ga)
@@ -173,6 +175,7 @@ struct g_array * g_array_deserialize(const char *blob, size_t blob_sz)
 void g_array_merge(struct g_array *dst, const struct g_array *src)
 {
     struct counter_array *src_item=NULL, *dst_item=NULL, *tmp=NULL;
+	long long max_array_sz=0;
     HASH_ITER(hh, src->hash, src_item, tmp)
     {
         HASH_FIND(hh, dst->hash, src_item->replica_id, sizeof(src_item->replica_id), dst_item);
@@ -193,8 +196,13 @@ void g_array_merge(struct g_array *dst, const struct g_array *src)
 				memcpy(dst_item->array, src_item->array, sizeof(struct counter_item)*dst_item->array_sz);
 			}
 		}
+		max_array_sz=MAX(src_item->array_sz, max_array_sz);
     }
 	dst->epoch=MAX(dst->epoch, src->epoch);
+	if(dst->array_sz<max_array_sz)
+	{
+		g_array_resize(dst, max_array_sz);
+	}
     return;
 }
 void g_array_merge_blob(struct g_array *ga, const char *blob, size_t blob_sz)

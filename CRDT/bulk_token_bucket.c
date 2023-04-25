@@ -53,7 +53,8 @@ struct bulk_token_bucket *bulk_token_bucket_new(uuid_t my_id, struct timeval now
     btb->cfg.CBS=CBS;
     btb->cfg.bucket_num=bucket_num;
     btb->cfg.refill_interval_ms=10;
-    btb->hll=ST_hyperloglog_new(6, 10, now);
+	memcpy(&btb->cfg.timestamp, &now, sizeof(btb->cfg.timestamp));
+    btb->hll=ST_hyperloglog_new(9, 5, now);
     memcpy(&btb->start, &now, sizeof(btb->start));
     btb->consumed=g_array_new(my_id, bucket_num);
     btb->refilled=ALLOC(struct refill_mark, bucket_num);
@@ -78,7 +79,8 @@ long long bulk_token_bucket_consume(struct bulk_token_bucket *btb, struct timeva
 	delta_time_ms=timeval_delta_ms(btb->perturb_timestamp, now);
 	ST_hyperloglog_add(btb->hll, key, keylen, now);
 	//Perturb every CBS/CIR seconds, so that buckets not used after last perturb have been refilled to CBS. 
-	if(delta_time_ms > MIN(1000*btb->cfg.CBS/btb->cfg.CIR, PERTURB_INTERVAL_MAX_MS))
+	if(!btb->cfg.bucket_num) return 0;
+	if(btb->cfg.CIR && delta_time_ms > MIN(1000*btb->cfg.CBS/btb->cfg.CIR, PERTURB_INTERVAL_MAX_MS))
 	{
 		btb->perturb++;
 		memcpy(&btb->perturb_timestamp, &now, sizeof(btb->perturb_timestamp));
@@ -169,6 +171,19 @@ void bulk_token_bucket_info(const struct bulk_token_bucket *btb, struct timeval 
 	info->estimate_keys=ST_hyperloglog_count(btb->hll);
 	info->collision_rate=collision_probability(info->bucket_number, info->estimate_keys);
 	return;
+}
+long long bulk_token_bucket_read_available(const struct bulk_token_bucket *btb, struct timeval now, const char *key, size_t keylen)
+{
+	long long consumed=0, refilled=0, available=0, new_refilled=0;
+	int bucket_idx=0;
+	bucket_idx=XXH3_64bits_withSeed(key, keylen, btb->perturb)%btb->cfg.bucket_num;
+	consumed=g_array_get(btb->consumed, bucket_idx);
+	refilled=btb->refilled[bucket_idx].refilled;
+	long long now_ms=timeval_delta_ms(btb->start, now);
+	long long delta_ms= now_ms - btb->refilled[bucket_idx].refill_ms;
+	available=tb_available(btb->cfg.CIR, btb->cfg.CBS, consumed, refilled, delta_ms, btb->cfg.refill_interval_ms, &new_refilled);
+	if(btb->cfg.CBS==0 && btb->cfg.CIR==0) available=INT64_MAX;
+	return available;
 }
 const size_t  BULK_TOKEN_BUCKET_HEADER_SIZE=offsetof(struct bulk_token_bucket, hll);
 void bulk_token_bucket_serialize(const struct bulk_token_bucket *btb, char **blob, size_t *blob_sz)

@@ -963,7 +963,7 @@ void command_spec_init(struct swarmkv *db)
 					hincrby_command, db->mod_store);
 
 	/* Token bucket commands */
-	command_register(&(db->command_table), "TCFG", "key capacity rate",
+	command_register(&(db->command_table), "TCFG", "key rate capacity",
 					3, 1, CMD_KEY_OW, REPLY_ERROR, AUTO_ROUTE, 
 					tcfg_command, db->mod_store);
 	command_register(&(db->command_table), "TCONSUME", "key tokens [NORMAL|FORCE|FLEXIBLE]",
@@ -972,6 +972,24 @@ void command_spec_init(struct swarmkv *db)
 	command_register(&(db->command_table), "TINFO", "key",
 					1, 1, CMD_KEY_RO, REPLY_EMPTY_ARRAY, AUTO_ROUTE,
 					tinfo_command, db->mod_store);
+	command_register(&(db->command_table), "FTCFG", "key rate capacity divisor",
+					4, 1, CMD_KEY_OW, REPLY_ERROR, AUTO_ROUTE, 
+					ftcfg_command, db->mod_store);
+	command_register(&(db->command_table), "FTCONSUME", "key member weight tokens",
+					4, 1, CMD_KEY_RW, REPLY_INT_MINORS1, AUTO_ROUTE,
+					ftconsume_command, db->mod_store);
+	command_register(&(db->command_table), "FTINFO", "key",
+					1, 1, CMD_KEY_RO, REPLY_EMPTY_ARRAY, AUTO_ROUTE,
+					ftinfo_command, db->mod_store);
+	command_register(&(db->command_table), "BTCFG", "key rate capacity buckets",
+					4, 1, CMD_KEY_OW, REPLY_ERROR, AUTO_ROUTE, 
+					btcfg_command, db->mod_store);
+	command_register(&(db->command_table), "BTCONSUME", "key member tokens [NORMAL|FORCE|FLEXIBLE]",
+					3, 1, CMD_KEY_RW, REPLY_INT_MINORS1, AUTO_ROUTE,
+					btconsume_command, db->mod_store);
+	command_register(&(db->command_table), "BTINFO", "key [member]",
+					1, 1, CMD_KEY_RO, REPLY_EMPTY_ARRAY, AUTO_ROUTE,
+					btinfo_command, db->mod_store);
 
 	/* Debugging Commands */
 	command_register(&(db->command_table), "INFO", "[section]",

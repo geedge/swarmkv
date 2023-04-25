@@ -372,7 +372,7 @@ Return
 Syntax
 
 ```
-TCFG key capacity rate
+TCFG key rate capacity
 ```
 
 Config a token bucket of `key`, which has a fixed `capacity` bucket and has tokens  are added at a fixed `rate`. If `key` does not exist, a new key holding a token bucket is created. If both capacity and rate are 0, the token bucket has infinite tokens.

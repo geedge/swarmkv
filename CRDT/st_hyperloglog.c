@@ -188,7 +188,7 @@ void ST_hyperloglog_merge(struct ST_hyperloglog *dst, const struct ST_hyperloglo
 }
 size_t ST_hyperloglog_serialized_size(const struct ST_hyperloglog *h)
 {
-    size_t sz=0, offset=0;
+    size_t sz=0;
     size_t num_reg = NUM_REG(h->cfg.precision);
     size_t words = INT_CEIL(num_reg, REG_PER_WORD);
 
@@ -452,7 +452,7 @@ static double raw_estimate2(const struct ST_hyperloglog *h, int *num_zero)
     harmonic_mean=n_calc/harmonic_mean;
     return harmonic_mean;
 }
-static double ST_HLL_count_no_sliding(const struct ST_hyperloglog *h)
+ __attribute__ ((unused)) static double ST_HLL_count_no_sliding(const struct ST_hyperloglog *h)
 {
     int num_zero = 0;
     int num_reg = NUM_REG(h->cfg.precision);

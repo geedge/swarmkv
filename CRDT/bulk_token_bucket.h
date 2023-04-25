@@ -17,6 +17,7 @@ void bulk_token_bucket_free(struct bulk_token_bucket *btb);
 void bulk_token_bucket_configure(struct bulk_token_bucket *btb, struct timeval now, long long CIR, long long CBS, long long bucket_num);
 
 long long bulk_token_bucket_consume(struct bulk_token_bucket *btb, struct timeval now, const char *key, size_t key_len, enum tb_consume_type cmd, long long tokens);
+long long bulk_token_bucket_read_available(const struct bulk_token_bucket *btb, struct timeval now, const char *key, size_t keylen);
 struct bulk_token_bucket_info
 {
 	long long CIR;

@@ -28,6 +28,7 @@ struct fair_token_bucket_info
 {
     struct OC_token_bucket_info bucket_info;
     long long active_key_number;
+    long long divisor;
 };
 void fair_token_bucket_info(const struct fair_token_bucket *ftb, struct timeval now, struct fair_token_bucket_info *info);
 
