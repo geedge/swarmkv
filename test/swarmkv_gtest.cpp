@@ -1496,7 +1496,7 @@ TEST_F(SwarmkvTwoNodes, TypeHash)
 TEST_F(SwarmkvTwoNodes, Wait)
 {
 	//return;
-	//sleep(3600*2);
+	sleep(3600*2);
 }
 TEST(CloudNative, AnnounceIPPort)
 {
