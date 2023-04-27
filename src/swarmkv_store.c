@@ -601,7 +601,7 @@ void swarmkv_store_periodic(struct swarmkv_module * mod_store)
 }
 struct swarmkv_module *swarmkv_store_new(const struct swarmkv_options *opts, exec_cmd_func *send_cmd, void *handle_send_cmd, uuid_t node_uuid)
 {
-	struct swarmkv_store* store=ALLOC(struct swarmkv_store, 1);
+	struct swarmkv_store *store=ALLOC(struct swarmkv_store, 1);
 	strncpy(store->module.name, "store", sizeof(store->module.name));
 	store->module.mod_ctx=store;
 	store->module.lock=store_lock;
@@ -721,41 +721,6 @@ struct pattern_match_arg
 	sds pattern;
     UT_array *matched_replies;
 };
-const char *type2string(enum sobj_type type)
-{
-	const char *ret_str=NULL;
-	switch(type)
-	{
-		case OBJ_TYPE_STRING:
-			ret_str="string";
-			break;
-		case OBJ_TYPE_INTEGER:
-			ret_str="integer";
-			break;
-		case OBJ_TYPE_SET:
-			ret_str="set";
-			break;
-		case OBJ_TYPE_HASH:
-			ret_str="hash";
-			break;
-		case OBJ_TYPE_TOKEN_BUCKET:
-			ret_str="token-bucket";
-			break;
-		case OBJ_TYPE_FAIR_TOKEN_BUCKET:
-			ret_str="fair-token-bucket";
-			break;
-		case OBJ_TYPE_BULK_TOKEN_BUCKET:
-			ret_str="bulk-token-bucket";
-			break;
-		case OBJ_TYPE_UNDEFINED:
-			ret_str="undefined";
-			break;
-		default:
-			assert(0);
-			break;
-	}
-	return ret_str;
-}
 enum cmd_exec_result type_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
 {
 /*TYPE key*/
@@ -975,7 +940,7 @@ enum cmd_exec_result crdt_info_command(struct swarmkv_module *mod_store, const s
 	int i=0;
 	*reply=swarmkv_reply_new_array(8);
 	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("Type");
-	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt(type2string(ctr->obj.type));
+	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt(sobj_specs[ctr->obj.type].type_name);
 	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("Size");
 	(*reply)->elements[i++]=swarmkv_reply_new_integer(sz);
 	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("Replicas");

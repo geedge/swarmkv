@@ -1332,7 +1332,7 @@ TEST_F(SwarmkvTwoNodes, TypeFairTokenBucket)
 	long long token=0, requested_tokens=0, allocated_tokens=0;
 	long long member_id=0, weight=0, n_member=100;
 
-	while(now.tv_sec - start.tv_sec<10)
+	while(now.tv_sec - start.tv_sec<20)
 	{
 		token=random()%(2*rate/n_member);
 		requested_tokens+=token;
@@ -1496,7 +1496,7 @@ TEST_F(SwarmkvTwoNodes, TypeHash)
 TEST_F(SwarmkvTwoNodes, Wait)
 {
 	//return;
-	sleep(3600*2);
+	//sleep(3600*2);
 }
 TEST(CloudNative, AnnounceIPPort)
 {
