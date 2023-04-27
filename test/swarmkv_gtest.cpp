@@ -1397,7 +1397,7 @@ TEST_F(SwarmkvTwoNodes, TypeBulkTokenBucket)
 	long long token=0, requested_tokens=0, allocated_tokens=0;
 	long long member_id=0, n_member=100;
 
-	while(now.tv_sec - start.tv_sec<10)
+	while(now.tv_sec - start.tv_sec<15)
 	{
 		token=random()%(2*rate/n_member);
 		requested_tokens+=token;
@@ -1507,7 +1507,7 @@ TEST(CloudNative, AnnounceIPPort)
 	struct swarmkv_options *opts[NODE_NUMBER];
 	const char *cluster_name="skv-in-k8s";
 	char *err=NULL;
-	const char *annouce_ip="172.17.93.178";//eth0 of GDNT-BJ-DEV1 of AliCloud
+	const char *annouce_ip="172.17.58.172";//eth0 of GDNT-BJ-DEV1 of AliCloud
 	const char *bind_ip="0.0.0.0";
 	char node_list_str[1024]={0};
 	for(i=0; i<NODE_NUMBER; i++)

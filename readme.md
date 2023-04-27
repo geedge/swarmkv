@@ -28,8 +28,9 @@ SwarmKV Data Types
 - Integer
 - Set
 - Hash Table
-- Bitmap [todo]
-- Token Bucket
+- Token Bucket, Fair Token Bucket and Bulk Token Bucket
+- Count-min Sketch [Todo]
+- HyperLogLog [Todo]
 
 
 
