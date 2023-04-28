@@ -585,7 +585,7 @@ swarmkv-2-nodes> BTINFO bulk user1
 12) (integer) 100000
 ```
 
-## Cluster Management
+## Debug
 
 ### INFO
 
@@ -657,6 +657,53 @@ instantaneous_output_kbps: 0.00
 instantaneous_input_cps: 0.00
 instantaneous_output_cps: 0.00
 ```
+
+### LATENCY
+
+Syntax
+
+```
+LATENCY <subcommand> [<arg> [value] [opt] ...]
+```
+
+The `LANTENCY` command returns latency metrics of command execution.
+Subcommands are:
+* COMMAND [command]
+    - Return time-latency samples for a specified command name.
+* PEER [IP:port]
+    - Return time-latency samples for the specified peer.
+* EVENT [event]
+    - Return time-latency samples for the specified event.
+* RESET [command|event|peer]
+    - Reset data of a specified catalog or all the data if no catalog provided.
+
+### DEBUG
+
+Syntax
+
+```
+DEBUG <subcommand> [<arg> [value] [opt] ...].
+```
+
+Subcommands are:
+* SLEEP <seconds>
+    - Stop the server for <seconds>. Decimals allowed.
+* ASSERT
+    - Crash by assertion failed.
+
+### COMMAND LIST
+
+Syntax
+
+```
+COMMAND LIST
+```
+
+The `COMMAND LIST` command returns an array of the server's command names.
+
+Return
+
+- Array reply: a list of command names.
 
 ## Cluster Management
 

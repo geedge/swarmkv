@@ -463,6 +463,21 @@ enum cmd_exec_result config_command(struct swarmkv_module *mod_store, const stru
 {
 	return FINISHED;
 }
+enum cmd_exec_result command_list_command(struct swarmkv_module *mod_db, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+{
+	struct swarmkv *db=module2db(mod_db);
+	size_t cnt=HASH_COUNT(db->command_table);
+	struct swarmkv_cmd_spec *spec=NULL, *tmp_spec=NULL;
+	int i=0;
+	*reply=swarmkv_reply_new_array(cnt);
+	HASH_ITER(hh, db->command_table, spec, tmp_spec)
+	{
+		(*reply)->elements[i]=swarmkv_reply_new_string(spec->name, strlen(spec->name));
+		i++;
+	}
+	assert(i==cnt);
+	return FINISHED;
+}
 struct swarmkv_cmd_spec *get_spec_by_argv(struct swarmkv *db, size_t argc, char* const argv[])
 {
 	struct swarmkv_cmd_spec *spec=NULL;
@@ -1001,6 +1016,9 @@ void command_spec_init(struct swarmkv *db)
 	command_register(&(db->command_table), "PING", "IP:port",
 					1, -1, CMD_KEY_NA, REPLY_NA, AUTO_ROUTE,
 					ping_command, &db->module);
+	command_register(&(db->command_table), "COMMAND LIST", "",
+					0, -1, CMD_KEY_NA, REPLY_NA, AUTO_ROUTE,
+					command_list_command, &db->module);	
 	command_register(&(db->command_table), "TUNNEL", "IP:port command ...",
 					2, -1, CMD_KEY_NA, REPLY_NA, AUTO_ROUTE,
 					tunnel_command, &db->module);
@@ -1008,6 +1026,9 @@ void command_spec_init(struct swarmkv *db)
 	command_register(&(db->command_table), "LATENCY", "<subcommand>",
 					1, -1, CMD_KEY_NA, REPLY_NA, NOT_AUTO_ROUTE,
 					latency_command, db->mod_monitor);
+
+
+					
 
 	/* low-level state-based CRDT synchronization commands*/
 	command_register(&(db->command_table), "CRDT PULL", "key",
