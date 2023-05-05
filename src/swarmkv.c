@@ -463,6 +463,21 @@ enum cmd_exec_result config_command(struct swarmkv_module *mod_store, const stru
 {
 	return FINISHED;
 }
+enum cmd_exec_result command_list_command(struct swarmkv_module *mod_db, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+{
+	struct swarmkv *db=module2db(mod_db);
+	size_t cnt=HASH_COUNT(db->command_table);
+	struct swarmkv_cmd_spec *spec=NULL, *tmp_spec=NULL;
+	int i=0;
+	*reply=swarmkv_reply_new_array(cnt);
+	HASH_ITER(hh, db->command_table, spec, tmp_spec)
+	{
+		(*reply)->elements[i]=swarmkv_reply_new_string(spec->name, strlen(spec->name));
+		i++;
+	}
+	assert(i==cnt);
+	return FINISHED;
+}
 struct swarmkv_cmd_spec *get_spec_by_argv(struct swarmkv *db, size_t argc, char* const argv[])
 {
 	struct swarmkv_cmd_spec *spec=NULL;
@@ -963,7 +978,7 @@ void command_spec_init(struct swarmkv *db)
 					hincrby_command, db->mod_store);
 
 	/* Token bucket commands */
-	command_register(&(db->command_table), "TCFG", "key capacity rate",
+	command_register(&(db->command_table), "TCFG", "key rate capacity",
 					3, 1, CMD_KEY_OW, REPLY_ERROR, AUTO_ROUTE, 
 					tcfg_command, db->mod_store);
 	command_register(&(db->command_table), "TCONSUME", "key tokens [NORMAL|FORCE|FLEXIBLE]",
@@ -972,8 +987,26 @@ void command_spec_init(struct swarmkv *db)
 	command_register(&(db->command_table), "TINFO", "key",
 					1, 1, CMD_KEY_RO, REPLY_EMPTY_ARRAY, AUTO_ROUTE,
 					tinfo_command, db->mod_store);
+	command_register(&(db->command_table), "FTCFG", "key rate capacity divisor",
+					4, 1, CMD_KEY_OW, REPLY_ERROR, AUTO_ROUTE, 
+					ftcfg_command, db->mod_store);
+	command_register(&(db->command_table), "FTCONSUME", "key member weight tokens",
+					4, 1, CMD_KEY_RW, REPLY_INT_MINORS1, AUTO_ROUTE,
+					ftconsume_command, db->mod_store);
+	command_register(&(db->command_table), "FTINFO", "key",
+					1, 1, CMD_KEY_RO, REPLY_EMPTY_ARRAY, AUTO_ROUTE,
+					ftinfo_command, db->mod_store);
+	command_register(&(db->command_table), "BTCFG", "key rate capacity number-of-buckets",
+					4, 1, CMD_KEY_OW, REPLY_ERROR, AUTO_ROUTE, 
+					btcfg_command, db->mod_store);
+	command_register(&(db->command_table), "BTCONSUME", "key member tokens [NORMAL|FORCE|FLEXIBLE]",
+					3, 1, CMD_KEY_RW, REPLY_INT_MINORS1, AUTO_ROUTE,
+					btconsume_command, db->mod_store);
+	command_register(&(db->command_table), "BTINFO", "key [member]",
+					1, 1, CMD_KEY_RO, REPLY_EMPTY_ARRAY, AUTO_ROUTE,
+					btinfo_command, db->mod_store);
 
-	/* Debugging Commands */
+	/* Debug Commands */
 	command_register(&(db->command_table), "INFO", "[section]",
 					0, -1, CMD_KEY_NA, REPLY_NA, AUTO_ROUTE,
 					info_command, &db->module);
@@ -983,6 +1016,9 @@ void command_spec_init(struct swarmkv *db)
 	command_register(&(db->command_table), "PING", "IP:port",
 					1, -1, CMD_KEY_NA, REPLY_NA, AUTO_ROUTE,
 					ping_command, &db->module);
+	command_register(&(db->command_table), "COMMAND LIST", "",
+					0, -1, CMD_KEY_NA, REPLY_NA, AUTO_ROUTE,
+					command_list_command, &db->module);	
 	command_register(&(db->command_table), "TUNNEL", "IP:port command ...",
 					2, -1, CMD_KEY_NA, REPLY_NA, AUTO_ROUTE,
 					tunnel_command, &db->module);
@@ -990,6 +1026,9 @@ void command_spec_init(struct swarmkv *db)
 	command_register(&(db->command_table), "LATENCY", "<subcommand>",
 					1, -1, CMD_KEY_NA, REPLY_NA, NOT_AUTO_ROUTE,
 					latency_command, db->mod_monitor);
+
+
+					
 
 	/* low-level state-based CRDT synchronization commands*/
 	command_register(&(db->command_table), "CRDT PULL", "key",

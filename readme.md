@@ -28,8 +28,9 @@ SwarmKV Data Types
 - Integer
 - Set
 - Hash Table
-- Bitmap [todo]
-- Token Bucket
+- Token Bucket, Fair Token Bucket and Bulk Token Bucket
+- Count-min Sketch [Todo]
+- HyperLogLog [Todo]
 
 
 
@@ -147,4 +148,5 @@ int main(int argc, char **argv)
 Here are some specific details about the SwarmKV.
 * [Commands](./docs/commands.md)
 * [Design](./docs/design.md)
-* [CLI](./docs/cli.md)
+* [Command-line interface (CLI)](./docs/cli.md)
+* [Conflict-free Replicated Data Type (CRDT)](./docs/crdt.md)

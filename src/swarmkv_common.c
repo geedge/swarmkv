@@ -70,6 +70,9 @@ sds swarmkv_reply_format(const struct swarmkv_reply *r, char *prefix) {
     case SWARMKV_REPLY_INTEGER:
         out = sdscatprintf(out,"(integer) %lld\n", r->integer);
     	break;
+	case SWARMKV_REPLY_DOUBLE:
+		out = sdscatprintf(out,"(double) %f\n", r->dval);
+		break;
     case SWARMKV_REPLY_STRING:
     case SWARMKV_REPLY_VERBATIM:
 	case SWARMKV_REPLY_NODE:
@@ -206,6 +209,13 @@ struct swarmkv_reply *swarmkv_reply_new_integer(long long integer)
 	struct swarmkv_reply *reply=ALLOC(struct swarmkv_reply, 1);
 	reply->type=SWARMKV_REPLY_INTEGER;
 	reply->integer=integer;
+	return reply;
+}
+struct swarmkv_reply *swarmkv_reply_new_double(double dval)
+{
+	struct swarmkv_reply *reply=ALLOC(struct swarmkv_reply, 1);
+	reply->type=SWARMKV_REPLY_DOUBLE;
+	reply->dval=dval;
 	return reply;
 }
 struct swarmkv_reply *swarmkv_reply_new_nil(void)

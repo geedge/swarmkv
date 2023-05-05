@@ -27,7 +27,7 @@ struct LWW_register *LWW_register_deserialize(const char *blob, size_t blob_sz);
 void LWW_register_merge(struct LWW_register *dst, struct LWW_register *src);
 
 void LWW_register_merge_blob(struct LWW_register *reg, const char *blob, size_t blob_sz);
-size_t LWW_regeister_size(const struct LWW_register *reg);
+size_t LWW_regeister_mem_size(const struct LWW_register *reg);
 
 #ifdef __cplusplus
 }

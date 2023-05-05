@@ -2,557 +2,17 @@
 #include "pn_counter.h"
 #include "or_set.h"
 #include "or_map.h"
-#include "oc_token_bucket.h"
+
 #include "crdt_utils.h"
+#include "cm_sketch.h"
+#include "st_hyperloglog.h"
+#include "g_array.h"
 
 #include <gtest/gtest.h>
 #include <unistd.h> //usleep
 #include <uuid/uuid.h>
 #include <math.h>
 
-#define REPLICA_NUMBER	3
-void OC_token_bucket_sync(struct OC_token_bucket *list[], size_t n)
-{
-	char *blob=NULL;
-	size_t blob_sz=0;
-	
-	for(size_t i=0; i<n; i++)
-	{
-		OC_token_bucket_serialize(list[i], &blob, &blob_sz);
-		for(size_t j=0; j<n; j++)
-		{
-			if(j==i) continue;
-			OC_token_bucket_merge_blob(list[j], blob, blob_sz);
-		}
-		free(blob);
-		blob=NULL;
-	}	
-	return;
-}
-
-enum traffic_type 
-{
-	LIGHT_UNIFORM_TYPE,
-	LIGHT_TWO_EIGHT_TYPE,
-	HEAVY_TWO_EIGHT_TYPE,
-	HEAVY_UNIFORM_EXTREME_TYPE
-};
-
-long long get_request_tokens(int index, enum traffic_type type, long long step_us, long long CIR, long long CBS) 
-{
-	long long request_size;
-	long long standard = CIR * step_us / 1000000;
-	long long sd10 = floor((long double)standard * 0.1);
-	int eight_replica_num = floor(REPLICA_NUMBER * 0.8);
-	long long rand_sd10 = random() % sd10;
-	int scope_flag = FALSE;
-	if (random() % 2) scope_flag = TRUE;
-	switch (type) 
-	{
-		case LIGHT_UNIFORM_TYPE:
-			request_size = (long long)floor((long double)standard * 0.5);
-			if (scope_flag) {
-			request_size += rand_sd10;
-			} else {
-			request_size -= rand_sd10;
-			}
-			break;
-		case LIGHT_TWO_EIGHT_TYPE:
-			if (index < eight_replica_num && scope_flag) {
-			request_size = (long long)floor((long double)standard * 0.2) + rand_sd10;
-			} else if (index < eight_replica_num && !scope_flag) {
-			request_size = (long long)floor((long double)standard * 0.2) - rand_sd10;
-			} else if (index >= eight_replica_num && scope_flag) {
-			request_size = (long long)floor((long double)standard * 1.6) + rand_sd10;
-			} else {
-			request_size = (long long)floor((long double)standard * 1.6) - rand_sd10;
-			}
-			break;
-		case HEAVY_TWO_EIGHT_TYPE:
-			if (index < eight_replica_num && scope_flag) {
-			request_size = (long long)floor((long double)standard * 0.6) + rand_sd10;
-			} else if (index < eight_replica_num && !scope_flag) {
-			request_size = (long long)floor((long double)standard * 0.6) - rand_sd10;
-			} else if (index >= eight_replica_num && scope_flag) {
-			request_size = (long long)floor((long double)standard * 4.8) + rand_sd10;
-			} else {
-			request_size = (long long)floor((long double)standard * 4.8) - rand_sd10;
-			}
-			break;
-		case HEAVY_UNIFORM_EXTREME_TYPE:
-			request_size = (long long)floor((long double)standard * 2);
-			if (scope_flag) {
-			request_size += rand_sd10;
-			} else {
-			request_size -= rand_sd10;
-			}
-			break;
-		default:
-			break;
-	}
-	return request_size;
-}
-
-void traffic_distribution(traffic_type type)
-{
-	struct OC_token_bucket *buckets[REPLICA_NUMBER];
-	size_t i = 0, j = 0;
-	long long CIR = 1*1024*1024; // 1Mps
-	long long CBS = 2*1024*1024;
-	uuid_t uuid;
-	struct timeval start;
-	gettimeofday(&start, NULL);
-	for (i = 0; i < REPLICA_NUMBER; i++) 
-	{
-		uuid_generate(uuid);
-		buckets[i] = OC_token_bucket_new(uuid, start, CIR, CBS);
-	}
-	long long tokens = 0, flexible_tokens = 0;
-	long long consumed = 0, requested = 0, upper_limit = 0, refilled = 0;
-	long long mimic_duration_us = (long long)100*1000*1000;
-	long long step_us = 100;
-	struct timeval step, now;
-	memcpy(&now, &start, sizeof(now));
-	step.tv_sec = 0;
-	step.tv_usec = (suseconds_t)step_us;
-	for (i = 0; (long long)i < mimic_duration_us / step_us; i++) 
-	{
-		j = i % 3; // sequence selection
-		timeradd(&now, &step, &now);
-		tokens = get_request_tokens(j, type, step_us, CIR, CBS);
-		flexible_tokens = OC_token_bucket_control(buckets[j], now, OCTB_CMD_CONSUME_FLEXIBLE, tokens);
-		requested += tokens;
-		consumed += flexible_tokens;
-		if(i%100==0)
-		{
-			OC_token_bucket_sync(buckets, REPLICA_NUMBER);
-		}
-	}
-	upper_limit = CBS + CIR * timeval_delta_ms(start, now) / 1000;
-	refilled = OC_token_bucket_control(buckets[0], now, OCTB_CMD_READ_REFILLED, 0);
-	EXPECT_LE(consumed, requested);
-	double accuracy = (double)consumed / MIN(refilled, requested);
-	EXPECT_NEAR(accuracy, 1, 0.01);
-	printf("accuracy:%f, upper_limit:%lld, refilled:%lld, requested:%lld, consumed:%lld\n",
-			accuracy, upper_limit, refilled, requested, consumed);
-	for(i = 0; i < REPLICA_NUMBER; i++) 
-	{
-		OC_token_bucket_free(buckets[i]);
-	}
-}
-
-TEST(OCTokenBucket, TrafficTypeConsumer)
-{
-	traffic_distribution(LIGHT_UNIFORM_TYPE);
-	traffic_distribution(LIGHT_TWO_EIGHT_TYPE);
-	traffic_distribution(HEAVY_TWO_EIGHT_TYPE);
-	traffic_distribution(HEAVY_UNIFORM_EXTREME_TYPE);
-}
-
-TEST(OCTokenBucket, Basic)
-{
-	uuid_t uuid;
-	uuid_generate(uuid);
-
-	struct OC_token_bucket *bucket=NULL;
-	long long CIR=100;
-	long long CBS=200;
-	struct timeval now;
-	gettimeofday(&now, NULL);
-
-	bucket=OC_token_bucket_new(uuid, now, CIR, CBS);
-	long long tokens=0;
-
-	tokens=OC_token_bucket_control(bucket, now, OCTB_CMD_CONSUME_NORMAL, 140);
-	EXPECT_EQ(tokens, 140);
-	
-	tokens=OC_token_bucket_control(bucket, now, OCTB_CMD_CONSUME_NORMAL, 61);
-	EXPECT_EQ(tokens, 0);
-
-	tokens=OC_token_bucket_control(bucket, now, OCTB_CMD_CONSUME_NORMAL, 60);
-	EXPECT_EQ(tokens, 60);
-
-	now.tv_sec++;
-	tokens=OC_token_bucket_control(bucket, now, OCTB_CMD_CONSUME_NORMAL, 90);
-	EXPECT_EQ(tokens, 90);
-	
-	tokens=OC_token_bucket_control(bucket, now, OCTB_CMD_READ_AVAILABLE, 0);
-	EXPECT_GE(tokens, 10);
-//	printf("avail=%lld\n", tokens);
-	
-	tokens=OC_token_bucket_control(bucket, now, OCTB_CMD_CONSUME_NORMAL, 10);
-	EXPECT_EQ(tokens, 10);
-	OC_token_bucket_free(bucket);
-
-
-}
-TEST(OCTokenBucket, Boundary)
-{
-	uuid_t uuid;
-	uuid_generate(uuid);
-
-	struct timeval now;
-	gettimeofday(&now, NULL);
-	struct OC_token_bucket *bucket=NULL;
-	long long tokens=0, consumed=0;
-
-	//Zero CIR
-	bucket=OC_token_bucket_new(uuid, now, 0, 1000);
-	tokens=OC_token_bucket_control(bucket, now, OCTB_CMD_CONSUME_NORMAL, 1000);
-	EXPECT_EQ(tokens, 1000);
-
-	now.tv_sec++;
-	tokens=OC_token_bucket_control(bucket, now, OCTB_CMD_CONSUME_NORMAL, 1);
-	EXPECT_EQ(tokens, 0);
-	OC_token_bucket_free(bucket);
-
-	//Zero CBS
-	bucket=OC_token_bucket_new(uuid, now, 1000, 0);
-	tokens=OC_token_bucket_control(bucket, now, OCTB_CMD_CONSUME_NORMAL, 1);
-	EXPECT_EQ(tokens, 0);
-	OC_token_bucket_free(bucket);
-
-	//Infinite Tokens
-	bucket=OC_token_bucket_new(uuid, now, 0, 0);
-	tokens=OC_token_bucket_control(bucket, now, OCTB_CMD_CONSUME_NORMAL, 140);
-	consumed+=tokens;
-	EXPECT_EQ(tokens, 140);
-
-
-	tokens=OC_token_bucket_control(bucket, now, OCTB_CMD_CONSUME_NORMAL, 65535);
-	consumed+=tokens;
-	EXPECT_EQ(tokens, 65535);
-
-	tokens=OC_token_bucket_control(bucket, now, OCTB_CMD_READ_CONSUEMD, 0);
-	EXPECT_EQ(tokens, consumed);
-
-	tokens=OC_token_bucket_control(bucket, now, OCTB_CMD_READ_REFILLED, 0);
-	EXPECT_EQ(tokens, consumed);
-
-	now.tv_sec++;
-	OC_token_bucket_configure(bucket, now, 100, 500, 10);
-	
-	now.tv_sec+=500/100;
-	tokens=OC_token_bucket_control(bucket, now, OCTB_CMD_CONSUME_NORMAL, 500);
-	consumed+=tokens;
-	EXPECT_EQ(tokens, 500);
-
-	tokens=OC_token_bucket_control(bucket, now, OCTB_CMD_READ_CONSUEMD, 0);
-	EXPECT_EQ(tokens, consumed);
-
-	tokens=OC_token_bucket_control(bucket, now, OCTB_CMD_READ_REFILLED, 0);
-	EXPECT_EQ(tokens, consumed);
-
-	OC_token_bucket_free(bucket);
-}
-TEST(OCTokenBucket, Merge)
-{
-	struct OC_token_bucket *buckets[2];
-	uuid_t uuid;
-	long long CIR=100;
-	long long CBS=200;
-	struct timeval now;
-	gettimeofday(&now, NULL);
-
-	size_t i=0;
-	for(i=0; i<2; i++)
-	{
-		uuid_generate(uuid);
-		buckets[i]=OC_token_bucket_new(uuid, now, CIR, CBS);
-	}
-	long long tokens=0;
-	OC_token_bucket_sync(buckets, 2);
-	tokens=OC_token_bucket_control(buckets[0], now, OCTB_CMD_CONSUME_NORMAL, 130);
-	EXPECT_EQ(tokens, 130);
-	tokens=OC_token_bucket_control(buckets[1], now, OCTB_CMD_CONSUME_NORMAL, 30);
-	EXPECT_EQ(tokens, 30);
-
-	OC_token_bucket_sync(buckets, 2);
-	now.tv_sec++;
-	//each has 200-130-30+100/2=90 avaliable tokens
-	tokens=OC_token_bucket_control(buckets[0], now, OCTB_CMD_CONSUME_NORMAL, 91);
-	EXPECT_EQ(tokens, 0);
-	tokens=OC_token_bucket_control(buckets[1], now, OCTB_CMD_CONSUME_FLEXIBLE, 90);
-	EXPECT_EQ(tokens, 90);
-	OC_token_bucket_sync(buckets, 2);
-	
-	for(i=0; i<2; i++)
-	{
-		OC_token_bucket_free(buckets[i]);
-	}
-}
-double OC_token_bucket_test(size_t replica_num, long long mimic_duration_s, long long sync_interval_ms, int saturation_percent)
-{
-	struct OC_token_bucket *buckets[replica_num];
-	size_t i=0, j=0;
-	long long CIR=512*1024;
-	long long CBS=2*1024*1024;
-	uuid_t uuid;
-	struct timeval start;
-	gettimeofday(&start, NULL);
-	for(i=0; i<replica_num; i++)
-	{
-		uuid_generate(uuid);
-		buckets[i]=OC_token_bucket_new(uuid, start, CIR, CBS);
-	}
-	srandom(17);
-	long long tokens=0;
-	long long consumed=0, requested=0, upper_limit=0, refilled=0;
-	long long step_us=100, mimic_duration_us=mimic_duration_s*1000*1000;
-	long long sync_interval_us=sync_interval_ms*1000;
-	struct timeval step, now;
-	memcpy(&now, &start, sizeof(now));
-	step.tv_sec=0;
-	step.tv_usec=(suseconds_t)step_us;
-	for(i=0; (long long)i<mimic_duration_us/step_us; i++)
-	{
-		timeradd(&now, &step, &now);
-		j=random()%replica_num;
-		tokens=CIR*step_us/(1000*1000);
-		tokens=tokens*saturation_percent/100;
-		tokens=tokens/2+random()%tokens;
-		requested+=tokens;
-		consumed+=OC_token_bucket_control(buckets[j], now, OCTB_CMD_CONSUME_NORMAL, tokens);
-		if((step_us*i)%sync_interval_us==0)
-		{
-			OC_token_bucket_sync(buckets, replica_num);
-		}
-	}
-	upper_limit=CBS+CIR*timeval_delta_ms(start, now)/1000;
-	refilled=OC_token_bucket_control(buckets[0], now, OCTB_CMD_READ_REFILLED, 0);
-	EXPECT_NEAR((double)consumed/MIN(refilled, requested), 1, 0.03);
-//	EXPECT_LE(consumed, requested);
-	double accuracy=(double)consumed/MIN(upper_limit, requested);
-	double real_saturation=(double)requested/upper_limit;
-	EXPECT_NEAR(real_saturation, (double)saturation_percent/100, 0.1);
-	for(i=0; i<replica_num; i++)
-	{
-		OC_token_bucket_free(buckets[i]);
-	}
-	return accuracy;
-}
-TEST(OCTokenBucket, HeavyConsumer)
-{
-	double accuracy=0.0;
-	long long replica_num=0, test_duration_s=500, sync_interval_ms=0;
-
-	long long i=0, j=0;
-	for(i=8; i<9; i++)
-	{
-		replica_num=i+1;
-		for(j=0; j<10; j++)
-		{
-			sync_interval_ms=100*(j+1);
-			accuracy=OC_token_bucket_test(replica_num, test_duration_s, sync_interval_ms, 200);
-			printf("replica_num=%lld, sync_interval_ms=%lld, accuracy=%.4f\n", replica_num, sync_interval_ms, accuracy);
-			EXPECT_NEAR(accuracy, 1, 0.05);
-		}
-	}
-}
-TEST(OCTokenBucket, LightConsumer)
-{	
-	double accuracy=0.0;
-	long long replica_num=0, test_duration_s=100, sync_interval_ms=0;
-
-	long long i=0, j=0;
-	for(i=0; i<4; i++)
-	{
-		replica_num=i+1;
-		for(j=0; j<20; j++)
-		{
-			sync_interval_ms=100*(j+1);
-			accuracy=OC_token_bucket_test(replica_num, test_duration_s, sync_interval_ms, 90);
-			EXPECT_NEAR(accuracy, 1, 0.03);
-		}
-	}
-}
-TEST(OCTokenBucket, ConcurrentHeavyConsumer)
-{
-	struct OC_token_bucket *buckets[REPLICA_NUMBER];
-	size_t i=0, j=0;
-	long long CIR=100*1024*1024;
-	long long CBS=1000*1024*1024;
-	uuid_t uuid;
-	struct timeval start;
-	gettimeofday(&start, NULL);
-	for(i=0; i<REPLICA_NUMBER; i++)
-	{
-		uuid_generate(uuid);
-		buckets[i]=OC_token_bucket_new(uuid, start, CIR, CBS);
-	}
-	srandom(17);
-	long long tokens=0;
-	long long consumed=0, requested=0, upper_limit=0, refilled=0;
-	long long mimic_duration_us=(long long)100*1000*1000;
-	long long step_us=100;
-	struct timeval step, now;
-	memcpy(&now, &start, sizeof(now));
-	step.tv_sec=0;
-	step.tv_usec=(suseconds_t)step_us;
-	for(i=0; (long long)i<mimic_duration_us/step_us; i++)
-	{
-		timeradd(&now, &step, &now);		
-		tokens=CIR*step_us/(1000*1000);		
-		tokens=tokens/REPLICA_NUMBER+random()%tokens;
-		for(j=0; j<REPLICA_NUMBER; j++)
-		{
-			requested+=tokens;			
-			consumed+=OC_token_bucket_control(buckets[j], now, OCTB_CMD_CONSUME_FLEXIBLE, tokens);
-		}
-		if(i%100==0)
-		{
-			OC_token_bucket_sync(buckets, REPLICA_NUMBER);
-		}
-	}
-	upper_limit=CBS+CIR*timeval_delta_ms(start, now)/1000;
-	refilled=OC_token_bucket_control(buckets[0], now, OCTB_CMD_READ_REFILLED, 0);
-	EXPECT_NEAR((double)consumed/MIN(refilled, requested), 1, 0.01);
-	EXPECT_NEAR((double)refilled/upper_limit, 1, 0.01);
-	EXPECT_LE(consumed, requested);
-	double accuracy=(double)consumed/MIN(upper_limit, requested);
-	EXPECT_NEAR(accuracy, 1, 0.01);
-	for(i=0; i<REPLICA_NUMBER; i++)
-	{
-		OC_token_bucket_free(buckets[i]);
-	}
-}
-TEST(OCTokenBucket, Reconfigure)
-{
-	struct OC_token_bucket *buckets[REPLICA_NUMBER];
-	size_t i=0, j=0;
-	double accuracy=0.0;
-	long long CIR=100*1024*1024;
-	long long CBS=1000*1024*1024;
-	uuid_t uuid;
-	struct timeval start;
-	gettimeofday(&start, NULL);
-	for(i=0; i<REPLICA_NUMBER; i++)
-	{
-		uuid_generate(uuid);
-		buckets[i]=OC_token_bucket_new(uuid, start, CIR, CBS);
-	}
-	srandom(17);
-	long long tokens=0;
-	long long consumed=0, requested=0, upper_limit=0, refilled=0;
-	long long mimic_duration_us=(long long)1000*1000*1000;
-	long long step_us=100;
-	struct timeval step, now;
-	memcpy(&now, &start, sizeof(now));
-	step.tv_sec=0;
-	step.tv_usec=(suseconds_t)step_us;
-	for(i=0; (long long)i<mimic_duration_us/step_us; i++)
-	{
-		timeradd(&now, &step, &now);		
-		tokens=CIR*step_us/(1000*1000);		
-		tokens=tokens/REPLICA_NUMBER+random()%tokens;
-		for(j=0; j<REPLICA_NUMBER; j++)
-		{
-			requested+=tokens;			
-			consumed+=OC_token_bucket_control(buckets[j], now, OCTB_CMD_CONSUME_FLEXIBLE, tokens);
-		}
-		if(i%100==0)
-		{
-			OC_token_bucket_sync(buckets, REPLICA_NUMBER);
-		}
-	}
-	upper_limit=CBS+CIR*timeval_delta_ms(start, now)/1000;
-	refilled=OC_token_bucket_control(buckets[0], now, OCTB_CMD_READ_REFILLED, 0);
-	EXPECT_NEAR((double)consumed/MIN(refilled, requested), 1, 0.01);
-	EXPECT_NEAR((double)refilled/upper_limit, 1, 0.01);
-	EXPECT_LE(consumed, requested);
-	accuracy=(double)consumed/MIN(upper_limit, requested);
-	EXPECT_NEAR(accuracy, 1, 0.01);
-
-	memcpy(&start, &now, sizeof(start));
-	CIR*=2;
-	CBS*=5;
-	requested=0;
-	consumed=0;
-	OC_token_bucket_configure(buckets[0], start, CIR, CBS, 0);
-	for(i=0; (long long)i<mimic_duration_us/step_us; i++)
-	{
-		timeradd(&now, &step, &now);		
-		tokens=CIR*step_us/(1000*1000);		
-		tokens=tokens/REPLICA_NUMBER+random()%tokens;
-		for(j=0; j<REPLICA_NUMBER; j++)
-		{
-			requested+=tokens;			
-			consumed+=OC_token_bucket_control(buckets[j], now, OCTB_CMD_CONSUME_FLEXIBLE, tokens);
-		}
-		if(i%100==0)
-		{
-			OC_token_bucket_sync(buckets, REPLICA_NUMBER);
-		}
-	}
-	upper_limit=CIR*timeval_delta_ms(start, now)/1000;//not + CBS, becasue reconfiguration will not refill the bucket to full.
-	refilled=OC_token_bucket_control(buckets[0], now, OCTB_CMD_READ_REFILLED, 0)-refilled;
-	EXPECT_NEAR((double)consumed/MIN(refilled, requested), 1, 0.01);
-	EXPECT_NEAR((double)refilled/upper_limit, 1, 0.01);
-	EXPECT_LE(consumed, requested);
-	accuracy=(double)consumed/MIN(upper_limit, requested);
-	EXPECT_NEAR(accuracy, 1, 0.01);
-	
-	for(i=0; i<REPLICA_NUMBER; i++)
-	{
-		OC_token_bucket_free(buckets[i]);
-	}
-}
-TEST(OCTokenBucket, PartitionTolerance)
-{
-	struct OC_token_bucket *buckets[REPLICA_NUMBER];
-	size_t i=0, j=0;
-	long long CIR=1*1024*1024;
-	long long CBS=2*1024*1024;
-	uuid_t uuid;
-	struct timeval start;
-	gettimeofday(&start, NULL);
-	for(i=0; i<REPLICA_NUMBER; i++)
-	{
-		uuid_generate(uuid);
-		buckets[i]=OC_token_bucket_new(uuid, start, CIR, CBS);
-	}
-	srandom(17);
-	long long tokens=0;
-	long long consumed=0, requested=0, upper_limit=0, refilled=0;
-	long long mimic_duration_us=(long long)100*1000*1000;
-	long long step_us=100;
-	struct timeval step, now;
-	memcpy(&now, &start, sizeof(now));
-	step.tv_sec=0;
-	step.tv_usec=(suseconds_t)step_us;
-	for(i=0; (long long)i<mimic_duration_us/step_us; i++)
-	{
-		timeradd(&now, &step, &now);
-		j=random()%REPLICA_NUMBER;
-		tokens=CIR*step_us/(1000*1000);
-		tokens=tokens+random()%tokens;
-		for(j=0; j<REPLICA_NUMBER; j++)
-		{
-			requested+=tokens;			
-			consumed+=OC_token_bucket_control(buckets[j], now, OCTB_CMD_CONSUME_FLEXIBLE, tokens);
-		}
-		//network partition at time (t/3, t*2/3]
-		if((long long)i>mimic_duration_us/step_us/3 && (long long)i<= 2*mimic_duration_us/step_us/3)
-		{
-			continue;
-		}
-		//if(i%100==0)
-		{
-			OC_token_bucket_sync(buckets, REPLICA_NUMBER);
-		}
-	}
-	upper_limit=CBS+(CIR*timeval_delta_ms(start, now)/1000)*2/3 + (CIR*timeval_delta_ms(start, now)/1000)*REPLICA_NUMBER/3;
-	refilled=OC_token_bucket_control(buckets[0], now, OCTB_CMD_READ_REFILLED, 0);
-	EXPECT_NEAR((double)consumed/MIN(refilled, requested), 1, 0.01);
-	EXPECT_LE(consumed, requested);
-	double accuracy=(double)consumed/MIN(upper_limit, requested);
-	EXPECT_NEAR(accuracy, 1, 0.01);
-	for(i=0; i<REPLICA_NUMBER; i++)
-	{
-		OC_token_bucket_free(buckets[i]);
-	}
-
-}
 TEST(LWWRegister, Basic)
 {
 	struct LWW_register *reg=NULL;
@@ -845,7 +305,7 @@ TEST(PNCounter, Replica100)
 	}
 	EXPECT_EQ(success, test_replica_num);
 	size_t sz=0;
-	sz=PN_counter_size(pnc[0]);
+	sz=PN_counter_mem_size(pnc[0]);
 	EXPECT_EQ(sz, 8864);
 	for(i=0; i<test_replica_num; i++)
 	{
@@ -1690,7 +1150,654 @@ TEST(ORMap, Replica32)
 	}
 
 }
+TEST(CMSketch, Basic)
+{
+	uuid_t uuid;
+	uuid_generate(uuid);
+	struct CM_sketch *cms=CM_sketch_new(uuid);
+	int ret=0, n_added=0;
+	for(int i=0; i<10; i++)
+	{
+		ret=CM_sketch_add_n(cms, (char *)&i, sizeof(i), i+1);
+		n_added += i+1;
+	}
+	for(int i=0; i<10; i++)
+	{
+		ret=CM_sketch_query(cms, (char *)&i, sizeof(i));
+		EXPECT_EQ(ret, i+1);
+	}
+	for(int i=0; i<10; i++)
+	{
+		ret=CM_sketch_remove_n(cms, (char *)&i, sizeof(i), i);
+		n_added -= i;
+	}
+	for(int i=0; i<10; i++)
+	{
+		ret=CM_sketch_query(cms, (char *)&i, sizeof(i));
+		//EXPECT_EQ(ret, 1);
+	}
+	struct CM_sketch_info info;
+	CM_sketch_info(cms, &info);
+	EXPECT_EQ(info.n_element, n_added);
+	printf("error_rate: %f confidence: %f\n", info.error_rate, info.confidence);
+	CM_sketch_free(cms);
+}
+TEST(CMSketch, I5K)
+{
+	uuid_t uuid;
+	uuid_generate(uuid);
+	struct CM_sketch *cms=CM_sketch_new(uuid);
+	long long n_item=5000, ret=0;
+	long long base=10000, total_add=0;
+	for(long long i=0; i<n_item; i++)
+	{
+		ret=CM_sketch_add_n(cms, (char *)&i, sizeof(i), base+i);
+		total_add+=(base+i);
+	}
+	struct CM_sketch_info info;
+	CM_sketch_info(cms, &info);
+	long long pass=0;
+	for(long long i=0; i<n_item; i++)
+	{
+		ret=CM_sketch_query(cms, (char *)&i, sizeof(i));
+		//The formal expectation is total_add*info.error_rate
+		if(abs(ret-(i+base))< (i+base)*info.error_rate)
+		{
+			pass++;
+		}
+	}
+	EXPECT_NEAR(pass, n_item, n_item*(1-info.confidence));
+}
+static void CMS_sync(struct CM_sketch *list[], size_t n)
+{
+	char *blob=NULL;
+	size_t blob_sz=0;
+	
+	for(size_t i=0; i<n; i++)
+	{
+		CM_sketch_serialize(list[i], &blob, &blob_sz);
+		for(size_t j=0; j<n; j++)
+		{
+			if(j==i) continue;
+			CM_sketch_merge_blob(list[j], blob, blob_sz);
+		}
+		free(blob);
+		blob=NULL;
+	}	
+	return;
+}
+TEST(CMSketch, Merge)
+{
+	size_t replica_number=2, round=10;
+	long long key=1234;
+	struct CM_sketch *cms[replica_number];
+	uuid_t uuid;
+	for(size_t i=0; i<replica_number; i++)
+	{
+		uuid_generate(uuid);
+		cms[i]=CM_sketch_new(uuid);
+	}
+	for(size_t i=0; i<round; i++)
+	{
+		CM_sketch_add_n(cms[i%replica_number], (char*) &key, sizeof(key), 1);
+	}
+	CMS_sync(cms, replica_number);
+	int ret=0;
+	for(size_t i=0; i<replica_number; i++)
+	{
+		ret=CM_sketch_query(cms[i], (char *)&key, sizeof(key));
+		EXPECT_EQ(ret, round);
+	}
+	for(size_t i=0; i<replica_number; i++)
+	{
+		CM_sketch_free(cms[i]);
+	}	
+}
+TEST(CMSketch, Idempotent)
+{
+	size_t replica_number=8, round=10000, i=0;
+	struct CM_sketch *cms[replica_number];
+	uuid_t uuid;
+	
+	for(i=0; i<replica_number; i++)
+	{
+		uuid_generate(uuid);
+		cms[i]=CM_sketch_new(uuid);
+	}
+	int n_added=0;
+	for(i=0; i<round; i++)
+	{
+		CM_sketch_add_n(cms[i%replica_number], (char*) &i, sizeof(i), i);
+		n_added+=i;
+	}
+	CMS_sync(cms, replica_number);
+	CMS_sync(cms, replica_number);
+	int ret=0;
+	size_t success=0;
+	struct CM_sketch_info info;
+	CM_sketch_info(cms[0], &info);
 
+	for(i=0; i<round; i++)
+	{
+		ret=CM_sketch_query(cms[(i+1)%replica_number], (char*) &i, sizeof(i));
+		if((double)ret<((double)i+info.error_rate*n_added))
+		{
+			success++;
+		}
+	}
+	EXPECT_GE((double)success/round, info.confidence);
+	for(i=0; i<replica_number; i++)
+	{
+		CM_sketch_free(cms[i]);
+	}	
+}
+long long st_hll_test(unsigned char precision, int actual_count)
+{
+	int count=0;
+	int key=random();
+	struct timeval nouse;
+	struct ST_hyperloglog *h=ST_hyperloglog_new(precision, 0, nouse);
+	for(int i=0; i<actual_count; i++)
+	{
+		key++;
+		ST_hyperloglog_add(h, (const char *)&key, sizeof(key), nouse);
+	}
+	count=ST_hyperloglog_count(h);
+	ST_hyperloglog_free(h);
+	return count;
+}
+
+TEST(STHyperLogLog, Basic)
+{
+	double error;
+	long long est_count=0;
+	long long count=10000;
+	unsigned char precision=6;
+
+
+	est_count=st_hll_test(precision, count);
+	error=ST_hyperloglog_error_for_precision(precision);
+	EXPECT_NEAR(est_count, count, error*count);
+
+	precision=9;
+	count=10000;
+	est_count=st_hll_test(precision, count);
+	error=ST_hyperloglog_error_for_precision(precision);
+	EXPECT_NEAR(est_count, count, error*count);
+
+}
+struct st_hll_case
+{
+	unsigned char precision;
+	int time_window_s;
+	int ideal_count;
+	int est_count;
+	int n_replica;
+};
+int st_hll_case_print(const struct st_hll_case *st_case, int n_case)
+{
+	int success=0;
+	double real_error=0, est_error=0;
+	printf("prcs\twin\tideal\test\test_err\treal_err\n");
+	for(int j=0; j<n_case; j++)
+	{
+		est_error=ST_hyperloglog_error_for_precision(st_case[j].precision);
+		real_error=(double)abs(st_case[j].est_count-st_case[j].ideal_count)/st_case[j].ideal_count;
+		printf("%d\t%d\t%d\t%d\t%f\t%f\n", st_case[j].precision,
+										st_case[j].time_window_s,
+										st_case[j].ideal_count,
+										st_case[j].est_count,
+										est_error,
+										real_error);
+		if(real_error <= MAX(0.1, est_error))
+		{
+			success++;
+		}
+	}
+	return success;
+}
+int st_hll_test_sliding_window(const struct st_hll_case *mycase)
+{
+	unsigned char precision=mycase->precision;
+	int n_replica=mycase->n_replica;
+	int actual_window_count=mycase->ideal_count;
+	int time_window_s=mycase->time_window_s;
+	int count=0, add_per_step=0;
+
+	struct timeval start, step, now;
+	gettimeofday(&start, NULL);
+	memcpy(&now, &start, sizeof(now));
+	struct ST_hyperloglog *h[n_replica];
+	for(int i=0; i<n_replica; i++)
+	{
+		h[i]=ST_hyperloglog_new(precision, time_window_s, start);
+	}
+
+	int key=1319823, j=0;
+	size_t n_add=0;
+	if(time_window_s>0)
+	{
+		double per_second_count=(double)actual_window_count/time_window_s;
+		if(per_second_count>1000*1000)
+		{
+			step.tv_sec=0;
+			step.tv_usec=1;
+			add_per_step=per_second_count/1000/1000;
+		}
+		else
+		{
+			step.tv_sec=0;
+			step.tv_usec=(suseconds_t)1000*1000/per_second_count;
+			add_per_step=1;
+		}
+		while(now.tv_sec-start.tv_sec<time_window_s*10)
+		{
+			timeradd(&now, &step, &now);
+			for(int i=0; i<add_per_step; i++)
+			{
+				j=random()%n_replica;
+				key++;
+				ST_hyperloglog_add(h[j], (const char *)&key, sizeof(key), now);
+				n_add++;
+			}
+		}
+	}
+	else
+	{
+		for(int i=0; i<actual_window_count; i++)
+		{
+			j=random()%n_replica;
+			key++;
+			ST_hyperloglog_add(h[j], (const char *)&key, sizeof(key), now);
+			n_add++;
+		}
+	}
+	char *blob=NULL;
+	size_t blob_sz=0;
+	for(int i=1; i<n_replica; i++)
+	{
+		ST_hyperloglog_serialize(h[i], &blob, &blob_sz);
+		ST_hyperloglog_merge_blob(h[0], blob, blob_sz);
+		free(blob);
+		blob=NULL;
+	}
+	count=ST_hyperloglog_count(h[0]);
+
+	for(int i=0; i<n_replica; i++)
+	{
+		ST_hyperloglog_free(h[i]);
+	}
+	return count;
+}
+TEST(STHyperLogLog, NoSliding)
+{
+	struct st_hll_case st_case[128];
+	int i=0;
+	for(int j=6; j<19; j++)
+	{
+		st_case[i].precision=j;
+		st_case[i].time_window_s=0;
+		st_case[i].ideal_count=100*100;
+		st_case[i].n_replica=1;
+		st_case[i].est_count=st_hll_test_sliding_window(st_case+i);
+		i++;
+	}
+	int success=st_hll_case_print(st_case, i);
+	//allow 2 case failed.
+	EXPECT_GE(success+2, i);
+}
+TEST(STHyperLogLog, VariousPrecision)
+{
+	int n_case=HLL_MAX_PRECISION-HLL_MIN_PRECISION+1;
+	struct st_hll_case st_case[n_case];
+	for(int i=0; i<n_case; i++)
+	{
+		st_case[i].precision=HLL_MIN_PRECISION+i;
+		st_case[i].time_window_s=5;
+		st_case[i].ideal_count=70000;
+		st_case[i].n_replica=1;
+		st_case[i].est_count=st_hll_test_sliding_window(st_case+i);
+	}
+	int success=st_hll_case_print(st_case, n_case);
+	EXPECT_GE(success+3, n_case);
+
+}
+TEST(STHyperLogLog, VariousCount)
+{
+	int n_case=15;
+	struct st_hll_case st_case[n_case];
+	int i=0;
+	for(i=0; i<n_case; i++)
+	{
+		st_case[i].precision=15;
+		st_case[i].time_window_s=300;
+		st_case[i].ideal_count=100*(2<<i);
+		st_case[i].n_replica=1;
+		st_case[i].est_count=st_hll_test_sliding_window(st_case+i);		
+	}
+	int success=st_hll_case_print(st_case, n_case);
+	EXPECT_GE(success+3, n_case);
+}
+TEST(STHyperLogLog, VariousWindow)
+{
+	int n_case=10;
+	struct st_hll_case st_case[n_case];
+	int i=0;
+	for(i=0; i<n_case; i++)
+	{
+		st_case[i].precision=15;
+		st_case[i].time_window_s=5*(i*i+1);
+		st_case[i].ideal_count=10000;
+		st_case[i].n_replica=1;
+		st_case[i].est_count=st_hll_test_sliding_window(st_case+i);		
+	}
+	int success=st_hll_case_print(st_case, n_case);
+	EXPECT_EQ(success, n_case);
+}
+TEST(STHyperLogLog, VariousWindow70k)
+{
+	int n_case=10;
+	struct st_hll_case st_case[n_case];
+	int i=0;
+	for(i=0; i<n_case; i++)
+	{
+		st_case[i].precision=15;
+		st_case[i].time_window_s=5*(i*i+1);
+		st_case[i].ideal_count=70000;
+		st_case[i].n_replica=1;
+		st_case[i].est_count=st_hll_test_sliding_window(st_case+i);		
+	}
+	int success=st_hll_case_print(st_case, n_case);
+	//70000 using linear estimation, which is the worst case for precision 15.
+	//Much better at precision 9.
+	//EXPECT_EQ(success, n_case);
+	for(i=0; i<n_case; i++)
+	{
+		st_case[i].precision=9;
+		st_case[i].time_window_s=5*(i*i+1);
+		st_case[i].ideal_count=70000;
+		st_case[i].n_replica=1;
+		st_case[i].est_count=st_hll_test_sliding_window(st_case+i);		
+	}
+	success=st_hll_case_print(st_case, n_case);
+	EXPECT_EQ(success, n_case);
+}
+TEST(STHyperLogLog, Debug)
+{
+	struct st_hll_case st_case[64];
+	int i=0;
+
+	st_case[i].precision=15;
+	st_case[i].time_window_s=0;
+	st_case[i].ideal_count=70000;
+	st_case[i].n_replica=1;
+	st_case[i].est_count=st_hll_test_sliding_window(st_case+i);		
+	i++;
+
+	st_case[i].precision=15;
+	st_case[i].time_window_s=300;
+	st_case[i].ideal_count=70000;
+	st_case[i].n_replica=1;
+	st_case[i].est_count=st_hll_test_sliding_window(st_case+i);
+	i++;
+
+	st_case[i].precision=14;
+	st_case[i].time_window_s=0;
+	st_case[i].ideal_count=40000;
+	st_case[i].n_replica=1;
+	st_case[i].est_count=st_hll_test_sliding_window(st_case+i);		
+	i++;
+
+	st_case[i].precision=14;
+	st_case[i].time_window_s=300;
+	st_case[i].ideal_count=40000;
+	st_case[i].n_replica=1;
+	st_case[i].est_count=st_hll_test_sliding_window(st_case+i);
+	i++;
+
+	st_case[i].precision=15;
+	st_case[i].time_window_s=300;
+	st_case[i].ideal_count=10000;
+	st_case[i].n_replica=1;
+	st_case[i].est_count=st_hll_test_sliding_window(st_case+i);
+	i++;
+
+	int success=st_hll_case_print(st_case, i);
+	EXPECT_EQ(success+1, i);
+}
+TEST(STHyperLogLog, Replicas)
+{
+	struct st_hll_case st_case[128];
+	int i=0;
+	st_case[i].precision=9;
+	st_case[i].time_window_s=1;
+	st_case[i].ideal_count=1000;
+	st_case[i].n_replica=2;
+
+	st_case[i].est_count=st_hll_test_sliding_window(st_case+i);
+	double est_error=ST_hyperloglog_error_for_precision(st_case[i].precision);
+	EXPECT_NEAR(st_case[i].est_count, st_case[i].ideal_count, est_error*st_case[i].ideal_count);
+	i++;
+}
+TEST(STHyperLogLog, Serialize)
+{
+	struct timeval start;
+	gettimeofday(&start, NULL);
+	struct ST_hyperloglog *h=ST_hyperloglog_new(9, 5, start);
+	size_t sz=ST_hyperloglog_serialized_size(h);
+	char *blob=NULL;
+	size_t blob_sz=0;
+	ST_hyperloglog_serialize(h, &blob, &blob_sz);
+	EXPECT_EQ(sz, blob_sz);
+	struct ST_hyperloglog *h2=ST_hyperloglog_deserialize(blob, blob_sz);
+	free(blob);
+	sz=ST_hyperloglog_serialized_size(h2);
+	EXPECT_EQ(sz, blob_sz);
+	ST_hyperloglog_free(h);
+	ST_hyperloglog_free(h2);
+}
+void g_array_sync(struct g_array **replicas, size_t n_replica)
+{
+	char *blob=NULL;
+	size_t blob_sz=0;
+	for(size_t i=0; i<n_replica; i++)
+	{
+		for(size_t j=0; j<n_replica; j++)
+		{
+			if(i==j) continue;
+			g_array_serialize(replicas[j], &blob, &blob_sz);
+			g_array_merge_blob(replicas[i], blob, blob_sz);
+			free(blob);
+		}
+	}
+	return;
+}
+TEST(STHyperLogLog, Reconfigure)
+{
+	struct timeval start, step, now;
+	gettimeofday(&start, NULL);
+	memcpy(&now, &start, sizeof(now));
+	int n_replica=2;
+	struct ST_hyperloglog *h[n_replica];
+	int time_window_s=10;
+	unsigned char precision=6;
+	for(int i=0; i<n_replica; i++)
+	{
+		h[i]=ST_hyperloglog_new(precision, time_window_s, start);
+	}
+	int key=1319823, j=0;
+	int n_add=0;
+	int add_per_step=100;
+	step.tv_sec=0;
+	step.tv_usec=1000;
+	int item_per_second=add_per_step*1000*1000/step.tv_usec;
+	while(now.tv_sec-start.tv_sec<time_window_s*5)
+	{
+		timeradd(&now, &step, &now);
+		for(int i=0; i<add_per_step; i++)
+		{
+			j=random()%n_replica;
+			key++;
+			ST_hyperloglog_add(h[j], (const char *)&key, sizeof(key), now);
+			n_add++;
+		}
+	}
+	for(int i=0; i<n_replica; i++)
+	{
+		for(int j=0; j<n_replica; j++)
+		{
+			if(i==j) continue;
+			ST_hyperloglog_merge(h[i], h[j]);
+		}
+	}
+	double hll_count=0, error=0;
+	hll_count=ST_hyperloglog_count(h[0]);
+	error=ST_hyperloglog_error_for_precision(precision);
+	EXPECT_NEAR(hll_count, item_per_second*time_window_s, error*item_per_second*time_window_s);
+
+
+	time_window_s=20;
+	precision=9;
+	ST_hyperloglog_configure(h[0], precision, time_window_s, now);
+	for(int i=0; i<n_replica; i++)
+	{
+		for(int j=0; j<n_replica; j++)
+		{
+			if(i==j) continue;
+			ST_hyperloglog_merge(h[i], h[j]);
+		}
+	}
+	memcpy(&start, &now, sizeof(start));
+	n_add=0;
+	while(now.tv_sec-start.tv_sec<time_window_s*5)
+	{
+		timeradd(&now, &step, &now);
+		for(int i=0; i<add_per_step; i++)
+		{
+			j=random()%n_replica;
+			key++;
+			ST_hyperloglog_add(h[j], (const char *)&key, sizeof(key), now);
+			n_add++;
+		}
+	}
+	for(int i=0; i<n_replica; i++)
+	{
+		for(int j=0; j<n_replica; j++)
+		{
+			if(i==j) continue;
+			ST_hyperloglog_merge(h[i], h[j]);
+		}
+	}
+	hll_count=ST_hyperloglog_count(h[0]);
+	error=ST_hyperloglog_error_for_precision(precision);
+	EXPECT_NEAR(hll_count, item_per_second*time_window_s, error*item_per_second*time_window_s);
+
+	for(int i=0; i<n_replica; i++)
+	{
+		ST_hyperloglog_free(h[i]);
+	}
+}
+TEST(GArray, Basic)
+{
+	uuid_t uuid;
+	size_t n_replica=4;
+	int array_sz=1024;
+	struct g_array *a[n_replica];
+	for(size_t i=0; i<n_replica; i++)
+	{
+		uuid_generate(uuid);
+		a[i]=g_array_new(uuid, array_sz);
+	}
+	int r=0, round=100;
+	long long increment=77;
+	for(int i=0; i<round; i++)
+	{
+		r=random()%n_replica;
+		for(int j=0; j<array_sz; j++)
+		{
+			g_array_incrby(a[r], j, increment);
+		}
+		if(i%7==0)
+		{
+			g_array_sync(a, n_replica);
+		}
+	}
+	g_array_sync(a, n_replica);
+	g_array_sync(a, n_replica);
+	
+	long long value=0, success=0;
+	for(int i=0; i<array_sz; i++)
+	{
+		r=random()%n_replica;
+		value=g_array_get(a[r], i);
+		if(value == (long long)round*increment) success++;
+	}
+	EXPECT_EQ(success, array_sz);
+	g_array_reset(a[0]);
+	value=g_array_get(a[0], 0);
+	EXPECT_EQ(value, 0);
+	g_array_sync(a, n_replica);
+	r=random()%n_replica;
+	value=g_array_get(a[r], 0);
+	EXPECT_EQ(value, 0);
+
+	for(size_t i=0; i<n_replica; i++)
+	{
+		g_array_free(a[i]);
+	}
+}
+TEST(GArray, Serialize)
+{
+	uuid_t uuid;
+	int n_replica=4;
+	int array_sz=1024;
+	struct g_array *a[n_replica], *a2=NULL;
+	for(int i=0; i<n_replica; i++)
+	{
+		uuid_generate(uuid);
+		a[i]=g_array_new(uuid, array_sz);
+		g_array_incrby(a[i], 0, 30);
+	}
+	g_array_sync(a, n_replica);
+
+	size_t sz=g_array_serialized_size(a[0]);
+	char *blob=NULL;
+	size_t blob_sz=0;
+	g_array_serialize(a[0], &blob, &blob_sz);
+	EXPECT_EQ(sz, blob_sz);
+	a2=g_array_deserialize(blob, blob_sz);
+	sz=g_array_serialized_size(a2);
+	EXPECT_EQ(sz, blob_sz);
+	free(blob);
+	for(int i=0; i<n_replica; i++)
+	{
+		g_array_free(a[i]);
+	}
+	g_array_free(a2);
+}
+TEST(GArray, Merge)
+{
+	uuid_t uuid;
+	int n_replica=2;
+	int array_sz=1024;
+	struct g_array *a[n_replica];
+	for(int i=0; i<n_replica; i++)
+	{
+		uuid_generate(uuid);
+		a[i]=g_array_new(uuid, array_sz*(i+1));
+		g_array_incrby(a[i], 0, 30);
+	}
+	g_array_sync(a, n_replica);
+	long long value=0;
+	value=g_array_get(a[0], 0);
+	EXPECT_EQ(value, 30*n_replica);
+	value=g_array_incrby(a[0], array_sz*n_replica-1, 1);
+	EXPECT_EQ(value, 1);
+	for(int i=0; i<n_replica; i++)
+	{
+		g_array_free(a[i]);
+	}
+}
 int main(int argc, char ** argv)
 {
 	int ret=0;

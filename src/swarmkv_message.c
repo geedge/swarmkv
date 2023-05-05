@@ -7,25 +7,29 @@ struct swarmkv_reply* deserialize_reply(mpack_node_t reply_node)
 {
 	struct swarmkv_reply* reply=NULL;
 	mpack_node_t item, array_node, vtype_item;
-	item=mpack_node_map_cstr(reply_node, "reply_type");
+	item=mpack_node_map_cstr(reply_node, "t");
 	size_t i=0;
 	enum swarmkv_reply_type type=mpack_node_int(item);
 	switch(type)
 	{
 		case SWARMKV_REPLY_INTEGER:
-			item=mpack_node_map_cstr(reply_node, "integer");
+			item=mpack_node_map_cstr(reply_node, "int");
 			reply=swarmkv_reply_new_integer(mpack_node_i64(item));
+			break;
+		case SWARMKV_REPLY_DOUBLE:
+			item=mpack_node_map_cstr(reply_node, "dval");
+			reply=swarmkv_reply_new_double(mpack_node_double(item));
 			break;
 		case SWARMKV_REPLY_STRING:
 		case SWARMKV_REPLY_ERROR:
 		case SWARMKV_REPLY_STATUS:
 		case SWARMKV_REPLY_NODE:
-			item=mpack_node_map_cstr(reply_node, "string");
+			item=mpack_node_map_cstr(reply_node, "str");
 			reply=swarmkv_reply_new_string(mpack_node_str(item), mpack_node_strlen(item));
 			reply->type=type;//dirty here
 			break;
 		case SWARMKV_REPLY_VERBATIM:
-			item=mpack_node_map_cstr(reply_node, "string");
+			item=mpack_node_map_cstr(reply_node, "str");
 			vtype_item=mpack_node_map_cstr(reply_node, "vtype");
 			reply=swarmkv_reply_new_verbatim(mpack_node_str(item), mpack_node_strlen(item), mpack_node_str(vtype_item));
 			break;
@@ -33,7 +37,7 @@ struct swarmkv_reply* deserialize_reply(mpack_node_t reply_node)
 			reply=swarmkv_reply_new_nil();
 			break;
 		case SWARMKV_REPLY_ARRAY:		
-			array_node=mpack_node_map_cstr(reply_node, "elements");
+			array_node=mpack_node_map_cstr(reply_node, "arr");
 			reply=swarmkv_reply_new_array(mpack_node_array_length(array_node));
 			for(i=0; i<reply->n_element; i++)
 			{
@@ -102,23 +106,27 @@ void swarmkv_msg_serialize_reply(const struct swarmkv_reply* reply, char **blob,
 	mpack_writer_t writer;
 	mpack_writer_init_growable(&writer, &root_mpack_buff, &root_mpack_sz);
 	mpack_build_map(&writer);
-	mpack_write_cstr(&writer, "reply_type");
+	mpack_write_cstr(&writer, "t");
 	mpack_write_int(&writer, reply->type);
 	switch(reply->type)
 	{
 		case SWARMKV_REPLY_INTEGER:
-			mpack_write_cstr(&writer, "integer");
+			mpack_write_cstr(&writer, "int");
 			mpack_write_i64(&writer, reply->integer);
+			break;
+		case SWARMKV_REPLY_DOUBLE:
+			mpack_write_cstr(&writer, "dval");
+			mpack_write_double(&writer, reply->dval);
 			break;
 		case SWARMKV_REPLY_STRING:
 		case SWARMKV_REPLY_STATUS:
 		case SWARMKV_REPLY_ERROR:
 		case SWARMKV_REPLY_NODE:
-			mpack_write_cstr(&writer, "string");
+			mpack_write_cstr(&writer, "str");
 			mpack_write_str(&writer, reply->str, reply->len);
 			break;
 		case SWARMKV_REPLY_VERBATIM:
-			mpack_write_cstr(&writer, "string");
+			mpack_write_cstr(&writer, "str");
 			mpack_write_str(&writer, reply->str, reply->len);
 			mpack_write_cstr(&writer, "vtype");
 			mpack_write_cstr(&writer, reply->vtype);			
@@ -126,7 +134,7 @@ void swarmkv_msg_serialize_reply(const struct swarmkv_reply* reply, char **blob,
 		case SWARMKV_REPLY_NIL:
 			break;
 		case SWARMKV_REPLY_ARRAY:
-			mpack_write_cstr(&writer, "elements");
+			mpack_write_cstr(&writer, "arr");
 			mpack_build_array(&writer);
 			for(i=0; i<reply->n_element; i++)
 			{

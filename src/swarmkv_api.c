@@ -284,6 +284,31 @@ void swarmkv_tconsume(struct swarmkv * db, const char * key, size_t keylen, long
 	swarmkv_cmd_free(cmd);
 	return;
 }
+void swarmkv_ftconsume(struct swarmkv * db, const char * key, size_t keylen, const char * member, size_t member_len, long long weight, long long tokens, swarmkv_on_reply_callback_t *cb, void *cb_arg)
+{	
+	struct swarmkv_cmd *cmd=NULL;
+	cmd=swarmkv_cmd_new(5);	
+	cmd->argv[0]=sdsnew("ftconsume");
+	cmd->argv[1]=sdsnewlen(key, keylen);
+	cmd->argv[2]=sdsnewlen(member, member_len);
+	cmd->argv[3]=sdsfromlonglong(weight);
+	cmd->argv[4]=sdsfromlonglong(tokens);
+	exec_for_local(db, cmd, NULL, cb, cb_arg);
+	swarmkv_cmd_free(cmd);
+	return;
+}
+void swarmkv_btconsume(struct swarmkv * db, const char * key, size_t keylen, const char * member, size_t member_len, long long tokens, swarmkv_on_reply_callback_t *cb, void *cb_arg)
+{	
+	struct swarmkv_cmd *cmd=NULL;
+	cmd=swarmkv_cmd_new(4);	
+	cmd->argv[0]=sdsnew("ftconsume");
+	cmd->argv[1]=sdsnewlen(key, keylen);
+	cmd->argv[2]=sdsnewlen(member, member_len);
+	cmd->argv[3]=sdsfromlonglong(tokens);
+	exec_for_local(db, cmd, NULL, cb, cb_arg);
+	swarmkv_cmd_free(cmd);
+	return;
+}
 struct blocking_query_ctx
 {
 	pthread_cond_t cond;

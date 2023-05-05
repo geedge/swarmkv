@@ -477,10 +477,10 @@ size_t OR_record_size(const struct OR_record *record)
 	switch(record->type)
 	{
 		case TYPE_INTEGER:
-			sz+=PN_counter_size(record->counter);				
+			sz+=PN_counter_serialized_size(record->counter);				
 			break;
 		case TYPE_STRING:
-			sz+=LWW_regeister_size(record->string);		
+			sz+=LWW_regeister_mem_size(record->string);		
 			break;
 		default:
 			break;
@@ -749,7 +749,7 @@ void OR_map_merge_blob(struct OR_map *map, const char *blob, size_t blob_sz)
 	OR_map_free(to_merge);
 	return;
 }
-size_t OR_map_size(const struct OR_map *map)
+size_t OR_map_mem_size(const struct OR_map *map)
 {
 	size_t sz=0;
 	struct OR_record *record=NULL, *tmp_record=NULL;

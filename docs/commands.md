@@ -372,7 +372,7 @@ Return
 Syntax
 
 ```
-TCFG key capacity rate
+TCFG key rate capacity
 ```
 
 Config a token bucket of `key`, which has a fixed `capacity` bucket and has tokens  are added at a fixed `rate`. If `key` does not exist, a new key holding a token bucket is created. If both capacity and rate are 0, the token bucket has infinite tokens.
@@ -389,12 +389,11 @@ Syntax
 TCONSUME key tokens [ NORMAL | FORCE | FLEXIBLE ]
 ```
 
-Consume `tokens` from a token from the token bucket stored at `key`. 
+Consume `tokens` from the token bucket stored at `key`. 
 
 The option modify `TCONSUME` behavior if the token bucket has not enough `tokens`.
 
 - NORMAL -- Return 0. The default behavior. 
-
 - FORCE -- Return the requested tokens, which are consumed forcibly.
 - FLEXIBLE -- Return the available tokens.
 
@@ -410,11 +409,11 @@ Syntax
 TINFO key
 ```
 
-Return information about `key`  token bucket.
+Return information of token bucket stored at `key`.
 
 Return
 
-- Array reply with information of the filter.
+- Array reply with information of the token bucket.
 
 Example
 
@@ -433,8 +432,160 @@ swarmkv-sync> tinfo tb-192.168.0.1
  9) "Available"
 10) (integer) 20000
 ```
+## Fair Token Bucket
 
-## Cluster Management
+### FTCFG
+
+Syntax
+
+```
+FTCFG key rate capacity divisor
+```
+
+Config a fair token bucket of `key`, except `rate` and `capacity` as normal token bucket, it has a `divisor` which is used to set a different table size to record the deficit of each member. The specified divisor must be a power of two. 
+If `key` does not exist, a new key holding a fair token bucket is created. 
+
+Return
+
+- Simple String Reply: OK if the token bucket was configured. 
+
+### FTCONSUME
+
+Syntax
+
+```
+FTCONSUME key member weight tokens
+```
+
+Consume `tokens` as `member` with `weight` from the fair token bucket stored at `key`. 
+
+The `weight` must be within the range of 1 to 20.
+
+Return
+
+- Integer Reply:  the number of tokens that were allow to consume, or -1 if key does not exist.
+
+### FTINFO
+
+Syntax
+
+```
+FTINFO key
+```
+
+Return information of the fair token bucket storead at `key`. The `ActiveMembers` is estimated by HyperLogLog.
+
+Return
+
+- Array reply with information of the filter.
+
+Example
+
+```
+swarmkv-2-nodes> ftcfg abc 1000 2000 4096
+OK
+swarmkv-2-nodes> ftconsume abc 1 2 20
+(integer) 20
+swarmkv-2-nodes> ftinfo abc
+ 1) "Rate"
+ 2) (integer) 1000
+ 3) "Capacity"
+ 4) (integer) 2000
+ 5) "Consumed"
+ 6) (integer) 120
+ 7) "Refilled"
+ 8) (integer) 2120
+ 9) "Available"
+10) (integer) 2000
+11) "Divisor"
+12) (integer) 4096
+13) "ActiveMembers"
+14) (integer) 3
+```
+
+## Bulk Token Bucket
+
+### BTCFG
+
+Syntax
+
+```
+BTCFG key rate capacity buckets
+```
+
+Config a bulk token bucket of `key`, except `rate` and `capacity` as normal token bucket, it has a `buckets` which specifies the number of sub-token buckets. It should be far more greater than the possible members to ensure a higher accuracy.
+If `key` does not exist, a new key holding a fair token bucket is created. 
+
+Return
+
+- Simple String Reply: OK if the token bucket was configured. 
+
+### BTCONSUME
+
+Syntax
+
+```
+BTCONSUME key member tokens  [ NORMAL | FORCE | FLEXIBLE ]
+```
+
+Consume `tokens` form the sub-token bucket `member` of the bulk token bucket stored at `key`. 
+
+
+Return
+
+- Integer Reply:  the number of tokens that were allow to consume, or -1 if key does not exist.
+
+### BTINFO
+
+Syntax
+
+```
+BTINFO key [member]
+```
+
+Return information of the fair token bucket storead at `key`. The `ActiveMembers` is estimated by HyperLogLog.
+You can optionally specified a `member` to query it's availalbe tokens.
+
+Return
+
+- Array reply with information of the filter.
+
+Example
+
+```
+swarmkv-2-nodes> BTCFG bulk 50000 100000 2048
+OK
+swarmkv-2-nodes> btconsume bulk user1 2000
+(integer) 2000
+swarmkv-2-nodes> BTINFO bulk
+ 1) "Rate"
+ 2) (integer) 50000
+ 3) "Capacity"
+ 4) (integer) 100000
+ 5) "Buckets"
+ 6) (integer) 2048
+ 7) "ActiveMembers"
+ 8) (integer) 2
+ 9) "Collisions"
+10) (double) 0.000000
+11) "Query"
+12) (integer) -1
+swarmkv-2-nodes> BTINFO bulk user1
+ 1) "Rate"
+ 2) (integer) 50000
+ 3) "Capacity"
+ 4) (integer) 100000
+ 5) "Buckets"
+ 6) (integer) 2048
+ 7) "ActiveMembers"
+ 8) (integer) 2
+ 9) "Collisions"
+10) (double) 0.000000
+11) "Query"
+12) (integer) 100000
+```
+
+## Debug
 
 ### INFO
 
@@ -507,6 +658,53 @@ instantaneous_input_cps: 0.00
 instantaneous_output_cps: 0.00
 ```
 
+### LATENCY
+
+Syntax
+
+```
+LATENCY <subcommand> [<arg> [value] [opt] ...]
+```
+
+The `LANTENCY` command returns latency metrics of command execution.
+Subcommands are:
+* COMMAND [command]
+    - Return time-latency samples for a specified command name.
+* PEER [IP:port]
+    - Return time-latency samples for the specified peer.
+* EVENT [event]
+    - Return time-latency samples for the specified event.
+* RESET [command|event|peer]
+    - Reset data of a specified catalog or all the data if no catalog provided.
+
+### DEBUG
+
+Syntax
+
+```
+DEBUG <subcommand> [<arg> [value] [opt] ...].
+```
+
+Subcommands are:
+* SLEEP <seconds>
+    - Stop the server for <seconds>. Decimals allowed.
+* ASSERT
+    - Crash by assertion failed.
+
+### COMMAND LIST
+
+Syntax
+
+```
+COMMAND LIST
+```
+
+The `COMMAND LIST` command returns an array of the server's command names.
+
+Return
+
+- Array reply: a list of command names.
+
 ## Cluster Management
 
 ### CLUSTER KEYS
@@ -546,10 +744,17 @@ The pattern is exactly same as Redis https://redis.io/commands/keys/ .
 | SCARD                    | key                                  | Integer reply: the cardinality (number of elements) of the set, or 0 if key does not exist. |
 | SISMEMBER                | key member                           | Integer reply, specifically:<br/><br/>1 if the element is a member of the set.<br/>0 if the element is not a member of the set, or if key does not exist. |
 | SMEMBERS                 | key                                  | Array reply: all elements of the set. Empty array if the key does not exist. |
+| HSET                     | HSET key field value [field value ...] | |
+| HGET                     |
 | TCFG                     | key capacity rate                    | Simple String Reply: OK if the token bucket was configured. Create the token bucket if key does not exist. |
-| TCONSUM                  | key tokens [NORMAL\|FORCE\|FLEXIBLE] | Integer reply： the number of tokens that were allow to consume, or -1 if key does not exist. |
-| TINFO                    | key                                  | Array Reply: <br/>1) "Capacity"<br/>2) (integer) 1000000<br/>3) "Rate"<br/>4) (integer) 1000<br/>5) "Consumed"<br/>6) (integer) 5239123<br/>7) "Available"<br/>8) (integer) 3113<br/> |
-| HGET                     |                                      |                                                              |
+| TCONSUME                 | key tokens [NORMAL\|FORCE\|FLEXIBLE] | Integer reply： the number of tokens that were allow to consume, or -1 if key does not exist. |
+| TINFO                    | key                                  | Array Reply |
+| FTCFG                    | key capacity rate divisor            | Simple String Reply: OK if the token bucket was configured. Create the token bucket if key does not exist. |
+| FTCONSUME                 | key member weight tokens | Integer reply： the number of tokens that were allow to consume, or -1 if key does not exist. |
+| FTINFO                    | key                                  | Array Reply|
+| BTCFG                    | key capacity rate buckets            | Simple String Reply: OK if the token bucket was configured. Create the token bucket if key does not exist. |
+| BTCONSUME                 | key member tokens [NORMAL\|FORCE\|FLEXIBLE] | Integer reply： the number of tokens that were allow to consume, or -1 if key does not exist. |
+| BTINFO                    | key                                  | Array Reply|                                   |                                                              |
 | KEYSPACE RADD            | key IP port                          | Add replica to the key, create the key if key does not exist. |
 | KEYSPACE XRADD           | key IP Port                          | Add replica to the key, return NULL if the key does not exist. |
 | KEYSPACE RLIST           | key                                  | Node Array reply:<br/>1) "192.168.1.200:5211"<br/>2) "192.168.1.201:5211"<br/>3) "[2001:db8::1]:5211"<br/> |

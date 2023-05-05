@@ -47,7 +47,7 @@ The command returns a JSON array.
 	},
 	{
 		"slot": "1023",
-    "owner": "192.168.0.1:5211"
+		"owner": "192.168.0.1:5211"
 	}
 ]
 ```
@@ -153,32 +153,6 @@ When a requestor executes a command, it takes the following steps
 - Other replica executes the command, registers the requestor as one of the replica nodes, and send a reply to the requestor
 - The requestor receives the reply and invokes user callback function.
 
-## CRDT Explained
-
-Swarm KV uses state-based CRDT types to store values. 
-
-### String
-
-Swarm KV implements Last-Write-Wins Register (LWW Register) to store string values. Swarm KV didn't implement logical clock such as  [Version Vector](https://en.wikipedia.org/wiki/Version_vector) or [Lamport Clock](https://en.wikipedia.org/wiki/Lamport_timestamp),  instead,  it uses real time (man 3 gettimeofday) for simplicity.
-
-### Integer
-
-Swarm KV uses Positive-Negative Counter (PN-Counter) to store integer values.
-
-### Set and Hash
-
-Swarm KV implements Add-Wins Observed-Remove Set (OR Set) to store set and hash values. OR Set is state-based and has no tombstone. Please referrer [An optimized conflict-free replicated set](https://arxiv.org/pdf/1210.3368.pdf) for more details.
-
-### Token Bucket
-
-Swarm KV implements Observe-Consumed Token Bucket (OC Token Bucket), which has a PN-Counter to track consumed tokens and a Last-write-wins register to track refilled tokens. It is initialized with two parameters:
-
-- CIR: Committed Information Rate
-- CBS: Committed Burst Size
-
-At the very beginning, the bucket is full, which means it has *CBS* tokens. You can reconfigure the token bucket at any time. Note that the reconfiguration will not refill the token bucket to full.
-
-If a network partition happens, the token bucket will be out-of-sync, and each replica has the entire CIR. And after the partition heals, replicas share the CIR again. The OC Token Bucket is robust to overuse as long as the sync interval is reasonable, i.e., 200ms.
 
 ## Fault tolerance
 
@@ -274,16 +248,14 @@ The source files are organized as follows:
 - src/swarmkv_api.c API implementaions.
 - src/swarmkv_store.c  KV operations, key hash table is implemented with [uthash](https://troydhanson.github.io/uthash/). Use [sds](https://github.com/antirez/sds) as a dynamic string library.
 - src/swarmkv_sync.c batching CRDT syncronization.
-- src/t_string.c  commands of data type string.
-- src/t_set.c commands of data type set.
 - src/swarmkv_keyspace.c: The control plane of SwarmKV. Interact with [HashiCorp Consul](https://www.consul.io/) for node discovery, slot assignment, and leader election.
 - src/swarmkv_message.c: Message is encoded to [MessagePack](https://msgpack.org/index.html) format by [mpack](https://github.com/ludocode/mpack) library.
 - src/swarmkv_net.c: High performance P2P communication via [libevent](https://libevent.org/).
 - src/swarmkv_message.c Collecting performance metrics.
-- src/t_xxx.c Implementing SwarmKV data types.
+- src/t_xxx.c Implementing SwarmKV commands of various data types.
 - src/deps/ Dependencies in source codes format, such as [uthash](https://troydhanson.github.io/uthash/), [sds](https://github.com/antirez/sds), [mpack](https://github.com/ludocode/mpack), [timeout](https://25thandclement.com/~william/projects/timeout.c.html), [cJSON](https://github.com/DaveGamble/cJSON), [HDRHistogram](https://github.com/HdrHistogram/HdrHistogram_c)
 - src/vendor/  Dependencies in archive format.
-- CRDT/ Implementing Conflict-free replicated data type.
+- CRDT/ Implementing Conflict-free replicated data types.
 - test/ Unit tests.
 - tools/swarmkv_cli: CLI implementation which is facilitated by [linenoise](https://github.com/antirez/linenoise).
 
@@ -291,7 +263,7 @@ The source files are organized as follows:
 
 [dqlite](https://dqlite.io/) is a C library that implements an embeddable and replicated SQL database engine with high availability and automatic failover.
 
-*[rqlite](https://github.com/rqlite/rqlite)* is an easy-to-use, lightweight, distributed relational database, which uses [SQLite](https://www.sqlite.org/) as its storage engine. 
+[rqlite](https://github.com/rqlite/rqlite) is an easy-to-use, lightweight, distributed relational database, which uses [SQLite](https://www.sqlite.org/) as its storage engine. 
 
 [Zeppelin](https://github.com/Qihoo360/zeppelin) is a Distributed Key-Value Platform that aims to provide excellent performance, reliability, and scalability.
 
@@ -327,22 +299,9 @@ The source files are organized as follows:
 
 # References
 
-Woo, Shinae, et al. "Elastic scaling of stateful network functions." *15th {USENIX} Symposium on Networked Systems Design and Implementation ({NSDI} 18)*. 2018.
-
-Bieniusa, Annette, et al. "[An optimized conflict-free replicated set](https://arxiv.org/pdf/1210.3368.pdf)." *arXiv preprint arXiv:1210.3368* (2012).
-
-[C implementation of the Raft consensus protocol](https://github.com/willemt/raft) by Willem-Hendrik Thiart.
+Woo, Shinae, et al. "Elastic scaling of stateful network functions." *15th {USENIX} Symposium on Networked Systems Design and Implementation ({NSDI} 18)*. 2018. [Source] (https://www.usenix.org/conference/nsdi18/presentation/woo)
 
 [Redis Cluster Specification](https://redis.io/topics/cluster-spec)
 
-[Conflict-free Replicated Data Type (CRDT)](https://en.wikipedia.org/wiki/Conflict-free_replicated_data_type) 
+[C implementation of the Raft consensus protocol](https://github.com/willemt/raft) by Willem-Hendrik Thiart.
 
-https://crdt.tech/
-
-https://hermes-protocol.com/
-
-[Redis Active-Active Architecture](https://redis.com/redis-enterprise/technology/active-active-geo-distribution/)
-
-[A fast, fault-tolerant & linearizable replication protocol](https://hermes-protocol.com/)
-
-https://bucket4j.com/8.1.0/toc.html

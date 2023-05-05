@@ -1,4 +1,4 @@
-bind_addr = "172.17.93.178"
+bind_addr = "127.0.0.1"
 client_addr = "0.0.0.0"
 server = true
 bootstrap_expect = 1

@@ -49,7 +49,7 @@ void OR_map_serialize(const struct OR_map *map, char **blob, size_t *blob_sz);
 struct OR_map *OR_map_deserialize(const char *blob, size_t blob_sz);
 void OR_map_merge(struct OR_map *dst, struct OR_map *src);
 void OR_map_merge_blob(struct OR_map *map, const char *blob, size_t blob_sz);
-size_t OR_map_size(const struct OR_map *map);
+size_t OR_map_mem_size(const struct OR_map *map);
 
 #ifdef __cplusplus
 }

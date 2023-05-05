@@ -22,6 +22,7 @@ enum swarmkv_reply_type
 	SWARMKV_REPLY_STRING=0,
 	SWARMKV_REPLY_ARRAY,
 	SWARMKV_REPLY_INTEGER,
+	SWARMKV_REPLY_DOUBLE,
 	SWARMKV_REPLY_NIL,
 	SWARMKV_REPLY_STATUS,
 	SWARMKV_REPLY_ERROR,
@@ -32,6 +33,7 @@ struct swarmkv_reply
 {
 	enum swarmkv_reply_type type;
 	long long integer;	/* The integer when type is SWARMKV_REPLY_INTEGER */
+	double dval;		/* The double when type is SWARMKV_REPLY_DOUBLE */
 	int len; 			/* Length of string */
 	char *str; 			/* Used for SWARMKV_REPLY_ERROR, SWARMKV_REPLY_STATUS, SWARMKV_NODE, SWARMKV_REPLY_STRING and SWARMKV_REPLY_VERBATIM */
 	char vtype[4]; 		/* Used for SWARMKV_REPLY_VERBATIM, contains the null
@@ -78,8 +80,8 @@ struct swarmkv_reply *swarmkv_command_on(struct swarmkv *db, const char *target,
 
 //Non-blocking function
 typedef void swarmkv_on_reply_callback_t(const struct swarmkv_reply *reply, void * arg);
-void swarmkv_async_command_on(struct swarmkv *db, swarmkv_on_reply_callback_t * cb, void *cb_arg, const char *target, const char *format, ...);
-void swarmkv_async_command(struct swarmkv *db, swarmkv_on_reply_callback_t * cb, void *cb_arg, const char *format, ...);
+void swarmkv_async_command_on(struct swarmkv *db, swarmkv_on_reply_callback_t * cb, void *cb_arg, const char *target, const char *format, ...)__attribute__ ((format (printf, 5, 6)));
+void swarmkv_async_command(struct swarmkv *db, swarmkv_on_reply_callback_t * cb, void *cb_arg, const char *format, ...)__attribute__ ((format (printf, 4, 5)));
 
 void swarmkv_get(struct swarmkv * db, 
 	const char * key, size_t keylen, swarmkv_on_reply_callback_t * cb, void * arg);
@@ -102,7 +104,8 @@ void swarmkv_smembers(struct swarmkv *db, const char* key, size_t keylen, swarmk
 void swarmkv_scard(struct swarmkv *db, const char* key, size_t keylen, swarmkv_on_reply_callback_t *cb, void *cb_arg);
 
 void swarmkv_tconsume(struct swarmkv * db, const char * key, size_t keylen, long long tokens, swarmkv_on_reply_callback_t *cb, void *cb_arg);
-
+void swarmkv_ftconsume(struct swarmkv * db, const char * key, size_t keylen, const char * member, size_t member_len, long long weight, long long tokens, swarmkv_on_reply_callback_t *cb, void *cb_arg);
+void swarmkv_btconsume(struct swarmkv * db, const char * key, size_t keylen, const char * member, size_t member_len, long long tokens, swarmkv_on_reply_callback_t *cb, void *cb_arg);
 //Used by swarmkv-cli
 size_t swarmkv_get_possible_command_name(struct swarmkv *db, const char *prefix, const char* cmd_names[], size_t sz);
 char *swarmkv_get_command_hint(struct swarmkv *db, const char* cmd_name);
