@@ -977,6 +977,11 @@ void command_spec_init(struct swarmkv *db)
 					3, 1, CMD_KEY_OW, REPLY_ERROR, AUTO_ROUTE,
 					hincrby_command, db->mod_store);
 
+    /* top-K commands */
+	command_register(&(db->command_table), "TOPKADD", "key",
+					2, 1, CMD_KEY_OW, REPLY_ERROR, AUTO_ROUTE,
+					topkadd_command, db->mod_store);
+
 	/* Token bucket commands */
 	command_register(&(db->command_table), "TCFG", "key rate capacity",
 					3, 1, CMD_KEY_OW, REPLY_ERROR, AUTO_ROUTE, 

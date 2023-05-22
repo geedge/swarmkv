@@ -13,6 +13,7 @@
 #include "oc_token_bucket.h"
 #include "fair_token_bucket.h"
 #include "bulk_token_bucket.h"
+#include "heavy_keeper.h"
 
 enum sobj_type
 {
@@ -23,6 +24,7 @@ enum sobj_type
 	OBJ_TYPE_TOKEN_BUCKET,
 	OBJ_TYPE_FAIR_TOKEN_BUCKET,
 	OBJ_TYPE_BULK_TOKEN_BUCKET,
+    OBJ_TYPE_TOPK,
 	OBJ_TYPE_UNDEFINED,
 	__SWARMKV_OBJ_TYPE_MAX
 };
@@ -37,6 +39,7 @@ struct sobj
 		struct PN_counter *counter;
 		struct OR_set *set;
 		struct OR_map *hash;
+        struct heavy_keeper *topk;
 		struct OC_token_bucket *bucket;
 		struct fair_token_bucket *ftb;
 		struct bulk_token_bucket *btb;

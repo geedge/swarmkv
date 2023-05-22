@@ -125,6 +125,15 @@ struct swarmkv_obj_specs sobj_specs[__SWARMKV_OBJ_TYPE_MAX] =
 		.obj_merge_blob=(void (*)(void *, const char *, size_t))bulk_token_bucket_merge_blob,
 		.obj_size=(size_t (*)(const void *))bulk_token_bucket_mem_size
 	},
+    {
+		.type=OBJ_TYPE_TOPK,
+		.type_name="top-K",
+		.obj_new=(void * (*)(unsigned char *))heavy_keeper_new_for_swarmkv_cb, // FIXME: 只能输入一个uuid 作为参数，另外K用多少？ param就只能默认了吧
+		.obj_free=(void (*)(void *))heavy_keeper_free,
+		.obj_serialize=(void (*)(const void *, char **, size_t *))heavy_keeper_serialization,
+		.obj_merge_blob=(void (*)(void *, const char *, size_t))heavy_keeper_merge_blob,
+		.obj_size=(size_t (*)(const void *))heavy_keeper_cal_total_memory_usage
+	},
 	{
 		.type=OBJ_TYPE_UNDEFINED,
 		.type_name="undefined",

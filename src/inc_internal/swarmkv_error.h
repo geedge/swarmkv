@@ -6,6 +6,7 @@
 #define	error_unknown_command		"ERR unknown command `%s`, with args beginning with: `%s`,"
 #define	error_value_not_integer		"ERR value is not an integer or out of range"
 #define error_arg_not_valid_integer "ERR arg `%s` is not an integer or out of range"
+#define error_arg_not_in_range      "ERR arg `%s` is out of range"
 #define error_arg_not_valid_address "ERR arg `%s` is not `IP:port` format"
 #define error_arg_string_should_be    "ERR arg `%s` should be `%s`"
 #define error_need_additional_arg   "ERR arg `%s` should be fllowed by more args"
@@ -22,3 +23,5 @@
 #define error_cluster_addslotowner_node_is_not_active	"ERR candinate node %s is not active"
 #define error_cluster_addslotowner_node_has_slot 		"ERR candinate node %s already has some slots"
 
+#define error_no_heavy_keeper_initialized "ERR should use TOPKREV to initialize heavy keeper first"
+#define error_key_occupied "ERR the key cannot be reseved to topK"
