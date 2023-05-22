@@ -8,7 +8,7 @@
 #include "swarmkv_store.h"
 
 // TOPKREV key K [width] [depth] [decay rate]
-enum cmd_exec_result topkadd_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply) {
+enum cmd_exec_result topkrev_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply) {
     if (cmd->argc - 1 < 2 || cmd->argc > 5) {
         *reply = swarmkv_reply_new_error(error_wrong_number_of_arg);
         return FINISHED;
@@ -169,6 +169,17 @@ enum cmd_exec_result topklist_command(struct swarmkv_module *mod_store, const st
     struct heavy_keeper *topk = obj->topk;
     struct heavy_keeper_result *result = heavy_keeper_query(topk);
 
+    size_t n_to_get = result->n_key;
+    *reply=swarmkv_reply_new_array(n_to_get);
+    for(size_t i=0; i<n_to_get; i++)
+    {
+        (*reply)->elements[i]=swarmkv_reply_new_string_fmt("%s %u", result->key, result->count);
+    }
+	return FINISHED;    
+}
 
-    return FINISHED;
+// TOPKQUERY key member return 0 for not in, 1 for in
+enum cmd_exec_result topkquery_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+{    
+    // TODO
 }

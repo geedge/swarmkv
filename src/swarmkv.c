@@ -978,9 +978,18 @@ void command_spec_init(struct swarmkv *db)
 					hincrby_command, db->mod_store);
 
     /* top-K commands */
-	command_register(&(db->command_table), "TOPKADD", "key",
-					2, 1, CMD_KEY_OW, REPLY_ERROR, AUTO_ROUTE,
+    command_register(&(db->command_table), "TOPKREV", "key K [width] [depth] [decay rate]",
+                2, 1, CMD_KEY_OW, REPLY_ERROR, AUTO_ROUTE,
+                topkrev_command, db->mod_store);
+	command_register(&(db->command_table), "TOPKADD", "key member score",
+					3, 1, CMD_KEY_OW, REPLY_ERROR, AUTO_ROUTE,
 					topkadd_command, db->mod_store);
+    command_register(&(db->command_table), "TOPKINFO", "key",
+                1, 1, CMD_KEY_RO, REPLY_ERROR, AUTO_ROUTE,
+                topkinfo_command, db->mod_store);
+    command_register(&(db->command_table), "TOPKLIST", "key",
+            1, 1, CMD_KEY_RO, REPLY_ERROR, AUTO_ROUTE,
+            topklist_command, db->mod_store);
 
 	/* Token bucket commands */
 	command_register(&(db->command_table), "TCFG", "key rate capacity",
