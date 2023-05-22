@@ -1,4 +1,6 @@
+#pragma once
 #include "swarmkv_common.h"
+#include "swarmkv_cmd_spec.h"
 
 // TOPKREV key K [width] [depth] [decay rate]
 enum cmd_exec_result topkrev_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply);

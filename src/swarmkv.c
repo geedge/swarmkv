@@ -16,6 +16,7 @@
 #include "t_set.h"
 #include "t_token_bucket.h"
 #include "t_hash.h"
+#include "t_topk.h"
 
 #include "swarmkv_message.h"
 #include "swarmkv_net.h"

@@ -5,6 +5,7 @@ extern "C"{
 #endif
 
 #include <stddef.h>
+#include <uuid/uuid.h>
 
 /* ---------------------------------------------------------------------------------------
 TOP K using heavykeeper algorithm. 

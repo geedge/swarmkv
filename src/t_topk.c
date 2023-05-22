@@ -182,4 +182,5 @@ enum cmd_exec_result topklist_command(struct swarmkv_module *mod_store, const st
 enum cmd_exec_result topkquery_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
 {    
     // TODO
+    return FINISHED;
 }
