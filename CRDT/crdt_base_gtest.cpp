@@ -381,7 +381,7 @@ TEST(ORSet,   Merge01)
 	}
 	free(blob);
 }
-TEST(ORSet,   Merge11)
+TEST(ORSet, Merge11)
 {
 	struct OR_set *set[2];
 	uuid_t uuid;
@@ -571,6 +571,22 @@ TEST(ORSet, Replica32)
 		set[i]=NULL;
 	}
 	EXPECT_EQ(success_cnt, replica_num);
+}
+void ORMap_sync(struct OR_map **maps, size_t n_map)
+{
+	char *blob=NULL;
+	size_t blob_sz=0;
+	for(size_t i=0; i<n_map; i++)
+	{
+		for(size_t j=0; j<n_map; j++)
+		{
+			if(i==j) continue;
+			OR_map_serialize(maps[j], &blob, &blob_sz);
+			OR_map_merge_blob(maps[i], blob, blob_sz);
+			free(blob);
+			blob=NULL;
+		}
+	}
 }
 TEST(ORMap, Basic)
 {
@@ -788,11 +804,7 @@ TEST(ORMap, SetGet)
 		snprintf(val_buffer, sizeof(val_buffer), "%s-%zu", val_prefix, i);
 		OR_map_set_string(map[0], key_buffer, strlen(key_buffer)+1, val_buffer, strlen(val_buffer)+1);
 	}
-	char *blob=NULL;
-	size_t blob_sz=0;
-	OR_map_serialize(map[0], &blob, &blob_sz);
-	OR_map_merge_blob(map[1], blob, blob_sz);
-	free(blob);
+	ORMap_sync(map, 2);
 	struct OR_map_kv *kv_result;
 	size_t success_cnt=0;
 	for(i=0; i<round; i++)
@@ -885,6 +897,32 @@ TEST(ORMap, Incrby)
 	}
 	EXPECT_EQ(success_cnt, round);
 	
+	for(i=0; i<2; i++)
+	{
+		OR_map_free(map[i]);
+	}
+}
+TEST(ORMap, Incrby5K)
+{
+	uuid_t uuid;
+	size_t i=0;
+	struct OR_map *map[2];
+	for(i=0; i<2; i++)
+	{
+		uuid_generate(uuid);
+		map[i]=OR_map_new(uuid);
+	}
+	long long result_integer=0;
+	size_t round=5000;
+	const char *key="priority-1";
+	for(i=0; i<round; i++)
+	{
+		OR_map_incrby(map[0], key, strlen(key), 1, &result_integer);
+		OR_map_incrby(map[1], key, strlen(key), -1, &result_integer);
+	}
+	ORMap_sync(map, 2);
+	OR_map_incrby(map[0], key, strlen(key), 0, &result_integer);
+	EXPECT_EQ(result_integer, 0);
 	for(i=0; i<2; i++)
 	{
 		OR_map_free(map[i]);

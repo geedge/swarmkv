@@ -796,6 +796,30 @@ TEST_F(SwarmkvTwoNodes, INCRYBY1kInteger)
 
 	cmd_exec_arg_free(arg);
 }
+TEST_F(SwarmkvTwoNodes, HINCRYBY5K)
+{
+	struct swarmkv *db1=SwarmkvTwoNodes::db1;
+	struct swarmkv *db2=SwarmkvTwoNodes::db2;
+	const char *key="myhash";
+	const char *field="priority-0";
+
+	int i=0, round=5000;
+	struct swarmkv_reply *reply=NULL;
+	for(i=0; i<round; i++)
+	{
+		reply=swarmkv_command(db1, "HINCRBY %s %s 1", key, field);
+		EXPECT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+		swarmkv_reply_free(reply);
+		reply=swarmkv_command(db2, "HINCRBY %s %s -1", key, field);
+		EXPECT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+		swarmkv_reply_free(reply);
+	}
+	wait_for_sync();
+	reply=swarmkv_command(db2, "HINCRBY %s %s 0", key, field);
+	EXPECT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 0);
+	swarmkv_reply_free(reply);	
+}
 
 TEST_F(SwarmkvTwoNodes, DEL)
 {
