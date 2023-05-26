@@ -1082,7 +1082,7 @@ TEST(BulkTokenBucket, Merge)
 {
 	int n_replica=5;
 	struct bulk_token_bucket *btb[n_replica];
-	long long allocated[n_replica]={0};
+	long long allocated[n_replica];
 	uuid_t uuid;
 	struct timeval start, step, now;
 	int step_us=1000;

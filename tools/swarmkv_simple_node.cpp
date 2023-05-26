@@ -53,15 +53,15 @@ int main(int argc, char ** argv)
 	long long key_number=0;
 	int worker_thread_number=1;
 	unsigned int consul_port=8500;
-	unsigned int cluster_port;
-	unsigned int consul_heal_check_port;
+	unsigned int cluster_port=0;
+	unsigned int consul_heal_check_port=0;
 	char cluster_name[256];
 
 	char cluster_announce_ip[32];
-	unsigned int cluster_announce_port;
+	unsigned int cluster_announce_port=0;
 
 	char healthcheck_announce_ip[32];
-	unsigned int healthcheck_announce_port;
+	unsigned int healthcheck_announce_port=0;
 
 	if(argc < 3) { help();}
 	strcpy(consul_host, "127.0.0.1");

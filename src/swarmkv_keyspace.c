@@ -299,6 +299,11 @@ void consul_request_free(struct consul_request *req)
 }
 void consul_request_error_callback(enum evhttp_request_error error, void *arg)
 {
+    if(error == EVREQ_HTTP_EOF)
+	{
+		return;
+	}
+
 	struct consul_request *req=(struct consul_request *)arg;
 	struct promise *p=future_to_promise(req->f);
 	promise_failed(p, FUTURE_ERROR_EXCEPTION, "consul request error");
