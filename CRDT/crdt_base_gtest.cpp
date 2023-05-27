@@ -572,7 +572,7 @@ TEST(ORSet, Replica32)
 	}
 	EXPECT_EQ(success_cnt, replica_num);
 }
-void ORMap_sync(struct OR_map **maps, size_t n_map)
+void OR_map_sync(struct OR_map **maps, size_t n_map)
 {
 	char *blob=NULL;
 	size_t blob_sz=0;
@@ -804,7 +804,7 @@ TEST(ORMap, SetGet)
 		snprintf(val_buffer, sizeof(val_buffer), "%s-%zu", val_prefix, i);
 		OR_map_set_string(map[0], key_buffer, strlen(key_buffer)+1, val_buffer, strlen(val_buffer)+1);
 	}
-	ORMap_sync(map, 2);
+	OR_map_sync(map, 2);
 	struct OR_map_kv *kv_result;
 	size_t success_cnt=0;
 	for(i=0; i<round; i++)
@@ -845,14 +845,8 @@ TEST(ORMap, Incrby)
 		snprintf(key_buffer, sizeof(key_buffer), "%s-%zu", key_prefix, i);
 		OR_map_incrby(map[i%2], key_buffer, strlen(key_buffer)+1, i, &result_integer);
 	}
-	char *blob=NULL;
-	size_t blob_sz=0;
-	OR_map_serialize(map[0], &blob, &blob_sz);
-	OR_map_merge_blob(map[1], blob, blob_sz);
-	free(blob);
-	OR_map_serialize(map[1], &blob, &blob_sz);
-	OR_map_merge_blob(map[0], blob, blob_sz);
-	free(blob);
+
+	OR_map_sync(map, 2);
 
 	struct OR_map_kv *result;
 	size_t success_cnt=0;
@@ -875,13 +869,7 @@ TEST(ORMap, Incrby)
 		snprintf(key_buffer, sizeof(key_buffer), "%s-%zu", key_prefix, i);
 		OR_map_incrby(map[i%2], key_buffer, strlen(key_buffer)+1, 998, &result_integer);
 	}
-	OR_map_serialize(map[0], &blob, &blob_sz);
-	OR_map_merge_blob(map[1], blob, blob_sz);
-	free(blob);
-	OR_map_serialize(map[1], &blob, &blob_sz);
-	OR_map_merge_blob(map[0], blob, blob_sz);
-	free(blob);
-
+	OR_map_sync(map, 2);
 	success_cnt=0;
 	for(i=0; i<round; i++)
 	{		
@@ -917,10 +905,11 @@ TEST(ORMap, Incrby5K)
 	const char *key="priority-1";
 	for(i=0; i<round; i++)
 	{
-		OR_map_incrby(map[0], key, strlen(key), 1, &result_integer);
-		OR_map_incrby(map[1], key, strlen(key), -1, &result_integer);
+		OR_map_incrby(map[i%2], key, strlen(key), 1, &result_integer);
+		OR_map_incrby(map[(i+1)%2], key, strlen(key), -1, &result_integer);
+		if(i%100==0) OR_map_sync(map, 2);
 	}
-	ORMap_sync(map, 2);
+	OR_map_sync(map, 2);
 	OR_map_incrby(map[0], key, strlen(key), 0, &result_integer);
 	EXPECT_EQ(result_integer, 0);
 	for(i=0; i<2; i++)
