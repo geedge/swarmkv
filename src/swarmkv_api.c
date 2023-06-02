@@ -301,7 +301,7 @@ void swarmkv_btconsume(struct swarmkv * db, const char * key, size_t keylen, con
 {	
 	struct swarmkv_cmd *cmd=NULL;
 	cmd=swarmkv_cmd_new(4);	
-	cmd->argv[0]=sdsnew("ftconsume");
+	cmd->argv[0]=sdsnew("btconsume");
 	cmd->argv[1]=sdsnewlen(key, keylen);
 	cmd->argv[2]=sdsnewlen(member, member_len);
 	cmd->argv[3]=sdsfromlonglong(tokens);
