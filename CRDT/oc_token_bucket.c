@@ -6,12 +6,12 @@
 
 #include <assert.h>
 #include <string.h>
-
+#define OCTB_REFILL_INTERVAL_MS_DEFAULT	10
 struct OC_configuration
 {
 	long long CIR;	//Committed Information Rate
 	long long CBS;	//Committed Burst Size
-	long long refill_duration_ms;
+	long long refill_interval_ms;
 	struct timeval write_timestamp;
 };
 struct OC_token_bucket
@@ -20,6 +20,9 @@ struct OC_token_bucket
 	long long refilled;
 	struct timeval refill_timestamp;
 	struct PN_counter *consumed;
+
+	/* Local variables */
+	int no_reserve;
 };
 const size_t OCTB_BLOB_HDR_SIZE= offsetof(struct OC_token_bucket, consumed);
 struct OC_token_bucket *OC_token_bucket_new(uuid_t my_id, struct timeval now, long long CIR, long long CBS)
@@ -30,7 +33,7 @@ struct OC_token_bucket *OC_token_bucket_new(uuid_t my_id, struct timeval now, lo
 	memcpy(&bucket->cfg.write_timestamp, &now, sizeof(bucket->cfg.write_timestamp));
 	bucket->cfg.CIR=CIR;
 	bucket->cfg.CBS=CBS;
-	bucket->cfg.refill_duration_ms=10;
+	bucket->cfg.refill_interval_ms=OCTB_REFILL_INTERVAL_MS_DEFAULT;
 	memcpy(&bucket->refill_timestamp, &now, sizeof(bucket->cfg.write_timestamp));
 	bucket->refilled=bucket->cfg.CBS;
 	return bucket;
@@ -48,7 +51,10 @@ void OC_token_bucket_configure(struct OC_token_bucket *bucket, struct timeval no
 	if(CIR>=0) bucket->cfg.CIR=CIR;
 	if(CBS>=0) bucket->cfg.CBS=CBS;
 }
-
+void OC_token_bucket_set_no_reserve(struct OC_token_bucket *bucket)
+{
+	bucket->no_reserve=1;
+}
 
 long long OC_token_bucket_consume(struct OC_token_bucket *bucket, struct timeval now, enum tb_consume_type cmd, long long tokens)
 {
@@ -60,7 +66,7 @@ long long OC_token_bucket_consume(struct OC_token_bucket *bucket, struct timeval
 
 	long long new_refilled=0;
 	long long available=tb_available(bucket->cfg.CIR, bucket->cfg.CBS, consumed, 
-				refilled, delta_time_ms, bucket->cfg.refill_duration_ms, &new_refilled);
+				refilled, delta_time_ms, bucket->cfg.refill_interval_ms, &new_refilled);
 
 	int infinite_flag=0;
     if(bucket->cfg.CBS==0 && bucket->cfg.CIR==0)
@@ -69,7 +75,11 @@ long long OC_token_bucket_consume(struct OC_token_bucket *bucket, struct timeval
 		new_refilled += tokens;
     }
 	size_t n_replica=PN_counter_replica_num(bucket->consumed);
-
+	if(refilled!=new_refilled)
+	{
+		bucket->refilled=new_refilled;
+		memcpy(&bucket->refill_timestamp, &now, sizeof(bucket->refill_timestamp));
+	}
 	long long allocated=0;
 	if(infinite_flag)
 	{
@@ -77,19 +87,15 @@ long long OC_token_bucket_consume(struct OC_token_bucket *bucket, struct timeval
 	}
 	else
 	{
-		allocated=tb_consume(bucket->cfg.CIR, available, n_replica, cmd, tokens);
+		//allocated=tb_consume_quantum_based(available, bucket->deficit, bucket->quantum, cmd, tokens);
+		if(bucket->no_reserve) n_replica=1;
+		allocated=tb_consume_reserve_based(bucket->cfg.CIR, available, n_replica, cmd, tokens);
 	}
 	if(allocated>0)
 	{
 		PN_counter_incrby(bucket->consumed, allocated);
 	}
-	if(refilled!=new_refilled)
-	{
-		bucket->refilled=new_refilled;		
-		memcpy(&bucket->refill_timestamp, &now, sizeof(bucket->refill_timestamp));
-	}
-	assert(allocated>=0);
-	
+	assert(allocated>=0);	
 	return allocated;
 }
 
@@ -99,10 +105,11 @@ void OC_token_bucket_info(struct OC_token_bucket *bucket, struct timeval now, st
 
 	info->CIR=bucket->cfg.CIR;
 	info->CBS=bucket->cfg.CBS;
-	info->refill_duration_ms=bucket->cfg.refill_duration_ms;
+	info->refill_interval_ms=bucket->cfg.refill_interval_ms;
 	info->consumed=PN_counter_get(bucket->consumed);
 	info->available=tb_available(bucket->cfg.CIR, bucket->cfg.CBS, info->consumed, 
-				 bucket->refilled, delta_time_ms, bucket->cfg.refill_duration_ms, &info->refilled);
+				 bucket->refilled, delta_time_ms, bucket->cfg.refill_interval_ms, &info->refilled);
+	info->number_of_replica=PN_counter_replica_num(bucket->consumed);
 	return;
 }
 size_t OC_token_bucket_serialized_size(const struct OC_token_bucket *bucket)

@@ -140,7 +140,7 @@ long long bulk_token_bucket_consume(struct bulk_token_bucket *btb, struct timeva
 	}
 	else
 	{
-		assigned=tb_consume(btb->cfg.CIR, global_available, n_replica, cmd, tokens);
+		assigned=tb_consume_reserve_based(btb->cfg.CIR, global_available, n_replica, cmd, tokens);
 	}
 
 	if(new_refilled!=refilled)

@@ -23,15 +23,15 @@ struct OC_token_bucket_info
 {
 	long long CIR;
 	long long CBS;
-	long long refill_duration_ms;
+	long long refill_interval_ms;
 	long long consumed;
 	long long refilled;
 	long long available;
-	long long number_of_consumers;
+	long long number_of_replica;
 };
 void OC_token_bucket_info(struct OC_token_bucket *bucket, struct timeval now, struct OC_token_bucket_info *info);
 void OC_token_bucket_free(struct OC_token_bucket *bucket);
-
+void OC_token_bucket_set_no_reserve(struct OC_token_bucket *bucket);
 
 long long OC_token_bucket_consume(struct OC_token_bucket *bucket, struct timeval now, enum tb_consume_type cmd, long long tokens);
 

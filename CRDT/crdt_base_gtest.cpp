@@ -1773,6 +1773,45 @@ TEST(GArray, Basic)
 		g_array_free(a[i]);
 	}
 }
+TEST(GArray, Reset)
+{
+	uuid_t uuid;
+	size_t n_replica=2;
+	int array_sz=1024, round=100;
+	struct g_array *a[n_replica];
+	for(size_t i=0; i<n_replica; i++)
+	{
+		uuid_generate(uuid);
+		a[i]=g_array_new(uuid, array_sz);
+	}
+	long long idx=1, value=0;
+	srandom(17);
+	for(size_t i=0; i<round; i++)
+	{
+		g_array_incrby(a[0], idx, 100);
+		g_array_incrby(a[1], idx, 100);
+		g_array_sync(a, n_replica);
+		value=g_array_get(a[0], idx);
+		EXPECT_EQ(value, 200);
+		g_array_reset(a[0]);
+		value=g_array_get(a[0], idx);
+		EXPECT_EQ(value, 0);
+		g_array_incrby(a[1], idx, 1);
+		g_array_sync(a, n_replica);
+		//Observed Reset
+		value=g_array_get(a[0], idx);
+		EXPECT_EQ(value, 1);
+		value=g_array_get(a[1], idx);
+		EXPECT_EQ(value, 1);
+		idx++;
+	}
+
+
+	for(size_t i=0; i<n_replica; i++)
+	{
+		g_array_free(a[i]);
+	}
+}
 TEST(GArray, Serialize)
 {
 	uuid_t uuid;

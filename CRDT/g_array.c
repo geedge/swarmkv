@@ -7,14 +7,13 @@
 #define	TO_LOCAL_EPOCH(x)	(x & ((1ULL << 24) - 1))
 struct counter_item
 {
-	long long epoch:24;
-	long long count:40;
+	long long count;
 };
 struct counter_array
 {
 	uuid_t replica_id;
-    long long array_sz;
 	long long sequence;
+	long long array_sz;
 	struct counter_item  *array;
 	UT_hash_handle hh;
 };
@@ -44,7 +43,7 @@ struct g_array *g_array_new(uuid_t my_id, long long array_sz)
 	struct g_array *ga=ALLOC(struct g_array, 1);
 	uuid_copy(ga->my_id, my_id);
 	ga->array_sz=array_sz;
-    return ga;
+	return ga;
 }
 void g_array_free(struct g_array *ga)
 {
@@ -57,15 +56,24 @@ void g_array_free(struct g_array *ga)
 	free(ga);
 	return;
 }
-
+static void update_global_epoch(struct g_array *ga)
+{
+	struct counter_array *a=NULL, *tmp=NULL;
+	ga->epoch=0;
+	HASH_ITER(hh, ga->hash, a, tmp)
+	{
+	//	ga->epoch+=a->epoch;
+	}
+	return;
+}
 long long g_array_get(const struct g_array *ga, long long idx)
 {
 	struct counter_array *a=NULL, *tmp=NULL;
 	long long value=0;
 	HASH_ITER(hh, ga->hash, a, tmp)
 	{
-        if(idx < a->array_sz && a->array[idx].epoch == TO_LOCAL_EPOCH(ga->epoch))
-            value += a->array[idx].count;
+		if(idx < a->array_sz)
+			value += a->array[idx].count;
 	}
 	return value;
 }
@@ -80,18 +88,25 @@ long long g_array_incrby(struct g_array *ga, long long idx, long long increment)
 		HASH_ADD_KEYPTR(hh, ga->hash, a->replica_id, sizeof(a->replica_id), a);
 	}
 	assert(idx < a->array_sz);
-	if(a->array[idx].epoch != TO_LOCAL_EPOCH(ga->epoch))
-	{
-		a->array[idx].epoch = TO_LOCAL_EPOCH(ga->epoch);
-		a->array[idx].count = 0;
-	}
 	a->array[idx].count += increment;
-	a->sequence ++;
+	a->sequence++;
 	return g_array_get(ga, idx);
 }
 void g_array_reset(struct g_array *ga)
 {
-	ga->epoch++;
+	struct counter_array *a=NULL;
+
+	HASH_FIND(hh, ga->hash, ga->my_id, sizeof(ga->my_id), a);
+	if(!a)
+	{
+		a=counter_array_new(ga->my_id, ga->array_sz);
+		HASH_ADD_KEYPTR(hh, ga->hash, a->replica_id, sizeof(a->replica_id), a);
+	}
+	for(size_t i=0; i<ga->array_sz; i++)
+	{
+		a->array[i].count -= g_array_get(ga, i);
+	}
+	a->sequence++;
 }
 void g_array_resize(struct g_array *ga, long long new_size)
 {
@@ -99,13 +114,12 @@ void g_array_resize(struct g_array *ga, long long new_size)
 	HASH_FIND(hh, ga->hash, ga->my_id, sizeof(ga->my_id), a);
 	if(a && a->array_sz < new_size)
 	{
-        a->array=(struct counter_item *)realloc(a->array, sizeof(struct counter_item)*new_size);
-        a->array_sz=new_size;
-		a->sequence++;
+		a->array=(struct counter_item *)realloc(a->array, sizeof(struct counter_item)*new_size);
+		a->array_sz=new_size;
 	}
 	ga->array_sz=new_size;
 	
-    return;
+	return;
 }
 size_t g_array_replicas(const struct g_array *ga)
 {
@@ -120,9 +134,9 @@ size_t g_array_serialized_size(const struct g_array *ga)
 	HASH_ITER(hh, ga->hash, item, tmp)
 	{
 		sz += G_ARRAY_ITEM_HEADER_SIZE;
-        sz += item->array_sz*sizeof(struct counter_item);
+		sz += item->array_sz*sizeof(struct counter_item);
 	}
-    return sz;
+	return sz;
 }
 void g_array_serialize(const struct g_array *ga, char **blob, size_t *blob_sz)
 {
@@ -172,43 +186,44 @@ struct g_array * g_array_deserialize(const char *blob, size_t blob_sz)
 	assert(offset<=blob_sz);
 	return ga;
 }
+
 void g_array_merge(struct g_array *dst, const struct g_array *src)
 {
-    struct counter_array *src_item=NULL, *dst_item=NULL, *tmp=NULL;
+	struct counter_array *src_item=NULL, *dst_item=NULL, *tmp=NULL;
 	long long max_array_sz=0;
-    HASH_ITER(hh, src->hash, src_item, tmp)
-    {
-        HASH_FIND(hh, dst->hash, src_item->replica_id, sizeof(src_item->replica_id), dst_item);
-        if(!dst_item)
-        {
-            dst_item=ALLOC(struct counter_array, 1);
+	HASH_ITER(hh, src->hash, src_item, tmp)
+	{
+		HASH_FIND(hh, dst->hash, src_item->replica_id, sizeof(src_item->replica_id), dst_item);
+		if(!dst_item)
+		{
+			dst_item=ALLOC(struct counter_array, 1);
 			memcpy(dst_item, src_item, G_ARRAY_ITEM_HEADER_SIZE);
-            dst_item->array=ALLOC(struct counter_item, dst_item->array_sz);
-            memcpy(dst_item->array, src_item->array, dst_item->array_sz*sizeof(struct counter_item));
+			dst_item->array=ALLOC(struct counter_item, dst_item->array_sz);
+			memcpy(dst_item->array, src_item->array, dst_item->array_sz*sizeof(struct counter_item));
 			HASH_ADD_KEYPTR(hh, dst->hash, dst_item->replica_id, sizeof(dst_item->replica_id), dst_item);
-        }
+		}
 		else
 		{
 			if(src_item->sequence > dst_item->sequence)
 			{
-				dst_item->array_sz=src_item->array_sz;
+				memcpy(dst_item, src_item, G_ARRAY_ITEM_HEADER_SIZE);
 				dst_item->array=realloc(dst_item->array, sizeof(struct counter_item)*dst_item->array_sz);
 				memcpy(dst_item->array, src_item->array, sizeof(struct counter_item)*dst_item->array_sz);
 			}
 		}
 		max_array_sz=MAX(src_item->array_sz, max_array_sz);
-    }
-	dst->epoch=MAX(dst->epoch, src->epoch);
+	}
+	update_global_epoch(dst);
 	if(dst->array_sz<max_array_sz)
 	{
 		g_array_resize(dst, max_array_sz);
 	}
-    return;
+	return;
 }
 void g_array_merge_blob(struct g_array *ga, const char *blob, size_t blob_sz)
 {
 	struct g_array *src=g_array_deserialize(blob, blob_sz);
-    g_array_merge(ga, src);
-    g_array_free(src);
-    return;
+	g_array_merge(ga, src);
+	g_array_free(src);
+	return;
 }

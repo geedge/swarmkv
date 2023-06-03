@@ -240,6 +240,7 @@ For a swarmkv node, it has three modules. Each module has its own internal data 
 - Keyspace Module stores replica addresses of keys. It's a key-route hash table which has 16384 slots. Each slot is protected by a mutex lock. Lock contention happens when wrting on keys of same slot.
 - Monitor Module collects runtime metrics for diagnostic. It's lock-free by taking advantage of [HdrHistogram_c](https://github.com/HdrHistogram/HdrHistogram_c)'s interval recorder.
 
+[Todo] Lock free API powered by completion queue.
 ## Source code layout
 
 The source files are organized as follows:
