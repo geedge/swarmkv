@@ -1234,6 +1234,7 @@ TEST(CMSketch, I5K)
 		}
 	}
 	EXPECT_NEAR(pass, n_item, n_item*(1-info.confidence));
+	CM_sketch_free(cms);
 }
 static void CMS_sync(struct CM_sketch *list[], size_t n)
 {
@@ -1777,7 +1778,8 @@ TEST(GArray, Reset)
 {
 	uuid_t uuid;
 	size_t n_replica=2;
-	int array_sz=1024, round=100;
+	int array_sz=1024;
+	size_t round=100;
 	struct g_array *a[n_replica];
 	for(size_t i=0; i<n_replica; i++)
 	{

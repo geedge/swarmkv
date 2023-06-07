@@ -759,13 +759,13 @@ double test_fair_token_bucket(struct sftb_class *classes, size_t n_class, long l
 	step.tv_sec=0;
 	step.tv_usec=(suseconds_t)step_us;
 	struct fair_token_bucket *ftb[n_replica];
-	for(int i=0; i<n_replica+1; i++)
+	for(int i=0; i<n_replica; i++)
 	{
 		uuid_generate(uuid);
 		ftb[i]=fair_token_bucket_new(uuid, now, CIR, CBS, 8192);
 	}
 	int sync_interval_ms=40;
-	long long got=0, got1=0;
+	long long got=0;
 	for(int i=0; i<duration_s*(1000*1000/step_us); i++)
 	{
 		timeradd(&now, &step, &now);
@@ -781,16 +781,6 @@ double test_fair_token_bucket(struct sftb_class *classes, size_t n_class, long l
 								classes[idx].weight,
 								TB_CONSUME_NORMAL,
 								this_demand);
-			got1=fair_token_bucket_consume(ftb[n_replica], now, 
-								(const char*) &(classes[idx].class_id),
-								sizeof(classes[idx].class_id),
-								classes[idx].weight,
-								TB_CONSUME_NORMAL,
-								this_demand);
-			if(got>got1)
-			{
-				//printf("%lld %lld\n", got, got1);
-			}
 			classes[idx].allocated_tokens+=got;
 			classes[idx].demand_tokens+=this_demand;
 			
@@ -1089,7 +1079,7 @@ void bulk_token_bucket_test(struct btb_case *mycase)
 			bk[i].ideal_tokens=max_tokens;
 		}
 	}
-	int sync_interval_ms=2000;
+	int sync_interval_ms=200;
 	for(int i=0; i<mycase->duration_s*(1000*1000/step_us); i++)
 	{
 		timeradd(&now, &step, &now);
@@ -1185,6 +1175,7 @@ TEST(BulkTokenBucket, Merge)
 		uuid_generate(uuid);
 		timeradd(&now, &step, &now);
 		btb[i]=bulk_token_bucket_new(uuid, now, CIR, CBS, 128*i);
+		allocated[i]=0;
 	}
 	int r=0;
 	int duration_s=100, sync_interval_ms=400;
@@ -1220,7 +1211,7 @@ TEST(BulkTokenBucket, RareCollision)
 		test[i].CIR=1000*1000;
 		test[i].CBS=1000*1000;
 		test[i].bucket_num=512;
-		test[i].n_replica=1;
+		test[i].n_replica=2;
 		test[i].key_num=(1<<i);
 		test[i].duration_s=100;
 		bulk_token_bucket_test(test+i);

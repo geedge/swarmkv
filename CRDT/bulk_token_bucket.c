@@ -160,6 +160,7 @@ void bulk_token_bucket_configure(struct bulk_token_bucket *btb, struct timeval n
     memcpy(&btb->cfg.timestamp, &now, sizeof(btb->cfg.timestamp));
  	g_array_resize(btb->consumed, bucket_num);
 	btb->refilled=realloc(btb->refilled, btb->cfg.bucket_num*sizeof(struct refill_mark));
+	memset(btb->refilled, 0, btb->cfg.bucket_num*sizeof(struct refill_mark));
     return;
 }
 void bulk_token_bucket_info(const struct bulk_token_bucket *btb, struct timeval now, struct bulk_token_bucket_info *info)
