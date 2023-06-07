@@ -1384,6 +1384,10 @@ TEST_F(SwarmkvTwoNodes, TypeFairTokenBucket)
 	EXPECT_NEAR(reply->elements[13]->integer, n_member, n_member/5);
 	swarmkv_reply_free(reply);
 
+	reply=swarmkv_command(db[1], "FTINFO %s", key);
+	EXPECT_NEAR(reply->elements[13]->integer, n_member, n_member/5);
+	swarmkv_reply_free(reply);
+
 	cmd_exec_arg_expect_integer(arg, 1);
 	swarmkv_del(db[0], key, strlen(key), generic_callback, arg);
 	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
@@ -1394,10 +1398,6 @@ TEST_F(SwarmkvTwoNodes, TypeFairTokenBucket)
 	swarmkv_async_command(db[1], generic_callback, arg, "FTCONSUME %s user-001 20 1000", key);
 	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
 	cmd_exec_arg_clear(arg);
-
-	reply=swarmkv_command(db[1], "FTINFO %s", key);
-	EXPECT_NEAR(reply->elements[13]->integer, n_member, n_member/5);
-	swarmkv_reply_free(reply);
 
 	cmd_exec_arg_free(arg);
 }
