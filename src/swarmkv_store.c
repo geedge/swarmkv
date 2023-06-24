@@ -137,10 +137,18 @@ struct swarmkv_obj_specs sobj_specs[__SWARMKV_OBJ_TYPE_MAX] =
 };
 #define	MODULE_SWAMRKV_STORE	module_name_str("swarmkv.store")
 #define STORE_SHARD_NUMBER	8
+struct swarmkv_store_thread
+{
+	struct scontainer *obj_table;
+	struct scontainer *sync_queue;
+	pthread_rwlock_t rwlock;
+};
 struct swarmkv_store
 {
 	struct swarmkv_module module;
 	node_t self;
+	size_t nr_worker_threads;
+	struct swarmkv_store_thread *threads;
 	struct scontainer *obj_table[STORE_SHARD_NUMBER];
 	struct scontainer *sync_queue[STORE_SHARD_NUMBER];
 //	pthread_mutex_t mutex[STORE_SHARD_NUMBER];
@@ -170,7 +178,13 @@ int get_shard_id(sds key)
 	int shard_idx=key_hash_slot(key, sdslen(key))%STORE_SHARD_NUMBER;
 	return shard_idx;
 }
-
+int store_gettid(struct swarmkv_module *mod, sds key)
+{
+	struct swarmkv_store *store=module2store(mod);
+	if(!key) return -1;
+	int tid=key_hash_slot(key, sdslen(key))%store->nr_worker_threads;
+	return tid;
+}
 void store_lock(struct swarmkv_module *mod, enum cmd_key_flag flag, sds key)
 {
 	struct swarmkv_store *store=module2store(mod);
@@ -606,9 +620,11 @@ struct swarmkv_module *swarmkv_store_new(const struct swarmkv_options *opts, exe
 	store->module.mod_ctx=store;
 	store->module.lock=store_lock;
 	store->module.unlock=store_unlock;
-	for(size_t i=0; i<STORE_SHARD_NUMBER; i++)
+	store->nr_worker_threads=opts->nr_worker_threads;
+	store->threads=ALLOC(struct swarmkv_store_thread, opts->nr_worker_threads);
+	for(size_t i=0; i<opts->nr_worker_threads; i++)
 	{
-		pthread_rwlock_init(&(store->rwlock[i]), NULL);
+		pthread_rwlock_init(&(store->threads[i].rwlock), NULL);
 	}
 	uuid_copy(store->my_uuid, node_uuid);
 	node_init(&store->self, opts->cluster_announce_ip, opts->cluster_announce_port);
@@ -623,16 +639,16 @@ void swarmkv_store_free(struct swarmkv_module *mod_store)
 	struct swarmkv_store *store=module2store(mod_store);
 	struct scontainer *ctr=NULL, *tmp=NULL;
 	
-	for(size_t i=0; i<STORE_SHARD_NUMBER; i++)
+	for(size_t i=0; i<store->nr_worker_threads; i++)
 	{
 
-		HASH_ITER(hh, store->obj_table[i], ctr, tmp)
+		HASH_ITER(hh, store->threads[i].obj_table, ctr, tmp)
 		{
 			assert(ctr->shard_idx==i);
-			scontainer_remove(&(store->obj_table[i]), ctr);
+			scontainer_remove(&(store->threads[i].obj_table), ctr);
 			scontainer_free(ctr);
 		}		
-		pthread_rwlock_destroy(&(store->rwlock[i]));
+		pthread_rwlock_destroy(&(store->threads[i].rwlock));
 	}
 	free(store);
 	return;

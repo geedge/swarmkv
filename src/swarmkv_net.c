@@ -28,18 +28,15 @@
 
 #define	MODULE_SWAMRKV_NET	module_name_str("swarmkv.net")
 #define	MSG_HDR_MAGIC	0x5210
-enum MSG_TYPE
-{
-	MSG_TYPE_CMD,
-	MSG_TYPE_REPLY
-};
+
 
 struct swarmkv_msg_hdr
 {
 	unsigned int magic;
 	enum MSG_TYPE msg_type;	//0: cmd, 1: reply
 	unsigned long long sequence;
-	unsigned long long payload_len;
+	unsigned int thread_id;
+	unsigned int payload_len;
 	node_t source;
 	//MessagePack payload
 };
@@ -86,7 +83,7 @@ struct snet_rpc
 	node_t peer;
 	struct event *timeout_ev;
 	on_reply_callback_t *cb;
-	void* cb_arg;
+	void *cb_arg;
 	struct snet_thread *thr;
 	struct timespec start;
 	UT_hash_handle hh;
@@ -132,8 +129,8 @@ struct swarmkv_net
 	struct evconnlistener *listener;	
 
 	void* logger;
-	on_cmd_callback_t* on_cmd_cb;
-	void* on_cmd_cb_arg;
+	on_msg_callback_t *on_msg_cb;
+	void *cb_arg;
 
 	pthread_mutex_t stat_lock;
 	long long last_input_bytes, last_output_bytes;
@@ -763,12 +760,12 @@ static void __accept_error_cb(struct evconnlistener *listener, void *arg)
 							err, evutil_socket_error_to_string(err));
 }
 
-struct swarmkv_net *swarmkv_net_new(struct swarmkv_options *opts, struct log_handle *logger, char **err)
+struct swarmkv_net *swarmkv_net_new(struct event_base *evbases[], int nr_worker_threads, struct swarmkv_options *opts, struct log_handle *logger, char **err)
 {
 	struct swarmkv_net *net=NULL;	
 	net=ALLOC(struct swarmkv_net, 1);
 	net->logger=logger;
-	net->n_thread=opts->nr_worker_threads;
+	net->n_thread=nr_worker_threads;
 	net->sequence_generator=1;
 	net->threads=ALLOC(struct snet_thread, net->n_thread);
 	struct snet_thread *thr=NULL;
@@ -776,7 +773,7 @@ struct swarmkv_net *swarmkv_net_new(struct swarmkv_options *opts, struct log_han
 	for(size_t i=0; i<net->n_thread; i++)
 	{
 		thr=net->threads+i;
-		thr->evbase=event_base_new();
+		thr->evbase=evbases[i];
 		thr->thread_id=i;
 		thr->peer_timeout_us=opts->cluster_timeout_us;
 		thr->ref_logger=logger;
@@ -893,7 +890,7 @@ void swarmkv_net_stop(struct swarmkv_net* net)
 	}
 	return;
 }
-void swarmkv_net_free(struct swarmkv_net* net)
+void swarmkv_net_free(struct swarmkv_net *net)
 {
 	int i=0;
 	struct snet_thread *thr=NULL;
@@ -928,7 +925,7 @@ void swarmkv_net_free(struct swarmkv_net* net)
 			HASH_DEL(thr->reply_ctx_table, rctx);
 			free(rctx);
 		}
-		event_base_free(thr->evbase);
+		thr->evbase=NULL;
 	}
 	pthread_mutex_destroy(&net->stat_lock);
 	free(net->threads);
@@ -936,18 +933,22 @@ void swarmkv_net_free(struct swarmkv_net* net)
 	free(net);
 	return;
 }
-
-void swarmkv_net_set_on_cmd_cb(struct swarmkv_net* net, on_cmd_callback_t on_cmd_cb, void* arg)
-{
-	net->on_cmd_cb_arg=arg;
-	net->on_cmd_cb=on_cmd_cb;
-}
-void swarmkv_net_set_monitor_handle(struct swarmkv_net* net, struct swarmkv_module *mod_monitor)
+void swarmkv_net_set_monitor_handle(struct swarmkv_net *net, struct swarmkv_module *mod_monitor)
 {
 	for(size_t i=0; i<net->n_thread; i++)
 	{
 		net->threads[i].mod_monitor=mod_monitor;
 	}
+}
+void swarmkv_net_set_on_msg_callback(struct swarmkv_net *net, on_msg_callback_t *cb, void *cb_arg)
+{
+	net->on_msg_cb=cb;
+	net->cb_arg=cb_arg;
+	return;
+}
+int swarmkv_net_send(struct swarmkv_net *net, const node_t *dest, struct swarmkv_msg *msg)
+{
+	return 0;
 }
 void swarmkv_net_dispath(struct swarmkv_net *net, int thread_id)
 {

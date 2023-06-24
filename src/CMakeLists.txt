@@ -7,9 +7,10 @@ message(STATUS "SwarmKV, Version: ${SWARMKV_VERSION}")
 
 add_definitions(-D_GNU_SOURCE) 
 add_definitions(-fPIC)
-set(SWARMKV_SRC swarmkv.c swarmkv_store.c swarmkv_sync.c swarmkv_api.c
+set(SWARMKV_SRC swarmkv_mesh.c swarmkv.c swarmkv_store.c swarmkv_sync.c swarmkv_api.c
 		t_string.c t_set.c t_token_bucket.c t_hash.c
-		swarmkv_common.c swarmkv_message.c swarmkv_net.c swarmkv_keyspace.c swarmkv_utils.c 
+		swarmkv_message.c swarmkv_net.c
+		swarmkv_common.c  swarmkv_keyspace.c swarmkv_utils.c 
 		swarmkv_monitor.c future_promise.cpp)
 
 set(LIB_SOURCE_FILES
@@ -19,18 +20,20 @@ set(LIB_SOURCE_FILES
 	${PROJECT_SOURCE_DIR}/deps/base64/base64.c
 	${PROJECT_SOURCE_DIR}/deps/xxhash/xxhash.c
 	${PROJECT_SOURCE_DIR}/deps/timeout/timeout.c
-	${PROJECT_SOURCE_DIR}/deps/log/log.c)
+	${PROJECT_SOURCE_DIR}/deps/log/log.c
+	${PROJECT_SOURCE_DIR}/deps/ringbuf/ringbuf.c)
 	
 include_directories(${PROJECT_SOURCE_DIR}/include/
-					${PROJECT_SOURCE_DIR}/CRDT/
-					${PROJECT_SOURCE_DIR}/deps/base64/
-					${PROJECT_SOURCE_DIR}/deps/mpack/
-					${PROJECT_SOURCE_DIR}/deps/sds/
+					${PROJECT_SOURCE_DIR}/CRDT
+					${PROJECT_SOURCE_DIR}/deps/base64
+					${PROJECT_SOURCE_DIR}/deps/mpack
+					${PROJECT_SOURCE_DIR}/deps/sds
 					${PROJECT_SOURCE_DIR}/deps/uthash
 					${PROJECT_SOURCE_DIR}/deps/xxhash
 					${PROJECT_SOURCE_DIR}/deps/timeout
 					${PROJECT_SOURCE_DIR}/deps/cJSON
-					${PROJECT_SOURCE_DIR}/deps/log)
+					${PROJECT_SOURCE_DIR}/deps/log
+					${PROJECT_SOURCE_DIR}/deps/ringbuf)
 
 
 # Static Library Output

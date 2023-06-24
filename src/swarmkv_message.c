@@ -99,7 +99,7 @@ struct swarmkv_cmd *swarmkv_msg_deserialize_cmd(const char *blob, size_t size)
 }
 
 
-void swarmkv_msg_serialize_reply(const struct swarmkv_reply* reply, char **blob, size_t *blob_sz)
+void swarmkv_msg_serialize_reply(const struct swarmkv_reply *reply, char **blob, size_t *blob_sz)
 {
 	char *root_mpack_buff=NULL, *element_mpack_buff=NULL;
 	size_t root_mpack_sz=0, element_mpack_size, i=0;

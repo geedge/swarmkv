@@ -10,6 +10,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <arpa/inet.h>
+
+
 int str2integer(const char *str, long long *integer)
 {
 	char *endptr=NULL;

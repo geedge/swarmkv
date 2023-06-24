@@ -30,13 +30,11 @@ enum cmd_key_flag
 				create the key if not-exisit. */
 	CMD_KEY_RM	/* Deletes the key. */
 };
-typedef void swarmkv_module_lock_func_t(struct swarmkv_module *mod, enum cmd_key_flag flag, sds key);
-
+typedef int swarmkv_module_gettid_func_t(struct swarmkv_module *mod, sds key);
 struct swarmkv_module
 {
 	char name[SWARMKV_SYMBOL_MAX];
-	swarmkv_module_lock_func_t *lock;
-	swarmkv_module_lock_func_t *unlock;
+	swarmkv_module_gettid_func_t *gettid;
 	void *mod_ctx;
 };
 

@@ -22,7 +22,6 @@ enum cmd_exec_result
 	FINISHED,
 	ASYNC_WAIT
 };
-	
 
 /*
 struct swarmkv_node_addr
@@ -74,7 +73,8 @@ struct swarmkv_options
 	char bind_address[MAX_IPV4_ADDR_LEN];
 	char consul_agent_host[MAX_IPV4_ADDR_LEN];
 	uuid_t bin_uuid;
-	size_t nr_worker_threads;
+	int nr_worker_threads;
+	int nr_caller_threads;
 	int is_assigned_to_db;
 };
 
@@ -113,6 +113,7 @@ sds node_print_json(const node_t *self, uuid_t uuid);
 sds node_addr2sds(const node_t *node);
 int node_init_from_sds(node_t *node, const char *addr_str);
 int node_init_from_reply(node_t *node, const struct swarmkv_reply *reply);
+/* Return 0 if node1 == node 2 */
 int node_compare(const node_t *node1, const node_t *node2);
 void node_copy(node_t *dst, const node_t *src);
 void node_init(node_t *node, const char *ipv4, unsigned int port);

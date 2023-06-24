@@ -212,7 +212,6 @@ struct swarmkv_keyspace
 	uuid_t uuid;
 	pthread_rwlock_t rwlock;	
 	struct slot_runtime slot_rts[KEYSPACE_SLOT_NUM];
-	node_t nodes[SWARMKV_MAX_NODE_NUM];
 
 	char consul_agent_host[MAX_IPV4_ADDR_LEN];
 	unsigned int consul_agent_port;
