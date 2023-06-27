@@ -62,13 +62,7 @@ struct snet_conn
 	struct snet_thread *ref_thr;
 	UT_hash_handle hh;
 };
-struct timeout_ctx
-{
-	timeout_cb *cb;
-	void *cb_arg;
-	int is_persist;
-	struct event *ev;
-};
+
 struct snet_reply_ctx
 {
 	unsigned long long sequence;
@@ -672,7 +666,7 @@ static int get_net_thread_id(const node_t *node, size_t n_thread)
 }
 
 
-static void __dummy_event_handler(evutil_socket_t fd, short what, void * arg)
+static void snet_stat_periodic(evutil_socket_t fd, short what, void * arg)
 {
 	struct swarmkv_net *net= (struct swarmkv_net *)arg;
 	struct timespec now;
@@ -760,7 +754,7 @@ static void __accept_error_cb(struct evconnlistener *listener, void *arg)
 							err, evutil_socket_error_to_string(err));
 }
 
-struct swarmkv_net *swarmkv_net_new(struct event_base *evbases[], int nr_worker_threads, struct swarmkv_options *opts, struct log_handle *logger, char **err)
+struct swarmkv_net *swarmkv_net_new(struct event_base *evbases[], int nr_worker_threads, const struct swarmkv_options *opts, struct log_handle *logger, char **err)
 {
 	struct swarmkv_net *net=NULL;	
 	net=ALLOC(struct swarmkv_net, 1);
@@ -781,7 +775,10 @@ struct swarmkv_net *swarmkv_net_new(struct event_base *evbases[], int nr_worker_
 		thr->conn_table=NULL;
 		thr->rpc_table=NULL;
 	}
-
+	struct event * ev = event_new(evbases[0], -1, EV_PERSIST, snet_stat_periodic, net);
+	struct timeval timer_delay = {2, 0};
+	evtimer_add(ev, &timer_delay);
+	
 	//Refer to http://www.wangafu.net/~nickm/libevent-book/Ref8_listener.html
 	struct sockaddr_in sin;
 	memset(&sin, 0, sizeof(sin));

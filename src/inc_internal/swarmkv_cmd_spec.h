@@ -51,6 +51,9 @@ enum cmd_keyroute_failover
 
 typedef enum cmd_exec_result command_proc_func(struct swarmkv_module *module, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply);
 
+#define	KEY_OFFSET_NONE -1
+#define KEY_OFFSET_ANY -2
+
 struct swarmkv_cmd_spec
 {
 	const char *name;

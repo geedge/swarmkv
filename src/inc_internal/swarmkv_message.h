@@ -20,6 +20,7 @@ struct swarmkv_msg
     };
 };
 struct swarmkv_msg *swarmkv_msg_new_by_cmd(const struct swarmkv_cmd *cmd, const node_t *source, int thread_id, long long sequence);
+struct swarmkv_msg *swarmkv_msg_new_by_reply(const struct swarmkv_reply *reply, const node_t *source, int thread_id, long long sequence);
 void swarmkv_msg_free(struct swarmkv_msg *msg);
 typedef void on_msg_callback_t(const struct swarmkv_msg *msg, void *arg);
 void swarmkv_msg_serialize_reply(const struct swarmkv_reply *reply, char **blob, size_t *blob_sz);

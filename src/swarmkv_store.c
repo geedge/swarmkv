@@ -561,7 +561,7 @@ void crdt_generic_call(struct swarmkv_store *store, enum CRDT_OP op, const struc
 	ctx->key=sdsdup(cmd->argv[2]);
 	node_copy(&ctx->peer, peer);
 	ctx->f=future_create(symbol[op], crdt_generic_on_succ, crdt_generic_on_fail, ctx);
-	store->exec_cmd(store->exec_cmd_handle, cmd, NULL, peer, ctx->f);
+	store->exec_cmd(store->exec_cmd_handle, NULL, peer, cmd, ctx->f);
 	return;
 }
 
@@ -613,20 +613,19 @@ void swarmkv_store_periodic(struct swarmkv_module * mod_store)
 		swarmkv_monitor_record_event(store->mod_monitor, "crdt-sync-cycle", timespec_diff_usec(&start, &end));
 	}
 }
-struct swarmkv_module *swarmkv_store_new(const struct swarmkv_options *opts, exec_cmd_func *send_cmd, void *handle_send_cmd, uuid_t node_uuid)
+struct swarmkv_module *swarmkv_store_new(const struct swarmkv_options *opts, exec_cmd_func *send_cmd, void *handle_send_cmd)
 {
 	struct swarmkv_store *store=ALLOC(struct swarmkv_store, 1);
 	strncpy(store->module.name, "store", sizeof(store->module.name));
 	store->module.mod_ctx=store;
-	store->module.lock=store_lock;
-	store->module.unlock=store_unlock;
 	store->nr_worker_threads=opts->nr_worker_threads;
 	store->threads=ALLOC(struct swarmkv_store_thread, opts->nr_worker_threads);
 	for(size_t i=0; i<opts->nr_worker_threads; i++)
 	{
 		pthread_rwlock_init(&(store->threads[i].rwlock), NULL);
+		
 	}
-	uuid_copy(store->my_uuid, node_uuid);
+	uuid_copy(store->my_uuid, opts->bin_uuid);
 	node_init(&store->self, opts->cluster_announce_ip, opts->cluster_announce_port);
 
 	store->exec_cmd=send_cmd;

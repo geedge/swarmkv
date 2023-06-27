@@ -501,7 +501,7 @@ error_out:
 
 struct swarmkv_reply *cluster_keys_command(struct swarmkv *db, char *argv[], size_t argc)
 {
-	struct swarmkv_reply *nodes_reply=NULL, *keyspace_keys_reply=NULL, *reply=NULL;
+	struct swarmkv_reply *nodes_reply=NULL, *thread_reply=NULL, *keyspace_keys_reply=NULL, *reply=NULL;
 	size_t i=0;
     if(argc <= 2)
     {
@@ -516,13 +516,18 @@ struct swarmkv_reply *cluster_keys_command(struct swarmkv *db, char *argv[], siz
 	}
 	for(i=0; i<nodes_reply->n_element; i++)
 	{
-		keyspace_keys_reply=swarmkv_command_on(db, nodes_reply->elements[i]->str, "keyspace keys %s", argv[2]);
-		swarmkv_reply_merge_array(&reply, keyspace_keys_reply);
-        if(keyspace_keys_reply->type==SWARMKV_REPLY_NIL)
-        {
-            swarmkv_reply_free(keyspace_keys_reply);
-        }
-		keyspace_keys_reply=NULL;
+		thread_reply=swarmkv_command_on(db, nodes_reply->elements[i]->str, "info threads");
+		for(int j=0; j<thread_reply->integer; j++)
+		{
+			keyspace_keys_reply=swarmkv_command_on(db, nodes_reply->elements[i]->str, "keyspace keys %d %s", j, argv[2]);
+			swarmkv_reply_merge_array(&reply, keyspace_keys_reply);
+			if(keyspace_keys_reply->type==SWARMKV_REPLY_NIL)
+			{
+				swarmkv_reply_free(keyspace_keys_reply);
+			}
+			keyspace_keys_reply=NULL;
+		}
+		swarmkv_reply_free(thread_reply);
 	}
 	swarmkv_reply_free(nodes_reply);
 	if(!reply)
