@@ -115,7 +115,7 @@ void promise_failed(struct promise * p, enum e_future_error error, const char * 
 	return;
 }
 
-void promise_success(struct promise * p, void * result)
+void promise_success(struct promise * p, const void * result)
 {
 	if(!p->f.is_canceled)
 	{

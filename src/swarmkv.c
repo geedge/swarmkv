@@ -98,7 +98,7 @@ void swarmkv_register_thread(struct swarmkv *db)
 	db->worker_threads[thread_id].thread_id=thread_id;
 	return;
 }
-static int __gettid(struct swarmkv *db)
+int __gettid(struct swarmkv *db)
 {
 	int sys_tid=syscall(SYS_gettid);
 	for(int i=0; i<db->opts->nr_worker_threads + db->opts->nr_caller_threads; i++)
@@ -119,10 +119,10 @@ struct local_caller_ctx
 	void * cb_arg;
 	struct future *my_future;
 };
-static void local_caller_on_success(void* result, void* user)
+static void local_caller_on_success(const void *result, void *user)
 {	
 	struct local_caller_ctx *ctx=(struct local_caller_ctx*)user;
-	struct swarmkv_reply *reply=(struct swarmkv_reply *)result;
+	const struct swarmkv_reply *reply=(const struct swarmkv_reply *)result;
 	ctx->cb(reply, ctx->cb_arg);
 	future_destroy(ctx->my_future);
 	free(ctx);
@@ -165,10 +165,10 @@ void remote_calller_ctx_free(struct remote_caller_ctx *ctx)
 	free(ctx);
 	return;
 }
-static void remote_caller_on_success(void *result, void *user)
+static void remote_caller_on_success(const void *result, void *user)
 {
 	struct remote_caller_ctx *ctx=(struct remote_caller_ctx*)user;
-	struct swarmkv_reply *reply=(struct swarmkv_reply*) result;
+	const struct swarmkv_reply *reply=(const struct swarmkv_reply*) result;
 	struct swarmkv_msg *msg=swarmkv_msg_new_by_reply(reply, &ctx->db->self, ctx->thread_id, ctx->sequence);
 	swarmkv_net_send(ctx->db->net, &ctx->remote, msg);
 	remote_calller_ctx_free(ctx);
@@ -261,19 +261,12 @@ enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct sw
 	snprintf(net_info_buff, sizeof(net_info_buff), "# Network\r\n"
 												"timeout_in_msec: %.3f\r\n"
 												"connections: %lld\r\n"
-												"pending_rpcs: %lld\r\n"
-												"timed_out_rpcs: %lld\r\n"
 												"input_bytes: %lld\r\n"
 												"output_bytes: %lld\r\n"
-												"input_cmds: %lld\r\n"
-												"output_cmds: %lld\r\n"
-												"input_replies: %lld\r\n"
-												"output_replies: %lld\r\n"
 												"input_msgs: %lld\r\n"
 												"output_msgs: %lld\r\n"
 												"input_buffer: %lld\r\n"
 												"output_buffer: %lld\r\n"
-												"unknown_sequence: %lld\r\n"
 												"instantaneous_input_kbps: %.2f\r\n"
 												"instantaneous_output_kbps: %.2f\r\n"
 												"instantaneous_input_cps: %.2f\r\n"
@@ -281,19 +274,12 @@ enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct sw
 												,
 												(double)db->opts->cluster_timeout_us/1000,
 												net_info.connections,
-												net_info.pending_rpcs,
-												net_info.timed_out_rpcs,
 												net_info.input_bytes,
 												net_info.output_bytes,
-												net_info.input_cmds,
-												net_info.output_cmds,
-												net_info.input_replies,
-												net_info.output_replies,
 												net_info.input_msgs,
 												net_info.output_msgs,
 												net_info.input_buffer_sz,
 												net_info.output_buffer_sz,
-												net_info.unknown_sequence,
 												net_info.instantaneous_input_kbps,
 												net_info.instantaneous_output_kbps,
 												net_info.instantaneous_input_cps,
@@ -574,25 +560,6 @@ void swarmkv_threads_run(struct swarmkv *db)
 	return;
 }
 
-void cmd_exec_cb(const node_t *peer, const void *data, size_t size, void *arg)
-{
-	struct swarmkv_reply *reply=NULL;
-	char error_str[256]={0};
-	struct future *f = (struct future *) arg;
-	struct promise *p = future_to_promise(f);
-	if(data && size)
-	{
-		reply=swarmkv_deserialize_reply(data, size);		
-		promise_success(p, (void*)reply);
-		swarmkv_reply_free(reply);
-	}
-	else
-	{
-		snprintf(error_str, sizeof(error_str), "peer %s timeout", peer->addr);		
-		promise_failed(p, FUTURE_ERROR_TIMEOUT, error_str);
-	}
-}
-
 static struct swarmkv_reply *keyroute_fail_reply(enum cmd_keyroute_failover failover_flag)
 {
 	struct swarmkv_reply *reply=NULL;
@@ -723,10 +690,10 @@ void cmd_ctx_free(struct cmd_ctx *ctx)
 	free(ctx);
 	return;
 }
-static void peer_exec_on_success(void* result, void* user)
+static void peer_exec_on_success(const void *result, void *user)
 {	
 	struct cmd_ctx *ctx = (struct cmd_ctx*)user;
-	struct swarmkv_reply *reply = (struct swarmkv_reply*) result;
+	const struct swarmkv_reply *reply = (const struct swarmkv_reply*) result;
 	
 	if(reply->type==SWARMKV_REPLY_NODE && 0==strncasecmp(reply->str, "-ASK", 4))
 	{
@@ -754,10 +721,10 @@ static void peer_exec_on_success(void* result, void* user)
 	}
 }
 
-static void key_route_on_success(void* result, void* user)
+static void key_route_on_success(const void *result, void *user)
 {
 	struct cmd_ctx *ctx = (struct cmd_ctx*)user;
-	struct swarmkv_reply *reply = (struct swarmkv_reply*) result;
+	const struct swarmkv_reply *reply = (const struct swarmkv_reply*) result;
 	struct swarmkv_reply *user_reply_for_keyspace_not_found=NULL;
 	size_t n_replica_node=0;
 	node_t *replica_nodes=NULL;
@@ -812,7 +779,7 @@ static int spec_gettid(struct swarmkv_cmd_spec *spec, const struct swarmkv_cmd *
 		return spec->module->gettid(spec->module, cmd->argv[spec->key_offset]);
 	}
 }
-void on_msg_callback(const struct swarmkv_msg *msg, void *arg)
+void on_msg_callback(struct swarmkv_msg *msg, void *arg)
 {
 	struct swarmkv *db = (struct swarmkv *)arg;
 	int thread_id=__gettid(db);
@@ -822,8 +789,14 @@ void on_msg_callback(const struct swarmkv_msg *msg, void *arg)
 	}
 	else
 	{
-		//if(msg->thread_id==thread_id)
-		swarmkv_rpc_complete(db->async, thread_id, msg->sequence, msg->reply);
+		if(msg->thread_id==thread_id)
+		{
+			swarmkv_mesh_send(db->mesh, thread_id, msg->thread_id, msg);
+		}
+		else
+		{
+			swarmkv_rpc_complete(db->async, thread_id, msg->sequence, msg->reply);
+		}
 	}
 }
 void __exec_cmd(struct swarmkv *db, const node_t *accessing_node, const node_t *target_node, const struct swarmkv_cmd *cmd, struct future *future_of_caller)
@@ -1363,7 +1336,11 @@ error_out:
 }
 void swarmkv_close(struct swarmkv * db)
 {
-	swarmkv_net_stop(db->net);
+	for(size_t i=0; i<db->opts->nr_worker_threads; i++)
+	{
+		event_base_loopexit(db->evbases[i], NULL);		
+		db->worker_threads[i].is_dispatching=0;	
+	}
 	for(size_t i=0; i<db->opts->nr_worker_threads; i++)
 	{
 		pthread_join(db->worker_threads[i].thr, NULL);

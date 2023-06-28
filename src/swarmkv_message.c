@@ -3,7 +3,7 @@
 #include "swarmkv_message.h"
 #include <string.h>
 
-struct swarmkv_reply* deserialize_reply(mpack_node_t reply_node)
+static struct swarmkv_reply* deserialize_reply(mpack_node_t reply_node)
 {
 	struct swarmkv_reply* reply=NULL;
 	mpack_node_t item, array_node, vtype_item;
@@ -51,7 +51,7 @@ struct swarmkv_reply* deserialize_reply(mpack_node_t reply_node)
 	}
 	return reply;
 }
-struct swarmkv_reply *swarmkv_deserialize_reply(const char *blob, size_t size)
+static struct swarmkv_reply *swarmkv_reply_deserialize(const char *blob, size_t size)
 {
 	mpack_tree_t tree;
 	mpack_tree_init_data(&tree, blob, size);
@@ -69,7 +69,7 @@ struct swarmkv_reply *swarmkv_deserialize_reply(const char *blob, size_t size)
 	}	
 	return reply;
 }
-struct swarmkv_cmd *swarmkv_msg_deserialize_cmd(const char *blob, size_t size)
+static struct swarmkv_cmd *swarmkv_cmd_deserialize(const char *blob, size_t size)
 {
 	mpack_tree_t tree;
 	mpack_tree_init_data(&tree, blob, size);
@@ -99,7 +99,7 @@ struct swarmkv_cmd *swarmkv_msg_deserialize_cmd(const char *blob, size_t size)
 }
 
 
-void swarmkv_msg_serialize_reply(const struct swarmkv_reply *reply, char **blob, size_t *blob_sz)
+static void swarmkv_reply_serialize(const struct swarmkv_reply *reply, char **blob, size_t *blob_sz)
 {
 	char *root_mpack_buff=NULL, *element_mpack_buff=NULL;
 	size_t root_mpack_sz=0, element_mpack_size, i=0;
@@ -138,7 +138,7 @@ void swarmkv_msg_serialize_reply(const struct swarmkv_reply *reply, char **blob,
 			mpack_build_array(&writer);
 			for(i=0; i<reply->n_element; i++)
 			{
-				swarmkv_msg_serialize_reply(reply->elements[i], &element_mpack_buff, &element_mpack_size);
+				swarmkv_reply_serialize(reply->elements[i], &element_mpack_buff, &element_mpack_size);
 				mpack_write_object_bytes(&writer, element_mpack_buff, element_mpack_size);
 				free(element_mpack_buff);
 				element_mpack_size=0;
@@ -159,7 +159,7 @@ void swarmkv_msg_serialize_reply(const struct swarmkv_reply *reply, char **blob,
 
 	return;
 }
-void swarmkv_msg_serialize_cmd(const struct swarmkv_cmd *cmd, char **blob, size_t *blob_sz)
+static void swarmkv_cmd_serialize(const struct swarmkv_cmd *cmd, char **blob, size_t *blob_sz)
 {
 	char *root_mpack_buff=NULL;
 	size_t root_mpack_sz=0;
@@ -183,5 +183,81 @@ void swarmkv_msg_serialize_cmd(const struct swarmkv_cmd *cmd, char **blob, size_
 	*blob_sz=root_mpack_sz;
 	return;
 }
+struct swarmkv_msg *swarmkv_msg_new_by_cmd(const struct swarmkv_cmd *cmd, const node_t *source, int thread_id, long long sequence)
+{
+	struct swarmkv_msg *msg=ALLOC(struct swarmkv_msg, 1);
+	msg->magic=SWARMKV_MSG_MAGIC;
+	msg->type=MSG_TYPE_CMD;
+	msg->thread_id=thread_id;
+	msg->sequence=sequence;
+	memcpy(&msg->source, &source, sizeof(node_t));
+	msg->cmd=swarmkv_cmd_dup(cmd);
+	return msg;
+}
+struct swarmkv_msg *swarmkv_msg_new_by_reply(const struct swarmkv_reply *reply, const node_t *source, int thread_id, long long sequence)
+{
+	struct swarmkv_msg *msg=ALLOC(struct swarmkv_msg, 1);
+	msg->magic=SWARMKV_MSG_MAGIC;
+	msg->type=MSG_TYPE_REPLY;
+	msg->thread_id=thread_id;
+	msg->sequence=sequence;
+	memcpy(&msg->source, &source, sizeof(node_t));
+	msg->reply=swarmkv_reply_dup(reply);
+	return msg;
+}
+void swarmkv_msg_free(struct swarmkv_msg *msg)
+{
+	if(msg->type==MSG_TYPE_CMD)
+	{
+		swarmkv_cmd_free(msg->cmd);
+	}
+	else
+	{
+		swarmkv_reply_free(msg->reply);
+	}
+	free(msg);
+	return;
+}
+void swarmkv_msg_serialize(const struct swarmkv_msg *msg, char **blob, size_t *blob_sz)
+{
 
-
+	char *payload=NULL;
+	size_t payload_len=0;
+	if(msg->type==MSG_TYPE_CMD)
+	{
+		swarmkv_cmd_serialize(msg->cmd,&payload, &payload_len);
+	}
+	else
+	{
+		swarmkv_reply_serialize(msg->reply, &payload, &payload_len);
+	}
+	*blob=ALLOC(char, payload_len+SWARMKV_MSG_HDR_SIZE);
+	memcpy(*blob, msg, SWARMKV_MSG_HDR_SIZE);
+	memcpy(*blob+SWARMKV_MSG_HDR_SIZE, payload, payload_len);
+	*blob_sz=payload_len+SWARMKV_MSG_HDR_SIZE;
+	free(payload);
+	return;
+}
+struct swarmkv_msg *swarmkv_msg_deserialize(const char *blob, size_t size)
+{
+	struct swarmkv_msg *tmp=(struct swarmkv_msg *)blob;
+	if(tmp->magic!=SWARMKV_MSG_MAGIC)
+	{
+		return NULL;
+	}
+	if(tmp->payload_len+SWARMKV_MSG_HDR_SIZE!=size)
+	{
+		return NULL;
+	}
+	struct swarmkv_msg *msg=ALLOC(struct swarmkv_msg, 1);
+	memcpy(msg, blob, SWARMKV_MSG_HDR_SIZE);
+	if(msg->type==MSG_TYPE_CMD)
+	{
+		msg->cmd=swarmkv_cmd_deserialize(blob+SWARMKV_MSG_HDR_SIZE, msg->payload_len);
+	}
+	else
+	{
+		msg->reply=swarmkv_reply_deserialize(blob+SWARMKV_MSG_HDR_SIZE, msg->payload_len);
+	}
+	return msg;
+}

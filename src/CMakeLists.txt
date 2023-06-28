@@ -7,11 +7,11 @@ message(STATUS "SwarmKV, Version: ${SWARMKV_VERSION}")
 
 add_definitions(-D_GNU_SOURCE) 
 add_definitions(-fPIC)
-set(SWARMKV_SRC swarmkv_mesh.c swarmkv.c swarmkv_store.c swarmkv_sync.c swarmkv_api.c
+set(SWARMKV_SRC swarmkv.c swarmkv_api.c
+		swarmkv_mesh.c swarmkv_rpc.c swarmkv_message.c swarmkv_net.c 
+		swarmkv_store.c swarmkv_sync.c swarmkv_keyspace.c swarmkv_monitor.c
 		t_string.c t_set.c t_token_bucket.c t_hash.c
-		swarmkv_message.c swarmkv_net.c
-		swarmkv_common.c  swarmkv_keyspace.c swarmkv_utils.c 
-		swarmkv_monitor.c future_promise.cpp)
+		swarmkv_common.c swarmkv_utils.c future_promise.c)
 
 set(LIB_SOURCE_FILES
 	${PROJECT_SOURCE_DIR}/deps/mpack/mpack.c
