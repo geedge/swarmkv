@@ -8,19 +8,7 @@
 #include <assert.h>
 #include <stdbool.h>
 //Unlike string, set and hash, XTCONSUME and XTINFO can only operate on an initialized token bucket.
-enum cmd_exec_result handle_undefined_object(struct sobj *obj, struct swarmkv_reply **reply)
-{
-	assert(obj->type==OBJ_TYPE_UNDEFINED);
-	node_t replica;
-	int ret=0;
-	ret=sobj_get_random_replica(obj, &replica);
-	if(ret)
-	{
-		*reply=swarmkv_reply_new_node(&replica, 1);
-		return REDIRECT;
-	}
-	return NEED_KEY_ROUTE;	
-}
+
 static int get_consume_type(sds s, enum tb_consume_type *consume_type)
 {
 	if(0==strncasecmp(s, "NORMAL", sdslen(s)))

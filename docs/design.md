@@ -211,7 +211,7 @@ Reply message
 
 A swarmkv instance has one key space thread and several (configurable) worker threads. Swarmkv uses [libevent](https://github.com/libevent/libevent) as a peer-to-peer communication infrastructure.  
 
-The keyspace thread communicates with Consul.
+The keyspace thread communicates with Consul. Some of the operations are blocking style, so swarmkv uses a seperated keyspace thread. 
 
 - Watch global slot table changes.
 - Watch leadership changes, run for leader if allowed.

@@ -136,12 +136,14 @@ struct swarmkv_obj_specs sobj_specs[__SWARMKV_OBJ_TYPE_MAX] =
 	}
 };
 #define	MODULE_SWAMRKV_STORE	module_name_str("swarmkv.store")
-#define STORE_SHARD_NUMBER	8
+
 struct swarmkv_store_thread
 {
 	struct scontainer *obj_table;
 	struct scontainer *sync_queue;
-	pthread_rwlock_t rwlock;
+	pthread_mutex_t sanity_lock;
+	long long keys_to_sync;
+	long long n_keys;
 };
 struct swarmkv_store
 {
@@ -149,10 +151,7 @@ struct swarmkv_store
 	node_t self;
 	size_t nr_worker_threads;
 	struct swarmkv_store_thread *threads;
-	struct scontainer *obj_table[STORE_SHARD_NUMBER];
-	struct scontainer *sync_queue[STORE_SHARD_NUMBER];
-//	pthread_mutex_t mutex[STORE_SHARD_NUMBER];
-	pthread_rwlock_t rwlock[STORE_SHARD_NUMBER];
+
 	exec_cmd_func *exec_cmd;
 	struct swarmkv *exec_cmd_handle;
 	uuid_t my_uuid;	
@@ -173,40 +172,14 @@ struct swarmkv_store *module2store(struct swarmkv_module *module)
 	return store;
 }
 
-int get_shard_id(sds key)
+int __store_gettid(sds key, int nr_worker_threads)
 {
-	int shard_idx=key_hash_slot(key, sdslen(key))%STORE_SHARD_NUMBER;
+	int shard_idx=key_hash_slot(key, sdslen(key))%nr_worker_threads;
 	return shard_idx;
 }
-int store_gettid(struct swarmkv_module *mod, sds key)
+int store_gettid(struct swarmkv_module * mod_store, sds key)
 {
-	struct swarmkv_store *store=module2store(mod);
-	if(!key) return -1;
-	int tid=key_hash_slot(key, sdslen(key))%store->nr_worker_threads;
-	return tid;
-}
-void store_lock(struct swarmkv_module *mod, enum cmd_key_flag flag, sds key)
-{
-	struct swarmkv_store *store=module2store(mod);
-	if(!key) return;
-	int shard_idx=get_shard_id(key);
-	if(flag==CMD_KEY_RO)
-	{
-		pthread_rwlock_rdlock(&(store->rwlock[shard_idx]));
-	}
-	else
-	{
-		pthread_rwlock_wrlock(&(store->rwlock[shard_idx]));
-	}
-	return;
-}
-void store_unlock(struct swarmkv_module *mod, enum cmd_key_flag flag, sds key)
-{
-	struct swarmkv_store *store=module2store(mod);
-	if(!key) return;
-	int shard_idx=get_shard_id(key);
-	pthread_rwlock_unlock(&(store->rwlock[shard_idx]));
-
+	return __store_gettid(key, module2store(mod_store)->nr_worker_threads);
 }
 struct scontainer
 {
@@ -215,19 +188,19 @@ struct scontainer
 	char is_pending;	//waiting for reply 0f CRDT PULL.
 	char is_in_table;
 	char is_in_sync_q;
-	int shard_idx;
+	int tid;
 	UT_array *replica_node_list; //used by value owner for cache synchronization
 	UT_hash_handle hh;
 	struct scontainer *prev; //hook to sync queue
 	struct scontainer *next; //hook to sync queue
 };
 
-static struct scontainer *scontainer_new(enum sobj_type type, const sds key)
+static struct scontainer *scontainer_new(enum sobj_type type, const sds key, int tid)
 {
 	struct scontainer *ctr=ALLOC(struct scontainer, 1);
 	ctr->obj.type=type;
-	ctr->obj.key=sdsdup(key);	
-	ctr->shard_idx=get_shard_id(key);
+	ctr->obj.key=sdsdup(key);
+	ctr->tid=tid;
 	gettimeofday(&ctr->op_timestamp, NULL);
 	return ctr;
 }
@@ -299,44 +272,46 @@ static void scontainer_remove_replica_node(struct scontainer *ctr, const node_t 
 }
 void store_add_scontainer(struct swarmkv_store *store, struct scontainer *ctr)
 {
-	scontainer_join(&(store->obj_table[ctr->shard_idx]), ctr);
+	scontainer_join(&(store->threads[ctr->tid].obj_table), ctr);
 	return;	
 }
 void store_remove_scontainer(struct swarmkv_store *store, struct scontainer *ctr)
 {
-	HASH_DELETE(hh, store->obj_table[ctr->shard_idx], ctr);	
+	HASH_DELETE(hh, store->threads[ctr->tid].obj_table, ctr);	
 	ctr->is_in_table=0;
 	if(ctr->is_in_sync_q)
 	{
-		DL_DELETE(store->sync_queue[ctr->shard_idx], ctr);
+		DL_DELETE(store->threads[ctr->tid].sync_queue, ctr);
 		ctr->is_in_sync_q=0;
 	}
 }
 typedef void sobj_callback_func_t(struct sobj * obj, void *cb_arg);
-void store_iterate_sobj(struct swarmkv_store *store, sobj_callback_func_t *cb, void *cb_arg)
+void store_iterate_sobj(struct swarmkv_store *store, int tid, sobj_callback_func_t *cb, void *cb_arg)
 {
     struct scontainer *ctr=NULL, *tmp=NULL;
-
-
-    for(size_t i=0; i<STORE_SHARD_NUMBER; i++)
-    {
-		pthread_rwlock_rdlock(&(store->rwlock[i]));
-        HASH_ITER(hh, store->obj_table[i], ctr, tmp)
-        {
-			if(!ctr->is_pending)
-			{
-				cb(&ctr->obj, cb_arg);
-			}
+	HASH_ITER(hh, store->threads[tid].obj_table, ctr, tmp)
+	{
+		if(!ctr->is_pending)
+		{
+			cb(&ctr->obj, cb_arg);
 		}
-		pthread_rwlock_unlock(&(store->rwlock[i]));
-    }
-
+	}
 }
 struct scontainer *store_lookup_scontainer(struct swarmkv_store *store, sds key)
 {
 	struct scontainer *ctr=NULL;
-	int shard_idx=get_shard_id(key);
-	ctr=scontainer_find(&(store->obj_table[shard_idx]), key);
+	int tid=__store_gettid(key, store->nr_worker_threads);
+	int real_tid=__gettid(store->exec_cmd_handle);
+	assert(tid==real_tid);
+	ctr=scontainer_find(&(store->threads[tid].obj_table), key);
+	if(0==pthread_mutex_trylock(&store->threads[tid].sanity_lock))
+	{
+		pthread_mutex_unlock(&store->threads[tid].sanity_lock);
+	}
+	else
+	{
+		assert(0);
+	}
 	if(ctr)
 	{
 		return ctr;
@@ -344,7 +319,7 @@ struct scontainer *store_lookup_scontainer(struct swarmkv_store *store, sds key)
 	else
 	{
 		return NULL;
-	}	
+	}
 }
 struct sobj *store_lookup(struct swarmkv_module *mod_store, sds key)
 {
@@ -374,7 +349,7 @@ void sobj_need_sync(struct swarmkv_module *mod_store, struct sobj *obj)
 	gettimeofday(&ctr->op_timestamp, NULL);
 	if(!ctr->is_in_sync_q && ctr->replica_node_list)
 	{
-		DL_APPEND(store->sync_queue[ctr->shard_idx], ctr);
+		DL_APPEND(store->threads[ctr->tid].sync_queue, ctr);
 		ctr->is_in_sync_q=1;
 	}
 	return;
@@ -386,6 +361,19 @@ int sobj_get_random_replica(struct sobj *obj, node_t *out)
 	node_t *replica=(node_t*)utarray_eltptr(ctr->replica_node_list, 0);
 	node_copy(out, replica);
 	return 1;
+}
+enum cmd_exec_result handle_undefined_object(struct sobj *obj, struct swarmkv_reply **reply)
+{
+	assert(obj->type==OBJ_TYPE_UNDEFINED);
+	node_t replica;
+	int ret=0;
+	ret=sobj_get_random_replica(obj, &replica);
+	if(ret)
+	{
+		*reply=swarmkv_reply_new_node(&replica, 1);
+		return REDIRECT;
+	}
+	return NEED_KEY_ROUTE;	
 }
 void scontainer_serialize(struct scontainer *ctr, char **blob, size_t *blob_sz)
 {
@@ -455,8 +443,8 @@ void sobj_merge_blob(struct sobj *obj, const char *blob, size_t blob_sz, uuid_t 
 
 enum CRDT_OP
 {
-	CRDT_PULL,
-	CRDT_PUSH,
+	CRDT_GET,
+	CRDT_MERGE,
 	CRDT_JOIN
 };
 struct crdt_generic_ctx
@@ -475,18 +463,16 @@ void crdt_generic_ctx_free(struct crdt_generic_ctx *ctx)
 	free(ctx);
 }
 
-static void crdt_generic_on_succ(void* result, void* user)
+static void crdt_generic_on_succ(void *result, void *user)
 {
 	struct crdt_generic_ctx *ctx=(struct crdt_generic_ctx *)user;
 	const struct swarmkv_reply *reply=(const struct swarmkv_reply*) result;
 	struct scontainer *ctr=NULL;
 	uuid_t uuid;
-	struct swarmkv_module *mod_store=&(ctx->store->module);
 	store_get_uuid(&(ctx->store->module), uuid);
 	switch(ctx->op)
 	{
-		case CRDT_PULL:
-			store_lock(mod_store, CMD_KEY_OW, ctx->key);
+		case CRDT_GET:
 			ctr=store_lookup_scontainer(ctx->store, ctx->key);
 			if(ctr && reply->type==SWARMKV_REPLY_STRING)
 			{
@@ -498,9 +484,8 @@ static void crdt_generic_on_succ(void* result, void* user)
 			{
 				atomic_inc(&ctx->store->sync_err);
 			}
-			store_unlock(&ctx->store->module, CMD_KEY_OW, ctx->key);
 			break;
-		case CRDT_PUSH:
+		case CRDT_MERGE:
 			if(reply->type==SWARMKV_REPLY_INTEGER && reply->integer>0)
 			{
 				atomic_add(&ctx->store->sync_ok, reply->integer);
@@ -528,24 +513,23 @@ static void crdt_generic_on_succ(void* result, void* user)
 	crdt_generic_ctx_free(ctx);
 	return;
 }
-static void store_remove_failed_peer(struct swarmkv_store *store, int shard, const node_t *peer)
+static void store_remove_failed_peer(struct swarmkv_store *store, int tid, const node_t *peer)
 {
 	struct scontainer *ctr=NULL, *tmp=NULL;
-	pthread_rwlock_wrlock(&store->rwlock[shard]);
-	HASH_ITER(hh, store->obj_table[shard], ctr, tmp)
+	HASH_ITER(hh, store->threads[tid].obj_table, ctr, tmp)
 	{
 		scontainer_remove_replica_node(ctr, peer);
 	}
-	pthread_rwlock_unlock(&store->rwlock[shard]);
+	return;
 }
 static void crdt_generic_on_fail(enum e_future_error err, const char * what, void * user)
 {
 	struct crdt_generic_ctx *ctx=(struct crdt_generic_ctx *)user;
 	atomic_inc(&ctx->store->sync_err);
+	int tid=__gettid(ctx->store->exec_cmd_handle);
 	if(err==FUTURE_ERROR_TIMEOUT)
 	{
-		int shard_idx=get_shard_id(ctx->key);
-		store_remove_failed_peer(ctx->store, shard_idx, &ctx->peer);
+		store_remove_failed_peer(ctx->store, tid, &ctx->peer);
 	}
 	crdt_generic_ctx_free(ctx);
 	return;
@@ -564,55 +548,55 @@ void crdt_generic_call(struct swarmkv_store *store, enum CRDT_OP op, const struc
 	store->exec_cmd(store->exec_cmd_handle, NULL, peer, cmd, ctx->f);
 	return;
 }
-
-void swarmkv_store_periodic(struct swarmkv_module * mod_store)
+#define MAX_SYNC_PER_PERIOD	100000
+void swarmkv_store_periodic(struct swarmkv_module * mod_store, int thread_id)
 {
 	struct swarmkv_store *store=module2store(mod_store);
 	struct scontainer *ctr=NULL, *tmp=NULL;
 	struct timespec start, end;
-	int has_key_synced=0;
-
+	int n_synced=0;
+	int real_tid=__gettid(store->exec_cmd_handle);
+	assert(real_tid==thread_id);
 	clock_gettime(CLOCK_MONOTONIC, &start);
 	//Ease the lock contention among work threads
-	int shard=random()%STORE_SHARD_NUMBER;
-	for(int i=0; i<STORE_SHARD_NUMBER; i++)
+	struct swarmkv_store_thread *thr=&store->threads[real_tid];
+	
+	struct sync_master *sync_master=sync_master_new();
+	DL_FOREACH_SAFE(thr->sync_queue, ctr, tmp)
 	{
-		shard=(shard+i)%STORE_SHARD_NUMBER;
-		struct sync_master *sync_master=sync_master_new();
-		pthread_rwlock_wrlock(&store->rwlock[shard]);
-		DL_FOREACH_SAFE(store->sync_queue[shard], ctr, tmp)
-		{
-			char *blob=NULL;
-			size_t blob_sz=0;
-			scontainer_serialize(ctr, &blob, &blob_sz);
-			sync_master_add_obj(sync_master, ctr->obj.key, blob, blob_sz,
-							utarray_front(ctr->replica_node_list), utarray_len(ctr->replica_node_list));
-			DL_DELETE(store->sync_queue[shard], ctr);
-			ctr->is_in_sync_q=0;
-			store->synced++;
-			has_key_synced=1;
-		}
-		pthread_rwlock_unlock(&store->rwlock[shard]);
-		node_t peer;
-		struct swarmkv_cmd *cmd=NULL;
-		int ret=1;
-		while(1)
-		{
-			ret=sync_master_get_cmd(sync_master, &peer, &cmd);
-			if(!ret) break;	
-			crdt_generic_call(store, CRDT_PUSH, cmd, &peer);
-			swarmkv_cmd_free(cmd);
-			cmd=NULL;
-		}
-		sync_master_free(sync_master);
+		char *blob=NULL;
+		size_t blob_sz=0;
+		scontainer_serialize(ctr, &blob, &blob_sz);
+		sync_master_add_obj(sync_master, ctr->obj.key, blob, blob_sz,
+						utarray_front(ctr->replica_node_list), utarray_len(ctr->replica_node_list));
+		DL_DELETE(thr->sync_queue, ctr);
+		ctr->is_in_sync_q=0;
+		store->synced++;
+		n_synced++;
+		if(n_synced>=MAX_SYNC_PER_PERIOD) break;
 	}
-
+	node_t peer;
+	struct swarmkv_cmd *cmd=NULL;
+	int ret=1;
+	while(1)
+	{
+		ret=sync_master_get_cmd(sync_master, &peer, &cmd);
+		if(!ret) break;	
+		crdt_generic_call(store, CRDT_MERGE, cmd, &peer);
+		swarmkv_cmd_free(cmd);
+		cmd=NULL;
+	}
+	sync_master_free(sync_master);
+	thr->n_keys=HASH_COUNT(thr->obj_table);
+	DL_COUNT(thr->sync_queue, ctr, thr->keys_to_sync);
 	clock_gettime(CLOCK_MONOTONIC, &end);
-	if(has_key_synced)
+
+	if(n_synced)
 	{
 		swarmkv_monitor_record_event(store->mod_monitor, "crdt-sync-cycle", timespec_diff_usec(&start, &end));
 	}
 }
+
 struct swarmkv_module *swarmkv_store_new(const struct swarmkv_options *opts, exec_cmd_func *send_cmd, void *handle_send_cmd)
 {
 	struct swarmkv_store *store=ALLOC(struct swarmkv_store, 1);
@@ -620,11 +604,6 @@ struct swarmkv_module *swarmkv_store_new(const struct swarmkv_options *opts, exe
 	store->module.mod_ctx=store;
 	store->nr_worker_threads=opts->nr_worker_threads;
 	store->threads=ALLOC(struct swarmkv_store_thread, opts->nr_worker_threads);
-	for(size_t i=0; i<opts->nr_worker_threads; i++)
-	{
-		pthread_rwlock_init(&(store->threads[i].rwlock), NULL);
-		
-	}
 	uuid_copy(store->my_uuid, opts->bin_uuid);
 	node_init(&store->self, opts->cluster_announce_ip, opts->cluster_announce_port);
 
@@ -643,11 +622,10 @@ void swarmkv_store_free(struct swarmkv_module *mod_store)
 
 		HASH_ITER(hh, store->threads[i].obj_table, ctr, tmp)
 		{
-			assert(ctr->shard_idx==i);
+			assert(ctr->tid==i);
 			scontainer_remove(&(store->threads[i].obj_table), ctr);
 			scontainer_free(ctr);
-		}		
-		pthread_rwlock_destroy(&(store->threads[i].rwlock));
+		}
 	}
 	free(store);
 	return;
@@ -660,75 +638,21 @@ void swarmkv_store_set_monitor_handle(struct swarmkv_module *mod_store, struct s
 void swarmkv_store_info(struct swarmkv_module *mod_store, struct store_info *info)
 {
 	struct swarmkv_store *store=module2store(mod_store);
-	struct scontainer *ctr=NULL;
-	info->shards=STORE_SHARD_NUMBER;
+	info->shards=store->nr_worker_threads;
 	info->keys=0;
 	info->keys_to_sync=0;
-	for(size_t i=0; i<STORE_SHARD_NUMBER; i++)
+	struct swarmkv_store_thread *thread=NULL;
+	for(size_t i=0; i<store->nr_worker_threads; i++)
 	{
-		pthread_rwlock_rdlock(&store->rwlock[i]);
-		DL_COUNT(store->sync_queue[i], ctr, info->keys_to_sync);
-		info->keys+=HASH_COUNT(store->obj_table[i]);
-		pthread_rwlock_unlock(&store->rwlock[i]);
+		thread = store->threads+i;
+		info->keys_to_sync += __sync_add_and_fetch(&thread->keys_to_sync, 0);
+		info->keys_to_sync += __sync_add_and_fetch(&thread->n_keys, 0);
 	}
 	info->sync_ok=__sync_add_and_fetch(&store->sync_ok, 0);
 	info->sync_err=__sync_add_and_fetch(&store->sync_err, 0);
 	info->synced=store->synced;
 }
-void swarmkv_store_add_key(struct swarmkv_module *mod_store, const sds key, node_t *replica_nodes, size_t n_replica_node)
-{
-	struct scontainer *ctr=NULL;
-	struct swarmkv_store *store=module2store(mod_store);
-	size_t max_pull_node_num=4;
-	struct swarmkv_cmd *crdt_pull_cmd=NULL;
-	crdt_pull_cmd=swarmkv_cmd_new(3);
-	crdt_pull_cmd->argv[0]=sdsnew("crdt");
-	crdt_pull_cmd->argv[1]=sdsnew("pull");
-	crdt_pull_cmd->argv[2]=sdsdup(key);
 
-	store_lock(mod_store, CMD_KEY_OW, key);
-	ctr=store_lookup_scontainer(store, key);
-	if(!ctr)
-	{
-		ctr=scontainer_new(OBJ_TYPE_UNDEFINED, key);
-		if(n_replica_node>0)//need crdt pull from replicas
-		{
-			ctr->is_pending=1;
-		}
-		else
-		{
-			ctr->is_pending=0;
-		}
-		store_add_scontainer(store, ctr);
-	}
-	for(size_t i=0; i<n_replica_node; i++)
-	{
-		scontainer_add_replica_node(ctr, replica_nodes+i);
-	}
-	store_unlock(mod_store, CMD_KEY_OW, key);
-
-	for(size_t i=0; i<n_replica_node; i++)
-	{
-		if(i<max_pull_node_num)
-		{
-			crdt_generic_call(store, CRDT_PULL, crdt_pull_cmd, replica_nodes+i);
-		}
-		else
-		{
-			struct swarmkv_cmd *crdt_join_cmd=NULL;
-			crdt_join_cmd=swarmkv_cmd_new(4);
-			crdt_join_cmd->argv[0]=sdsnew("crdt");
-			crdt_join_cmd->argv[1]=sdsnew("join");
-			crdt_join_cmd->argv[2]=sdsdup(ctr->obj.key);
-			crdt_join_cmd->argv[3]=node_addr2sds(replica_nodes+i);
-			crdt_generic_call(store, CRDT_JOIN, crdt_join_cmd, replica_nodes+i);
-			swarmkv_cmd_free(crdt_join_cmd);
-		}
-	}
-	swarmkv_cmd_free(crdt_pull_cmd);
-	crdt_pull_cmd=NULL;
-	return;
-}
 UT_icd ut_array_matched_reply = {sizeof(struct swarmkv_reply *), NULL, NULL, NULL};
 
 struct pattern_match_arg
@@ -749,9 +673,73 @@ enum cmd_exec_result type_command(struct swarmkv_module *mod_store, const struct
 	*reply=swarmkv_reply_new_string_fmt(sobj_specs[obj->type].type_name);
 	return FINISHED;
 }
-enum cmd_exec_result crdt_pull_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result crdt_add_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
 {
-/* CRDT PULL key */
+/*CRDT ADD key IP:port [IP:port ...]*/
+	struct scontainer *ctr=NULL;
+	struct swarmkv_store *store=module2store(mod_store);
+	size_t max_pull_node_num=4;
+
+	sds key=cmd->argv[2];
+	int tid=store_gettid(mod_store, key);
+	int real_tid=__gettid(store->exec_cmd_handle);
+	assert(tid==real_tid);
+	struct swarmkv_cmd *crdt_get_cmd=NULL;
+	crdt_get_cmd=swarmkv_cmd_new(3);
+	crdt_get_cmd->argv[0]=sdsnew("crdt");
+	crdt_get_cmd->argv[1]=sdsnew("get");
+	crdt_get_cmd->argv[2]=sdsdup(key);
+	size_t n_replica_node=cmd->argc-3;
+	node_t *replica_nodes=ALLOC(node_t, n_replica_node);
+	for(size_t i=0; i<n_replica_node; i++)
+	{
+		node_init_from_sds(&replica_nodes[i], cmd->argv[3+i]);
+	}
+	ctr=store_lookup_scontainer(store, key);
+	if(!ctr)
+	{
+		ctr=scontainer_new(OBJ_TYPE_UNDEFINED, key, tid);
+		if(n_replica_node>0)//need crdt pull from replicas
+		{
+			ctr->is_pending=1;
+		}
+		else
+		{
+			ctr->is_pending=0;
+		}
+		store_add_scontainer(store, ctr);
+	}
+	for(size_t i=0; i<n_replica_node; i++)
+	{
+		scontainer_add_replica_node(ctr, replica_nodes+i);
+	}
+
+	for(size_t i=0; i<n_replica_node; i++)
+	{
+		if(i<max_pull_node_num)
+		{
+			crdt_generic_call(store, CRDT_GET, crdt_get_cmd, replica_nodes+i);
+		}
+		else
+		{
+			struct swarmkv_cmd *crdt_join_cmd=NULL;
+			crdt_join_cmd=swarmkv_cmd_new(4);
+			crdt_join_cmd->argv[0]=sdsnew("crdt");
+			crdt_join_cmd->argv[1]=sdsnew("merge");
+			crdt_join_cmd->argv[2]=sdsdup(ctr->obj.key);
+			crdt_join_cmd->argv[3]=node_addr2sds(replica_nodes+i);
+			crdt_generic_call(store, CRDT_JOIN, crdt_join_cmd, replica_nodes+i);
+			swarmkv_cmd_free(crdt_join_cmd);
+		}
+	}
+	swarmkv_cmd_free(crdt_get_cmd);
+	crdt_get_cmd=NULL;
+	free(replica_nodes);
+	return FINISHED;
+}
+enum cmd_exec_result crdt_get_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+{
+/* CRDT GET key */
 	struct swarmkv_store *store=module2store(mod_store);
 	struct scontainer *ctr=NULL;
 	const sds key=cmd->argv[2];
@@ -781,17 +769,17 @@ enum cmd_exec_result crdt_pull_command(struct swarmkv_module *mod_store, const s
 	return FINISHED;
 	
 }
-enum cmd_exec_result crdt_push_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result crdt_merge_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
 {
-/* CRDT PUSH key blob [key blob ...]*/
+/* CRDT MERGE key blob [key blob ...]*/
 	struct sobj *obj=NULL;
 	sds key=NULL, blob=NULL;	
 	assert(accessing_node!=NULL);//should never invoked by local
 	long long synced=0;
 	uuid_t uuid;
-	int __attribute__((__unused__))first_key_shard_idx=0;
-	int __attribute__((__unused__))shard_idx=0;
-	first_key_shard_idx=get_shard_id(cmd->argv[2]);
+	int __attribute__((__unused__))first_key_tid=0;
+	int __attribute__((__unused__))tid=0;
+	first_key_tid=store_gettid(mod_store, cmd->argv[2]);
 
 	store_get_uuid(mod_store, uuid);
 	for(size_t i=0; i<cmd->argc-2; i+=2)
@@ -804,11 +792,10 @@ enum cmd_exec_result crdt_push_command(struct swarmkv_module *mod_store, const s
 			sobj_merge_blob(obj, blob, sdslen(blob), uuid);
 			synced++;
 		}
-		shard_idx=get_shard_id(key);
-		assert(shard_idx==first_key_shard_idx);
+		tid=store_gettid(mod_store, key);
+		assert(tid==first_key_tid);
 	}
 	*reply=swarmkv_reply_new_integer(synced);
-	obj=store_lookup(mod_store, key);
 	return FINISHED;
 }
 
@@ -872,13 +859,19 @@ static void pattern_match_function(struct sobj * obj, void *cb_arg)
 
 enum cmd_exec_result crdt_keys_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
 {
-//CRDT KEYS IP Port pattern
+//CRDT KEYS tid pattern
     int i=0, n_matched=0;
 	struct pattern_match_arg cb_arg;
-	cb_arg.pattern=cmd->argv[2];
+	int thread_id=atoll(cmd->argv[3]);
+	cb_arg.pattern=cmd->argv[4];
     utarray_new(cb_arg.matched_replies, &ut_array_matched_reply);
 	struct swarmkv_store *store=module2store(mod_store);
-    store_iterate_sobj(store, pattern_match_function, &cb_arg);
+	if(thread_id>store->nr_worker_threads)
+	{
+		*reply=swarmkv_reply_new_error("Invalid thread id");
+		return FINISHED;
+	}
+    store_iterate_sobj(store, thread_id, pattern_match_function, &cb_arg);
 	n_matched=utarray_len(cb_arg.matched_replies);
 	if(n_matched>0)
 	{

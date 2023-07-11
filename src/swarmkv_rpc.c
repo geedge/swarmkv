@@ -36,8 +36,14 @@ struct swarmkv_rpc_mgr *swarmkv_rpc_mgr_new(const struct swarmkv_options *opts, 
 	mgr->seq_generator=0;
 	mgr->nr_worker_threads=nr_worker_threads;
 	mgr->evbases=evbases;
+	mgr->rpc_table=ALLOC(struct swarmkv_rpc *, nr_worker_threads);
 	mgr->timeout_us=opts->cluster_timeout_us;
 	return mgr;
+}
+void swarmkv_rpc_mgr_free(struct swarmkv_rpc_mgr *mgr)
+{
+	free(mgr->rpc_table);
+	free(mgr);
 }
 void swarmkv_rpc_free(struct swarmkv_rpc *rpc)
 {
@@ -54,7 +60,7 @@ static void rpc_timeout_callback(evutil_socket_t fd, short events, void *arg)
 	promise_failed(p, FUTURE_ERROR_TIMEOUT, "rpc timed out");
 }
 
-long long swarmkv_rpc_lunch(struct swarmkv_rpc_mgr *mgr, int thread_id, struct future *f)
+long long swarmkv_rpc_launch(struct swarmkv_rpc_mgr *mgr, int thread_id, struct future *f)
 {
 	struct swarmkv_rpc *rpc=ALLOC(struct swarmkv_rpc, 1);
 	rpc->sequence=++mgr->seq_generator;
@@ -67,7 +73,7 @@ long long swarmkv_rpc_lunch(struct swarmkv_rpc_mgr *mgr, int thread_id, struct f
 	HASH_ADD(hh, mgr->rpc_table[thread_id], sequence, sizeof(rpc->sequence), rpc);
 	return rpc->sequence;
 }
-void swarmkv_rpc_complete(struct swarmkv_rpc_mgr *mgr, int thread_id, long long sequence, const void *reply)
+void swarmkv_rpc_complete(struct swarmkv_rpc_mgr *mgr, int thread_id, long long sequence, void *reply)
 {
 	struct swarmkv_rpc *rpc=NULL;
 	HASH_FIND(hh, mgr->rpc_table[thread_id], &sequence, sizeof(sequence), rpc);

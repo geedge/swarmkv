@@ -142,7 +142,7 @@ void crdt_del_ctx_free(struct crdt_del_ctx *ctx)
 	free(ctx);
 }
 
-static void crdt_del_on_succ(void* result, void* user)
+static void crdt_del_on_succ(void *result, void *user)
 {
 	
 	struct crdt_del_ctx *ctx = (struct crdt_del_ctx*)user;
@@ -176,7 +176,7 @@ void key_entry_deletion_notification(struct key_route_entry *key_entry, exec_cmd
 		node_copy(&ctx->peer, &replica->node);
 		ctx->key=sdsdup(key_entry->key);
 		ctx->f=future_create("key_del", crdt_del_on_succ, crdt_del_on_fail, ctx);
-		exec_cmd(exec_cmd_handle, crdt_del_cmd, NULL, &replica->node, ctx->f);
+		exec_cmd(exec_cmd_handle, NULL, &replica->node, crdt_del_cmd, ctx->f);
 	}
 	swarmkv_cmd_free(crdt_del_cmd);
 	return;
@@ -192,7 +192,7 @@ struct slot_runtime
 	struct timeouts *expires;
 
 	int I_am_owner;
-	pthread_mutex_t mutex;
+	pthread_mutex_t sanity_lock;
 };
 void http_connection_close_callback(struct evhttp_connection *conn, void *arg)
 {
@@ -210,7 +210,7 @@ struct swarmkv_keyspace
 	int readable_tid;
 	node_t self;
 	uuid_t uuid;
-	pthread_rwlock_t rwlock;	
+	pthread_rwlock_t rwlock;
 	struct slot_runtime slot_rts[KEYSPACE_SLOT_NUM];
 
 	char consul_agent_host[MAX_IPV4_ADDR_LEN];
@@ -491,32 +491,11 @@ int consul_service_register(struct swarmkv_keyspace* ks)
 	cJSON_Delete(service);
 	return ret;
 }
-static void __ks_dummy_event_handler(evutil_socket_t fd, short what, void * arg)
-{
-	struct swarmkv_keyspace *ks=(struct swarmkv_keyspace *)arg;
-	keyspace_active_expire_cycle(ks);
-	return;
-}
 
-void *swarmkv_keyspace_thread(void *arg)
-{
-	struct swarmkv_keyspace *ks=(struct swarmkv_keyspace *)arg;
-	char thread_name[16];
-	snprintf(thread_name, sizeof(thread_name), "swarmkv-ks");
-	prctl(PR_SET_NAME, (unsigned long long) thread_name, NULL, NULL, NULL);
-	struct event * ev = event_new(ks->evbase, -1, EV_PERSIST, __ks_dummy_event_handler, ks);
-	struct timeval timer_delay = {2, 0};
-	evtimer_add(ev, &timer_delay);
-	event_base_dispatch(ks->evbase);
-	event_del(ev);
-	event_free(ev);
-
-	return NULL;
-}
 void consul_session_create_on_success(void *result, void *arg)
 {
 	struct evhttp_request *req=(struct evhttp_request *)result;
-	struct swarmkv_keyspace* ks = (struct swarmkv_keyspace *)arg;
+	struct swarmkv_keyspace *ks = (struct swarmkv_keyspace *)arg;
 	int resp_code=0;
 	cJSON* session_id=NULL, *session_create_response=NULL;
 	
@@ -662,7 +641,7 @@ void consul_session_check_async(struct swarmkv_keyspace* ks)
 	return;
 
 }
-void acquire_session_lock_on_success(void* result, void *arg)
+void acquire_session_lock_on_success(void *result, void *arg)
 {
 	struct evhttp_request *req=(struct evhttp_request *)result;
 	struct swarmkv_keyspace* ks=(struct swarmkv_keyspace*)arg;
@@ -702,7 +681,7 @@ void acquire_session_lock_on_fail(enum e_future_error err, const char * what, vo
 	consul_watch_leadership_changes_async(ks);
 	return;
 }
-void consul_acquire_session_lock_async(struct swarmkv_keyspace* ks)
+void consul_acquire_session_lock_async(struct swarmkv_keyspace *ks)
 {
 	sds req_body=node_print_json(&ks->self, ks->uuid);
 
@@ -727,7 +706,7 @@ void consul_acquire_session_lock_async(struct swarmkv_keyspace* ks)
 	sdsfree(req_body);
 
 }
-void consul_run_for_leader_async(struct swarmkv_keyspace* ks)
+void consul_run_for_leader_async(struct swarmkv_keyspace *ks)
 {
 	if(0==strlen(ks->consul_session_id))
 	{
@@ -853,7 +832,7 @@ void watch_slots_changes_on_success(void *result, void *arg)
 		slot_rt=ks->slot_rts+i;	
 		slot=&(slot_rt->slot);
 		owner=&(slot->owner);
-		pthread_mutex_lock(&slot_rt->mutex);
+		pthread_mutex_lock(&slot_rt->sanity_lock);
 		if(0!=node_compare(owner, &(new_slots[i].owner)))
 		{		
 			node_copy(owner, &(new_slots[i].owner));
@@ -873,7 +852,7 @@ void watch_slots_changes_on_success(void *result, void *arg)
 		{
 			slot_rt->I_am_owner=0;
 		}
-		pthread_mutex_unlock(&slot_rt->mutex);
+		pthread_mutex_unlock(&slot_rt->sanity_lock);
 	}
 	log_info(ks->logger, MODULE_SWARMKV_KEYSPACE, "key slots update finished.");
 	cJSON_Delete(metadata_array);
@@ -1051,7 +1030,7 @@ void remove_failed_nodes_from_key_route_table(struct swarmkv_keyspace *ks, node_
 	{
 		slot_rt=ks->slot_rts+slot_id;
 		if(!slot_rt->I_am_owner) continue;
-		pthread_mutex_lock(&slot_rt->mutex);
+		pthread_mutex_lock(&slot_rt->sanity_lock);
 		HASH_ITER(hh, slot_rt->keyroute_table, key_entry, tmp_entry)
 		{
 			int is_modified=0;
@@ -1067,7 +1046,7 @@ void remove_failed_nodes_from_key_route_table(struct swarmkv_keyspace *ks, node_
 			}
 			if(is_modified) n_modified_key++;
 		}
-		pthread_mutex_unlock(&slot_rt->mutex);
+		pthread_mutex_unlock(&slot_rt->sanity_lock);
 	}
 	HASH_ITER(hh, hash_health_node, node, tmp_node)
 	{
@@ -1141,7 +1120,7 @@ int keyslots_init(struct swarmkv_keyspace *ks)
 		slot->slot_id=i;
 		node_copy(&slot->owner, &ks->self);
 		slot_rt->expires=timeouts_open(0, &error);
-		pthread_mutex_init(&slot_rt->mutex, NULL);
+		pthread_mutex_init(&slot_rt->sanity_lock, NULL);
 	}
 
 	char url[SWARMKV_URL_MAX]="";
@@ -1185,7 +1164,7 @@ void keyspace_lock(struct swarmkv_module *mod_keyspace, enum cmd_key_flag flag, 
 	int slot_id=key_hash_slot(key, sdslen(key));
 	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
 	struct slot_runtime *slot_rt=ks->slot_rts+slot_id;
-	pthread_mutex_lock(&slot_rt->mutex);
+	pthread_mutex_lock(&slot_rt->sanity_lock);
 	return;
 }
 void keyspace_unlock(struct swarmkv_module *mod_keyspace, enum cmd_key_flag flag, const sds key)
@@ -1194,8 +1173,17 @@ void keyspace_unlock(struct swarmkv_module *mod_keyspace, enum cmd_key_flag flag
 	int slot_id=key_hash_slot(key, sdslen(key));
 	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
 	struct slot_runtime *slot_rt=ks->slot_rts+slot_id;
-	pthread_mutex_unlock(&slot_rt->mutex);
+	pthread_mutex_unlock(&slot_rt->sanity_lock);
 	return;
+}
+void *swarmkv_keyspace_thread(void *arg)
+{
+	struct swarmkv_keyspace *ks=(struct swarmkv_keyspace *)arg;
+	char thread_name[16];
+	snprintf(thread_name, sizeof(thread_name), "swarmkv-ks");
+	prctl(PR_SET_NAME, (unsigned long long) thread_name, NULL, NULL, NULL);
+	event_base_dispatch(ks->evbase);
+	return NULL;
 }
 
 struct swarmkv_module *swarmkv_keyspace_new(struct swarmkv_options *opts, const char *db_name, struct log_handle *logger, char **err)
@@ -1203,8 +1191,6 @@ struct swarmkv_module *swarmkv_keyspace_new(struct swarmkv_options *opts, const 
 	struct swarmkv_keyspace *ks=ALLOC(struct swarmkv_keyspace, 1);
 	strncpy(ks->module.name, "keyspace", sizeof(ks->module.name));
 	ks->module.mod_ctx=ks;
-	ks->module.lock=keyspace_lock;
-	ks->module.unlock=keyspace_unlock;
 	strncpy(ks->db_name, db_name, sizeof(ks->db_name));
 	node_init(&ks->self, opts->cluster_announce_ip, opts->cluster_announce_port);
 	uuid_copy(ks->uuid, opts->bin_uuid);
@@ -1291,7 +1277,7 @@ void swarmkv_keyspace_free(struct swarmkv_module* module)
 			HASH_DELETE(hh, slot_rt->keyroute_table, key_entry);
 			key_entry_free(key_entry);
 		}
-		pthread_mutex_destroy(&slot_rt->mutex);
+		pthread_mutex_destroy(&slot_rt->sanity_lock);
 	}
 	consul_client_free(ks->consul_client);
 	ks->consul_client=NULL;
@@ -1314,10 +1300,10 @@ void swarmkv_keyspace_info(struct swarmkv_module *mod_keyspace, struct keyspace_
 		slot_rt=ks->slot_rts+i;
 		if(!slot_rt->I_am_owner) continue;
 		info->slots++;
-		pthread_mutex_lock(&slot_rt->mutex);
+		pthread_mutex_lock(&slot_rt->sanity_lock);
 		info->keys+=HASH_COUNT(slot_rt->keyroute_table);
 		info->expires+=timeouts_count(slot_rt->expires);
-		pthread_mutex_unlock(&slot_rt->mutex);
+		pthread_mutex_unlock(&slot_rt->sanity_lock);
 	}
 }
 enum cmd_exec_result keyslot_command(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
@@ -1388,13 +1374,13 @@ enum cmd_exec_result keyspace_setslot_command(struct swarmkv_module *mod_keyspac
 	}
 	slot_rt=&(ks->slot_rts[slot_id]);
 	
-	pthread_mutex_lock(&slot_rt->mutex);
+	pthread_mutex_lock(&slot_rt->sanity_lock);
 	slot_rt->state=state;
 	if(state!=STATE_STABLE)
 	{
 		node_copy(&slot_rt->rebalancing_peer, &peer_node);
 	}
-	pthread_mutex_unlock(&slot_rt->mutex);
+	pthread_mutex_unlock(&slot_rt->sanity_lock);
 	*reply=swarmkv_reply_new_status("OK");
 
 	return FINISHED;
@@ -1547,9 +1533,9 @@ enum cmd_exec_result keyspace_getkeysinslot_command(struct swarmkv_module *mod_k
 	slot_rt=ks->slot_rts+slot_id;
 	char *blob=NULL;
 	size_t blob_sz;
-	pthread_mutex_lock(&slot_rt->mutex);
+	pthread_mutex_lock(&slot_rt->sanity_lock);
 	key_slot_serialize(slot_rt, &blob, &blob_sz);
-	pthread_mutex_unlock(&slot_rt->mutex);
+	pthread_mutex_unlock(&slot_rt->sanity_lock);
 	*reply=swarmkv_reply_new_string(blob, blob_sz);
 	free(blob);
 	blob=NULL;
@@ -1576,9 +1562,9 @@ enum cmd_exec_result keyspace_addkeystoslot_command(struct swarmkv_module *mod_k
 
 	slot_rt=ks->slot_rts+slot_id;
 
-	pthread_mutex_lock(&slot_rt->mutex);
+	pthread_mutex_lock(&slot_rt->sanity_lock);
 	new_added_entry_num=key_slot_merge(slot_rt, blob, sdslen(blob));
-	pthread_mutex_unlock(&slot_rt->mutex);
+	pthread_mutex_unlock(&slot_rt->sanity_lock);
 
 	*reply=swarmkv_reply_new_integer(new_added_entry_num);
 	return FINISHED;
@@ -1601,7 +1587,7 @@ enum cmd_exec_result keyspace_delslotkeys_command(struct swarmkv_module *mod_key
 	}
 
 	slot_rt=ks->slot_rts+slot_id;
-	pthread_mutex_lock(&slot_rt->mutex);
+	pthread_mutex_lock(&slot_rt->sanity_lock);
 	HASH_ITER(hh, slot_rt->keyroute_table, key_entry, tmp)
 	{
 		HASH_DELETE(hh, slot_rt->keyroute_table, key_entry);
@@ -1612,7 +1598,7 @@ enum cmd_exec_result keyspace_delslotkeys_command(struct swarmkv_module *mod_key
 		key_entry_free(key_entry);
 		delete_num++;
 	}
-	pthread_mutex_unlock(&slot_rt->mutex);
+	pthread_mutex_unlock(&slot_rt->sanity_lock);
 	*reply=swarmkv_reply_new_integer(delete_num);
 	return FINISHED;
 }
@@ -1631,9 +1617,9 @@ enum cmd_exec_result keyspace_countkeysinslot_command(struct swarmkv_module *mod
 		return FINISHED;
 	}
 	slot_rt=ks->slot_rts+slot_id;
-	pthread_mutex_lock(&slot_rt->mutex);
+	pthread_mutex_lock(&slot_rt->sanity_lock);
 	key_num=HASH_COUNT(slot_rt->keyroute_table);
-	pthread_mutex_unlock(&slot_rt->mutex);
+	pthread_mutex_unlock(&slot_rt->sanity_lock);
 	*reply=swarmkv_reply_new_integer(key_num);
 	return FINISHED;
 }
@@ -1754,10 +1740,10 @@ enum cmd_exec_result keyspace_keys_command(struct swarmkv_module *mod_keyspace, 
 	for(i=0; i<KEYSPACE_SLOT_NUM; i++)
 	{
 		slot_rt=ks->slot_rts+i;
-		pthread_mutex_lock(&slot_rt->mutex);
+		pthread_mutex_lock(&slot_rt->sanity_lock);
 		if(!slot_rt->I_am_owner && slot_rt->state!=STATE_IMPORTING)
 		{
-			pthread_mutex_unlock(&slot_rt->mutex);
+			pthread_mutex_unlock(&slot_rt->sanity_lock);
 			continue;
 		}
 		
@@ -1770,7 +1756,7 @@ enum cmd_exec_result keyspace_keys_command(struct swarmkv_module *mod_keyspace, 
 				utarray_push_back(matched_replies, &r);
 			}
 		}
-		pthread_mutex_unlock(&slot_rt->mutex);
+		pthread_mutex_unlock(&slot_rt->sanity_lock);
 	}
 	n_matched=utarray_len(matched_replies);
 	if(n_matched>0)
@@ -1986,8 +1972,12 @@ enum cmd_exec_result persist_command(struct swarmkv_module *mod_keyspace, const 
 }
 
 #define ACTIVE_EXPIRE_CYCLE_KEYS_PER_LOOP 1000
-void keyspace_active_expire_cycle(struct swarmkv_keyspace *ks)
-{	
+void swarmkv_keyspace_periodic(struct swarmkv_module *mod_keyspace, int thread_id)
+{
+	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
+	int real_tid=__gettid(ks->exec_cmd_handle);
+	assert(real_tid==thread_id);
+
 	struct timespec now;
 	int i=0, j=0;
 	struct slot_runtime *slot_rt=NULL;
@@ -1998,9 +1988,17 @@ void keyspace_active_expire_cycle(struct swarmkv_keyspace *ks)
 	clock_gettime(CLOCK_MONOTONIC_COARSE, &start);
 	for(i=0; i<KEYSPACE_SLOT_NUM; i++)
 	{
+		if(i%ks->opts->nr_worker_threads!=thread_id) continue;
 		slot_rt=ks->slot_rts+i;
 		if(!slot_rt->I_am_owner) continue;
-		pthread_mutex_lock(&slot_rt->mutex);
+		if(pthread_mutex_trylock(&slot_rt->sanity_lock))
+		{
+			pthread_mutex_unlock(&slot_rt->sanity_lock);
+		}
+		else
+		{
+			assert(0);
+		}
 
 		clock_gettime(CLOCK_REALTIME, &now);
 		timeouts_update(slot_rt->expires, now.tv_sec);
@@ -2016,7 +2014,7 @@ void keyspace_active_expire_cycle(struct swarmkv_keyspace *ks)
 			j++;
 			has_key_expired=1;
 		}
-		pthread_mutex_unlock(&slot_rt->mutex);
+		pthread_mutex_unlock(&slot_rt->sanity_lock);
 	}
 	clock_gettime(CLOCK_MONOTONIC_COARSE, &end);
 	if(has_key_expired)
@@ -2024,5 +2022,4 @@ void keyspace_active_expire_cycle(struct swarmkv_keyspace *ks)
 		swarmkv_monitor_record_event(ks->mod_monitor, "keyspace-expire-cycle", timespec_diff_usec(&start, &end));
 	}
 }
-
 

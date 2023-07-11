@@ -34,11 +34,10 @@ typedef int swarmkv_module_gettid_func_t(struct swarmkv_module *mod, sds key);
 struct swarmkv_module
 {
 	char name[SWARMKV_SYMBOL_MAX];
-	swarmkv_module_gettid_func_t *gettid;
 	void *mod_ctx;
 };
 
-enum cmd_keyroute_failover
+enum key_not_found_reply
 {
 	REPLY_NA,	/*Not Applicable*/
 	REPLY_INT_0,
@@ -51,9 +50,9 @@ enum cmd_keyroute_failover
 
 typedef enum cmd_exec_result command_proc_func(struct swarmkv_module *module, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply);
 
-#define	KEY_OFFSET_NONE -1
-#define KEY_OFFSET_ANY -2
-
+#define	KEY_OFFSET_NONE		-1
+#define KEY_OFFSET_TID 		-2
+#define KEY_OFFSET_SLOTID	-3
 struct swarmkv_cmd_spec
 {
 	const char *name;
@@ -61,7 +60,7 @@ struct swarmkv_cmd_spec
 	int arity; /* Number of arguments, it is possible to use -N to say >= N */
     int key_offset; /* The argument that's a key (-1 = no keys) */
 	enum cmd_key_flag flag; /* Command flag, see CMD_*. */
-	enum cmd_keyroute_failover failover; 
+	enum key_not_found_reply nokey_reply; 
 	int auto_route; /* The node that executes the command must be explicitly specifeid. */
 
 	command_proc_func *proc;

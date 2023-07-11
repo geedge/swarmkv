@@ -16,7 +16,10 @@ enum cmd_exec_result get_command(struct swarmkv_module *mod_store, const struct 
 	{
 		return NEED_KEY_ROUTE;
 	}
-	
+	if(obj->type == OBJ_TYPE_UNDEFINED)
+	{
+		return handle_undefined_object(obj, reply);
+	}	
 	if(obj->type==OBJ_TYPE_STRING)
 	{
 		LWW_register_get0(obj->string, &string_val, &string_sz);
@@ -49,7 +52,6 @@ enum cmd_exec_result set_command(struct swarmkv_module *mod_store, const struct 
 	{
 		return NEED_KEY_ROUTE;
 	}
-	
 	if(obj->type==OBJ_TYPE_UNDEFINED)
 	{
 		uuid_t uuid;

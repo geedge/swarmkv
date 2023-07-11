@@ -56,6 +56,10 @@ enum cmd_exec_result srem_command(struct swarmkv_module *mod_store, const struct
 	{
 		return NEED_KEY_ROUTE;
 	}
+	if(obj->type == OBJ_TYPE_UNDEFINED)
+	{
+		return handle_undefined_object(obj, reply);
+	}
 	if(obj->type!=OBJ_TYPE_SET)
 	{
 		*reply=swarmkv_reply_new_error(error_wrong_type);
@@ -84,6 +88,10 @@ enum cmd_exec_result smembers_command(struct swarmkv_module *mod_store, const st
 	if(!obj)
 	{
 		return NEED_KEY_ROUTE;
+	}
+	if(obj->type == OBJ_TYPE_UNDEFINED)
+	{
+		return handle_undefined_object(obj, reply);
 	}
 	if(obj->type!=OBJ_TYPE_SET)
 	{
@@ -116,6 +124,10 @@ enum cmd_exec_result sismember_command(struct swarmkv_module *mod_store, const s
 	{
 		return NEED_KEY_ROUTE;
 	}
+	if(obj->type == OBJ_TYPE_UNDEFINED)
+	{
+		return handle_undefined_object(obj, reply);
+	}
 	if(obj->type!=OBJ_TYPE_SET)
 	{
 		*reply=swarmkv_reply_new_error(error_wrong_type);
@@ -135,6 +147,10 @@ enum cmd_exec_result scard_command(struct swarmkv_module *mod_store, const struc
 	if(!obj)
 	{
 		return NEED_KEY_ROUTE;
+	}
+	if(obj->type == OBJ_TYPE_UNDEFINED)
+	{
+		return handle_undefined_object(obj, reply);
 	}
 	if(obj->type!=OBJ_TYPE_SET)
 	{

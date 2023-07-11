@@ -10,6 +10,7 @@
 
 struct swarmkv_module *swarmkv_keyspace_new(struct swarmkv_options *opts, const char *db_name, struct log_handle *logger, char **err);
 void swarmkv_keyspace_free(struct swarmkv_module* mod_keyspace);
+void swarmkv_keyspace_periodic(struct swarmkv_module *mod_keyspace, int thread_id);
 struct keyspace_info
 {
 	unsigned int health_check_port;

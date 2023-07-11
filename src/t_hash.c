@@ -89,27 +89,29 @@ enum cmd_exec_result hdel_command(struct swarmkv_module *mod_store, const struct
 	{
 		return NEED_KEY_ROUTE;
 	}
+	if(obj->type == OBJ_TYPE_UNDEFINED)
+	{
+		return handle_undefined_object(obj, reply);
+	}
+    if(obj->type!=OBJ_TYPE_HASH)
+	{
+		*reply=swarmkv_reply_new_error(error_wrong_type);
+		return FINISHED;
+	}
 	size_t n_to_del=cmd->argc-2;
 	size_t i=0;
 	int ret=0, n_deleted=0;
 
 	sds field;
-		
-	if(obj->type==OBJ_TYPE_HASH)
+	for(i=0; i<n_to_del; i++)
 	{
-		for(i=0; i<n_to_del; i++)
-		{
-            field=cmd->argv[2+i];
-            ret=OR_map_remove(obj->hash, field, sdslen(field));
-			if(ret>0) n_deleted++;
-		}
-		*reply=swarmkv_reply_new_integer(n_deleted);
-		sobj_need_sync(mod_store, obj);
+		field=cmd->argv[2+i];
+		ret=OR_map_remove(obj->hash, field, sdslen(field));
+		if(ret>0) n_deleted++;
 	}
-	else
-	{
-		*reply=swarmkv_reply_new_error(error_wrong_type);		
-	}
+	*reply=swarmkv_reply_new_integer(n_deleted);
+	sobj_need_sync(mod_store, obj);
+
     return FINISHED;
 }
 enum cmd_exec_result hmget_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
@@ -122,6 +124,10 @@ enum cmd_exec_result hmget_command(struct swarmkv_module *mod_store, const struc
 	if(!obj)
 	{
 		return NEED_KEY_ROUTE;
+	}
+	if(obj->type == OBJ_TYPE_UNDEFINED)
+	{
+		return handle_undefined_object(obj, reply);
 	}
     if(obj->type!=OBJ_TYPE_HASH)
 	{
@@ -176,6 +182,10 @@ enum cmd_exec_result hgetall_command(struct swarmkv_module *mod_store, const str
 	if(!obj)
 	{
 		return NEED_KEY_ROUTE;
+	}
+	if(obj->type == OBJ_TYPE_UNDEFINED)
+	{
+		return handle_undefined_object(obj, reply);
 	}
     if(obj->type!=OBJ_TYPE_HASH)
 	{
@@ -255,6 +265,10 @@ enum cmd_exec_result hkeys_command(struct swarmkv_module *mod_store, const struc
 	{
 		return NEED_KEY_ROUTE;
 	}
+	if(obj->type == OBJ_TYPE_UNDEFINED)
+	{
+		return handle_undefined_object(obj, reply);
+	}
     if(obj->type!=OBJ_TYPE_HASH)
 	{
 		*reply=swarmkv_reply_new_error(error_wrong_type);
@@ -283,6 +297,10 @@ enum cmd_exec_result hlen_command(struct swarmkv_module *mod_store, const struct
 	if(!obj)
 	{
 		return NEED_KEY_ROUTE;
+	}
+	if(obj->type == OBJ_TYPE_UNDEFINED)
+	{
+		return handle_undefined_object(obj, reply);
 	}
     if(obj->type!=OBJ_TYPE_HASH)
 	{

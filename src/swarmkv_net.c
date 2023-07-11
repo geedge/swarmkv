@@ -596,7 +596,7 @@ void swarmkv_net_set_on_msg_callback(struct swarmkv_net *net, on_msg_callback_t 
 	net->on_msg_cb_arg=cb_arg;
 	return;
 }
-extern int __gettid(struct swarmkv *db);
+
 void swarmkv_net_send(struct swarmkv_net *net, const node_t *dest, struct swarmkv_msg *msg)
 {
 	int tid=__gettid((struct swarmkv *)(net->on_msg_cb_arg));

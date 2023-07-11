@@ -125,3 +125,5 @@ int http_blocking_request(enum evhttp_cmd_type type, const char* host, unsigned 
 
 typedef void exec_cmd_func(struct swarmkv *db, const node_t *accessing_node, const node_t *target_node, const struct swarmkv_cmd *cmd, struct future *future_of_caller);
 struct swarmkv_reply *swarmkv_command_on_argv(struct swarmkv *db, const char *target, int argc, sds *argv);
+
+int __gettid(struct swarmkv *db);
