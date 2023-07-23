@@ -75,6 +75,7 @@ struct swarmkv_options
 	uuid_t bin_uuid;
 	int nr_worker_threads;
 	int nr_caller_threads;
+	int total_threads;
 	int is_assigned_to_db;
 };
 

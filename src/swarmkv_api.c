@@ -126,7 +126,12 @@ int swarmkv_options_set_dryrun(struct swarmkv_options *opts)
 	opts->cluster_port=15210;//overrides default p2p port
 	return 0;
 }
-int swarmkv_options_set_worker_thread_number(struct swarmkv_options *opts, size_t nr_worker_threads)
+int swarmkv_options_set_caller_thread_number(struct swarmkv_options *opts, int nr_caller_threads)
+{
+	opts->nr_caller_threads=nr_caller_threads;
+	return 0;
+}
+int swarmkv_options_set_worker_thread_number(struct swarmkv_options *opts, int nr_worker_threads)
 {
 	opts->nr_worker_threads=nr_worker_threads;
 	return 0;
@@ -311,15 +316,14 @@ void swarmkv_btconsume(struct swarmkv * db, const char * key, size_t keylen, con
 }
 struct blocking_query_ctx
 {
-	pthread_cond_t cond;
-	pthread_mutex_t mutex;
 	struct swarmkv_reply *reply;
+	struct swarmkv *db;
 };
 void blocking_query_cb(const struct swarmkv_reply *reply, void * arg)
 {
 	struct blocking_query_ctx *ctx=(struct blocking_query_ctx*) arg;
 	ctx->reply=swarmkv_reply_dup(reply);
-	pthread_cond_signal(&ctx->cond);
+	swarmkv_caller_loop_break(ctx->db);
 	return;
 }
 struct swarmkv_reply *swarmkv_command_on_argv(struct swarmkv *db, const char *target, int argc, sds *argv)
@@ -330,8 +334,7 @@ struct swarmkv_reply *swarmkv_command_on_argv(struct swarmkv *db, const char *ta
 	memset(&ctx, 0, sizeof(ctx));
     node_t target_node;
 	memset(&target_node, 0, sizeof(node_t));
-	pthread_cond_init(&ctx.cond, NULL);
-	pthread_mutex_init(&ctx.mutex, NULL);
+	ctx.db=db;
 	cmd=swarmkv_cmd_new(argc);
 	for(int i=0; i<argc; i++)
 	{
@@ -347,24 +350,10 @@ struct swarmkv_reply *swarmkv_command_on_argv(struct swarmkv *db, const char *ta
 		node_init_from_sds(&target_node, target);
         exec_for_local(db, cmd, &target_node, blocking_query_cb, &ctx);
     }
-
-	struct timespec max_wait = {0, 0};
-	clock_gettime(CLOCK_REALTIME, &max_wait);
-	max_wait.tv_sec+=100;
-	int timed_wait_rv=0;
-	if(NULL==ctx.reply)
-	{
-		pthread_mutex_lock(&ctx.mutex);
-		timed_wait_rv=pthread_cond_timedwait(&ctx.cond, &ctx.mutex, &max_wait);
-		pthread_mutex_unlock(&ctx.mutex);
-		if(timed_wait_rv)
-		{
-			printf("%s\n", swarmkv_util_pthread_cond_timedwait_error_to_string(timed_wait_rv));
-			ctx.reply=swarmkv_reply_new_error("timeout");
-		}
-	}
+	swarmkv_caller_loop(db, NULL);
 	reply=ctx.reply;
 	ctx.reply=NULL;
+
 	swarmkv_cmd_free(cmd);
 	return reply;
 }
@@ -395,7 +384,7 @@ struct swarmkv_reply *swarmkv_command(struct swarmkv *db,const char *format, ...
 {
 	char *cmd_str=NULL;
     va_list ap;
-    va_start(ap,format);
+    va_start(ap, format);
 	vasprintf(&cmd_str, format, ap);
     va_end(ap);
 

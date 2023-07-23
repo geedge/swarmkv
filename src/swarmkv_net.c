@@ -280,6 +280,7 @@ static void peer_conn_read_cb(struct bufferevent *bev, void *arg)
 	assert(bev==conn->bev);
 	snet_thread_buffer_usage_stat(thr);
 	assert(conn->ref_thr == conn->ref_thr->ref_net->threads+conn->thread_id);
+	struct swarmkv_msg *msg=NULL;
 	if(conn->need_to_be_kill)
 	{
 		log_fatal(thr->ref_logger, MODULE_SWAMRKV_NET, "connection %s is killed",
@@ -316,7 +317,7 @@ static void peer_conn_read_cb(struct bufferevent *bev, void *arg)
 			}
 			if(!conn->is_in_conn_table && !conn->is_duplicated)
 			{
-				snet_conn_set_peer(conn, &hdr->source);
+				snet_conn_set_peer(conn, &hdr->caller);
 				snet_conn_table_add(thr, conn);			
 			}
 			conn->recv_state=RECEIVING_PAYLOAD;
@@ -332,7 +333,10 @@ static void peer_conn_read_cb(struct bufferevent *bev, void *arg)
 				conn->recv_state=RECEIVING_PAYLOAD;
 				break;
 			}
-			swarmkv_msg_deserialize(recv_buff, msg_sz);
+			msg=swarmkv_msg_deserialize(recv_buff, msg_sz);
+			thr->ref_net->on_msg_cb(msg, thr->ref_net->on_msg_cb_arg);
+			swarmkv_msg_free(msg);
+			msg=NULL;
 			evbuffer_drain(input, msg_sz);
 			thr->stat.input_bytes += msg_sz;
 			conn->recv_state=RECEIVING_HDR;
@@ -600,7 +604,6 @@ void swarmkv_net_set_on_msg_callback(struct swarmkv_net *net, on_msg_callback_t 
 void swarmkv_net_send(struct swarmkv_net *net, const node_t *dest, struct swarmkv_msg *msg)
 {
 	int tid=__gettid((struct swarmkv *)(net->on_msg_cb_arg));
-	assert(tid==msg->thread_id);
 	struct snet_thread *thr=net->threads+tid;
 	struct snet_conn *conn=NULL;
 	HASH_FIND(hh, thr->conn_table, dest, sizeof(node_t), conn);

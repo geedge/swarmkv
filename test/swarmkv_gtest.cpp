@@ -11,7 +11,7 @@
 #include <sys/time.h>
 
 #define	CMD_EXEC_TIMEOUT_MS	1000*2
-
+struct timeval g_exec_timeout={CMD_EXEC_TIMEOUT_MS/1000, (CMD_EXEC_TIMEOUT_MS%1000)*1000};
 void generic_callback(const struct swarmkv_reply *reply, void * cb_arg)
 {
 	struct cmd_exec_arg *arg=(struct cmd_exec_arg*)cb_arg;
@@ -41,12 +41,15 @@ protected:
 		swarmkv_options_set_cluster_port(opts, 5210);
 		swarmkv_options_set_health_check_port(opts, 6210);
 		swarmkv_options_set_logger(opts, logger);
+		swarmkv_options_set_worker_thread_number(opts, 1);
+		swarmkv_options_set_caller_thread_number(opts, 1);
 		db=swarmkv_open(opts, cluster_name, &err);
 		if(err)
 		{
 			printf("swarmkv_open failed: %s.\n", err);
 			free(err);
 		}
+		swarmkv_register_thread(db);
 	}
 	static void TearDownTestCase()
 	{
@@ -62,28 +65,21 @@ struct swarmkv *SwarmkvBasicTest::db;
 struct log_handle *SwarmkvBasicTest::logger;
 TEST_F(SwarmkvBasicTest, TypeString)
 {
-	struct cmd_exec_arg *arg=NULL;
 	struct swarmkv *db=SwarmkvBasicTest::db;
 	const char *key="name";
 	const char *val="zhangsan";
-	int exec_successful=0;
 
-	arg=cmd_exec_arg_new();
-	
-	cmd_exec_arg_expect_OK(arg);
-	swarmkv_set(db, key, strlen(key), val, strlen(val), generic_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_TRUE(exec_successful);
-	cmd_exec_arg_clear(arg);
+	struct swarmkv_reply *reply=NULL;
+	reply=swarmkv_command(db, "SET %s %s", key, val);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	EXPECT_STREQ(reply->str, "OK");
+	swarmkv_reply_free(reply);
 
-	cmd_exec_arg_expect_cstring(arg, val);
-	swarmkv_get(db, key, strlen(key), generic_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_TRUE(exec_successful);
-	cmd_exec_arg_clear(arg);
-	
-	cmd_exec_arg_free(arg);
-	arg=NULL;
+	reply=swarmkv_command(db, "GET %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STRING);
+	EXPECT_STREQ(reply->str, val);
+	swarmkv_reply_free(reply);
+
 }
 TEST_F(SwarmkvBasicTest, TypeInteger)
 {
@@ -122,26 +118,21 @@ TEST_F(SwarmkvBasicTest, TypeInteger)
 }
 TEST_F(SwarmkvBasicTest, GenericDEL)
 {
-	struct cmd_exec_arg *arg=NULL;
 	struct swarmkv *db=SwarmkvBasicTest::db;
 	const char* key="name2";
 	const char* val="zhangsan";
-	int exec_successful=0;
 
-	arg=cmd_exec_arg_new();
-	cmd_exec_arg_expect_OK(arg);
-	swarmkv_set(db, key, strlen(key), val, strlen(val), generic_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_TRUE(exec_successful);
-	cmd_exec_arg_clear(arg);
+	struct swarmkv_reply *reply=NULL;
 
-	
-	cmd_exec_arg_expect_integer(arg, 1);
-	swarmkv_del(db, key, strlen(key), generic_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_TRUE(exec_successful);
-	cmd_exec_arg_free(arg);
-	arg=NULL;
+	reply=swarmkv_command(db, "SET %s %s", key, val);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	EXPECT_STREQ(reply->str, "OK");
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db, "DEL %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 1);
+	swarmkv_reply_free(reply);
 }
 TEST_F(SwarmkvBasicTest, GenericTYPE)
 {
@@ -217,109 +208,79 @@ TEST_F(SwarmkvBasicTest, GenericTYPE)
 }
 TEST_F(SwarmkvBasicTest, TypeSet)
 {
-	struct cmd_exec_arg *arg=NULL;
 	struct swarmkv *db=SwarmkvBasicTest::db;
-	const char* key="Jack's friends";
-	const char* member[]={"zhangsan", "lisi", "王二麻子", "Tom", "مرحبا"};
-	size_t member_len[32];
-	size_t n_member=0, i=0;
-	n_member=sizeof(member)/sizeof(const char*);
-	for(i=0; i<n_member; i++)
+	const char *key="friends_of_Jack";
+	const char *member[]={"zhangsan", "lisi", "王二麻子", "Tom", "مرحبا"};
+	size_t i=0;
+	struct swarmkv_reply *reply=NULL;
+
+	reply=swarmkv_command(db, "SADD %s %s %s %s %s %s", key, member[0], member[1], member[2], member[3], member[4]);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 5);
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db, "SMEMBERS %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
+	EXPECT_EQ(reply->n_element, 5);
+	for(i=0; i<reply->n_element; i++)
 	{
-		member_len[i]=strlen(member[i])+1;
+		EXPECT_EQ(reply->elements[i]->type, SWARMKV_REPLY_STRING);
+		EXPECT_STREQ(reply->elements[i]->str, member[i]);
 	}
+	swarmkv_reply_free(reply);
 
-	int exec_successful=0;
+	reply=swarmkv_command(db, "SREM %s %s %s", key, member[0], member[1]);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 2);
+	swarmkv_reply_free(reply);
 
-	arg=cmd_exec_arg_new();
+	reply=swarmkv_command(db, "SISMEMBER %s %s", key, member[0]);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 0);
+	swarmkv_reply_free(reply);
 
-	//SADD key m0 m2 ... m4
-	cmd_exec_arg_expect_integer(arg, n_member);
-	swarmkv_sadd(db, key, strlen(key)+1, member, member_len, n_member, generic_callback, arg);	
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_TRUE(exec_successful);
-	cmd_exec_arg_clear(arg);
+	reply=swarmkv_command(db, "SISMEMBER %s %s", key, member[2]);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 1);
+	swarmkv_reply_free(reply);
 
-	//SMEMEBERS key
-	cmd_exec_arg_expect_array(arg, n_member);
-	swarmkv_smembers(db, key, strlen(key)+1, generic_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_TRUE(exec_successful);
-	cmd_exec_arg_clear(arg);
+	reply=swarmkv_command(db, "SCARD %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 3);
+	swarmkv_reply_free(reply);
 
+	reply=swarmkv_command(db, "DEL %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 1);
+	swarmkv_reply_free(reply);
 
-	//SREM key m0 m1
-	cmd_exec_arg_expect_integer(arg, 2);
-	swarmkv_srem(db, key, strlen(key)+1, member, member_len, 2, generic_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_TRUE(exec_successful);
-	cmd_exec_arg_clear(arg);
+	reply=swarmkv_command(db, "SISMEMBER %s %s", key, member[2]);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 0);
+	swarmkv_reply_free(reply);
 
-	//SISMEMBER key m0
-	cmd_exec_arg_expect_integer(arg, 0);
-	swarmkv_sismember(db, key, strlen(key)+1, member[0], member_len[0], generic_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_TRUE(exec_successful);
-	cmd_exec_arg_clear(arg);
+	reply=swarmkv_command(db, "SCARD %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 0);
+	swarmkv_reply_free(reply);
 
-	//SISMEMBER key m2
-	cmd_exec_arg_expect_integer(arg, 1);
-	swarmkv_sismember(db, key, strlen(key)+1, member[2], member_len[2], generic_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_TRUE(exec_successful);
-	cmd_exec_arg_clear(arg);
-
-
-	//SCARD key
-	cmd_exec_arg_expect_integer(arg, 3);
-	swarmkv_scard(db, key, strlen(key)+1, generic_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_TRUE(exec_successful);
-	cmd_exec_arg_clear(arg);
-
-	//DEL key
-	cmd_exec_arg_expect_integer(arg, 1);
-	swarmkv_del(db, key, strlen(key)+1, generic_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_TRUE(exec_successful);
-	cmd_exec_arg_clear(arg);
-
-	//SISMEMBER key m2
-	cmd_exec_arg_expect_integer(arg, 0);
-	swarmkv_sismember(db, key, strlen(key)+1, member[2], member_len[2], generic_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_TRUE(exec_successful);
-	cmd_exec_arg_clear(arg);
-
-	//SCARD key
-	cmd_exec_arg_expect_integer(arg, 0);
-	swarmkv_scard(db, key, strlen(key)+1, generic_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_TRUE(exec_successful);
-	cmd_exec_arg_clear(arg);
-
-	
-	cmd_exec_arg_free(arg);
-	arg=NULL;
 }
 TEST_F(SwarmkvBasicTest, TypeTokenBucket)
 {
-	struct cmd_exec_arg *arg=NULL;
 	struct swarmkv *db=SwarmkvBasicTest::db;
 	const char *key="tb-192.168.0.1";
-	int exec_successful=0;
-	arg=cmd_exec_arg_new();
+	struct swarmkv_reply *reply=NULL;
+
 	long long capacity=1024*4, rate=1024*2, request_tokens=0, allocated_tokens=0;
-	cmd_exec_arg_expect_OK(arg);	
-	swarmkv_async_command(db, generic_callback, arg, "TCFG %s %lld %lld", key, rate, capacity);	
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	cmd_exec_arg_clear(arg);
-	EXPECT_TRUE(exec_successful);
+	reply=swarmkv_command(db, "TCFG %s %lld %lld", key, rate, capacity);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	swarmkv_reply_free(reply);
+
 	struct timeval start, now;
 	gettimeofday(&start, NULL);
 	gettimeofday(&now, NULL);
 	srand(171);
-	struct swarmkv_reply *reply=NULL;
+
 	int i=0;
 	while(now.tv_sec - start.tv_sec<3)
 	{
@@ -334,7 +295,6 @@ TEST_F(SwarmkvBasicTest, TypeTokenBucket)
 		i++;
 	}
 	EXPECT_LE(allocated_tokens, (now.tv_sec -start.tv_sec)*rate+capacity);	
-	cmd_exec_arg_free(arg);
 
 	//Infinite tokens
 	reply=swarmkv_command(db, "TCFG %s 0 0", key);
@@ -355,22 +315,19 @@ TEST_F(SwarmkvBasicTest, TypeTokenBucket)
 }
 TEST_F(SwarmkvBasicTest, TypeFairTokenBucket)
 {
-	struct cmd_exec_arg *arg=NULL;
 	struct swarmkv *db=SwarmkvBasicTest::db;
 	const char *key="3-floor-bandwidth-100Mbps";
-	int exec_successful=0;
-	arg=cmd_exec_arg_new();
 	long long capacity=200*1024*1024, rate=100*1024*1024, request_tokens=0, allocated_tokens=0;
-	cmd_exec_arg_expect_OK(arg);	
-	swarmkv_async_command(db, generic_callback, arg, "FTCFG %s %lld %lld 128", key, rate, capacity);	
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	cmd_exec_arg_clear(arg);
-	EXPECT_TRUE(exec_successful);
+
+	struct swarmkv_reply *reply=NULL;
+	reply=swarmkv_command(db, "FTCFG %s %lld %lld 128", key, rate, capacity);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	swarmkv_reply_free(reply);
+
 	struct timeval start, now;
 	gettimeofday(&start, NULL);
 	gettimeofday(&now, NULL);
 	srand(171);
-	struct swarmkv_reply *reply=NULL;
 	int i=0;
 	while(now.tv_sec - start.tv_sec<3)
 	{
@@ -385,7 +342,7 @@ TEST_F(SwarmkvBasicTest, TypeFairTokenBucket)
 		i++;
 	}
 	EXPECT_LE(allocated_tokens, (now.tv_sec -start.tv_sec)*rate+capacity);	
-	cmd_exec_arg_free(arg);
+
 
 	//Infinite tokens
 	reply=swarmkv_command(db, "FTCFG %s 0 0 256", key);
@@ -406,22 +363,20 @@ TEST_F(SwarmkvBasicTest, TypeFairTokenBucket)
 }
 TEST_F(SwarmkvBasicTest, TypeBulkTokenBucket)
 {
-	struct cmd_exec_arg *arg=NULL;
 	struct swarmkv *db=SwarmkvBasicTest::db;
 	const char *key="everyone-has-1Mbps";
-	int exec_successful=0;
-	arg=cmd_exec_arg_new();
+
 	long long capacity=2*1024*1024, rate=1*1024*1024, request_tokens=0, allocated_tokens=0;
-	cmd_exec_arg_expect_OK(arg);	
-	swarmkv_async_command(db, generic_callback, arg, "BTCFG %s %lld %lld 128", key, rate, capacity);	
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	cmd_exec_arg_clear(arg);
-	EXPECT_TRUE(exec_successful);
+
+	struct swarmkv_reply *reply=NULL;
+	reply=swarmkv_command(db, "BTCFG %s %lld %lld 128", key, rate, capacity);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	swarmkv_reply_free(reply);
+
 	struct timeval start, now;
 	gettimeofday(&start, NULL);
 	gettimeofday(&now, NULL);
 	srand(171);
-	struct swarmkv_reply *reply=NULL;
 	int i=0, n_member=120;
 	while(now.tv_sec - start.tv_sec<3)
 	{
@@ -436,7 +391,6 @@ TEST_F(SwarmkvBasicTest, TypeBulkTokenBucket)
 		i++;
 	}
 	EXPECT_LE(allocated_tokens/n_member, (now.tv_sec -start.tv_sec)*rate+capacity);	
-	cmd_exec_arg_free(arg);
 
 	//Infinite tokens
 	reply=swarmkv_command(db, "BTCFG %s 0 0 256", key);
@@ -531,61 +485,42 @@ TEST_F(SwarmkvBasicTest, TypeHash)
 }
 TEST_F(SwarmkvBasicTest, EXPIRE_TTL)
 {
-	struct cmd_exec_arg *arg=NULL;
 	struct swarmkv *db=SwarmkvBasicTest::db;
-	const char* key="quarantine";
-	const char* val="wuhan-江夏-如家";
-	int exec_successful=0;
+	const char *key="quarantine";
+	const char *val="wuhan-江夏-如家";
 	int seconds=3;
-	
-	//SET key value
-	arg=cmd_exec_arg_new();
-	cmd_exec_arg_expect_OK(arg);
-	swarmkv_set(db, key, strlen(key), val, strlen(val), generic_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_TRUE(exec_successful);
-	cmd_exec_arg_clear(arg);
+	struct swarmkv_reply *reply=NULL;
 
-	//EXPIRE key seconds
-	cmd_exec_arg_expect_integer(arg, 1);
-	swarmkv_expire(db, key, strlen(key), seconds, generic_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_TRUE(exec_successful);
-	cmd_exec_arg_clear(arg);
+	reply=swarmkv_command(db, "SET %s %s", key, val);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	EXPECT_STREQ(reply->str, "OK");
+	swarmkv_reply_free(reply);
 
-	//TTL key
-	cmd_exec_arg_expect_integer(arg, seconds);
-	swarmkv_ttl(db, key, strlen(key), generic_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_TRUE(exec_successful);
-	cmd_exec_arg_clear(arg);
+	reply=swarmkv_command(db, "EXPIRE %s %d", key, seconds);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 1);
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db, "TTL %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, seconds);
+	swarmkv_reply_free(reply);
 
 	sleep(seconds+2);
 
-	//GET key
-	cmd_exec_arg_expect_NIL(arg);
-	swarmkv_get(db, key, strlen(key), generic_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_TRUE(exec_successful);
-	cmd_exec_arg_clear(arg);
+	reply=swarmkv_command(db, "GET %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_NIL);
+	swarmkv_reply_free(reply);
 
+	reply=swarmkv_command(db, "EXPIRE %s %d", key, seconds);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 0);
+	swarmkv_reply_free(reply);
 
-	//EXPIRE key seconds
-	cmd_exec_arg_expect_integer(arg, 0);
-	swarmkv_expire(db, key, strlen(key), seconds, generic_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_TRUE(exec_successful);
-	cmd_exec_arg_clear(arg);
-
-	//TTL key
-	cmd_exec_arg_expect_integer(arg, -2);
-	swarmkv_ttl(db, key, strlen(key), generic_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_TRUE(exec_successful);
-	cmd_exec_arg_clear(arg);
-	
-	cmd_exec_arg_free(arg);
-	arg=NULL;
+	reply=swarmkv_command(db, "TTL %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, -2);
+	swarmkv_reply_free(reply);
 }
 TEST_F(SwarmkvBasicTest, HashTags)
 {

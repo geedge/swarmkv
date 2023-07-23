@@ -19,6 +19,7 @@ struct swarmkv_mesh_thread
 {
 	int thread_id;
 	int efd;
+	struct event * ev;
 	ringbuf_t *ring;
 	char *buff;
 	ringbuf_worker_t **workers;
@@ -65,7 +66,7 @@ error_out:
 	swarmkv_msg_free(msg);
 	return -1;
 }
-void swarmkv_mesh_set_on_msg_recv_cb(struct swarmkv_mesh *mesh, on_msg_callback_t cb_func, void *cb_arg)
+void swarmkv_mesh_set_on_msg_cb(struct swarmkv_mesh *mesh, on_msg_callback_t cb_func, void *cb_arg)
 {
 	mesh->on_msg_recv=cb_func;
 	mesh->msg_recv_arg=cb_arg;
@@ -80,6 +81,8 @@ void swarmkv_mesh_free(struct swarmkv_mesh *mesh)
 		free(mesh->threads[i].ring);
 		free(mesh->threads[i].workers);
 		free(mesh->threads[i].buff);
+		event_del(mesh->threads[i].ev);
+		event_free(mesh->threads[i].ev);
 	}
 	free(mesh->threads);
 	free(mesh);
@@ -134,7 +137,8 @@ struct swarmkv_mesh *swarmkv_mesh_new(struct event_base *evbase[], int nthreads,
 			log_fatal(mesh->ref_logger, MODULE_SWAMRKV_MESH, "eventfd() failed: %s", strerror(errno));
 			assert(0);
 		}
-		event_new(evbase[i],mesh->threads[i].efd, EV_READ|EV_PERSIST, swarmkv_mesh_on_event, mesh->threads+i);
+		mesh->threads[i].ev=event_new(evbase[i], mesh->threads[i].efd, EV_READ|EV_PERSIST, swarmkv_mesh_on_event, mesh->threads+i);
+		event_add(mesh->threads[i].ev, NULL);
 		mesh->threads[i].ref_mesh=mesh;
 	}
 	return mesh;

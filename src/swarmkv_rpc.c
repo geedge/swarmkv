@@ -30,13 +30,13 @@ struct swarmkv_rpc_mgr
 	long long timed_out_rpcs;
 	long long unknown_sequence;
 };
-struct swarmkv_rpc_mgr *swarmkv_rpc_mgr_new(const struct swarmkv_options *opts, struct event_base *evbases[], int nr_worker_threads)
+struct swarmkv_rpc_mgr *swarmkv_rpc_mgr_new(const struct swarmkv_options *opts, struct event_base *evbases[], int nr_threads)
 {
 	struct swarmkv_rpc_mgr *mgr=ALLOC(struct swarmkv_rpc_mgr, 1);
 	mgr->seq_generator=0;
-	mgr->nr_worker_threads=nr_worker_threads;
+	mgr->nr_worker_threads=nr_threads;
 	mgr->evbases=evbases;
-	mgr->rpc_table=ALLOC(struct swarmkv_rpc *, nr_worker_threads);
+	mgr->rpc_table=ALLOC(struct swarmkv_rpc *, nr_threads);
 	mgr->timeout_us=opts->cluster_timeout_us;
 	return mgr;
 }
@@ -58,6 +58,7 @@ static void rpc_timeout_callback(evutil_socket_t fd, short events, void *arg)
 	rpc->ref_mgr->timed_out_rpcs++;
 	struct promise *p=future_to_promise(rpc->f);
 	promise_failed(p, FUTURE_ERROR_TIMEOUT, "rpc timed out");
+	swarmkv_rpc_free(rpc);
 }
 
 long long swarmkv_rpc_launch(struct swarmkv_rpc_mgr *mgr, int thread_id, struct future *f)

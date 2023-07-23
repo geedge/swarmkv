@@ -165,7 +165,7 @@ void error_pthread_cond_timedwait(const int timed_wait_rv)
     }
 }
 
-int cmd_exec_arg_wait(struct cmd_exec_arg* arg, long timeout_ms)
+int cmd_exec_arg_wait(struct cmd_exec_arg *arg, long timeout_ms)
 {
 	struct timespec max_wait = {0, 0};
 	clock_gettime(CLOCK_REALTIME, &max_wait);

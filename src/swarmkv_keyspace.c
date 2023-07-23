@@ -1991,7 +1991,7 @@ void swarmkv_keyspace_periodic(struct swarmkv_module *mod_keyspace, int thread_i
 		if(i%ks->opts->nr_worker_threads!=thread_id) continue;
 		slot_rt=ks->slot_rts+i;
 		if(!slot_rt->I_am_owner) continue;
-		if(pthread_mutex_trylock(&slot_rt->sanity_lock))
+		if(0==pthread_mutex_trylock(&slot_rt->sanity_lock))
 		{
 			pthread_mutex_unlock(&slot_rt->sanity_lock);
 		}

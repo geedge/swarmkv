@@ -11,6 +11,8 @@
 #pragma once
 #include <stddef.h>
 #include <stdio.h>
+#include <sys/time.h>
+
 #ifdef __cplusplus
 extern "C"
 {
@@ -62,7 +64,8 @@ int swarmkv_options_set_consul_port(struct swarmkv_options *opts, unsigned int c
 int swarmkv_options_set_consul_host(struct swarmkv_options *opts, const char* ip_addr);
 int swarmkv_options_set_dryrun(struct swarmkv_options *opts);
 int swarmkv_options_set_disable_run_for_leader(struct swarmkv_options *opts);
-int swarmkv_options_set_worker_thread_number(struct swarmkv_options *opts, size_t nr_worker_threads);
+int swarmkv_options_set_caller_thread_number(struct swarmkv_options *opts, int nr_caller_threads);
+int swarmkv_options_set_worker_thread_number(struct swarmkv_options *opts, int nr_worker_threads);
 
 int swarmkv_options_set_cluster_announce_ip(struct swarmkv_options *opts, const char *ip_addr);
 int swarmkv_options_set_cluster_announce_port(struct swarmkv_options *opts, unsigned int cluster_announce_port);
@@ -73,6 +76,11 @@ struct swarmkv;
 /* The ownership of opts is transferred to swarmkv instance.*/
 struct swarmkv *swarmkv_open(struct swarmkv_options *opts, const char *cluster_name, char **err);
 void swarmkv_close(struct swarmkv * db);
+
+
+void swarmkv_register_thread(struct swarmkv *db);
+void swarmkv_caller_loop(struct swarmkv *db, struct timeval *tv);
+void swarmkv_caller_loop_break(struct swarmkv *db);
 
 //Blocking function
 struct swarmkv_reply *swarmkv_command(struct swarmkv *db,const char *format, ...);

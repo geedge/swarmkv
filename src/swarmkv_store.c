@@ -675,7 +675,7 @@ enum cmd_exec_result type_command(struct swarmkv_module *mod_store, const struct
 }
 enum cmd_exec_result crdt_add_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
 {
-/*CRDT ADD key IP:port [IP:port ...]*/
+/*CRDT ADD key [IP:port ...]*/
 	struct scontainer *ctr=NULL;
 	struct swarmkv_store *store=module2store(mod_store);
 	size_t max_pull_node_num=4;
@@ -735,6 +735,7 @@ enum cmd_exec_result crdt_add_command(struct swarmkv_module *mod_store, const st
 	swarmkv_cmd_free(crdt_get_cmd);
 	crdt_get_cmd=NULL;
 	free(replica_nodes);
+	*reply=swarmkv_reply_new_status("OK");
 	return FINISHED;
 }
 enum cmd_exec_result crdt_get_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
