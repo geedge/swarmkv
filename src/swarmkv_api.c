@@ -351,6 +351,7 @@ struct swarmkv_reply *swarmkv_command_on_argv(struct swarmkv *db, const char *ta
         exec_for_local(db, cmd, &target_node, blocking_query_cb, &ctx);
     }
 	swarmkv_caller_loop(db, NULL);
+	assert(ctx.reply!=NULL);
 	reply=ctx.reply;
 	ctx.reply=NULL;
 

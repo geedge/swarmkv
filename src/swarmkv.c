@@ -822,6 +822,7 @@ static void key_route_on_success(void *result, void *user)
 			crdt_add_ctx=cmd_ctx_new(ctx->db, ctx->cmd, n_replica_node>0?NULL:ctx->future_of_caller);
 			crdt_add_ctx->future_of_mine=future_create("crdt_add", crdt_add_on_success, generic_on_fail, crdt_add_ctx);
 			__exec_cmd(ctx->db, NULL, &ctx->db->self, crdt_add_cmd, crdt_add_ctx->future_of_mine);
+			swarmkv_cmd_free(crdt_add_cmd);
 		}
 		free(replica_nodes);
 	}
@@ -1284,7 +1285,7 @@ char *swarmkv_get_command_hint(struct swarmkv *db, const char* cmd_name)
     sdsfreesplitres(argv,argc);
 	return NULL;
 }
-void timeout_cb(evutil_socket_t fd, short event, void *arg)
+static void loop_timeout_cb(evutil_socket_t fd, short event, void *arg)
 {
     struct swarmkv_thread_ctx *ctx = (struct swarmkv_thread_ctx *)arg;
     event_base_loopbreak(ctx->evbase);
@@ -1298,9 +1299,10 @@ void swarmkv_caller_loop(struct swarmkv *db, struct timeval *tv)
 	struct event *timeout_event = NULL;
 	if(tv)
 	{
-		timeout_event = event_new(ctx->evbase, -1, 0, timeout_cb, ctx);
+		timeout_event = event_new(ctx->evbase, -1, 0, loop_timeout_cb, ctx);
 		evtimer_add(timeout_event, tv);
-		event_base_loop(ctx->evbase, EVLOOP_ONCE);
+		event_base_loop(ctx->evbase, EVLOOP_NO_EXIT_ON_EMPTY);
+		event_del(timeout_event);
 		event_free(timeout_event);
 	}
 	else
@@ -1479,11 +1481,13 @@ void swarmkv_close(struct swarmkv * db)
 	}
 	free(db->threads);
 	db->threads=NULL;
+	free(db->ref_evbases);
+	db->ref_evbases=NULL;
 
 	db->opts->is_assigned_to_db=0;
 	swarmkv_options_free(db->opts);
 	db->opts=NULL;
-
+	
 	free(db);
 	return;
 }

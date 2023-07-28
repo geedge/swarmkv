@@ -115,6 +115,7 @@ void g_array_resize(struct g_array *ga, long long new_size)
 	if(a && a->array_sz < new_size)
 	{
 		a->array=(struct counter_item *)realloc(a->array, sizeof(struct counter_item)*new_size);
+		memset(a->array+a->array_sz, 0, sizeof(struct counter_item)*(new_size-a->array_sz));
 		a->array_sz=new_size;
 	}
 	ga->array_sz=new_size;

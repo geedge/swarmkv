@@ -89,7 +89,7 @@ struct swarmkv_net
 	void* logger;
 	on_msg_callback_t *on_msg_cb;
 	void *on_msg_cb_arg;
-
+	struct event * stat_ev;
 	long long last_input_bytes, last_output_bytes;
 	long long last_input_cmds, last_output_cmds;
 	struct timespec last_stats;
@@ -499,9 +499,9 @@ struct swarmkv_net *swarmkv_net_new(struct event_base *evbases[], int nr_worker_
 		thr->ref_net=net;
 		thr->conn_table=NULL;
 	}
-	struct event * ev = event_new(evbases[0], -1, EV_PERSIST, snet_stat_periodic, net);
+	net->stat_ev = event_new(evbases[0], -1, EV_PERSIST, snet_stat_periodic, net);
 	struct timeval timer_delay = {2, 0};
-	evtimer_add(ev, &timer_delay);
+	evtimer_add(net->stat_ev, &timer_delay);
 	
 	//Refer to http://www.wangafu.net/~nickm/libevent-book/Ref8_listener.html
 	struct sockaddr_in sin;
@@ -582,6 +582,8 @@ void swarmkv_net_free(struct swarmkv_net *net)
 		}		
 		thr->evbase=NULL;
 	}
+	event_del(net->stat_ev);
+	event_free(net->stat_ev);
 	free(net->threads);
 
 	free(net);

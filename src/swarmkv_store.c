@@ -627,6 +627,8 @@ void swarmkv_store_free(struct swarmkv_module *mod_store)
 			scontainer_free(ctr);
 		}
 	}
+	free(store->threads);
+	store->threads=NULL;
 	free(store);
 	return;
 }

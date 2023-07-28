@@ -37,6 +37,7 @@ struct swarmkv_mesh
 int swarmkv_mesh_send(struct swarmkv_mesh *mesh, int current_thread_id, int dest_thread_id, struct swarmkv_msg *msg)
 {
 	assert(current_thread_id<mesh->nr_thread);
+	assert(current_thread_id != dest_thread_id);
 	struct swarmkv_mesh_thread *curr_thr=mesh->threads+current_thread_id;
 	struct swarmkv_mesh_thread *dest_thr=mesh->threads+dest_thread_id;
 	ringbuf_t *dest_ring=dest_thr->ring;
@@ -92,28 +93,28 @@ static void swarmkv_mesh_on_event(evutil_socket_t fd, short what, void * arg)
 	struct swarmkv_mesh_thread *thread=(struct swarmkv_mesh_thread*)arg;
 	struct swarmkv_mesh *mesh=thread->ref_mesh;
 	ringbuf_t *ring=thread->ring;
-	uint64_t val=0;
-	ssize_t s = read(thread->efd, &val, sizeof(uint64_t));
+	uint64_t n_msg=0;
+	ssize_t s = read(thread->efd, &n_msg, sizeof(uint64_t));
 	if(s!=sizeof(uint64_t))
 	{
 		assert(0);
 	}
-	size_t offset=0, ret=0, n_msg=0;
+	size_t offset=0, ret=0;
 	struct swarmkv_msg *msg=NULL;
-	while(1)
+	for(uint64_t i=0; i<n_msg; i++)
 	{
 		ret=ringbuf_consume(ring, &offset);
 		if(ret==0)
 		{
+			assert(0);
 			break;
 		}
 		ringbuf_release(ring, sizeof(struct swarmkv_msg*));
 		msg=*(struct swarmkv_msg**)(thread->buff+offset);
-		n_msg++;
 		mesh->on_msg_recv(msg, mesh->msg_recv_arg);
 		swarmkv_msg_free(msg);
 	}
-	assert(n_msg==val);
+
 	return;
 }
 struct swarmkv_mesh *swarmkv_mesh_new(struct event_base *evbase[], int nthreads, struct log_handle *logger)

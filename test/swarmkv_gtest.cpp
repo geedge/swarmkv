@@ -565,7 +565,7 @@ protected:
 			free(err);
 			err=NULL;
 		}
-
+		swarmkv_register_thread(db1);
 		struct swarmkv_options* opts2=swarmkv_options_new();
 		swarmkv_options_set_cluster_port(opts2, 5211);
 		swarmkv_options_set_health_check_port(opts2, 6211);
@@ -577,7 +577,7 @@ protected:
 			free(err);
 			err=NULL;
 		}
-
+		swarmkv_register_thread(db2);
 	}
 	static void TearDownTestCase()
 	{
