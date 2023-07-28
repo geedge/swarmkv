@@ -93,7 +93,7 @@ int sync_master_get_cmd(struct sync_master *master, node_t *peer, struct swarmkv
 		n_data=utarray_len(task->sync_data_list);
 		c=swarmkv_cmd_new(2+n_data*2);
 		c->argv[0]=sdsnew("crdt");
-		c->argv[1]=sdsnew("push");
+		c->argv[1]=sdsnew("merge");
 		for(size_t i=0; i<n_data; i++)
 		{
 			p=utarray_eltptr(task->sync_data_list, i);

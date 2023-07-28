@@ -172,9 +172,10 @@ static void remoter_caller_ctx_send_reply(struct remote_caller_ctx *ctx, const s
 	struct swarmkv *db = ctx->db;
 	struct swarmkv_msg *msg=swarmkv_msg_new_by_reply(reply, &ctx->remote, ctx->remote_tid, ctx->sequence);
 	int cur_tid=__gettid(db);
-	assert(cur_tid != msg->caller_tid);
+	
 	if(0==node_compare(&db->self, &msg->caller))
 	{
+		assert(cur_tid != msg->caller_tid);
 		swarmkv_mesh_send(db->mesh, cur_tid, msg->caller_tid, msg);
 	}
 	else
@@ -760,10 +761,9 @@ static void peer_exec_on_success(void *result, void *user)
 		cmd_ctx_free(ctx);
 	}
 }
-struct swarmkv_cmd *make_crdt_add_cmd(enum cmd_key_flag flag, const sds key, node_t replica[], size_t n_replica)
+struct swarmkv_cmd *make_crdt_add_cmd(const sds key, node_t replica[], size_t n_replica)
 {
 	struct swarmkv_cmd *crdt_add_cmd=NULL;
-	assert(flag==CMD_KEY_OW);
 	crdt_add_cmd=swarmkv_cmd_new(3+n_replica);
 	crdt_add_cmd->argv[0]=sdsnew("crdt");
 	crdt_add_cmd->argv[1]=sdsnew("add");
@@ -818,7 +818,7 @@ static void key_route_on_success(void *result, void *user)
 		if(self_is_a_replica)
 		{
 			struct cmd_ctx *crdt_add_ctx=NULL;
-			struct swarmkv_cmd *crdt_add_cmd=make_crdt_add_cmd(spec->flag, key, replica_nodes, n_replica_node);
+			struct swarmkv_cmd *crdt_add_cmd=make_crdt_add_cmd(key, replica_nodes, n_replica_node);
 			crdt_add_ctx=cmd_ctx_new(ctx->db, ctx->cmd, n_replica_node>0?NULL:ctx->future_of_caller);
 			crdt_add_ctx->future_of_mine=future_create("crdt_add", crdt_add_on_success, generic_on_fail, crdt_add_ctx);
 			__exec_cmd(ctx->db, NULL, &ctx->db->self, crdt_add_cmd, crdt_add_ctx->future_of_mine);
@@ -920,7 +920,6 @@ void __exec_cmd(struct swarmkv *db, const node_t *accessing_node, const node_t *
 		return;
 	}
 
-
 	enum cmd_exec_result exec_ret=FINISHED;
 	struct timespec start, end;
 	clock_gettime(CLOCK_MONOTONIC_COARSE, &start);
@@ -934,6 +933,7 @@ void __exec_cmd(struct swarmkv *db, const node_t *accessing_node, const node_t *
 		struct promise *p=future_to_promise(future_of_caller);
 		promise_success(p, reply);
 		swarmkv_reply_free(reply);
+		return;
 	}
 	switch(exec_ret)
 	{
@@ -1491,6 +1491,9 @@ void swarmkv_close(struct swarmkv * db)
 	free(db);
 	return;
 }
-
+const char *swarmkv_self_address(const struct swarmkv *db)
+{
+	return db->self.addr;
+}
 
 

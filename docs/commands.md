@@ -766,8 +766,8 @@ The pattern is exactly same as Redis https://redis.io/commands/keys/ .
 | KEYSPACE KEYS            | IP port pattern                      |                                                              |
 | KEYSPACE COUNTKEYSINSLOT | slot                                 |                                                              |
 | CRDT DEL                 | key                                  | Integer reply: The number of cached keys that were removed.  |
-| CRDT PUSH                | key blob                             | Simple string reply: OK if PUSH was executed correctly.      |
-| CRDT PULL                | key                                  | Blog reply: a blob of state-based CRDT                       |
+| CRDT MERGE                | key blob                            | Simple string reply: OK if MERGE was executed correctly.      |
+| CRDT GET                | key                                   | Blog reply: a blob of state-based CRDT                       |
 | CLUSTER KEYS             | pattern                              | Array reply: list of keys matching pattern.                  |
 | CLUSTER NODES            |                                      |                                                              |
 | CLUSTER SLOTS            |                                      |                                                              |

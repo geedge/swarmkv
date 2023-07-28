@@ -61,7 +61,7 @@ int swarmkv_options_set_logger(struct swarmkv_options *opts, void *logger);
 int swarmkv_options_set_log_level(struct swarmkv_options *opts, int loglevel);
 int swarmkv_options_set_log_path(struct swarmkv_options *opts, const char *logpath);
 int swarmkv_options_set_consul_port(struct swarmkv_options *opts, unsigned int consul_port);
-int swarmkv_options_set_consul_host(struct swarmkv_options *opts, const char* ip_addr);
+int swarmkv_options_set_consul_host(struct swarmkv_options *opts, const char *ip_addr);
 int swarmkv_options_set_dryrun(struct swarmkv_options *opts);
 int swarmkv_options_set_disable_run_for_leader(struct swarmkv_options *opts);
 int swarmkv_options_set_caller_thread_number(struct swarmkv_options *opts, int nr_caller_threads);
@@ -83,8 +83,8 @@ void swarmkv_caller_loop(struct swarmkv *db, struct timeval *tv);
 void swarmkv_caller_loop_break(struct swarmkv *db);
 
 //Blocking function
-struct swarmkv_reply *swarmkv_command(struct swarmkv *db,const char *format, ...);
-struct swarmkv_reply *swarmkv_command_on(struct swarmkv *db, const char *target, const char *format, ...);
+struct swarmkv_reply *swarmkv_command(struct swarmkv *db, const char *format, ...)__attribute__ ((format (printf, 2, 3)));
+struct swarmkv_reply *swarmkv_command_on(struct swarmkv *db, const char *target, const char *format, ...)__attribute__ ((format (printf, 3, 4)));
 
 //Non-blocking function
 typedef void swarmkv_on_reply_callback_t(const struct swarmkv_reply *reply, void * arg);
@@ -119,7 +119,7 @@ size_t swarmkv_get_possible_command_name(struct swarmkv *db, const char *prefix,
 char *swarmkv_get_command_hint(struct swarmkv *db, const char* cmd_name);
 
 
-
+const char *swarmkv_self_address(const struct swarmkv *db);
 #ifdef __cplusplus
 } /* end extern "C" */
 #endif

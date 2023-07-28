@@ -537,7 +537,7 @@ static void crdt_generic_on_fail(enum e_future_error err, const char * what, voi
 
 void crdt_generic_call(struct swarmkv_store *store, enum CRDT_OP op, const struct swarmkv_cmd *cmd, const node_t *peer)
 {
-	const char *symbol[]={"crdt_pull", "crdt_push", "crdt_join"};
+	const char *symbol[]={"crdt_get", "crdt_merge", "crdt_join"};
 	struct crdt_generic_ctx *ctx=NULL;
 	ctx=ALLOC(struct crdt_generic_ctx, 1);
 	ctx->op=op;

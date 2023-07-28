@@ -70,9 +70,9 @@ int swarmkv_options_set_health_check_announce_port(struct swarmkv_options *opts,
 	opts->health_check_announce_port=health_check_announce_port;
 	return 0;
 }
-int swarmkv_options_set_cluster_timeout_us(struct swarmkv_options *opts, unsigned int timeout_ms)
+int swarmkv_options_set_cluster_timeout_us(struct swarmkv_options *opts, unsigned int timeout_us)
 {
-	opts->cluster_timeout_us=timeout_ms;
+	opts->cluster_timeout_us=timeout_us;
 	return 0;
 }
 int swarmkv_options_set_sync_interval_us(struct swarmkv_options *opts, unsigned int interval_us)
@@ -335,6 +335,7 @@ struct swarmkv_reply *swarmkv_command_on_argv(struct swarmkv *db, const char *ta
     node_t target_node;
 	memset(&target_node, 0, sizeof(node_t));
 	ctx.db=db;
+	ctx.reply=NULL;
 	cmd=swarmkv_cmd_new(argc);
 	for(int i=0; i<argc; i++)
 	{
@@ -350,7 +351,10 @@ struct swarmkv_reply *swarmkv_command_on_argv(struct swarmkv *db, const char *ta
 		node_init_from_sds(&target_node, target);
         exec_for_local(db, cmd, &target_node, blocking_query_cb, &ctx);
     }
-	swarmkv_caller_loop(db, NULL);
+	if(ctx.reply==NULL)
+	{
+		swarmkv_caller_loop(db, NULL);
+	}
 	assert(ctx.reply!=NULL);
 	reply=ctx.reply;
 	ctx.reply=NULL;

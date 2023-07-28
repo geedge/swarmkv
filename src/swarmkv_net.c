@@ -110,7 +110,8 @@ struct snet_conn *snet_conn_new_by_connecting(struct snet_thread *thr, const nod
 	
 	struct snet_conn* conn=ALLOC(struct snet_conn, 1);
 	conn->buff_for_sending=evbuffer_new();
-
+	conn->fd=-1;
+	
 	//http://www.wangafu.net/~nickm/libevent-book/Ref6_bufferevent.html
 	conn->bev=bufferevent_socket_new(base, -1, BEV_OPT_DEFER_CALLBACKS|BEV_OPT_THREADSAFE);//BEV_OPT_UNLOCK_CALLBACKS|
 	bufferevent_setcb(conn->bev, NULL, NULL, connect_peer_eventcb, conn);
@@ -373,6 +374,7 @@ void connect_peer_eventcb(struct bufferevent *bev, short events, void *arg)
 		int yes=1;
 		evutil_socket_t fd=bufferevent_getfd(conn->bev);
 		setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, (char*)&yes, sizeof(yes));
+		conn->fd=fd;
 		evutil_make_socket_closeonexec(fd);
 		bufferevent_write_buffer(conn->bev, conn->buff_for_sending);
 		bufferevent_setcb(conn->bev, peer_conn_read_cb, peer_conn_write_cb, peer_conn_event_cb, conn);
@@ -629,8 +631,17 @@ void swarmkv_net_send(struct swarmkv_net *net, const node_t *dest, struct swarmk
 	char *data=NULL;
 	size_t size=0;
 	swarmkv_msg_serialize(msg,  &data, &size);
-	swarmkv_msg_free(msg);	
-	evbuffer_add(conn->buff_for_sending, data, size);
+	swarmkv_msg_free(msg);
+	struct evbuffer* output_buffer=NULL;
+	output_buffer=bufferevent_get_output(conn->bev);
+	if(output_buffer)
+	{
+		evbuffer_add(output_buffer, data, size);
+	}
+	else
+	{
+		evbuffer_add(conn->buff_for_sending, data, size);
+	}
 	free(data);
 	thr->stat.output_bytes += size;
 	thr->stat.output_msgs++;

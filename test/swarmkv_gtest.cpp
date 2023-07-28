@@ -558,6 +558,9 @@ protected:
 		swarmkv_options_set_cluster_port(opts1, 5210);
 		swarmkv_options_set_health_check_port(opts1, 6210);
 		swarmkv_options_set_logger(opts1, logger);
+		swarmkv_options_set_cluster_timeout_us(opts1, 600*1000*1000);
+		swarmkv_options_set_worker_thread_number(opts1, 1);
+		swarmkv_options_set_caller_thread_number(opts1, 1);
 		db1=swarmkv_open(opts1, cluster_name, &err);
 		if(err)
 		{
@@ -570,6 +573,9 @@ protected:
 		swarmkv_options_set_cluster_port(opts2, 5211);
 		swarmkv_options_set_health_check_port(opts2, 6211);
 		swarmkv_options_set_logger(opts2, logger);
+		swarmkv_options_set_cluster_timeout_us(opts2, 600*1000*1000);
+		swarmkv_options_set_worker_thread_number(opts2, 1);
+		swarmkv_options_set_caller_thread_number(opts2, 1);
 		db2=swarmkv_open(opts2, cluster_name, &err);
 		if(err)
 		{
@@ -594,504 +600,380 @@ struct swarmkv* SwarmkvTwoNodes::db1;
 struct swarmkv* SwarmkvTwoNodes::db2;
 TEST_F(SwarmkvTwoNodes, SET_GET)
 {
-	struct cmd_exec_arg *arg=NULL;
 	struct swarmkv *db1=SwarmkvTwoNodes::db1;
 	struct swarmkv *db2=SwarmkvTwoNodes::db2;
 	const char *key="id001";
 	const char *val1="zhangsan", *val2="lisi";
-	int exec_successful=0;
+	struct swarmkv_reply *reply=NULL;
 
-	arg=cmd_exec_arg_new();
-	
-	cmd_exec_arg_expect_OK(arg);
-	swarmkv_set(db1, key, strlen(key), val1, strlen(val1), generic_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_TRUE(exec_successful);
-	cmd_exec_arg_clear(arg);
+	reply=swarmkv_command(db1, "SET %s %s", key, val1);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	EXPECT_STREQ(reply->str, "OK");
+	swarmkv_reply_free(reply);
 
-	cmd_exec_arg_expect_cstring(arg, val1);
-	swarmkv_get(db2, key, strlen(key), generic_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_TRUE(exec_successful);
-	cmd_exec_arg_clear(arg);
+	reply=swarmkv_command(db2, "GET %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STRING);
+	EXPECT_STREQ(reply->str, val1);
+	swarmkv_reply_free(reply);
 
-	cmd_exec_arg_expect_OK(arg);
-	swarmkv_set(db2, key, strlen(key), val2, strlen(val2), generic_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_TRUE(exec_successful);
-	cmd_exec_arg_clear(arg);
+	reply=swarmkv_command(db2, "SET %s %s", key, val2);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	EXPECT_STREQ(reply->str, "OK");
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db2, "GET %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STRING);
+	EXPECT_STREQ(reply->str, val2);
+	swarmkv_reply_free(reply);
 
 	wait_for_sync();
 	
-	cmd_exec_arg_expect_cstring(arg, val2);
-	swarmkv_get(db1, key, strlen(key), generic_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_TRUE(exec_successful);
-	cmd_exec_arg_clear(arg);
+	reply=swarmkv_command(db1, "GET %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STRING);
+	EXPECT_STREQ(reply->str, val2);
+	swarmkv_reply_free(reply);
 
-	cmd_exec_arg_free(arg);
-	arg=NULL;
 }
 TEST_F(SwarmkvTwoNodes, SET1kString)
 {
-	struct cmd_exec_arg *arg=NULL;
 	struct swarmkv *db1=SwarmkvTwoNodes::db1;
 	struct swarmkv *db2=SwarmkvTwoNodes::db2;
 	struct swarmkv* tmp_db=NULL;
 	const char *key_prefix="test-1k-string";
 	const char *val_prefix="value-xx";
 	char key[128]="", val[128]="";
-	int exec_successful=0, i=0, round=1000, n_success=0;
+	int i=0, round=1000;
+	struct swarmkv_reply *reply=NULL;
 
-	arg=cmd_exec_arg_new();	
-	cmd_exec_arg_expect_OK(arg);
-	n_success=0;
+
 	for(i=0; i<round; i++)
 	{ 
 		snprintf(key, sizeof(key), "%s-%d", key_prefix, i);
 		snprintf(val, sizeof(val), "%s-%d", val_prefix, i);
 		tmp_db=i%2?db1:db2;
-		swarmkv_set(tmp_db, key, strlen(key), val, strlen(val), generic_callback, arg);
-		exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-		if(exec_successful) n_success++;
-		cmd_exec_arg_clear(arg);
+		reply=swarmkv_command(tmp_db, "SET %s %s", key, val);
+		ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+		EXPECT_STREQ(reply->str, "OK");
+		swarmkv_reply_free(reply);
 	}
-	EXPECT_EQ(round, n_success);
-	n_success=0;
+
 	for(i=0; i<round; i++)
 	{ 
 		snprintf(key, sizeof(key), "%s-%d", key_prefix, i);
 		snprintf(val, sizeof(val), "%s-%d", val_prefix, i);
-		cmd_exec_arg_expect_cstring(arg, val);
 
 		tmp_db=i%2?db2:db1;
-		swarmkv_get(tmp_db, key, strlen(key), generic_callback, arg);
-		exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-		if(exec_successful) n_success++;
-		cmd_exec_arg_clear(arg);
-	}
-	EXPECT_EQ(round, n_success);
+		reply=swarmkv_command(tmp_db, "GET %s", key);
+		ASSERT_EQ(reply->type, SWARMKV_REPLY_STRING);
+		EXPECT_STREQ(reply->str, val);
+		swarmkv_reply_free(reply);
 
-	cmd_exec_arg_free(arg);
+	}
 }
-TEST_F(SwarmkvTwoNodes, INCRYBY1kInteger)
+TEST_F(SwarmkvTwoNodes, INCRBY1kInteger)
 {
-	struct cmd_exec_arg *arg=NULL;
 	struct swarmkv *db1=SwarmkvTwoNodes::db1;
 	struct swarmkv *db2=SwarmkvTwoNodes::db2;
 	struct swarmkv* tmp_db=NULL;
 	const char *key_prefix="incrby-1k-integer";
-	char key[128]="", val[128]="";
-	int exec_successful=0, i=0, round=1000, n_success=0;
-	
-	arg=cmd_exec_arg_new();	
+	char key[128]="";
+	int i=0, round=1000;
+	struct swarmkv_reply *reply=NULL;
 
-	n_success=0;
 	int increment=-3000000;
 	for(i=0; i<round; i++)
-	{ 
-		snprintf(key, sizeof(key), "%s-%d", key_prefix, i);
-		cmd_exec_arg_expect_integer(arg, i+increment);
-
-		tmp_db=i%2?db2:db1;
-		swarmkv_incrby(tmp_db, key, strlen(key), i+increment, generic_callback, arg);
-		exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-		if(exec_successful) n_success++;
-		cmd_exec_arg_clear(arg);
-	}
-	EXPECT_EQ(round, n_success);
-
-	cmd_exec_arg_expect_OK(arg);
-	n_success=0;
-	for(i=0; i<round; i++)
-	{ 
-		snprintf(key, sizeof(key), "%s-%d", key_prefix, i);
-		snprintf(val, sizeof(val), "0");
+	{
 		tmp_db=i%2?db1:db2;
-		swarmkv_set(tmp_db, key, strlen(key), val, strlen(val), generic_callback, arg);
-		exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-		if(exec_successful) n_success++;
-		cmd_exec_arg_clear(arg);
+		snprintf(key, sizeof(key), "%s-%d", key_prefix, i);
+		reply=swarmkv_command(tmp_db, "INCRBY %s %d", key, i+increment);
+		ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+		EXPECT_EQ(reply->integer, i+increment);
+		swarmkv_reply_free(reply);
 	}
-	EXPECT_EQ(round, n_success);
-
-	cmd_exec_arg_expect_cstring(arg, "0");
-	n_success=0;
+	for(i=0; i<round; i++)
+	{
+		tmp_db=(i+1)%2?db1:db2;
+		snprintf(key, sizeof(key), "%s-%d", key_prefix, i);
+		reply=swarmkv_command(tmp_db, "INCRBY %s %d", key, 0);
+		ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+		EXPECT_EQ(reply->integer, i+increment);
+		swarmkv_reply_free(reply);
+	}
+	for(i=0; i<round; i++)
+	{
+		tmp_db=i%2?db1:db2;
+		snprintf(key, sizeof(key), "%s-%d", key_prefix, i);
+		reply=swarmkv_command(tmp_db, "SET %s 0", key);
+		ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+		EXPECT_STREQ(reply->str, "OK");
+		swarmkv_reply_free(reply);
+	}
 	for(i=0; i<round; i++)
 	{ 
-		snprintf(key, sizeof(key), "%s-%d", key_prefix, i);		
-		tmp_db=i%2?db2:db1;
-		swarmkv_get(tmp_db, key, strlen(key), generic_callback, arg);
-		exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-		if(exec_successful) n_success++;
-		cmd_exec_arg_clear(arg);
+		tmp_db=(i+1)%2?db1:db2;
+		snprintf(key, sizeof(key), "%s-%d", key_prefix, i);
+		reply=swarmkv_command(tmp_db, "GET %s", key);
+		ASSERT_EQ(reply->type, SWARMKV_REPLY_STRING);
+		EXPECT_STREQ(reply->str, "0");
+		swarmkv_reply_free(reply);
 	}
-	EXPECT_EQ(round, n_success);
 
-
-	cmd_exec_arg_free(arg);
 }
-TEST_F(SwarmkvTwoNodes, HINCRYBY5K)
+TEST_F(SwarmkvTwoNodes, HINCRBY5K)
 {
 	struct swarmkv *db1=SwarmkvTwoNodes::db1;
 	struct swarmkv *db2=SwarmkvTwoNodes::db2;
 	const char *key="myhash";
 	const char *field="priority-0";
 
-	int i=0, round=5000;
 	struct swarmkv_reply *reply=NULL;
+	int i=0, round=5000;
+	
 	for(i=0; i<round; i++)
 	{
 		reply=swarmkv_command(db1, "HINCRBY %s %s 1", key, field);
-		EXPECT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
 		swarmkv_reply_free(reply);
+
 		reply=swarmkv_command(db2, "HINCRBY %s %s -1", key, field);
-		EXPECT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
 		swarmkv_reply_free(reply);
 	}
 	wait_for_sync();
 	reply=swarmkv_command(db2, "HINCRBY %s %s 0", key, field);
-	EXPECT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
 	EXPECT_EQ(reply->integer, 0);
-	swarmkv_reply_free(reply);	
+	swarmkv_reply_free(reply);
 }
 
 TEST_F(SwarmkvTwoNodes, DEL)
 {
-	struct cmd_exec_arg *arg=NULL;
 	struct swarmkv *db1=SwarmkvTwoNodes::db1;
 	struct swarmkv *db2=SwarmkvTwoNodes::db2;
 	const char* key="id002";
-	const char* val="to-be-deleted";	
-	int exec_successful=0;
-	arg=cmd_exec_arg_new();
-	
-	//db1: SET key value
-	cmd_exec_arg_expect_OK(arg);
-	swarmkv_set(db1, key, strlen(key), val, strlen(val), generic_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_TRUE(exec_successful);
-	cmd_exec_arg_clear(arg);
+	const char* val="to-be-deleted";
+	struct swarmkv_reply *reply=NULL;
 
-	//db2: DEL key
-	cmd_exec_arg_expect_integer(arg, 1);
-	swarmkv_del(db2, key, strlen(key), generic_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_TRUE(exec_successful);
-	cmd_exec_arg_clear(arg);
+	reply=swarmkv_command(db1, "SET %s %s", key, val);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	EXPECT_STREQ(reply->str, "OK");
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db2, "DEL %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 1);
+	swarmkv_reply_free(reply);
 
 	wait_for_sync();
 
-	//db1: GET key
-	cmd_exec_arg_expect_NIL(arg);
-	swarmkv_get(db1, key, strlen(key), generic_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_TRUE(exec_successful);
-	cmd_exec_arg_clear(arg);
+	reply=swarmkv_command(db1, "GET %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_NIL);
+	swarmkv_reply_free(reply);
 
-	//db2: GET key
-	cmd_exec_arg_expect_NIL(arg);
-	swarmkv_get(db2, key, strlen(key), generic_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_TRUE(exec_successful);
-	cmd_exec_arg_clear(arg);
-
-	cmd_exec_arg_free(arg);
-	arg=NULL;
-
+	reply=swarmkv_command(db2, "GET %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_NIL);
+	swarmkv_reply_free(reply);
 }
 
 TEST_F(SwarmkvTwoNodes, INCRBY)
 {
-	struct cmd_exec_arg *arg=NULL;
 	struct swarmkv *db1=SwarmkvTwoNodes::db1;
 	struct swarmkv *db2=SwarmkvTwoNodes::db2;
 	const char* key="id003";
-	long long val=10000;	
-	int exec_successful=0;
-	arg=cmd_exec_arg_new();
+	long long val=10000;
 
-	//INCRYBY key 10000
-	cmd_exec_arg_expect_integer(arg, val);
-	swarmkv_incrby(db1, key, strlen(key), val, generic_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_TRUE(exec_successful);
-	cmd_exec_arg_clear(arg);
+	struct swarmkv_reply *reply=NULL;
+	
+	reply=swarmkv_command(db1, "INCRBY %s %lld", key, val);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, val);
+	swarmkv_reply_free(reply);
 
-	//INCRYBY key 100
-	cmd_exec_arg_expect_integer(arg, val+100);
-	swarmkv_incrby(db2, key, strlen(key), 100, generic_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_TRUE(exec_successful);
-	cmd_exec_arg_clear(arg);
+	reply=swarmkv_command(db2, "INCRBY %s 100", key);
+	val+=100;
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, val);
+	swarmkv_reply_free(reply);
 
-	//INCRYBY key -200	
-	cmd_exec_arg_expect_integer(arg, val+100-200);
-	swarmkv_incrby(db1, key, strlen(key), -200, generic_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_TRUE(exec_successful);
-	cmd_exec_arg_clear(arg);
-
-	cmd_exec_arg_free(arg);
-	arg=NULL;
-
+	reply=swarmkv_command(db2, "INCRBY %s -200", key);
+	val+=(-200);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, val);
+	swarmkv_reply_free(reply);
 }
 TEST_F(SwarmkvTwoNodes, EXPIRE)
 {
-	struct cmd_exec_arg *arg=NULL;
 	struct swarmkv *db1=SwarmkvTwoNodes::db1;
 	struct swarmkv *db2=SwarmkvTwoNodes::db2;
 	struct swarmkv* tmp_db=NULL;
 	char key[128]="", val[128]="";
-	int exec_successful=0, i=0, round=128, n_success=0;
+	int i=0, round=128;
 	int max_timeout_seconds=10, min_timeout_seconds=2;
 	int seconds=0;
-	arg=cmd_exec_arg_new();	
 
-	/*
-	 * SET expiring-key-%d value-xx-%d
-	*/
-	cmd_exec_arg_expect_OK(arg);
-	n_success=0;
+	struct swarmkv_reply *reply=NULL;
+
 	for(i=0; i<round; i++)
 	{ 
 		snprintf(key, sizeof(key), "expiring-key-%d", i);
 		snprintf(val, sizeof(val), "value-xx-%d", i);
 		tmp_db=i%2?db1:db2;
-		swarmkv_set(tmp_db, key, strlen(key), val, strlen(val), generic_callback, arg);
-		exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-		if(exec_successful) n_success++;
-		cmd_exec_arg_clear(arg);
+		reply=swarmkv_command(tmp_db, "SET %s %s", key, val);
+		ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+		EXPECT_STREQ(reply->str, "OK");
+		swarmkv_reply_free(reply);
 	}
-	EXPECT_EQ(round, n_success);
 
-
-	/*
-	 * EXPIRE expiring-key-%d [min_timeout_seconds, max_timeout_seconds)
-	 * Expect integer 1 reply
-	*/
-
-	n_success=0;
 	for(i=0; i<round; i++)
 	{ 
 		snprintf(key, sizeof(key), "expiring-key-%d", i);
 		tmp_db=i%2?db2:db1;
-		cmd_exec_arg_expect_integer(arg, 1);
 		seconds=min_timeout_seconds+i%(max_timeout_seconds-min_timeout_seconds);
-		swarmkv_expire(tmp_db, key, strlen(key), seconds, generic_callback, arg);
-		exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-		if(exec_successful) n_success++;
-		cmd_exec_arg_clear(arg);
+		reply=swarmkv_command(tmp_db, "EXPIRE %s %d", key, seconds);
+		ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+		EXPECT_EQ(reply->integer, 1);
+		swarmkv_reply_free(reply);
 	}
-	EXPECT_EQ(round, n_success);
 
 	sleep(max_timeout_seconds+1);
 
-	/*
-	 * GET expiring-key-%d
-	 * Expect NIL reply
-	*/
-	n_success=0;
 	for(i=0; i<round; i++)
 	{ 
 		snprintf(key, sizeof(key), "expiring-key-%d", i);
 		tmp_db=i%2?db2:db1;
-		cmd_exec_arg_expect_NIL(arg);
-		seconds=min_timeout_seconds+i%(max_timeout_seconds-min_timeout_seconds);
-		swarmkv_get(tmp_db, key, strlen(key), generic_callback, arg);
-		exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-		if(exec_successful) n_success++;
-		cmd_exec_arg_clear(arg);
+		reply=swarmkv_command(tmp_db, "GET %s", key);
+		ASSERT_EQ(reply->type, SWARMKV_REPLY_NIL);
+		swarmkv_reply_free(reply);
 	}
-	EXPECT_EQ(round, n_success);
-
 
 	/*
 	 * KEYSPACE RLIST expiring-key-%d
 	 * Expect NIL reply, make sure that expired keys are removed from keyspace.
 	*/
 
-	n_success=0;
-	struct swarmkv_reply *reply=NULL;
 	for(i=0; i<round; i++)
 	{ 
 		snprintf(key, sizeof(key), "expiring-key-%d", i);
 		tmp_db=i%2?db2:db1;
-		seconds=min_timeout_seconds+i%(max_timeout_seconds-min_timeout_seconds);
-		reply=swarmkv_command_on(tmp_db, NULL, "KEYSPACE RLIST %s", key);
-		if(reply->type==SWARMKV_REPLY_NIL)
-		{
-			n_success++;
-		}
+		reply=swarmkv_command(tmp_db, "KEYSPACE RLIST %s", key);
+		ASSERT_EQ(reply->type, SWARMKV_REPLY_NIL);
 		swarmkv_reply_free(reply);
 	}
-	EXPECT_EQ(round, n_success);
-
-	cmd_exec_arg_free(arg);
-	arg=NULL;
 }
 TEST_F(SwarmkvTwoNodes, TTL)
 {
-	struct cmd_exec_arg *arg=NULL;
 	struct swarmkv *db1=SwarmkvTwoNodes::db1;
 	struct swarmkv *db2=SwarmkvTwoNodes::db2;
 
 	const char *key="ttl-key-001";
 	const char *value="hello-world";
-	int exec_successful=0;
 	int seconds=3;
 
-	arg=cmd_exec_arg_new();
+	struct swarmkv_reply *reply=NULL;
 
-	// db1: SET key value
-	
-	cmd_exec_arg_expect_OK(arg);
-	swarmkv_set(db1, key, strlen(key), value, strlen(value), generic_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_TRUE(exec_successful);
-	cmd_exec_arg_clear(arg);
+	reply=swarmkv_command(db1, "SET %s %s", key, value);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	EXPECT_STREQ(reply->str, "OK");
+	swarmkv_reply_free(reply);
 
-	// db2: EXPIRE key seconds
-	cmd_exec_arg_expect_integer(arg, 1);
-	swarmkv_expire(db2, key, strlen(key), seconds, generic_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_TRUE(exec_successful);
-	cmd_exec_arg_clear(arg);
+	reply=swarmkv_command(db2, "EXPIRE %s %d", key, seconds);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 1);
+	swarmkv_reply_free(reply);
 
-	//db1: TTL key
-	cmd_exec_arg_expect_integer(arg, seconds);
-	swarmkv_ttl(db1, key, strlen(key), generic_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_TRUE(exec_successful);
-	cmd_exec_arg_clear(arg);
+	reply=swarmkv_command(db1, "TTL %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, seconds);
+	swarmkv_reply_free(reply);
 
-
-	//db2: TTL key
-	cmd_exec_arg_expect_integer(arg, seconds);
-	swarmkv_ttl(db2, key, strlen(key), generic_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_TRUE(exec_successful);
-	cmd_exec_arg_clear(arg);
-
-	cmd_exec_arg_free(arg);
-
+	reply=swarmkv_command(db2, "TTL %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, seconds);
+	swarmkv_reply_free(reply);
 }
 TEST_F(SwarmkvTwoNodes, PERSIST)
 {
-	struct cmd_exec_arg *arg=NULL;
 	struct swarmkv *db1=SwarmkvTwoNodes::db1;
 	struct swarmkv *db2=SwarmkvTwoNodes::db2;
 
 	const char *key="persit-key-001";
 	const char *value="hello-world";
-	int exec_successful=0;
 	int seconds=3;
 
-	arg=cmd_exec_arg_new();
-
-	// db1: SET key value
+	struct swarmkv_reply *reply=NULL;
 	
-	cmd_exec_arg_expect_OK(arg);
-	swarmkv_set(db1, key, strlen(key), value, strlen(value), generic_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_TRUE(exec_successful);
-	cmd_exec_arg_clear(arg);
+	reply=swarmkv_command(db1, "SET %s %s", key, value);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	EXPECT_STREQ(reply->str, "OK");
+	swarmkv_reply_free(reply);
 
-	// db1: EXPIRE key seconds
-	cmd_exec_arg_expect_integer(arg, 1);
-	swarmkv_expire(db1, key, strlen(key), seconds, generic_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_TRUE(exec_successful);
-	cmd_exec_arg_clear(arg);
+	reply=swarmkv_command(db1, "EXPIRE %s %d", key, seconds);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 1);
 
-	//db2: TTL key
-	cmd_exec_arg_expect_integer(arg, seconds);
-	swarmkv_ttl(db2, key, strlen(key), generic_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_TRUE(exec_successful);
-	cmd_exec_arg_clear(arg);
+	reply=swarmkv_command(db2, "TTL %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, seconds);
+	swarmkv_reply_free(reply);
 
+	reply=swarmkv_command(db1, "PERSIST %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 1);
+	swarmkv_reply_free(reply);
 
-	//db1: PERSIT key
-	cmd_exec_arg_expect_integer(arg, 1);
-	swarmkv_persist(db1, key, strlen(key), generic_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_TRUE(exec_successful);
-	cmd_exec_arg_clear(arg);
-
-
-	//db2: TTL key
-	cmd_exec_arg_expect_integer(arg, -1);
-	swarmkv_ttl(db2, key, strlen(key), generic_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_TRUE(exec_successful);
-	cmd_exec_arg_clear(arg);
+	reply=swarmkv_command(db2, "TTL %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, -1);
+	swarmkv_reply_free(reply);
 
 	sleep(seconds+1);
 
-	//db1: GET key
-	cmd_exec_arg_expect_cstring(arg, value);
-	swarmkv_get(db1, key, strlen(key), generic_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_TRUE(exec_successful);
-	cmd_exec_arg_clear(arg);
-
-	cmd_exec_arg_free(arg);
+	reply=swarmkv_command(db1, "GET %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STRING);
+	EXPECT_STREQ(reply->str, value);
+	swarmkv_reply_free(reply);
 
 }
 
 TEST_F(SwarmkvTwoNodes, FromLocalReplica)
 {
-	struct cmd_exec_arg *arg=NULL;
 	struct swarmkv *db1=SwarmkvTwoNodes::db1;
 	struct swarmkv *db2=SwarmkvTwoNodes::db2;
-	const char* key="id004";
-	int exec_successful=0;
-	arg=cmd_exec_arg_new();
+	const char *key="id004";
+	const char *val1="lisi", *val2="wang2mazi";
+	struct swarmkv_reply *reply=NULL;
 
-
-
-	//db1: SET id003 lisi	
-	const char* val1="lisi";
-
-	cmd_exec_arg_expect_OK(arg);
-	swarmkv_set(db1, key, strlen(key), val1, strlen(val1), generic_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_TRUE(exec_successful);
-	cmd_exec_arg_clear(arg);
-
-	//db2: GET id003
-	cmd_exec_arg_expect_cstring(arg, val1);
-	swarmkv_get(db2, key, strlen(key), generic_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_TRUE(exec_successful);
-	EXPECT_EQ(arg->is_sync_callback, 0);
-	cmd_exec_arg_clear(arg);
-
-	wait_for_sync();
-
-	//db2: SET id003 wang2mazi	
-	const char* val2="wang2mazi";
-
-	cmd_exec_arg_expect_OK(arg);
-	swarmkv_set(db2, key, strlen(key), val2, strlen(val2), generic_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_TRUE(exec_successful);
-	EXPECT_EQ(arg->is_sync_callback, 1);
-	cmd_exec_arg_clear(arg);
-
-	wait_for_sync();
-
-	//db1: GET id003	
-	cmd_exec_arg_expect_cstring(arg, val2);
-	swarmkv_get(db1, key, strlen(key), generic_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_TRUE(exec_successful);
-	EXPECT_EQ(arg->is_sync_callback, 1);
-	cmd_exec_arg_clear(arg);
+	reply=swarmkv_command(db1, "SET %s %s", key, val1);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	EXPECT_STREQ(reply->str, "OK");
+	swarmkv_reply_free(reply);
 	
-	cmd_exec_arg_free(arg);
+	reply=swarmkv_command(db2, "GET %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STRING);
+	EXPECT_STREQ(reply->str, val1);
+	swarmkv_reply_free(reply);
 
+	wait_for_sync();
+
+	reply=swarmkv_command(db2, "SET %s %s", key, val2);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	EXPECT_STREQ(reply->str, "OK");
+	swarmkv_reply_free(reply);
+
+	wait_for_sync();
+
+	reply=swarmkv_command(db1, "GET %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STRING);
+	EXPECT_STREQ(reply->str, val2);
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command_on(db1, swarmkv_self_address(db1), "CRDT EXISTS %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 1);
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command_on(db2, swarmkv_self_address(db2), "CRDT EXISTS %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 1);
+	swarmkv_reply_free(reply);
 }
 TEST_F(SwarmkvTwoNodes, TypeSet)
 {
