@@ -25,7 +25,15 @@ void generic_callback(const struct swarmkv_reply *reply, void * cb_arg)
 	}
 	return;
 }
-
+int g_current_thread_id=0;
+void copy_reply_callback(const struct swarmkv_reply *reply, void * cb_arg)
+{
+	struct swarmkv_reply **copy=(struct swarmkv_reply **)cb_arg;
+	*copy=swarmkv_reply_dup(reply);
+	int curr_tid=syscall(SYS_gettid);
+	assert(curr_tid==g_current_thread_id);
+	return;
+}
 class SwarmkvBasicTest : public testing::Test 
 {
 
@@ -37,7 +45,7 @@ protected:
 		const char *cluster_name="swarmkv-basic-test";
 		swarmkv_cli_create_cluster(cluster_name, "127.0.0.1:5210");
 		logger=log_handle_create(log_path, 0);
-		struct swarmkv_options* opts=swarmkv_options_new();
+		struct swarmkv_options *opts=swarmkv_options_new();
 		swarmkv_options_set_cluster_port(opts, 5210);
 		swarmkv_options_set_health_check_port(opts, 6210);
 		swarmkv_options_set_logger(opts, logger);
@@ -506,7 +514,7 @@ TEST_F(SwarmkvBasicTest, EXPIRE_TTL)
 	EXPECT_EQ(reply->integer, seconds);
 	swarmkv_reply_free(reply);
 
-	sleep(seconds+2);
+	sleep(seconds+1);
 
 	reply=swarmkv_command(db, "GET %s", key);
 	ASSERT_EQ(reply->type, SWARMKV_REPLY_NIL);
@@ -558,6 +566,7 @@ protected:
 		swarmkv_options_set_cluster_port(opts1, 5210);
 		swarmkv_options_set_health_check_port(opts1, 6210);
 		swarmkv_options_set_logger(opts1, logger);
+		swarmkv_options_set_sync_interval_us(opts1, 10*1000);
 		swarmkv_options_set_cluster_timeout_us(opts1, 600*1000*1000);
 		swarmkv_options_set_worker_thread_number(opts1, 1);
 		swarmkv_options_set_caller_thread_number(opts1, 1);
@@ -574,6 +583,7 @@ protected:
 		swarmkv_options_set_health_check_port(opts2, 6211);
 		swarmkv_options_set_logger(opts2, logger);
 		swarmkv_options_set_cluster_timeout_us(opts2, 600*1000*1000);
+		swarmkv_options_set_sync_interval_us(opts2, 10*1000);
 		swarmkv_options_set_worker_thread_number(opts2, 1);
 		swarmkv_options_set_caller_thread_number(opts2, 1);
 		db2=swarmkv_open(opts2, cluster_name, &err);
@@ -595,9 +605,9 @@ protected:
  	static struct log_handle *logger;
 	static struct swarmkv *db1, *db2;
 };
-struct log_handle* SwarmkvTwoNodes::logger;
-struct swarmkv* SwarmkvTwoNodes::db1;
-struct swarmkv* SwarmkvTwoNodes::db2;
+struct log_handle *SwarmkvTwoNodes::logger;
+struct swarmkv *SwarmkvTwoNodes::db1;
+struct swarmkv *SwarmkvTwoNodes::db2;
 TEST_F(SwarmkvTwoNodes, SET_GET)
 {
 	struct swarmkv *db1=SwarmkvTwoNodes::db1;
@@ -642,7 +652,7 @@ TEST_F(SwarmkvTwoNodes, SET1kString)
 	const char *key_prefix="test-1k-string";
 	const char *val_prefix="value-xx";
 	char key[128]="", val[128]="";
-	int i=0, round=1000;
+	int i=0, round=100000;
 	struct swarmkv_reply *reply=NULL;
 
 
@@ -977,7 +987,6 @@ TEST_F(SwarmkvTwoNodes, FromLocalReplica)
 }
 TEST_F(SwarmkvTwoNodes, TypeSet)
 {
-	struct cmd_exec_arg *arg=NULL;
 	struct swarmkv *db[2];
 	db[0]=SwarmkvTwoNodes::db1;
 	db[1]=SwarmkvTwoNodes::db2;
@@ -985,8 +994,6 @@ TEST_F(SwarmkvTwoNodes, TypeSet)
 	char **members=NULL;
 	size_t *member_len=NULL;
 	size_t n_member=128;
-	int exec_successful=0;
-	arg=cmd_exec_arg_new();
 
 	members=ALLOC(char*, n_member);
 	member_len=ALLOC(size_t, n_member);
@@ -995,37 +1002,46 @@ TEST_F(SwarmkvTwoNodes, TypeSet)
 		members[i]=ALLOC(char, 1024);
 		member_len[i]=snprintf(members[i], 1024, "set-member-%zu", i);
 	}
-	
-	cmd_exec_arg_expect_integer(arg, n_member/2);
-	swarmkv_sadd(db[0], key, strlen(key), (const char**) members, member_len, n_member/2, generic_callback, arg);	
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_TRUE(exec_successful);
-	cmd_exec_arg_clear(arg);
+	struct swarmkv_reply *reply=NULL;
 
-	cmd_exec_arg_expect_integer(arg, n_member-n_member/2);
-	swarmkv_sadd(db[1], key, strlen(key), (const char**)  members+n_member/2, member_len+n_member/2, n_member-n_member/2, generic_callback, arg);	
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_TRUE(exec_successful);
-	cmd_exec_arg_clear(arg);
+	swarmkv_sadd(db[0], key, strlen(key), (const char**) members, member_len, n_member/2, copy_reply_callback, &reply);
+	swarmkv_caller_loop(db[0], NULL);
+	ASSERT_TRUE(reply!=NULL);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, n_member/2);
+	swarmkv_reply_free(reply);
+	reply=NULL;
+
+	swarmkv_sadd(db[1], key, strlen(key), (const char**)  members+n_member/2, member_len+n_member/2, n_member-n_member/2, copy_reply_callback, &reply);	
+	swarmkv_caller_loop(db[1], NULL);
+	ASSERT_TRUE(reply!=NULL);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, n_member-n_member/2);
+	swarmkv_reply_free(reply);
+	reply=NULL;
 	
 	wait_for_sync();
 
-	cmd_exec_arg_expect_array(arg, n_member);
-	swarmkv_smembers(db[1], key, strlen(key), generic_callback, arg);	
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_TRUE(exec_successful);
-	cmd_exec_arg_clear(arg);
+	swarmkv_smembers(db[1], key, strlen(key), copy_reply_callback, &reply);
+	swarmkv_caller_loop(db[1], NULL);
+	ASSERT_TRUE(reply!=NULL);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
+	EXPECT_EQ(reply->n_element, n_member);
+	swarmkv_reply_free(reply);
+	reply=NULL;
 
-	
+
 	for(size_t i=0; i<n_member; i++)
 	{
 		if(i%3==0)
 		{
-			cmd_exec_arg_expect_integer(arg, 1);
-			swarmkv_srem(db[i%2], key, strlen(key), (const char**) members+i, member_len+i, 1, generic_callback, arg);	
-			exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-			cmd_exec_arg_clear(arg);
-			EXPECT_TRUE(exec_successful);
+			swarmkv_srem(db[i%2], key, strlen(key), (const char**) members+i, member_len+i, 1, copy_reply_callback, &reply);
+			swarmkv_caller_loop(db[i%2], NULL);
+			ASSERT_TRUE(reply!=NULL);
+			ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+			EXPECT_EQ(reply->integer, 1);
+			swarmkv_reply_free(reply);
+			reply=NULL;
 		}
 	}
 
@@ -1035,16 +1051,17 @@ TEST_F(SwarmkvTwoNodes, TypeSet)
 	{
 		if(i%3==0)
 		{
-			cmd_exec_arg_expect_integer(arg, 0);
-			swarmkv_sismember(db[(i+1)%2], key, strlen(key), members[i], member_len[i], generic_callback, arg);	
-			exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-			cmd_exec_arg_clear(arg);
-			EXPECT_TRUE(exec_successful);
+			swarmkv_sismember(db[(i+1)%2], key, strlen(key), members[i], member_len[i], copy_reply_callback, &reply);
+			swarmkv_caller_loop(db[(i+1)%2], NULL);
+			ASSERT_TRUE(reply!=NULL);
+			ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+			EXPECT_EQ(reply->integer, 0);
+			swarmkv_reply_free(reply);
+			reply=NULL;
 		}
 	}
 
 	//Cleanup
-	cmd_exec_arg_free(arg);
 	for(size_t i=0; i<n_member; i++)
 	{
 		free(members[i]);
@@ -1056,36 +1073,37 @@ TEST_F(SwarmkvTwoNodes, TypeSet)
 
 TEST_F(SwarmkvTwoNodes, TypeTokenBucket)
 {
-	struct cmd_exec_arg *arg=NULL;
 	struct swarmkv *db[2];
 	db[0]=SwarmkvTwoNodes::db1;
 	db[1]=SwarmkvTwoNodes::db2;
 	const char *key="tb-192.168.0.1";
-	int exec_successful=0;
-	arg=cmd_exec_arg_new();
-	long long capacity=1024*4, rate=1024*2;
-	cmd_exec_arg_expect_OK(arg);	
-	swarmkv_async_command(db[0], generic_callback, arg, "TCFG %s %lld %lld", key, rate, capacity);	
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	cmd_exec_arg_clear(arg);
-	EXPECT_TRUE(exec_successful);
-	srandom(171);
+
 	struct swarmkv_reply *reply=NULL;
+
+	long long capacity=1024*4, rate=1024*2;
+
+	reply=swarmkv_command(db[0], "TCFG %s %lld %lld", key, rate, capacity);	
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	EXPECT_STREQ(reply->str, "OK");
+	swarmkv_reply_free(reply);
+	reply=NULL;
+
+
+	srandom(171);
+	
 	int i=0;
 	struct timeval start, now;
 	gettimeofday(&start, NULL);
 	gettimeofday(&now, NULL);
-	long long token=0, requested_tokens=0, got_tokens=0;
+	long long token=0, requested_tokens=0, allocated_tokens=0;
 	//Two heavy consumers
 	while(now.tv_sec - start.tv_sec<10)
 	{
 		token=random()%(4*rate);
 		requested_tokens+=token;
 		reply=swarmkv_command(db[i%2], "TCONSUME %s %lld FLEXIBLE", key, token);
-		if(reply->type==SWARMKV_REPLY_INTEGER)
-		{
-			got_tokens+=reply->integer;
-		}
+		ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+		allocated_tokens+=reply->integer;
 		swarmkv_reply_free(reply);
 		gettimeofday(&now, NULL);
 		i++;
@@ -1105,11 +1123,10 @@ TEST_F(SwarmkvTwoNodes, TypeTokenBucket)
 		token=token*6/10;
 		requested_tokens+=token;
 		reply=swarmkv_command(db[0], "TCONSUME %s %lld FLEXIBLE", key, token);
-		if(reply->type==SWARMKV_REPLY_INTEGER)
-		{
-			got_tokens+=reply->integer;
-		}
+		ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+		allocated_tokens+=reply->integer;
 		swarmkv_reply_free(reply);
+		
 		gettimeofday(&now, NULL);
 		i++;
 	}
@@ -1119,10 +1136,8 @@ TEST_F(SwarmkvTwoNodes, TypeTokenBucket)
 		token=rate*3/4+random()%(rate);
 		requested_tokens+=token;
 		reply=swarmkv_command(db[0], "TCONSUME %s %lld", key, token);
-		if(reply->type==SWARMKV_REPLY_INTEGER)
-		{
-			got_tokens+=reply->integer;
-		}
+		ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);	
+		allocated_tokens+=reply->integer;
 		swarmkv_reply_free(reply);
 		gettimeofday(&now, NULL);
 		i++;
@@ -1130,42 +1145,43 @@ TEST_F(SwarmkvTwoNodes, TypeTokenBucket)
 //	printf("consume round %d, speed %d ops\n", i, i/(int)(now.tv_sec-start.tv_sec));
 	EXPECT_GE(i/(int)(now.tv_sec-start.tv_sec), 100000);
 	long long upper_limit=(now.tv_sec-start.tv_sec)*rate+capacity;
-	double accuracy=(double)got_tokens/(upper_limit<requested_tokens?upper_limit:requested_tokens);
+	double accuracy=(double)allocated_tokens/(upper_limit<requested_tokens?upper_limit:requested_tokens);
 	EXPECT_NEAR(accuracy, 1, 0.035);	
 
 	wait_for_sync();
 
-	cmd_exec_arg_expect_integer(arg, 1);
-	swarmkv_del(db[0], key, strlen(key), generic_callback, arg);	
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	cmd_exec_arg_clear(arg);
+	reply=swarmkv_command(db[0], "DEL %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 1);
+	swarmkv_reply_free(reply);
+	reply=NULL;
+
 	wait_for_sync();
 
-	cmd_exec_arg_expect_integer(arg, 0);
-	swarmkv_async_command(db[1], generic_callback, arg, "TCONSUME %s 4096 FLEXIBLE", key);
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	cmd_exec_arg_clear(arg);
-
-	cmd_exec_arg_free(arg);
-	
+	reply=swarmkv_command(db[1], "TCONSUME %s 4096 FLEXIBLE", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, -1);
+	swarmkv_reply_free(reply);
+	reply=NULL;
 }
 TEST_F(SwarmkvTwoNodes, TypeFairTokenBucket)
 {
-	struct cmd_exec_arg *arg=NULL;
 	struct swarmkv *db[2];
 	db[0]=SwarmkvTwoNodes::db1;
 	db[1]=SwarmkvTwoNodes::db2;
+	
 	const char *key="shaping-profile-with-fairness";
-	int exec_successful=0;
-	arg=cmd_exec_arg_new();
 	long long capacity=1024*4, rate=1024*2, divisor=1024;
-	cmd_exec_arg_expect_OK(arg);	
-	swarmkv_async_command(db[0], generic_callback, arg, "FTCFG %s %lld %lld %lld", key, rate, capacity, divisor);	
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	cmd_exec_arg_clear(arg);
-	EXPECT_TRUE(exec_successful);
-	srandom(171);
 	struct swarmkv_reply *reply=NULL;
+	
+	reply=swarmkv_command(db[0], "FTCFG %s %lld %lld %lld", key, rate, capacity, divisor);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	EXPECT_STREQ(reply->str, "OK");
+	swarmkv_reply_free(reply);
+	reply=NULL;
+
+	srandom(171);
+	
 	int round=0;
 	struct timeval start, now;
 	gettimeofday(&start, NULL);
@@ -1180,11 +1196,10 @@ TEST_F(SwarmkvTwoNodes, TypeFairTokenBucket)
 		
 		weight=1+(member_id%20);
 		reply=swarmkv_command(db[round%2], "FTCONSUME %s user-%lld %lld %lld", key, member_id, weight, token);
-		if(reply->type==SWARMKV_REPLY_INTEGER)
-		{
-			allocated_tokens+=reply->integer;
-		}
+		ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+		allocated_tokens+=reply->integer;
 		swarmkv_reply_free(reply);
+
 		gettimeofday(&now, NULL);
 		member_id=(member_id+1)%n_member;
 		round++;
@@ -1198,43 +1213,47 @@ TEST_F(SwarmkvTwoNodes, TypeFairTokenBucket)
 	wait_for_sync();
 
 	reply=swarmkv_command(db[0], "FTINFO %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
+	ASSERT_EQ(reply->n_element, 14);
 	EXPECT_NEAR(reply->elements[13]->integer, n_member, n_member/5);
 	swarmkv_reply_free(reply);
 
 	reply=swarmkv_command(db[1], "FTINFO %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
+	ASSERT_EQ(reply->n_element, 14);
 	EXPECT_NEAR(reply->elements[13]->integer, n_member, n_member/5);
 	swarmkv_reply_free(reply);
 
-	cmd_exec_arg_expect_integer(arg, 1);
-	swarmkv_del(db[0], key, strlen(key), generic_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	cmd_exec_arg_clear(arg);
+	reply=swarmkv_command(db[0], "DEL %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 1);
+	swarmkv_reply_free(reply);
+
 	wait_for_sync();
 
-	cmd_exec_arg_expect_integer(arg, -1);
-	swarmkv_async_command(db[1], generic_callback, arg, "FTCONSUME %s user-001 20 1000", key);
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	cmd_exec_arg_clear(arg);
-
-	cmd_exec_arg_free(arg);
+	reply=swarmkv_command(db[1], "FTCONSUME %s user-001 20 1000", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, -1);
+	swarmkv_reply_free(reply);
 }
 TEST_F(SwarmkvTwoNodes, TypeBulkTokenBucket)
 {
-	struct cmd_exec_arg *arg=NULL;
+
 	struct swarmkv *db[2];
 	db[0]=SwarmkvTwoNodes::db1;
 	db[1]=SwarmkvTwoNodes::db2;
+
 	const char *key="shaping-profile-everyone-has-10Mbps";
-	int exec_successful=0;
-	arg=cmd_exec_arg_new();
 	long long capacity=15*1024*1024, rate=10*1024*1024, buckets=8192;
-	cmd_exec_arg_expect_OK(arg);	
-	swarmkv_async_command(db[0], generic_callback, arg, "BTCFG %s %lld %lld %lld", key, rate, capacity, buckets);	
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	cmd_exec_arg_clear(arg);
-	EXPECT_TRUE(exec_successful);
-	srandom(171);
 	struct swarmkv_reply *reply=NULL;
+	
+	reply=swarmkv_command(db[0], "BTCFG %s %lld %lld %lld", key, rate, capacity, buckets);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	EXPECT_STREQ(reply->str, "OK");
+	swarmkv_reply_free(reply);
+
+	srandom(171);
+	
 	int round=0;
 	struct timeval start, now;
 	gettimeofday(&start, NULL);
@@ -1248,11 +1267,10 @@ TEST_F(SwarmkvTwoNodes, TypeBulkTokenBucket)
 		requested_tokens+=token;
 		
 		reply=swarmkv_command(db[round%2], "BTCONSUME %s user-%lld %lld", key, member_id, token);
-		if(reply->type==SWARMKV_REPLY_INTEGER)
-		{
-			allocated_tokens+=reply->integer;
-		}
+		ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+		allocated_tokens+=reply->integer;
 		swarmkv_reply_free(reply);
+
 		gettimeofday(&now, NULL);
 		member_id=(member_id+1)%n_member;
 		round++;
@@ -1267,27 +1285,30 @@ TEST_F(SwarmkvTwoNodes, TypeBulkTokenBucket)
 	wait_for_sync();
 
 	reply=swarmkv_command(db[0], "BTINFO %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
+	ASSERT_EQ(reply->n_element, 12);
 	EXPECT_NEAR(reply->elements[7]->integer, n_member, n_member/5);
 	swarmkv_reply_free(reply);
 
 	reply=swarmkv_command(db[1], "BTINFO %s user-001", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
+	ASSERT_EQ(reply->n_element, 12);
 	EXPECT_NEAR(reply->elements[7]->integer, n_member, n_member/5);
 	EXPECT_LE(reply->elements[9]->integer, capacity);
 	swarmkv_reply_free(reply);
 
-	cmd_exec_arg_expect_integer(arg, 1);
-	swarmkv_del(db[0], key, strlen(key), generic_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	cmd_exec_arg_clear(arg);
+	reply=swarmkv_command(db[0], "DEL %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 1);
+	swarmkv_reply_free(reply);
+
 	wait_for_sync();
 
-	cmd_exec_arg_expect_integer(arg, -1);
-	swarmkv_async_command(db[1], generic_callback, arg, "BTCONSUME %s user-001 1000", key);
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	cmd_exec_arg_clear(arg);
+	reply=swarmkv_command(db[1],"BTCONSUME %s user-001 1000", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, -1);
+	swarmkv_reply_free(reply);
 
-	
-	cmd_exec_arg_free(arg);
 }
 TEST_F(SwarmkvTwoNodes, TypeHash)
 {
@@ -1301,7 +1322,7 @@ TEST_F(SwarmkvTwoNodes, TypeHash)
 	{
 		reply=swarmkv_command(db[i%2], "HSET uid-%zu name zhangsan gender male age 18 gender male", i);
 		ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
-		ASSERT_EQ(reply->integer, 3);
+		EXPECT_EQ(reply->integer, 3);
 		swarmkv_reply_free(reply);
 	}
 	wait_for_sync();
@@ -1339,7 +1360,7 @@ TEST_F(SwarmkvTwoNodes, TypeHash)
 	{
 		reply=swarmkv_command(db[(i+1)%2], "HGET uid-%zu gender", i);
 		ASSERT_EQ(reply->type, SWARMKV_REPLY_STRING);
-		ASSERT_STREQ(reply->str, "female");
+		EXPECT_STREQ(reply->str, "female");
 		swarmkv_reply_free(reply);
 	}
 
@@ -1347,7 +1368,7 @@ TEST_F(SwarmkvTwoNodes, TypeHash)
 TEST_F(SwarmkvTwoNodes, Wait)
 {
 	//return;
-	sleep(3600*2);
+	//sleep(3600*2);
 }
 TEST(CloudNative, AnnounceIPPort)
 {
@@ -1381,6 +1402,7 @@ TEST(CloudNative, AnnounceIPPort)
 			free(err);
 			err=NULL;
 		}
+		swarmkv_register_thread(db[i]);
 	}
 
 	const char *key="int1";
@@ -1436,6 +1458,7 @@ protected:
 				free(err);
 				err=NULL;
 			}
+			swarmkv_register_thread(db[i]);
 		}
 
 	}
@@ -1455,87 +1478,59 @@ struct swarmkv* SwarmkvNNodes::db[TEST_NODE_NUMBER];
 struct log_handle * SwarmkvNNodes::logger;
 TEST_F(SwarmkvNNodes, SET_GET)
 {
-	struct cmd_exec_arg *arg=NULL;
 	const char *key="id001";
 	const char *val1="zhangsan", *val2="lisi";
-	int exec_successful=0;
 	struct swarmkv **db=SwarmkvNNodes::db;
 
-	arg=cmd_exec_arg_new();
-	arg->print_reply_on_fail=1;
-	cmd_exec_arg_expect_OK(arg);
-	swarmkv_set(db[0], key, strlen(key), val1, strlen(val1), generic_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_TRUE(exec_successful);
-	cmd_exec_arg_clear(arg);
+	struct swarmkv_reply *reply=NULL;
+	reply=swarmkv_command(db[0], "SET %s %s", key, val1);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	EXPECT_STREQ(reply->str, "OK");
+	swarmkv_reply_free(reply);
 
-	size_t success_cnt=0, i=0;
+	size_t i=0;
 	
 	for(i=0; i<TEST_NODE_NUMBER; i++)
 	{
-		cmd_exec_arg_clear(arg);
-		cmd_exec_arg_expect_cstring(arg, val1);
-		swarmkv_get(db[i], key, strlen(key), generic_callback, arg);
-		exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-		if(exec_successful)
-		{
-			success_cnt++;
-		}
-		
+		reply=swarmkv_command(db[i], "GET %s", key);
+		ASSERT_EQ(reply->type, SWARMKV_REPLY_STRING);
+		EXPECT_STREQ(reply->str, val1);
+		swarmkv_reply_free(reply);
 	}
-	EXPECT_EQ(success_cnt, TEST_NODE_NUMBER);
 
-	cmd_exec_arg_clear(arg);
-	cmd_exec_arg_expect_OK(arg);
-	swarmkv_set(db[0], key, strlen(key), val2, strlen(val2), generic_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-	EXPECT_TRUE(exec_successful);
-	
+	reply=swarmkv_command(db[0], "SET %s %s", key, val2);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	EXPECT_STREQ(reply->str, "OK");
+	swarmkv_reply_free(reply);
 
 	wait_for_sync();
-
-	success_cnt=0;
+	//sleep(10);
 	for(i=0; i<TEST_NODE_NUMBER; i++)
 	{
-		cmd_exec_arg_clear(arg);
-		cmd_exec_arg_expect_cstring(arg, val2);
-		swarmkv_get(db[i], key, strlen(key), generic_callback, arg);
-		exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-		if(exec_successful)
-		{
-			success_cnt++;
-		}		
+		reply=swarmkv_command(db[i], "GET %s", key);
+		ASSERT_EQ(reply->type, SWARMKV_REPLY_STRING);
+		EXPECT_STREQ(reply->str, val2);
+		swarmkv_reply_free(reply);
 	}
-	EXPECT_EQ(success_cnt, TEST_NODE_NUMBER);
+	reply=swarmkv_command(db[TEST_NODE_NUMBER-1], "DEL %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 1);
+	swarmkv_reply_free(reply);
 
 	wait_for_sync();
 
-	cmd_exec_arg_clear(arg);
-	cmd_exec_arg_expect_integer(arg, 1);
-	swarmkv_del(db[TEST_NODE_NUMBER-1], key, strlen(key), generic_callback, arg);
-	exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);	
-	EXPECT_TRUE(exec_successful);
-
-	wait_for_sync();
-
-	success_cnt=0;
 	for(i=0; i<TEST_NODE_NUMBER; i++)
 	{
-		cmd_exec_arg_clear(arg);
-		cmd_exec_arg_expect_NIL(arg);
-		swarmkv_get(db[i], key, strlen(key), generic_callback, arg);
-		exec_successful=cmd_exec_arg_wait(arg, CMD_EXEC_TIMEOUT_MS);
-		if(exec_successful)
-		{
-			success_cnt++;
-		}
+		reply=swarmkv_command(db[i], "GET %s", key);
+		ASSERT_EQ(reply->type, SWARMKV_REPLY_NIL);
+		swarmkv_reply_free(reply);
 	}
-	EXPECT_EQ(success_cnt, TEST_NODE_NUMBER);
-	cmd_exec_arg_free(arg);
+
 }
 int main(int argc, char ** argv)
 {
 	int ret=0;
+	g_current_thread_id=syscall(SYS_gettid);
 	::testing::InitGoogleTest(&argc, argv);
 	ret=RUN_ALL_TESTS();
 	return ret;

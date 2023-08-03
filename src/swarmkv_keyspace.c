@@ -163,7 +163,7 @@ static void crdt_del_on_fail(enum e_future_error err, const char * what, void * 
 	return;
 }
 
-void key_entry_deletion_notification(struct key_route_entry *key_entry, exec_cmd_func *exec_cmd, struct swarmkv *exec_cmd_handle)
+void key_entry_deletion_notification(struct key_route_entry *key_entry, const node_t *self, exec_cmd_func *exec_cmd, struct swarmkv *exec_cmd_handle)
 {
 	struct replica_node *replica=NULL, *tmp=NULL;
 	struct swarmkv_cmd *crdt_del_cmd=swarmkv_cmd_new(3);
@@ -175,8 +175,8 @@ void key_entry_deletion_notification(struct key_route_entry *key_entry, exec_cmd
 		struct crdt_del_ctx *ctx=ALLOC(struct crdt_del_ctx, 1);
 		node_copy(&ctx->peer, &replica->node);
 		ctx->key=sdsdup(key_entry->key);
-		ctx->f=future_create("key_del", crdt_del_on_succ, crdt_del_on_fail, ctx);
-		exec_cmd(exec_cmd_handle, NULL, &replica->node, crdt_del_cmd, ctx->f);
+		ctx->f=future_create("_del", crdt_del_on_succ, crdt_del_on_fail, ctx);
+		exec_cmd(exec_cmd_handle, self, &replica->node, crdt_del_cmd, ctx->f);
 	}
 	swarmkv_cmd_free(crdt_del_cmd);
 	return;
@@ -1689,7 +1689,7 @@ enum cmd_exec_result key_route_generic(struct swarmkv_keyspace *ks, enum KEYSPAC
 			if(key_entry)
 			{
 				HASH_DELETE(hh, slot_rt->keyroute_table, key_entry);
-				key_entry_deletion_notification(key_entry, ks->exec_cmd_func, ks->exec_cmd_handle);
+				key_entry_deletion_notification(key_entry, &ks->self, ks->exec_cmd_func, ks->exec_cmd_handle);
 				key_entry_free(key_entry);
 				*reply=swarmkv_reply_new_integer(1);
 			}
@@ -1978,29 +1978,31 @@ void swarmkv_keyspace_periodic(struct swarmkv_module *mod_keyspace, int thread_i
 	int real_tid=__gettid(ks->exec_cmd_handle);
 	assert(real_tid==thread_id);
 
-	struct timespec now;
 	int i=0, j=0;
 	struct slot_runtime *slot_rt=NULL;
 	struct timeout *t=NULL;	
 	struct key_route_entry *key_entry=NULL;
-	struct timespec start, end;
+	struct timespec start, end, now;
 	int has_key_expired=0;
 	clock_gettime(CLOCK_MONOTONIC_COARSE, &start);
+	clock_gettime(CLOCK_REALTIME, &now);
 	for(i=0; i<KEYSPACE_SLOT_NUM; i++)
 	{
 		if(i%ks->opts->nr_worker_threads!=thread_id) continue;
 		slot_rt=ks->slot_rts+i;
 		if(!slot_rt->I_am_owner) continue;
-		if(0==pthread_mutex_trylock(&slot_rt->sanity_lock))
+		if(ks->opts->sanity_check)
 		{
-			pthread_mutex_unlock(&slot_rt->sanity_lock);
+			if(0==pthread_mutex_trylock(&slot_rt->sanity_lock))
+			{
+				pthread_mutex_unlock(&slot_rt->sanity_lock);
+			}
+			else
+			{
+				assert(0);
+			}
 		}
-		else
-		{
-			assert(0);
-		}
-
-		clock_gettime(CLOCK_REALTIME, &now);
+		//if(0==timeouts_count(slot_rt->expires)) continue;
 		timeouts_update(slot_rt->expires, now.tv_sec);
 		t=timeouts_get(slot_rt->expires);
 		while(t && j<ACTIVE_EXPIRE_CYCLE_KEYS_PER_LOOP)
@@ -2008,13 +2010,12 @@ void swarmkv_keyspace_periodic(struct swarmkv_module *mod_keyspace, int thread_i
 			key_entry=container_of(t, struct key_route_entry, timeout_handle);
 			assert(key_entry->is_expiring);
 			HASH_DELETE(hh, slot_rt->keyroute_table, key_entry);
-			key_entry_deletion_notification(key_entry, ks->exec_cmd_func, ks->exec_cmd_handle);
+			key_entry_deletion_notification(key_entry, &ks->self, ks->exec_cmd_func, ks->exec_cmd_handle);
 			key_entry_free(key_entry);
 			t=timeouts_get(slot_rt->expires);
 			j++;
 			has_key_expired=1;
 		}
-		pthread_mutex_unlock(&slot_rt->sanity_lock);
 	}
 	clock_gettime(CLOCK_MONOTONIC_COARSE, &end);
 	if(has_key_expired)

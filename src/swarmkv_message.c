@@ -210,10 +210,12 @@ void swarmkv_msg_free(struct swarmkv_msg *msg)
 	if(msg->type==MSG_TYPE_CMD)
 	{
 		swarmkv_cmd_free(msg->cmd);
+		msg->cmd=NULL;
 	}
 	else
 	{
 		swarmkv_reply_free(msg->reply);
+		msg->reply=NULL;
 	}
 	free(msg);
 	return;
@@ -225,10 +227,12 @@ void swarmkv_msg_serialize(const struct swarmkv_msg *msg, char **blob, size_t *b
 	size_t payload_len=0;
 	if(msg->type==MSG_TYPE_CMD)
 	{
+		assert(msg->cmd->argc>0);
 		swarmkv_cmd_serialize(msg->cmd,&payload, &payload_len);
 	}
 	else
 	{
+		assert(msg->reply!=NULL);
 		swarmkv_reply_serialize(msg->reply, &payload, &payload_len);
 	}
 	*blob=ALLOC(char, payload_len+SWARMKV_MSG_HDR_SIZE);

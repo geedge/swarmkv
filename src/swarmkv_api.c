@@ -34,6 +34,7 @@ struct swarmkv_options* swarmkv_options_new(void)
 	strcpy(opts->consul_agent_host, "127.0.0.1");
 	uuid_generate(opts->bin_uuid);
 	opts->nr_worker_threads=1;
+	opts->nr_caller_threads=1;
 	opts->is_assigned_to_db=0;
 	opts->run_for_leader_flag=1;
 	return opts;
@@ -373,6 +374,7 @@ struct swarmkv_reply *swarmkv_command_on(struct swarmkv *db, const char *target,
 
 	int argc=0;
 	sds *argv=NULL;
+
 	argv=sdssplitargs(cmd_str, &argc);
 	struct swarmkv_reply *reply=NULL;
 	reply=swarmkv_command_on_argv(db, target, argc, argv);
@@ -385,14 +387,14 @@ struct swarmkv_reply *swarmkv_command_on(struct swarmkv *db, const char *target,
 
 	return reply;
 }
-struct swarmkv_reply *swarmkv_command(struct swarmkv *db,const char *format, ...)
+struct swarmkv_reply *swarmkv_command(struct swarmkv *db, const char *format, ...)
 {
 	char *cmd_str=NULL;
     va_list ap;
     va_start(ap, format);
 	vasprintf(&cmd_str, format, ap);
     va_end(ap);
-
+	
 	int argc=0;
 	sds *argv=NULL;
 	argv=sdssplitargs(cmd_str, &argc);

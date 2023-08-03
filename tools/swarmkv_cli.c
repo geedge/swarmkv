@@ -1250,6 +1250,7 @@ int main(int argc, char * argv[])
     swarmkv_options_set_consul_host(opts, g_config.consul_host);
 	swarmkv_options_set_consul_port(opts, g_config.consul_port);
 	swarmkv_options_set_worker_thread_number(opts, 1);
+	swarmkv_options_set_caller_thread_number(opts, 1);
 	swarmkv_options_set_logger(opts, logger);
 	char *err=NULL;
 	g_config.db=swarmkv_open(opts, g_config.db_name, &err);
@@ -1261,7 +1262,7 @@ int main(int argc, char * argv[])
 		err=NULL;
 		return 0;
 	}
-
+	swarmkv_register_thread(g_config.db);
 	//Run swarmkv-cli --exec commands.
 	if(exec_argc)
 	{

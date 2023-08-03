@@ -143,7 +143,7 @@ int main(int argc, char ** argv)
 
 		for(i=0; i<key_number; i++)
 		{
-			reply=swarmkv_command_on(db, NULL, "TCFG tb-%d 50000 50000", i, i);
+			reply=swarmkv_command_on(db, NULL, "TCFG tb-%lld 50000 50000", i);
 			swarmkv_reply_free(reply);
 			if(key_number > 10 && i%(key_number/10)==0)
 			{

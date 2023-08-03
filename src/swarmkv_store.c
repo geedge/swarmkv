@@ -144,6 +144,7 @@ struct swarmkv_store_thread
 	pthread_mutex_t sanity_lock;
 	long long keys_to_sync;
 	long long n_keys;
+	long long calls;
 };
 struct swarmkv_store
 {
@@ -539,13 +540,14 @@ void crdt_generic_call(struct swarmkv_store *store, enum CRDT_OP op, const struc
 {
 	const char *symbol[]={"crdt_get", "crdt_merge", "crdt_join"};
 	struct crdt_generic_ctx *ctx=NULL;
+	assert(peer);
 	ctx=ALLOC(struct crdt_generic_ctx, 1);
 	ctx->op=op;
 	ctx->store=store;
 	ctx->key=sdsdup(cmd->argv[2]);
 	node_copy(&ctx->peer, peer);
 	ctx->f=future_create(symbol[op], crdt_generic_on_succ, crdt_generic_on_fail, ctx);
-	store->exec_cmd(store->exec_cmd_handle, NULL, peer, cmd, ctx->f);
+	store->exec_cmd(store->exec_cmd_handle, &store->self, peer, cmd, ctx->f);
 	return;
 }
 #define MAX_SYNC_PER_PERIOD	100000
@@ -558,9 +560,9 @@ void swarmkv_store_periodic(struct swarmkv_module * mod_store, int thread_id)
 	int real_tid=__gettid(store->exec_cmd_handle);
 	assert(real_tid==thread_id);
 	clock_gettime(CLOCK_MONOTONIC, &start);
-	//Ease the lock contention among work threads
+
 	struct swarmkv_store_thread *thr=&store->threads[real_tid];
-	
+	thr->calls++;
 	struct sync_master *sync_master=sync_master_new();
 	DL_FOREACH_SAFE(thr->sync_queue, ctr, tmp)
 	{
@@ -573,6 +575,11 @@ void swarmkv_store_periodic(struct swarmkv_module * mod_store, int thread_id)
 		ctr->is_in_sync_q=0;
 		store->synced++;
 		n_synced++;
+		for(int i=0; i<utarray_len(ctr->replica_node_list); i++)
+		{
+			printf("Debug: %s synced %s -> %s\n", ctr->obj.key, store->self.addr, ((node_t*)utarray_eltptr(ctr->replica_node_list, i))->addr);
+		}
+		
 		if(n_synced>=MAX_SYNC_PER_PERIOD) break;
 	}
 	node_t peer;
@@ -692,11 +699,7 @@ enum cmd_exec_result crdt_add_command(struct swarmkv_module *mod_store, const st
 	crdt_get_cmd->argv[1]=sdsnew("get");
 	crdt_get_cmd->argv[2]=sdsdup(key);
 	size_t n_replica_node=cmd->argc-3;
-	node_t *replica_nodes=ALLOC(node_t, n_replica_node);
-	for(size_t i=0; i<n_replica_node; i++)
-	{
-		node_init_from_sds(&replica_nodes[i], cmd->argv[3+i]);
-	}
+
 	ctr=store_lookup_scontainer(store, key);
 	if(!ctr)
 	{
@@ -711,28 +714,27 @@ enum cmd_exec_result crdt_add_command(struct swarmkv_module *mod_store, const st
 		}
 		store_add_scontainer(store, ctr);
 	}
+	node_t *replica_nodes=ALLOC(node_t, n_replica_node);
 	for(size_t i=0; i<n_replica_node; i++)
 	{
+		node_init_from_sds(&replica_nodes[i], cmd->argv[3+i]);
+		assert(node_compare(replica_nodes+i, &store->self)!=0);
 		scontainer_add_replica_node(ctr, replica_nodes+i);
 	}
-
+	struct swarmkv_cmd *crdt_join_cmd=NULL;
 	for(size_t i=0; i<n_replica_node; i++)
 	{
 		if(i<max_pull_node_num)
 		{
 			crdt_generic_call(store, CRDT_GET, crdt_get_cmd, replica_nodes+i);
 		}
-		else
-		{
-			struct swarmkv_cmd *crdt_join_cmd=NULL;
-			crdt_join_cmd=swarmkv_cmd_new(4);
-			crdt_join_cmd->argv[0]=sdsnew("crdt");
-			crdt_join_cmd->argv[1]=sdsnew("merge");
-			crdt_join_cmd->argv[2]=sdsdup(ctr->obj.key);
-			crdt_join_cmd->argv[3]=node_addr2sds(replica_nodes+i);
-			crdt_generic_call(store, CRDT_JOIN, crdt_join_cmd, replica_nodes+i);
-			swarmkv_cmd_free(crdt_join_cmd);
-		}
+		crdt_join_cmd=swarmkv_cmd_new(4);
+		crdt_join_cmd->argv[0]=sdsnew("crdt");
+		crdt_join_cmd->argv[1]=sdsnew("join");
+		crdt_join_cmd->argv[2]=sdsdup(ctr->obj.key);
+		crdt_join_cmd->argv[3]=node_addr2sds(&store->self);
+		crdt_generic_call(store, CRDT_JOIN, crdt_join_cmd, replica_nodes+i);
+		swarmkv_cmd_free(crdt_join_cmd);
 	}
 	swarmkv_cmd_free(crdt_get_cmd);
 	crdt_get_cmd=NULL;
@@ -753,7 +755,12 @@ enum cmd_exec_result crdt_get_command(struct swarmkv_module *mod_store, const st
 	ctr=store_lookup_scontainer(store, key);
 	if(ctr)
 	{
-		scontainer_add_replica_node(ctr, accessing_node);
+/*
+		if(node_compare(accessing_node, &store->self))
+		{
+			scontainer_add_replica_node(ctr, accessing_node);
+		}
+*/
 		if(ctr->obj.type!=OBJ_TYPE_UNDEFINED)
 		{
 			scontainer_serialize(ctr, &blob, &blob_sz);
@@ -827,10 +834,12 @@ enum cmd_exec_result crdt_join_command(struct swarmkv_module *mod_store, const s
 	struct scontainer *ctr=NULL;
 	const sds key=cmd->argv[2];
 	assert(accessing_node!=NULL);//should never invoked by local
-
+	
     node_t replica_node;
     node_init_from_sds(&replica_node, cmd->argv[3]);
 	struct swarmkv_store *store=module2store(mod_store);
+	assert(node_compare(&replica_node, &store->self)!=0);
+	printf("CRDT JOIN %s %s <- %s\n", key, store->self.addr, cmd->argv[3]);
 	ctr=store_lookup_scontainer(store, key);
 	int added=0;
 	if(ctr)

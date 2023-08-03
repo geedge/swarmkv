@@ -44,6 +44,7 @@ struct swarmkv_reply
 	struct swarmkv_reply **elements;/* elements vector for SWARMKV_REPLY_ARRAY */
 };
 void swarmkv_reply_free(struct swarmkv_reply *reply);
+struct swarmkv_reply *swarmkv_reply_dup(const struct swarmkv_reply *origin);
 void swarmkv_reply_print(const struct swarmkv_reply *reply, FILE *stream);
 
 struct swarmkv_options;

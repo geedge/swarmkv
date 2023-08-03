@@ -41,6 +41,7 @@ int swarmkv_mesh_send(struct swarmkv_mesh *mesh, int current_thread_id, int dest
 	struct swarmkv_mesh_thread *curr_thr=mesh->threads+current_thread_id;
 	struct swarmkv_mesh_thread *dest_thr=mesh->threads+dest_thread_id;
 	ringbuf_t *dest_ring=dest_thr->ring;
+	assert(msg->magic == SWARMKV_MSG_MAGIC);
 	if(curr_thr->workers[dest_thread_id]==NULL)
 	{
 		curr_thr->workers[dest_thread_id]=ringbuf_register(dest_ring, current_thread_id);
@@ -73,21 +74,7 @@ void swarmkv_mesh_set_on_msg_cb(struct swarmkv_mesh *mesh, on_msg_callback_t cb_
 	mesh->msg_recv_arg=cb_arg;
 	return;
 }
-void swarmkv_mesh_free(struct swarmkv_mesh *mesh)
-{
-	for(int i=0; i<mesh->nr_thread; i++)
-	{
-		close(mesh->threads[i].efd);
-		ringbuf_release(mesh->threads[i].ring, RINGBUF_SIZE);
-		free(mesh->threads[i].ring);
-		free(mesh->threads[i].workers);
-		free(mesh->threads[i].buff);
-		event_del(mesh->threads[i].ev);
-		event_free(mesh->threads[i].ev);
-	}
-	free(mesh->threads);
-	free(mesh);
-}
+
 static void swarmkv_mesh_on_event(evutil_socket_t fd, short what, void * arg)
 {
 	struct swarmkv_mesh_thread *thread=(struct swarmkv_mesh_thread*)arg;
@@ -99,22 +86,19 @@ static void swarmkv_mesh_on_event(evutil_socket_t fd, short what, void * arg)
 	{
 		assert(0);
 	}
-	size_t offset=0, ret=0;
+	size_t offset=0, len=0;
 	struct swarmkv_msg *msg=NULL;
+	len=ringbuf_consume(ring, &offset);
+	assert(n_msg <= len/sizeof(struct swarmkv_msg*));
 	for(uint64_t i=0; i<n_msg; i++)
 	{
-		ret=ringbuf_consume(ring, &offset);
-		if(ret==0)
-		{
-			assert(0);
-			break;
-		}
-		ringbuf_release(ring, sizeof(struct swarmkv_msg*));
 		msg=*(struct swarmkv_msg**)(thread->buff+offset);
+		assert(msg->magic==SWARMKV_MSG_MAGIC);
+		//ownership of msg is transferred to the callback function.
 		mesh->on_msg_recv(msg, mesh->msg_recv_arg);
-		swarmkv_msg_free(msg);
+		offset+=sizeof(struct swarmkv_msg*);
 	}
-
+	ringbuf_release(ring, n_msg*sizeof(struct swarmkv_msg*));
 	return;
 }
 struct swarmkv_mesh *swarmkv_mesh_new(struct event_base *evbase[], int nthreads, struct log_handle *logger)
@@ -142,5 +126,27 @@ struct swarmkv_mesh *swarmkv_mesh_new(struct event_base *evbase[], int nthreads,
 		event_add(mesh->threads[i].ev, NULL);
 		mesh->threads[i].ref_mesh=mesh;
 	}
+	for(int i=0; i<mesh->nr_thread; i++)
+	{
+		for(int j=0; j<mesh->nr_thread; j++)
+		{
+			mesh->threads[i].workers[j]=ringbuf_register(mesh->threads[j].ring, i);
+		}
+	}
 	return mesh;
+}
+void swarmkv_mesh_free(struct swarmkv_mesh *mesh)
+{
+	for(int i=0; i<mesh->nr_thread; i++)
+	{
+		close(mesh->threads[i].efd);
+		ringbuf_release(mesh->threads[i].ring, RINGBUF_SIZE);
+		free(mesh->threads[i].ring);
+		free(mesh->threads[i].workers);
+		free(mesh->threads[i].buff);
+		event_del(mesh->threads[i].ev);
+		event_free(mesh->threads[i].ev);
+	}
+	free(mesh->threads);
+	free(mesh);
 }

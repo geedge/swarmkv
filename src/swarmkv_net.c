@@ -335,8 +335,9 @@ static void peer_conn_read_cb(struct bufferevent *bev, void *arg)
 				break;
 			}
 			msg=swarmkv_msg_deserialize(recv_buff, msg_sz);
+			//onwership of msg is transfered to on_msg_cb
 			thr->ref_net->on_msg_cb(msg, thr->ref_net->on_msg_cb_arg);
-			swarmkv_msg_free(msg);
+			//swarmkv_msg_free(msg);
 			msg=NULL;
 			evbuffer_drain(input, msg_sz);
 			thr->stat.input_bytes += msg_sz;

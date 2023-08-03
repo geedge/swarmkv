@@ -66,7 +66,8 @@ struct swarmkv
 
 	int thread_counter;
 	struct swarmkv_thread_ctx *threads;
-	
+	pthread_barrier_t barrier;
+
 	struct event_base **ref_evbases;
 
 	node_t self;
@@ -100,6 +101,7 @@ void swarmkv_register_thread(struct swarmkv *db)
 	db->threads[thread_id].thread_id=thread_id;
 	return;
 }
+
 int __gettid(struct swarmkv *db)
 {
 	int sys_tid=syscall(SYS_gettid);
@@ -113,7 +115,11 @@ int __gettid(struct swarmkv *db)
 	assert(0);
 	return -1;
 }
-
+struct swarmkv_thread_ctx *swarmkv_get_thread_ctx(struct swarmkv *db)
+{
+	int tid=__gettid(db);
+	return &db->threads[tid];
+}
 void __exec_cmd(struct swarmkv *db, const node_t *accessing_node, const node_t *target_node, const struct swarmkv_cmd *cmd, struct future *future_of_caller);
 struct local_caller_ctx
 {
@@ -148,7 +154,7 @@ void exec_for_local(struct swarmkv *db, const struct swarmkv_cmd *cmd, const nod
 								local_caller_on_success,
 								local_caller_on_fail,
 								ctx);
-	__exec_cmd(db, NULL, target_node, cmd, ctx->my_future);
+	__exec_cmd(db, &db->self, target_node, cmd, ctx->my_future);
 	return;
 }
 struct remote_caller_ctx
@@ -531,10 +537,6 @@ struct swarmkv_cmd_spec *get_spec_by_argv(struct swarmkv *db, size_t argc, char*
 	fclose(logfile);
 	sleep(1000);
 }
-static void __dummy_event_handler(evutil_socket_t fd, short what, void * arg)
-{
-
-}
 void __swarmkv_periodic(evutil_socket_t fd, short what, void * arg)
 {
 	struct swarmkv_thread_ctx *thread=(struct swarmkv_thread_ctx *)arg;
@@ -543,9 +545,10 @@ void __swarmkv_periodic(evutil_socket_t fd, short what, void * arg)
 }
 void *swarmkv_worker_thread(void *arg)
 {
-	struct swarmkv_thread_ctx* ctx = (struct swarmkv_thread_ctx *) arg;
-	struct swarmkv *db=ctx->db;
-	swarmkv_register_thread(ctx->db);
+	struct swarmkv *db = (struct swarmkv *)arg;
+	swarmkv_register_thread(db);
+	int tid=__gettid(db);
+	struct swarmkv_thread_ctx *ctx = db->threads+tid;
 	char thread_name[16];
 	snprintf(thread_name, sizeof(thread_name), "swarmkv-%u", ctx->thread_id);
 	prctl(PR_SET_NAME, (unsigned long long) thread_name, NULL, NULL, NULL);
@@ -555,6 +558,7 @@ void *swarmkv_worker_thread(void *arg)
 	evtimer_add(periodic_ev, &sync_interval);
 	
 	ctx->is_dispatching=1;
+	pthread_barrier_wait(&db->barrier);
 
 	
 	int ret=event_base_dispatch(ctx->evbase);
@@ -574,25 +578,17 @@ void *swarmkv_worker_thread(void *arg)
 
 void swarmkv_threads_run(struct swarmkv *db)
 {
+	pthread_barrier_init(&db->barrier, NULL, db->opts->nr_worker_threads+1);
 	int i = 0, ret=0;
 	for (i = 0; i < db->opts->nr_worker_threads; i++)
 	{
-		ret=pthread_create(&db->threads[i].thr, NULL, swarmkv_worker_thread, (void *) (db->threads+i));
+		ret=pthread_create(&db->threads[i].thr, NULL, swarmkv_worker_thread, db);
 		if(ret !=0 )//error
 		{
 			log_fatal(db->logger, MODULE_SWAMRKV_CORE, "pthread_create() error %d", ret);
 		}
 	}
-	int running_threads=0;
-	while(running_threads < db->opts->nr_worker_threads)
-	{
-		running_threads=0;
-		for (i = 0; i < db->opts->nr_worker_threads; i++)
-		{
-			running_threads += db->threads[i].is_dispatching;
-		}
-		usleep(10);
-	}
+	pthread_barrier_wait(&db->barrier);
 	return;
 }
 
@@ -781,7 +777,7 @@ static void crdt_add_on_success(void *result, void *user)
 	assert(reply->type==SWARMKV_REPLY_STATUS);
 	if(ctx->future_of_caller)
 	{
-		__exec_cmd(ctx->db, NULL, NULL, ctx->cmd, ctx->future_of_caller);
+		__exec_cmd(ctx->db, &ctx->db->self, NULL, ctx->cmd, ctx->future_of_caller);
 	}
 	cmd_ctx_free(ctx);
 }
@@ -813,7 +809,7 @@ static void key_route_on_success(void *result, void *user)
 		}
 		if(n_replica_node>0)
 		{
-			__exec_cmd(ctx->db, NULL, replica_nodes+0, ctx->cmd, ctx->future_of_caller);
+			__exec_cmd(ctx->db,  &ctx->db->self, replica_nodes+0, ctx->cmd, ctx->future_of_caller);
 		}
 		if(self_is_a_replica)
 		{
@@ -821,7 +817,7 @@ static void key_route_on_success(void *result, void *user)
 			struct swarmkv_cmd *crdt_add_cmd=make_crdt_add_cmd(key, replica_nodes, n_replica_node);
 			crdt_add_ctx=cmd_ctx_new(ctx->db, ctx->cmd, n_replica_node>0?NULL:ctx->future_of_caller);
 			crdt_add_ctx->future_of_mine=future_create("crdt_add", crdt_add_on_success, generic_on_fail, crdt_add_ctx);
-			__exec_cmd(ctx->db, NULL, &ctx->db->self, crdt_add_cmd, crdt_add_ctx->future_of_mine);
+			__exec_cmd(ctx->db, &ctx->db->self, &ctx->db->self, crdt_add_cmd, crdt_add_ctx->future_of_mine);
 			swarmkv_cmd_free(crdt_add_cmd);
 		}
 		free(replica_nodes);
@@ -846,7 +842,7 @@ static int spec_gettid(struct swarmkv_cmd_spec *spec, const struct swarmkv_cmd *
 	}
 	return tid;
 }
-void on_msg_callback(struct swarmkv_msg *msg, void *arg)
+void __on_msg_callback(struct swarmkv_msg *msg, void *arg)
 {
 	struct swarmkv *db = (struct swarmkv *)arg;
 	int cur_tid=__gettid(db);
@@ -854,6 +850,7 @@ void on_msg_callback(struct swarmkv_msg *msg, void *arg)
 	{
 		assert(cur_tid < db->opts->nr_worker_threads);
 		exec_for_remote(db, msg);
+		swarmkv_msg_free(msg);
 	}
 	else
 	{
@@ -864,6 +861,7 @@ void on_msg_callback(struct swarmkv_msg *msg, void *arg)
 		else
 		{
 			swarmkv_rpc_complete(db->rpc_mgr, cur_tid, msg->sequence, msg->reply);
+			swarmkv_msg_free(msg);
 		}
 	}
 }
@@ -873,7 +871,12 @@ void __exec_cmd(struct swarmkv *db, const node_t *accessing_node, const node_t *
 	struct swarmkv_reply *reply=NULL;
 	struct promise *p=NULL;
 	int cur_tid=__gettid(db);
-	node_t peer;
+	
+	int is_called_by_self=1;
+	if(accessing_node && 0!=node_compare(&db->self, accessing_node))
+	{
+		is_called_by_self=0;
+	}
 	spec=get_spec_by_argv(db, cmd->argc, cmd->argv);
 	if(!spec)
 	{		
@@ -891,8 +894,8 @@ void __exec_cmd(struct swarmkv *db, const node_t *accessing_node, const node_t *
 		swarmkv_reply_free(reply);
 		return;
 	}
-	/*Initiating a non-auto-route command from local is NOT allowed.*/
-	if(!spec->auto_route && !accessing_node && !target_node)
+	/*Initiating a non-auto-route command without target from local is NOT allowed.*/
+	if(!spec->auto_route && is_called_by_self && !target_node)
 	{
 		reply=swarmkv_reply_new_error(error_no_target_node, spec->name);
 		p=future_to_promise(future_of_caller);
@@ -913,7 +916,7 @@ void __exec_cmd(struct swarmkv *db, const node_t *accessing_node, const node_t *
 	}
 	if(cur_tid != target_tid)
 	{
-		//cmd is executed in target thread's on_msg_callback
+		//cmd will be executed in target thread's on_msg_callback
 		long long sequence=swarmkv_rpc_launch(db->rpc_mgr, cur_tid, future_of_caller);
 		msg=swarmkv_msg_new_by_cmd(cmd, &db->self, cur_tid, sequence);
 		swarmkv_mesh_send(db->mesh, cur_tid, target_tid, msg);
@@ -928,13 +931,14 @@ void __exec_cmd(struct swarmkv *db, const node_t *accessing_node, const node_t *
 	swarmkv_monitor_record_command(db->mod_monitor, spec->name, timespec_diff_usec(&start, &end));
 	
 	
-	if(accessing_node && node_compare(&db->self, accessing_node))//Remote call, non-recursive exec
+	if(!is_called_by_self)//Remote call, non-recursive exec
 	{
 		struct promise *p=future_to_promise(future_of_caller);
 		promise_success(p, reply);
 		swarmkv_reply_free(reply);
 		return;
 	}
+	
 	switch(exec_ret)
 	{
 		case FINISHED:
@@ -946,10 +950,12 @@ void __exec_cmd(struct swarmkv *db, const node_t *accessing_node, const node_t *
 		}
 		case REDIRECT:
 		{
+			node_t peer;
 			struct cmd_ctx *ctx=cmd_ctx_new(db, cmd, future_of_caller);
 			node_init_from_reply(&peer, reply);
+			swarmkv_reply_free(reply);
 			ctx->future_of_mine=future_create("peer_exec", peer_exec_on_success, generic_on_fail, ctx);
-			__exec_cmd(db, NULL, &peer, cmd, ctx->future_of_mine);
+			__exec_cmd(db, &db->self, &peer, cmd, ctx->future_of_mine);
 			break;
 		}
 		case NEED_KEY_ROUTE:
@@ -957,9 +963,10 @@ void __exec_cmd(struct swarmkv *db, const node_t *accessing_node, const node_t *
 			struct swarmkv_cmd *keyspace_cmd=make_keyroute_cmd(spec->flag, cmd->argv[spec->key_offset], db->opts->dryrun? NULL:(&db->self));
 			struct cmd_ctx *ctx=cmd_ctx_new(db, cmd, future_of_caller);
 			ctx->future_of_mine=future_create("key_route", key_route_on_success, generic_on_fail, ctx);
-			__exec_cmd(db, NULL, NULL, keyspace_cmd, ctx->future_of_mine);
+			__exec_cmd(db, &db->self, NULL, keyspace_cmd, ctx->future_of_mine);
 			swarmkv_cmd_free(keyspace_cmd);
 			keyspace_cmd=NULL;
+			assert(reply==NULL);
 			break;
 		}
 		case ASYNC_WAIT:
@@ -1373,7 +1380,7 @@ struct swarmkv *swarmkv_open(struct swarmkv_options *opts, const char *db_name, 
 	}
 	db->rpc_mgr=swarmkv_rpc_mgr_new(db->opts, db->ref_evbases, opts->total_threads);
 	db->mesh=swarmkv_mesh_new(db->ref_evbases, opts->total_threads, db->logger);
-	swarmkv_mesh_set_on_msg_cb(db->mesh, on_msg_callback, db);
+	swarmkv_mesh_set_on_msg_cb(db->mesh, __on_msg_callback, db);
 	db->mod_monitor=swarmkv_monitor_new(db->opts);
 
 	//Note: if the cluster_port is 0, swarmkv_net_new updates db->self.cluster_port.
@@ -1382,7 +1389,7 @@ struct swarmkv *swarmkv_open(struct swarmkv_options *opts, const char *db_name, 
 	{
 		goto error_out;
 	}
-	swarmkv_net_set_on_msg_callback(db->net, on_msg_callback, db);
+	swarmkv_net_set_on_msg_callback(db->net, __on_msg_callback, db);
 
 
 	swarmkv_net_set_monitor_handle(db->net, db->mod_monitor);
@@ -1487,7 +1494,7 @@ void swarmkv_close(struct swarmkv * db)
 	db->opts->is_assigned_to_db=0;
 	swarmkv_options_free(db->opts);
 	db->opts=NULL;
-	
+	pthread_barrier_destroy(&db->barrier);
 	free(db);
 	return;
 }
