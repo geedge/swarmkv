@@ -342,7 +342,12 @@ void store_get_uuid(struct swarmkv_module* mod_store, uuid_t uuid)
 	uuid_copy(uuid, store->my_uuid);
 	return;
 }
-
+void store_get_node_addr(struct swarmkv_module* mod_store, node_t *node)
+{
+	struct swarmkv_store *store=module2store(mod_store);
+	node_copy(node, &store->self);
+	return;
+}
 void sobj_need_sync(struct swarmkv_module *mod_store, struct sobj *obj)
 {
 	struct swarmkv_store *store=module2store(mod_store);
@@ -577,7 +582,7 @@ void swarmkv_store_periodic(struct swarmkv_module * mod_store, int thread_id)
 		n_synced++;
 		for(int i=0; i<utarray_len(ctr->replica_node_list); i++)
 		{
-			printf("Debug: %s synced %s -> %s\n", ctr->obj.key, store->self.addr, ((node_t*)utarray_eltptr(ctr->replica_node_list, i))->addr);
+//			printf("Debug: %s synced %s -> %s\n", ctr->obj.key, store->self.addr, ((node_t*)utarray_eltptr(ctr->replica_node_list, i))->addr);
 		}
 		
 		if(n_synced>=MAX_SYNC_PER_PERIOD) break;
@@ -590,6 +595,8 @@ void swarmkv_store_periodic(struct swarmkv_module * mod_store, int thread_id)
 		ret=sync_master_get_cmd(sync_master, &peer, &cmd);
 		if(!ret) break;	
 		crdt_generic_call(store, CRDT_MERGE, cmd, &peer);
+		printf("Debug: %s synced %s -> %s\n", cmd->argv[2], store->self.addr, peer.addr);
+
 		swarmkv_cmd_free(cmd);
 		cmd=NULL;
 	}
@@ -791,7 +798,10 @@ enum cmd_exec_result crdt_merge_command(struct swarmkv_module *mod_store, const 
 	int __attribute__((__unused__))tid=0;
 	first_key_tid=store_gettid(mod_store, cmd->argv[2]);
 
+	node_t self;
+	store_get_node_addr(mod_store, &self);
 	store_get_uuid(mod_store, uuid);
+	printf("Merge: %s merge %s -> %s\n", accessing_node->addr, cmd->argv[2], self.addr);
 	for(size_t i=0; i<cmd->argc-2; i+=2)
 	{
 		key=cmd->argv[2+i];
@@ -828,23 +838,31 @@ enum cmd_exec_result crdt_del_command(struct swarmkv_module *mod_store, const st
 	}	
 	return FINISHED;
 }
-enum cmd_exec_result crdt_join_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result crdt_meet_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
 {
-	/* CRDT JOIN <key> IP:port*/
+	/* CRDT MEET <key> IP:port [IP:port ...]*/
 	struct scontainer *ctr=NULL;
 	const sds key=cmd->argv[2];
 	assert(accessing_node!=NULL);//should never invoked by local
 	
     node_t replica_node;
-    node_init_from_sds(&replica_node, cmd->argv[3]);
+   
 	struct swarmkv_store *store=module2store(mod_store);
-	assert(node_compare(&replica_node, &store->self)!=0);
-	printf("CRDT JOIN %s %s <- %s\n", key, store->self.addr, cmd->argv[3]);
+	//assert(node_compare(&replica_node, &store->self)!=0);
+	//printf("CRDT MEET %s %s <- %s\n", key, store->self.addr, cmd->argv[3]);
 	ctr=store_lookup_scontainer(store, key);
 	int added=0;
 	if(ctr)
 	{
-		added=scontainer_add_replica_node(ctr, &replica_node);
+		for(int i=0; i<cmd->argc-3; i++)
+		{
+			node_init_from_sds(&replica_node, cmd->argv[3+i]);
+			if(node_compare(&replica_node, &store->self)==0)
+			{
+				continue;
+			}
+			added+=scontainer_add_replica_node(ctr, &replica_node);
+		}
 		*reply=swarmkv_reply_new_integer(added);
 	}
 	else
@@ -910,7 +928,7 @@ enum cmd_exec_result crdt_exists_command(struct swarmkv_module *mod_store, const
 	sds key=cmd->argv[2];
 	struct sobj *obj=NULL;
 	obj=store_lookup(mod_store, key);
-	*reply=swarmkv_reply_new_integer(obj?1:0);
+	*reply=swarmkv_reply_new_integer((obj && obj->type!=OBJ_TYPE_UNDEFINED)?1:0);
 	return FINISHED;
 }
 

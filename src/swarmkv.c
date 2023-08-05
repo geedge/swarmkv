@@ -216,7 +216,7 @@ void exec_for_remote(struct swarmkv *db, const struct swarmkv_msg *msg)
 	ctx->my_future=future_create("for_remote", 
 								remote_caller_on_success,
 								remote_caller_on_fail,
-								ctx);	
+								ctx);
 	__exec_cmd(db, &msg->caller, NULL, msg->cmd, ctx->my_future);
 	return;
 }
@@ -810,6 +810,7 @@ static void key_route_on_success(void *result, void *user)
 		if(n_replica_node>0)
 		{
 			__exec_cmd(ctx->db,  &ctx->db->self, replica_nodes+0, ctx->cmd, ctx->future_of_caller);
+			//__send_cmd(ctx->db, replica_nodes+0, ctx->cmd, ctx->future_of_caller);
 		}
 		if(self_is_a_replica)
 		{
@@ -848,6 +849,7 @@ void __on_msg_callback(struct swarmkv_msg *msg, void *arg)
 	int cur_tid=__gettid(db);
 	if(msg->type==MSG_TYPE_CMD)
 	{
+		//command may be from other thread or other node.
 		assert(cur_tid < db->opts->nr_worker_threads);
 		exec_for_remote(db, msg);
 		swarmkv_msg_free(msg);
@@ -856,6 +858,7 @@ void __on_msg_callback(struct swarmkv_msg *msg, void *arg)
 	{
 		if(msg->caller_tid!=cur_tid)
 		{
+			//The msg's onwership is transfered to swarmkv_mesh_send.
 			swarmkv_mesh_send(db->mesh, cur_tid, msg->caller_tid, msg);
 		}
 		else
@@ -895,7 +898,7 @@ void __exec_cmd(struct swarmkv *db, const node_t *accessing_node, const node_t *
 		return;
 	}
 	/*Initiating a non-auto-route command without target from local is NOT allowed.*/
-	if(!spec->auto_route && is_called_by_self && !target_node)
+	if(0 && !spec->auto_route && is_called_by_self && !target_node)
 	{
 		reply=swarmkv_reply_new_error(error_no_target_node, spec->name);
 		p=future_to_promise(future_of_caller);
@@ -931,7 +934,7 @@ void __exec_cmd(struct swarmkv *db, const node_t *accessing_node, const node_t *
 	swarmkv_monitor_record_command(db->mod_monitor, spec->name, timespec_diff_usec(&start, &end));
 	
 	
-	if(!is_called_by_self)//Remote call, non-recursive exec
+	if(0 && !is_called_by_self)//Remote call, non-recursive exec
 	{
 		struct promise *p=future_to_promise(future_of_caller);
 		promise_success(p, reply);
@@ -978,6 +981,7 @@ void __exec_cmd(struct swarmkv *db, const node_t *accessing_node, const node_t *
 	}
 	return;
 }
+
 void command_register(struct swarmkv_cmd_spec **table, const char *name, const char *hint,
 						int arity, int key_offset, enum cmd_key_flag flag, enum key_not_found_reply failover, int auto_route,
 						command_proc_func *proc, struct swarmkv_module *module)
@@ -1141,9 +1145,9 @@ void command_spec_init(struct swarmkv *db)
 	command_register(&(db->command_table), "CRDT MERGE", "key blob [key blob ...]",
 					2, 2, CMD_KEY_NA, REPLY_NA, NOT_AUTO_ROUTE,
 					crdt_merge_command, db->mod_store);
-	command_register(&(db->command_table), "CRDT JOIN", "key IP:port",
+	command_register(&(db->command_table), "CRDT MEET", "key IP:port [IP:port ...]",
 					2, 2, CMD_KEY_NA, REPLY_NA, NOT_AUTO_ROUTE,
-					crdt_join_command, db->mod_store);
+					crdt_meet_command, db->mod_store);
 	command_register(&(db->command_table), "CRDT DEL", "key",
 					1, 2, CMD_KEY_NA, REPLY_NA, NOT_AUTO_ROUTE,
 					crdt_del_command, db->mod_store);

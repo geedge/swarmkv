@@ -175,10 +175,36 @@ void key_entry_deletion_notification(struct key_route_entry *key_entry, const no
 		struct crdt_del_ctx *ctx=ALLOC(struct crdt_del_ctx, 1);
 		node_copy(&ctx->peer, &replica->node);
 		ctx->key=sdsdup(key_entry->key);
-		ctx->f=future_create("_del", crdt_del_on_succ, crdt_del_on_fail, ctx);
+		ctx->f=future_create("crdt_del", crdt_del_on_succ, crdt_del_on_fail, ctx);
 		exec_cmd(exec_cmd_handle, self, &replica->node, crdt_del_cmd, ctx->f);
 	}
 	swarmkv_cmd_free(crdt_del_cmd);
+	return;
+}
+void key_entry_meet_replica(struct key_route_entry *key_entry, const node_t *self, exec_cmd_func *exec_cmd, struct swarmkv *exec_cmd_handle)
+{
+	struct replica_node *replica=NULL, *tmp=NULL;
+	int n_replica=HASH_COUNT(key_entry->hash_replica), i=0;
+	struct swarmkv_cmd *crdt_meet_cmd=swarmkv_cmd_new(3+n_replica);
+	crdt_meet_cmd->argv[0]=sdsnew("crdt");
+	crdt_meet_cmd->argv[1]=sdsnew("meet");
+	crdt_meet_cmd->argv[2]=sdsdup(key_entry->key);
+	
+	HASH_ITER(hh, key_entry->hash_replica, replica, tmp)
+	{
+		crdt_meet_cmd->argv[3+i]=node_addr2sds(&replica->node);
+		i++;
+	}
+	assert(i==n_replica);
+	HASH_ITER(hh, key_entry->hash_replica, replica, tmp)
+	{
+		struct crdt_del_ctx *ctx=ALLOC(struct crdt_del_ctx, 1);
+		node_copy(&ctx->peer, &replica->node);
+		ctx->key=sdsdup(key_entry->key);
+		ctx->f=future_create("crdt_meet", crdt_del_on_succ, crdt_del_on_fail, ctx);
+		exec_cmd(exec_cmd_handle, self, &replica->node, crdt_meet_cmd, ctx->f);
+	}
+	swarmkv_cmd_free(crdt_meet_cmd);
 	return;
 }
 
@@ -1672,6 +1698,7 @@ enum cmd_exec_result key_route_generic(struct swarmkv_keyspace *ks, enum KEYSPAC
 				HASH_ADD_KEYPTR(hh, slot_rt->keyroute_table, key_entry->key, sdslen(key_entry->key), key_entry);
 			}
 			key_entry_add_replica_node(key_entry, new_replica);
+			key_entry_meet_replica(key_entry, &ks->self, ks->exec_cmd_func, ks->exec_cmd_handle);
 			*reply=key_entry_list_replica_nodes(key_entry);
 			break;
 		case KEYSPACE_XRADD:
@@ -1679,6 +1706,7 @@ enum cmd_exec_result key_route_generic(struct swarmkv_keyspace *ks, enum KEYSPAC
 			{
 				key_entry_add_replica_node(key_entry, new_replica);
 				*reply=key_entry_list_replica_nodes(key_entry);
+				key_entry_meet_replica(key_entry, &ks->self, ks->exec_cmd_func, ks->exec_cmd_handle);
 			}
 			else
 			{

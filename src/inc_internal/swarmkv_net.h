@@ -8,6 +8,7 @@ struct swarmkv_net *swarmkv_net_new(struct event_base *evbases[], int nr_worker_
 void swarmkv_net_free(struct swarmkv_net *net);
 
 void swarmkv_net_set_on_msg_callback(struct swarmkv_net *net, on_msg_callback_t *cb, void *cb_arg);
+//swamrkv_net_send takes the ownership of msg.
 void swarmkv_net_send(struct swarmkv_net *net, const node_t *dest, struct swarmkv_msg *msg);
 
 void swarmkv_net_set_monitor_handle(struct swarmkv_net *net, struct swarmkv_module *mod_monitor);
