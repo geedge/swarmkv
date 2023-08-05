@@ -580,11 +580,6 @@ void swarmkv_store_periodic(struct swarmkv_module * mod_store, int thread_id)
 		ctr->is_in_sync_q=0;
 		store->synced++;
 		n_synced++;
-		for(int i=0; i<utarray_len(ctr->replica_node_list); i++)
-		{
-//			printf("Debug: %s synced %s -> %s\n", ctr->obj.key, store->self.addr, ((node_t*)utarray_eltptr(ctr->replica_node_list, i))->addr);
-		}
-		
 		if(n_synced>=MAX_SYNC_PER_PERIOD) break;
 	}
 	node_t peer;
@@ -595,8 +590,7 @@ void swarmkv_store_periodic(struct swarmkv_module * mod_store, int thread_id)
 		ret=sync_master_get_cmd(sync_master, &peer, &cmd);
 		if(!ret) break;	
 		crdt_generic_call(store, CRDT_MERGE, cmd, &peer);
-		printf("Debug: %s synced %s -> %s\n", cmd->argv[2], store->self.addr, peer.addr);
-
+		//printf("Debug: %s synced %s -> %s\n", cmd->argv[2], store->self.addr, peer.addr);
 		swarmkv_cmd_free(cmd);
 		cmd=NULL;
 	}
@@ -676,7 +670,7 @@ struct pattern_match_arg
 	sds pattern;
     UT_array *matched_replies;
 };
-enum cmd_exec_result type_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result type_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
 {
 /*TYPE key*/
 	struct sobj *obj=NULL;
@@ -689,7 +683,7 @@ enum cmd_exec_result type_command(struct swarmkv_module *mod_store, const struct
 	*reply=swarmkv_reply_new_string_fmt(sobj_specs[obj->type].type_name);
 	return FINISHED;
 }
-enum cmd_exec_result crdt_add_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result crdt_add_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
 {
 /*CRDT ADD key [IP:port ...]*/
 	struct scontainer *ctr=NULL;
@@ -749,7 +743,7 @@ enum cmd_exec_result crdt_add_command(struct swarmkv_module *mod_store, const st
 	*reply=swarmkv_reply_new_status("OK");
 	return FINISHED;
 }
-enum cmd_exec_result crdt_get_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result crdt_get_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
 {
 /* CRDT GET key */
 	struct swarmkv_store *store=module2store(mod_store);
@@ -757,17 +751,10 @@ enum cmd_exec_result crdt_get_command(struct swarmkv_module *mod_store, const st
 	const sds key=cmd->argv[2];
 	char *blob=NULL;
 	size_t blob_sz=0;
-		
-	assert(accessing_node!=NULL);//should never invoked by local
+	
 	ctr=store_lookup_scontainer(store, key);
 	if(ctr)
 	{
-/*
-		if(node_compare(accessing_node, &store->self))
-		{
-			scontainer_add_replica_node(ctr, accessing_node);
-		}
-*/
 		if(ctr->obj.type!=OBJ_TYPE_UNDEFINED)
 		{
 			scontainer_serialize(ctr, &blob, &blob_sz);
@@ -786,12 +773,11 @@ enum cmd_exec_result crdt_get_command(struct swarmkv_module *mod_store, const st
 	return FINISHED;
 	
 }
-enum cmd_exec_result crdt_merge_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result crdt_merge_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
 {
 /* CRDT MERGE key blob [key blob ...]*/
 	struct sobj *obj=NULL;
 	sds key=NULL, blob=NULL;	
-	assert(accessing_node!=NULL);//should never invoked by local
 	long long synced=0;
 	uuid_t uuid;
 	int __attribute__((__unused__))first_key_tid=0;
@@ -801,7 +787,7 @@ enum cmd_exec_result crdt_merge_command(struct swarmkv_module *mod_store, const 
 	node_t self;
 	store_get_node_addr(mod_store, &self);
 	store_get_uuid(mod_store, uuid);
-	printf("Merge: %s merge %s -> %s\n", accessing_node->addr, cmd->argv[2], self.addr);
+
 	for(size_t i=0; i<cmd->argc-2; i+=2)
 	{
 		key=cmd->argv[2+i];
@@ -819,7 +805,7 @@ enum cmd_exec_result crdt_merge_command(struct swarmkv_module *mod_store, const 
 	return FINISHED;
 }
 
-enum cmd_exec_result crdt_del_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result crdt_del_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
 {
     /* CRDT DEL <key> */
 	sds key=cmd->argv[2];
@@ -838,12 +824,11 @@ enum cmd_exec_result crdt_del_command(struct swarmkv_module *mod_store, const st
 	}	
 	return FINISHED;
 }
-enum cmd_exec_result crdt_meet_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result crdt_meet_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
 {
 	/* CRDT MEET <key> IP:port [IP:port ...]*/
 	struct scontainer *ctr=NULL;
 	const sds key=cmd->argv[2];
-	assert(accessing_node!=NULL);//should never invoked by local
 	
     node_t replica_node;
    
@@ -887,7 +872,7 @@ static void pattern_match_function(struct sobj * obj, void *cb_arg)
 }
 
 
-enum cmd_exec_result crdt_keys_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result crdt_keys_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
 {
 //CRDT KEYS tid pattern
     int i=0, n_matched=0;
@@ -922,7 +907,7 @@ enum cmd_exec_result crdt_keys_command(struct swarmkv_module *mod_store, const s
 	return FINISHED;
 }
 
-enum cmd_exec_result crdt_exists_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result crdt_exists_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
 {
 //CRDT EXISTS key
 	sds key=cmd->argv[2];
@@ -933,7 +918,7 @@ enum cmd_exec_result crdt_exists_command(struct swarmkv_module *mod_store, const
 }
 
 
-enum cmd_exec_result crdt_rlist_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result crdt_rlist_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
 {
 /* CRDT RLIST key*/
 	const sds key=cmd->argv[2];
@@ -957,7 +942,7 @@ enum cmd_exec_result crdt_rlist_command(struct swarmkv_module *mod_store, const 
 	}
 	return FINISHED;
 }
-enum cmd_exec_result crdt_info_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result crdt_info_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
 {
 /*CRDT INFO key*/
 	const sds key=cmd->argv[2];

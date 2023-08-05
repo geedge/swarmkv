@@ -120,7 +120,7 @@ struct swarmkv_thread_ctx *swarmkv_get_thread_ctx(struct swarmkv *db)
 	int tid=__gettid(db);
 	return &db->threads[tid];
 }
-void __exec_cmd(struct swarmkv *db, const node_t *accessing_node, const node_t *target_node, const struct swarmkv_cmd *cmd, struct future *future_of_caller);
+void __exec_cmd(struct swarmkv *db, const node_t *acessing_node, const node_t *target_node, const struct swarmkv_cmd *cmd, struct future *future_of_caller);
 struct local_caller_ctx
 {
 	swarmkv_on_reply_callback_t * cb;
@@ -220,7 +220,7 @@ void exec_for_remote(struct swarmkv *db, const struct swarmkv_msg *msg)
 	__exec_cmd(db, &msg->caller, NULL, msg->cmd, ctx->my_future);
 	return;
 }
-enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
 {
 	char node_info_buff[4096], store_info_buff[4096], ks_info_buff[4096], net_info_buff[4096];
 	char all_info_buff[4096*4];
@@ -373,59 +373,14 @@ void tunnel_on_reply_cb(const struct swarmkv_reply *reply, void * arg)
 	}
 	pthread_mutex_unlock(&db->lock_tunnel);
 }
-enum cmd_exec_result tunnel_command(struct swarmkv_module *mod_db, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
-{
-	struct swarmkv *db=module2db(mod_db);
-	struct tunnel_ctx *ctx=NULL;
-	node_t target;
-	node_init_from_sds(&target, cmd->argv[1]);
-	struct swarmkv_cmd *real_cmd=swarmkv_cmd_new(cmd->argc-2);
-	for(size_t i=0; i<cmd->argc-2; i++)
-	{
-		real_cmd->argv[i]=sdsdup(cmd->argv[i+2]);
-	}
-	if(0==pthread_mutex_trylock(&db->lock_tunnel))
-	{
-		ctx=ALLOC(struct tunnel_ctx, 1);
-		ctx->db=db;
-		ctx->is_async=0;
-		exec_for_local(db, real_cmd, &target, tunnel_on_reply_cb, ctx);
-		swarmkv_cmd_free(real_cmd);
-		if(ctx->is_callback_executed)
-		{
-			*reply=ctx->reply;
-			ctx->reply=NULL;
-			free(ctx);
-			return FINISHED;
-		}
-		else
-		{
-			ctx->is_async=1;
-			if(accessing_node)
-			{
-				node_copy(&db->tunnel_for, accessing_node);
-			}
-			else
-			{
-				node_copy(&db->tunnel_for, &db->self);
-			}
-		}
-	}
-	else
-	{
-		*reply=swarmkv_reply_new_error(error_tunnel_busy, db->tunnel_for.addr);
-		return FINISHED;
-	}
-	return ASYNC_WAIT;
-}
-enum cmd_exec_result ping_command(struct swarmkv_module *mod_db, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result ping_command(struct swarmkv_module *mod_db, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
 {
 	struct swarmkv *db=module2db(mod_db);
 	node_t target;
 	node_init_from_sds(&target, cmd->argv[1]);
 	if(0==node_compare(&target, &db->self))
 	{
-		*reply=swarmkv_reply_new_string_fmt("PONG %s -> %s", db->self.addr, accessing_node?accessing_node->addr:db->self.addr);
+		*reply=swarmkv_reply_new_string_fmt("PONG from %s", swarmkv_self_address(db));
 		return FINISHED;
 	}
 	else
@@ -434,7 +389,7 @@ enum cmd_exec_result ping_command(struct swarmkv_module *mod_db, const struct sw
 		return REDIRECT;
 	}
 }
-enum cmd_exec_result __attribute__((optimize("O0"))) debug_command(struct swarmkv_module *mod_db, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result __attribute__((optimize("O0"))) debug_command(struct swarmkv_module *mod_db, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
 {
 
 	if(cmd->argc==2 && !strcasecmp(cmd->argv[1], "help") )
@@ -477,11 +432,11 @@ enum cmd_exec_result __attribute__((optimize("O0"))) debug_command(struct swarmk
 	return FINISHED;
 }
 
-enum cmd_exec_result config_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result config_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
 {
 	return FINISHED;
 }
-enum cmd_exec_result command_list_command(struct swarmkv_module *mod_db, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result command_list_command(struct swarmkv_module *mod_db, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
 {
 	struct swarmkv *db=module2db(mod_db);
 	size_t cnt=HASH_COUNT(db->command_table);
@@ -875,11 +830,6 @@ void __exec_cmd(struct swarmkv *db, const node_t *accessing_node, const node_t *
 	struct promise *p=NULL;
 	int cur_tid=__gettid(db);
 	
-	int is_called_by_self=1;
-	if(accessing_node && 0!=node_compare(&db->self, accessing_node))
-	{
-		is_called_by_self=0;
-	}
 	spec=get_spec_by_argv(db, cmd->argc, cmd->argv);
 	if(!spec)
 	{		
@@ -897,15 +847,7 @@ void __exec_cmd(struct swarmkv *db, const node_t *accessing_node, const node_t *
 		swarmkv_reply_free(reply);
 		return;
 	}
-	/*Initiating a non-auto-route command without target from local is NOT allowed.*/
-	if(0 && !spec->auto_route && is_called_by_self && !target_node)
-	{
-		reply=swarmkv_reply_new_error(error_no_target_node, spec->name);
-		p=future_to_promise(future_of_caller);
-		promise_success(p, reply);
-		swarmkv_reply_free(reply);
-		return;
-	}
+
 	int target_tid=spec_gettid(spec, cmd, db->opts->nr_worker_threads);
 	
 	struct swarmkv_msg *msg=NULL;
@@ -929,18 +871,10 @@ void __exec_cmd(struct swarmkv *db, const node_t *accessing_node, const node_t *
 	enum cmd_exec_result exec_ret=FINISHED;
 	struct timespec start, end;
 	clock_gettime(CLOCK_MONOTONIC_COARSE, &start);
-	exec_ret=spec->proc(spec->module, cmd, accessing_node, &reply);
+	exec_ret=spec->proc(spec->module, cmd, &reply);
 	clock_gettime(CLOCK_MONOTONIC_COARSE, &end);
 	swarmkv_monitor_record_command(db->mod_monitor, spec->name, timespec_diff_usec(&start, &end));
 	
-	
-	if(0 && !is_called_by_self)//Remote call, non-recursive exec
-	{
-		struct promise *p=future_to_promise(future_of_caller);
-		promise_success(p, reply);
-		swarmkv_reply_free(reply);
-		return;
-	}
 	
 	switch(exec_ret)
 	{
@@ -970,11 +904,9 @@ void __exec_cmd(struct swarmkv *db, const node_t *accessing_node, const node_t *
 			swarmkv_cmd_free(keyspace_cmd);
 			keyspace_cmd=NULL;
 			assert(reply==NULL);
+			assert(spec->auto_route==1);
 			break;
 		}
-		case ASYNC_WAIT:
-			db->f_tunnel=future_of_caller;
-			break;
 		default:
 			assert(0);
 			break;
@@ -1127,9 +1059,6 @@ void command_spec_init(struct swarmkv *db)
 	command_register(&(db->command_table), "COMMAND LIST", "",
 					0, KEY_OFFSET_NONE, CMD_KEY_NA, REPLY_NA, AUTO_ROUTE,
 					command_list_command, &db->module);	
-	command_register(&(db->command_table), "TUNNEL", "IP:port command ...",
-					2, KEY_OFFSET_NONE, CMD_KEY_NA, REPLY_NA, AUTO_ROUTE,
-					tunnel_command, &db->module);
 
 	command_register(&(db->command_table), "LATENCY", "<subcommand>",
 					1, KEY_OFFSET_NONE, CMD_KEY_NA, REPLY_NA, NOT_AUTO_ROUTE,

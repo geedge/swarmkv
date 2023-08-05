@@ -29,7 +29,7 @@ static int get_consume_type(sds s, enum tb_consume_type *consume_type)
 	}
 	return 0;
 }
-enum cmd_exec_result tcfg_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result tcfg_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
 {
 /*TCFG key rate capacity*/
 	struct sobj *obj=NULL;
@@ -81,7 +81,7 @@ enum cmd_exec_result tcfg_command(struct swarmkv_module *mod_store, const struct
 	}	
 	return FINISHED;
 }
-enum cmd_exec_result tinfo_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result tinfo_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
 {
 /*TINFO key*/	
 	struct sobj *obj=NULL;
@@ -124,7 +124,7 @@ enum cmd_exec_result tinfo_command(struct swarmkv_module *mod_store, const struc
 	assert(i==10);
 	return FINISHED;
 }
-enum cmd_exec_result tconsume_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result tconsume_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
 {
 /*TCONSUME key tokens [NORMAL|FORCE|FLEXIBLE]*/
 	struct sobj *obj=NULL;
@@ -177,7 +177,7 @@ bool is_power_of_2(long long num)
     }
     return false;
 }
-enum cmd_exec_result ftcfg_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result ftcfg_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
 {
 /*FTCFG key rate capacity divisor*/
 	struct sobj *obj=NULL;
@@ -234,7 +234,7 @@ enum cmd_exec_result ftcfg_command(struct swarmkv_module *mod_store, const struc
 	}	
 	return FINISHED;
 }
-enum cmd_exec_result ftconsume_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result ftconsume_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
 {
 /*FTCONSUME key member weight tokens*/	
 	struct sobj *obj=NULL;
@@ -278,7 +278,7 @@ enum cmd_exec_result ftconsume_command(struct swarmkv_module *mod_store, const s
 	sobj_need_sync(mod_store, obj);
 	return FINISHED;
 }
-enum cmd_exec_result ftinfo_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result ftinfo_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
 {
 /*FTINFO key*/	
 	struct sobj *obj=NULL;
@@ -324,7 +324,7 @@ enum cmd_exec_result ftinfo_command(struct swarmkv_module *mod_store, const stru
 	assert(i==14);
 	return FINISHED;
 }
-enum cmd_exec_result btcfg_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result btcfg_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
 {
 /*BTCFG key rate capacity buckets*/
 	struct sobj *obj=NULL;
@@ -381,7 +381,7 @@ enum cmd_exec_result btcfg_command(struct swarmkv_module *mod_store, const struc
 	}	
 	return FINISHED;
 }
-enum cmd_exec_result btconsume_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result btconsume_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
 {
 /*BTCONSUME key member tokens [NORMAL|FORCE|FLEXIBLE]*/	
 	struct sobj *obj=NULL;
@@ -429,7 +429,7 @@ enum cmd_exec_result btconsume_command(struct swarmkv_module *mod_store, const s
 	sobj_need_sync(mod_store, obj);
 	return FINISHED;
 }
-enum cmd_exec_result btinfo_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result btinfo_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
 {
 /*BTINFO key [member]*/	
 	struct sobj *obj=NULL;

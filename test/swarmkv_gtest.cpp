@@ -1368,7 +1368,7 @@ TEST_F(SwarmkvTwoNodes, TypeHash)
 TEST_F(SwarmkvTwoNodes, Wait)
 {
 	//return;
-	//sleep(3600*2);
+	sleep(3600*2);
 }
 TEST(CloudNative, AnnounceIPPort)
 {
@@ -1425,7 +1425,7 @@ TEST(CloudNative, AnnounceIPPort)
 		swarmkv_close(db[i]);
 	}
 }
-#define TEST_NODE_NUMBER	2
+#define TEST_NODE_NUMBER	8
 class SwarmkvNNodes : public testing::Test 
 {
 
@@ -1449,7 +1449,7 @@ protected:
 			opts[i]=swarmkv_options_new();			
 			swarmkv_options_set_cluster_port(opts[i], 5210+i);
 			swarmkv_options_set_health_check_port(opts[i], 6210+i);
-			swarmkv_options_set_worker_thread_number(opts[i], 8);
+			swarmkv_options_set_worker_thread_number(opts[i], 2);
 			swarmkv_options_set_logger(opts[i], logger);
 			swarmkv_options_set_cluster_timeout_us(opts[i], 30*1000*1000);
 			db[i]=swarmkv_open(opts[i], cluster_name, &err);
@@ -1505,7 +1505,6 @@ TEST_F(SwarmkvNNodes, SET_GET)
 	swarmkv_reply_free(reply);
 
 	wait_for_sync();
-	sleep(2);
 	for(i=0; i<TEST_NODE_NUMBER; i++)
 	{
 		reply=swarmkv_command_on(db[i], swarmkv_self_address(db[i]), "CRDT EXISTS %s", key);

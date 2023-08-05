@@ -19,8 +19,7 @@ enum cmd_exec_result
 {
 	NEED_KEY_ROUTE,
 	REDIRECT,
-	FINISHED,
-	ASYNC_WAIT
+	FINISHED
 };
 
 /*

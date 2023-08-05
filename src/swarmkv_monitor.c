@@ -305,7 +305,7 @@ struct swarmkv_reply *lantency_generic(struct recorder **table, const char *key)
     }
     return reply;
 }
-enum cmd_exec_result latency_command(struct swarmkv_module *mod_monitor, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result latency_command(struct swarmkv_module *mod_monitor, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
 {
     struct swarmkv_monitor *monitor=module2monitor(mod_monitor);
 	if(cmd->argc==2 && !strcasecmp(cmd->argv[1], "help") )

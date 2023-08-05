@@ -1332,7 +1332,7 @@ void swarmkv_keyspace_info(struct swarmkv_module *mod_keyspace, struct keyspace_
 		pthread_mutex_unlock(&slot_rt->sanity_lock);
 	}
 }
-enum cmd_exec_result keyslot_command(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result keyslot_command(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
 {
 	/* KEYSLOT key*/
 	char *key=cmd->argv[1];
@@ -1340,7 +1340,7 @@ enum cmd_exec_result keyslot_command(struct swarmkv_module *mod_keyspace, const 
 	*reply=swarmkv_reply_new_integer(slot_id);
 	return FINISHED;
 }
-enum cmd_exec_result keyspace_setslot_command(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result keyspace_setslot_command(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
 {
 /* KEYSPACE SETSLOT <slot> IMPORTING|MIGRATING|NODE|STABLE IP:port */
 
@@ -1544,7 +1544,7 @@ long long key_slot_merge(struct slot_runtime *slot_rt, const char *blob, size_t 
 	return new_added_entry_num;
 }
 
-enum cmd_exec_result keyspace_getkeysinslot_command(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd,  const node_t *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result keyspace_getkeysinslot_command(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd,  struct swarmkv_reply **reply)
 {
 /* KEYSPACE GETKEYSINSLOT slot */
 	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
@@ -1568,7 +1568,7 @@ enum cmd_exec_result keyspace_getkeysinslot_command(struct swarmkv_module *mod_k
 	return FINISHED;
 }
 
-enum cmd_exec_result keyspace_addkeystoslot_command(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result keyspace_addkeystoslot_command(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
 {
 /* KEYSPACE ADDKEYSTOSLOT slot blob */
 
@@ -1596,7 +1596,7 @@ enum cmd_exec_result keyspace_addkeystoslot_command(struct swarmkv_module *mod_k
 	return FINISHED;
 }
 
-enum cmd_exec_result keyspace_delslotkeys_command(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result keyspace_delslotkeys_command(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
 {
 /* KEYSPACE DELSLOTKEYS slot */
 	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
@@ -1628,7 +1628,7 @@ enum cmd_exec_result keyspace_delslotkeys_command(struct swarmkv_module *mod_key
 	*reply=swarmkv_reply_new_integer(delete_num);
 	return FINISHED;
 }
-enum cmd_exec_result keyspace_countkeysinslot_command(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result keyspace_countkeysinslot_command(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
 {
 /*KEYSPACE COUNTKEYSINSLOT slot*/
 	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
@@ -1751,7 +1751,7 @@ enum cmd_exec_result key_route_generic(struct swarmkv_keyspace *ks, enum KEYSPAC
 }
 
 UT_icd ut_swarmkv_reply_pointer_icd = {sizeof(struct swarmkv_reply *), NULL, NULL, NULL};
-enum cmd_exec_result keyspace_keys_command(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result keyspace_keys_command(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
 {
 /* KEYSPACE KEYS key-pattern */
 
@@ -1803,7 +1803,7 @@ enum cmd_exec_result keyspace_keys_command(struct swarmkv_module *mod_keyspace, 
 	matched_replies=NULL;
 	return FINISHED;
 }
-enum cmd_exec_result keyspace_rlist_command(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result keyspace_rlist_command(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
 {
 /*KEYSPACE RLIST <key> */
 	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
@@ -1814,7 +1814,7 @@ enum cmd_exec_result keyspace_rlist_command(struct swarmkv_module *mod_keyspace,
 	return ret;
 }
 
-enum cmd_exec_result keyspace_radd_command(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result keyspace_radd_command(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
 {
 /*KEYSPACE RADD <key> IP:port*/
 	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
@@ -1837,7 +1837,7 @@ enum cmd_exec_result keyspace_radd_command(struct swarmkv_module *mod_keyspace, 
 	ret=key_route_generic(ks, KEYSPACE_RADD, key, &new_replica, reply);
 	return ret;
 }
-enum cmd_exec_result keyspace_xradd_command(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result keyspace_xradd_command(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
 {
 /*KEYSPACE XRADD <key> IP:port*/
 	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
@@ -1854,7 +1854,7 @@ enum cmd_exec_result keyspace_xradd_command(struct swarmkv_module *mod_keyspace,
 	return ret;
 }
 
-enum cmd_exec_result del_command(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result del_command(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
 {
 /*DEL <key> */
 	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
@@ -1864,7 +1864,7 @@ enum cmd_exec_result del_command(struct swarmkv_module *mod_keyspace, const stru
 	return ret;
 }
 
-enum cmd_exec_result keyspace_rdel_command(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result keyspace_rdel_command(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
 {
 /*KEYSPACE RDEL <key IP:port> */
 	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
@@ -1973,7 +1973,7 @@ enum cmd_exec_result key_ttl_generic(struct swarmkv_keyspace *ks, enum KEY_TTL_O
 	}
 	return FINISHED;
 }
-enum cmd_exec_result expire_command(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result expire_command(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
 {
 /* EXPIRE key seconds */
 	enum cmd_exec_result ret=0;
@@ -1981,7 +1981,7 @@ enum cmd_exec_result expire_command(struct swarmkv_module *mod_keyspace, const s
 	ret=key_ttl_generic(ks, KEY_TTL_SET, cmd, reply);
 	return ret;
 }
-enum cmd_exec_result ttl_command(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result ttl_command(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
 {
 /* TTL key */
 	enum cmd_exec_result ret=0;
@@ -1989,7 +1989,7 @@ enum cmd_exec_result ttl_command(struct swarmkv_module *mod_keyspace, const stru
 	ret=key_ttl_generic(ks, KEY_TTL_GET, cmd, reply);
 	return ret;
 }
-enum cmd_exec_result persist_command(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, const node_t *accessing_node, struct swarmkv_reply **reply)
+enum cmd_exec_result persist_command(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
 {
 /* PERSIST key */
 	enum cmd_exec_result ret=0;
