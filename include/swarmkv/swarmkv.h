@@ -80,7 +80,15 @@ void swarmkv_close(struct swarmkv * db);
 
 
 void swarmkv_register_thread(struct swarmkv *db);
-void swarmkv_caller_loop(struct swarmkv *db, struct timeval *tv);
+
+//Do not exit the loop because we have no pending events. 
+#define	SWARMKV_LOOP_NO_EXIT_ON_EMPTY	0x04
+//Do not block: see which events are ready now, run the callbacks of the highest-priority ones, then exit.
+#define	SWARMKV_LOOP_NONBLOCK			0x02
+//	Block until we have an active event, then exit once all active events have had their callbacks run.
+#define	SWARMKV_LOOP_ONCE				0x01
+//flags	any combination of SWARMKV_LOOP_ONCE | SWARMKV_LOOP_NONBLOCK | SWARMKV_LOOP_NO_EXIT_ON_EMPTY
+void swarmkv_caller_loop(struct swarmkv *db, int flags, struct timeval *tv);
 void swarmkv_caller_loop_break(struct swarmkv *db);
 
 //Blocking function

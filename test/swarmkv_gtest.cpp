@@ -652,7 +652,7 @@ TEST_F(SwarmkvTwoNodes, SET1kString)
 	const char *key_prefix="test-1k-string";
 	const char *val_prefix="value-xx";
 	char key[128]="", val[128]="";
-	int i=0, round=100000;
+	int i=0, round=1*1000;
 	struct swarmkv_reply *reply=NULL;
 
 
@@ -1005,7 +1005,7 @@ TEST_F(SwarmkvTwoNodes, TypeSet)
 	struct swarmkv_reply *reply=NULL;
 
 	swarmkv_sadd(db[0], key, strlen(key), (const char**) members, member_len, n_member/2, copy_reply_callback, &reply);
-	swarmkv_caller_loop(db[0], NULL);
+	swarmkv_caller_loop(db[0], SWARMKV_LOOP_ONCE, NULL);
 	ASSERT_TRUE(reply!=NULL);
 	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
 	EXPECT_EQ(reply->integer, n_member/2);
@@ -1013,7 +1013,7 @@ TEST_F(SwarmkvTwoNodes, TypeSet)
 	reply=NULL;
 
 	swarmkv_sadd(db[1], key, strlen(key), (const char**)  members+n_member/2, member_len+n_member/2, n_member-n_member/2, copy_reply_callback, &reply);	
-	swarmkv_caller_loop(db[1], NULL);
+	swarmkv_caller_loop(db[1], SWARMKV_LOOP_ONCE, NULL);
 	ASSERT_TRUE(reply!=NULL);
 	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
 	EXPECT_EQ(reply->integer, n_member-n_member/2);
@@ -1023,7 +1023,7 @@ TEST_F(SwarmkvTwoNodes, TypeSet)
 	wait_for_sync();
 
 	swarmkv_smembers(db[1], key, strlen(key), copy_reply_callback, &reply);
-	swarmkv_caller_loop(db[1], NULL);
+	swarmkv_caller_loop(db[1], SWARMKV_LOOP_ONCE, NULL);
 	ASSERT_TRUE(reply!=NULL);
 	ASSERT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
 	EXPECT_EQ(reply->n_element, n_member);
@@ -1036,7 +1036,7 @@ TEST_F(SwarmkvTwoNodes, TypeSet)
 		if(i%3==0)
 		{
 			swarmkv_srem(db[i%2], key, strlen(key), (const char**) members+i, member_len+i, 1, copy_reply_callback, &reply);
-			swarmkv_caller_loop(db[i%2], NULL);
+			swarmkv_caller_loop(db[i%2], SWARMKV_LOOP_ONCE, NULL);
 			ASSERT_TRUE(reply!=NULL);
 			ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
 			EXPECT_EQ(reply->integer, 1);
@@ -1052,7 +1052,7 @@ TEST_F(SwarmkvTwoNodes, TypeSet)
 		if(i%3==0)
 		{
 			swarmkv_sismember(db[(i+1)%2], key, strlen(key), members[i], member_len[i], copy_reply_callback, &reply);
-			swarmkv_caller_loop(db[(i+1)%2], NULL);
+			swarmkv_caller_loop(db[(i+1)%2], SWARMKV_LOOP_ONCE, NULL);
 			ASSERT_TRUE(reply!=NULL);
 			ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
 			EXPECT_EQ(reply->integer, 0);

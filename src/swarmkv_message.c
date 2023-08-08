@@ -183,7 +183,7 @@ static void swarmkv_cmd_serialize(const struct swarmkv_cmd *cmd, char **blob, si
 	*blob_sz=root_mpack_sz;
 	return;
 }
-struct swarmkv_msg *swarmkv_msg_new_by_cmd(const struct swarmkv_cmd *cmd, const node_t *caller, int caller_tid, long long sequence)
+struct swarmkv_msg *swarmkv_msg_new_by_cmd(const struct swarmkv_cmd *cmd, const node_t *caller, int caller_tid, const node_t *executer, long long sequence)
 {
 	struct swarmkv_msg *msg=ALLOC(struct swarmkv_msg, 1);
 	msg->magic=SWARMKV_MSG_MAGIC;
@@ -191,10 +191,11 @@ struct swarmkv_msg *swarmkv_msg_new_by_cmd(const struct swarmkv_cmd *cmd, const 
 	msg->caller_tid=caller_tid;
 	msg->sequence=sequence;
 	node_copy(&msg->caller, caller);
+	if(executer) node_copy(&msg->executor, executer);
 	msg->cmd=swarmkv_cmd_dup(cmd);
 	return msg;
 }
-struct swarmkv_msg *swarmkv_msg_new_by_reply(const struct swarmkv_reply *reply, const node_t *caller, int caller_tid, long long sequence)
+struct swarmkv_msg *swarmkv_msg_new_by_reply(const struct swarmkv_reply *reply, const node_t *caller, int caller_tid, const node_t *executer, long long sequence)
 {
 	struct swarmkv_msg *msg=ALLOC(struct swarmkv_msg, 1);
 	msg->magic=SWARMKV_MSG_MAGIC;
@@ -202,6 +203,7 @@ struct swarmkv_msg *swarmkv_msg_new_by_reply(const struct swarmkv_reply *reply, 
 	msg->caller_tid=caller_tid;
 	msg->sequence=sequence;
 	node_copy(&msg->caller, caller);
+	node_copy(&msg->executor, executer);
 	msg->reply=swarmkv_reply_dup(reply);
 	return msg;
 }
@@ -228,7 +230,7 @@ void swarmkv_msg_serialize(const struct swarmkv_msg *msg, char **blob, size_t *b
 	if(msg->type==MSG_TYPE_CMD)
 	{
 		assert(msg->cmd->argc>0);
-		swarmkv_cmd_serialize(msg->cmd,&payload, &payload_len);
+		swarmkv_cmd_serialize(msg->cmd, &payload, &payload_len);
 	}
 	else
 	{

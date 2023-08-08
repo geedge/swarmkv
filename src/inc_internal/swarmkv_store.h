@@ -44,10 +44,11 @@ struct sobj
 	};
 };
 
-struct swarmkv_module *swarmkv_store_new(const struct swarmkv_options *opts, exec_cmd_func *send_cmd, void *handle_send_cmd);
+struct swarmkv_module *swarmkv_store_new(const struct swarmkv_options *opts);
 void swarmkv_store_free(struct swarmkv_module* mod_store);
 void swarmkv_store_periodic(struct swarmkv_module * mod_store, int thread_id);
 void swarmkv_store_set_monitor_handle(struct swarmkv_module *mod_store, struct swarmkv_module *mod_monitor);
+void swarmkv_store_set_exec_cmd_handle(struct swarmkv_module *mod_store, struct swarmkv *db);
 struct store_info
 {
 	long long keys;

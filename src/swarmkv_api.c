@@ -354,7 +354,7 @@ struct swarmkv_reply *swarmkv_command_on_argv(struct swarmkv *db, const char *ta
     }
 	if(ctx.reply==NULL)
 	{
-		swarmkv_caller_loop(db, NULL);
+		swarmkv_caller_loop(db, SWARMKV_LOOP_ONCE, NULL);
 	}
 	assert(ctx.reply!=NULL);
 	reply=ctx.reply;

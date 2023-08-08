@@ -78,7 +78,7 @@ struct snet_thread
 };
 struct swarmkv_net
 {
-	size_t nr_worker_threads;
+	size_t nr_threads;
 	uuid_t my_uuid;
 	int n_connection;
 	node_t self;
@@ -102,7 +102,6 @@ void connect_peer_eventcb(struct bufferevent *bev, short events, void *arg);
 static void peer_conn_write_cb(struct bufferevent *bev, void *arg);
 static void peer_conn_read_cb(struct bufferevent *bev, void *arg);
 static void peer_conn_event_cb(struct bufferevent *bev, short events, void *arg);
-void snet_conn_send(struct snet_conn *conn, const void *hdr, size_t hdr_sz, const void *payload, size_t payload_sz);
 
 struct snet_conn *snet_conn_new_by_connecting(struct snet_thread *thr, const node_t *dest)
 {
@@ -399,24 +398,6 @@ void connect_peer_eventcb(struct bufferevent *bev, short events, void *arg)
     }
 }
 
-void snet_conn_send(struct snet_conn *conn, const void *hdr, size_t hdr_sz, const void *payload, size_t payload_sz)
-{
-	struct evbuffer* output_buffer=NULL;
-	output_buffer=bufferevent_get_output(conn->bev);
-	
-	if(output_buffer)
-	{
-		evbuffer_add(output_buffer, hdr, hdr_sz);
-		evbuffer_add(output_buffer, payload, payload_sz);
-	}
-	else
-	{
-		evbuffer_add(conn->buff_for_sending, hdr, hdr_sz);
-		evbuffer_add(conn->buff_for_sending, payload, payload_sz);
-	}
-	conn->ref_thr->stat.output_bytes += (hdr_sz+payload_sz);
-	return;
-}
 static int get_net_thread_id(const node_t *node, size_t n_thread)
 {
 	int thread_id=(int)(XXH32(node, sizeof(node_t), 171))%n_thread;
@@ -437,7 +418,7 @@ static void snet_stat_periodic(evutil_socket_t fd, short what, void * arg)
 		return;
 	}
 
-	for(size_t i=0; i<net->nr_worker_threads; i++)
+	for(size_t i=0; i<net->nr_threads; i++)
 	{
 		input_bytes += net->threads[i].stat.input_bytes;
 		output_bytes += net->threads[i].stat.output_bytes;
@@ -466,7 +447,7 @@ static void accept_peer_connection_cb(struct evconnlistener *listener, evutil_so
 	struct snet_conn *conn=NULL;
 	node_t peer;
 	node_init_from_sockaddr(&peer, addr);
-	int thread_id=get_net_thread_id(&peer, net->nr_worker_threads);
+	int thread_id=get_net_thread_id(&peer, net->nr_threads);
 	thr=net->threads+thread_id;
 	conn=snet_conn_new_by_fd(thr, fd, addr);
 
@@ -483,16 +464,16 @@ static void __accept_error_cb(struct evconnlistener *listener, void *arg)
 							err, evutil_socket_error_to_string(err));
 }
 
-struct swarmkv_net *swarmkv_net_new(struct event_base *evbases[], int nr_worker_threads, struct swarmkv_options *opts, struct log_handle *logger, char **err)
+struct swarmkv_net *swarmkv_net_new(struct event_base *evbases[], int nr_threads, struct swarmkv_options *opts, struct log_handle *logger, char **err)
 {
 	struct swarmkv_net *net=NULL;	
 	net=ALLOC(struct swarmkv_net, 1);
 	net->logger=logger;
-	net->nr_worker_threads=nr_worker_threads;
-	net->threads=ALLOC(struct snet_thread, net->nr_worker_threads);
+	net->nr_threads=nr_threads;
+	net->threads=ALLOC(struct snet_thread, net->nr_threads);
 	struct snet_thread *thr=NULL;
 	
-	for(size_t i=0; i<net->nr_worker_threads; i++)
+	for(size_t i=0; i<net->nr_threads; i++)
 	{
 		thr=net->threads+i;
 		thr->evbase=evbases[i];
@@ -542,7 +523,7 @@ void swarmkv_net_info(struct swarmkv_net *net, struct snet_info *info)
 {
 	struct snet_thread *thr=NULL;
 	memset(info, 0, sizeof(struct snet_info));
-	for(size_t i=0; i<net->nr_worker_threads; i++)
+	for(size_t i=0; i<net->nr_threads; i++)
 	{
 		thr=net->threads+i;
 		info->connections += (HASH_COUNT(thr->conn_table) + HASH_COUNT(thr->duplicated_conn_table));
@@ -569,7 +550,7 @@ void swarmkv_net_free(struct swarmkv_net *net)
 	struct snet_conn *conn=NULL, *tmp=NULL;
 
 	evconnlistener_free(net->listener);
-	for(i=0; i<net->nr_worker_threads; i++)
+	for(i=0; i<net->nr_threads; i++)
 	{	
 		thr=net->threads+i;
 
@@ -594,7 +575,7 @@ void swarmkv_net_free(struct swarmkv_net *net)
 }
 void swarmkv_net_set_monitor_handle(struct swarmkv_net *net, struct swarmkv_module *mod_monitor)
 {
-	for(size_t i=0; i<net->nr_worker_threads; i++)
+	for(size_t i=0; i<net->nr_threads; i++)
 	{
 		net->threads[i].mod_monitor=mod_monitor;
 	}
@@ -609,6 +590,7 @@ void swarmkv_net_set_on_msg_callback(struct swarmkv_net *net, on_msg_callback_t 
 void swarmkv_net_send(struct swarmkv_net *net, const node_t *dest, struct swarmkv_msg *msg)
 {
 	int tid=__gettid((struct swarmkv *)(net->on_msg_cb_arg));
+	assert(tid<net->nr_threads);
 	struct snet_thread *thr=net->threads+tid;
 	struct snet_conn *conn=NULL;
 	HASH_FIND(hh, thr->conn_table, dest, sizeof(node_t), conn);

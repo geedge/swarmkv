@@ -120,7 +120,7 @@ struct swarmkv_thread_ctx *swarmkv_get_thread_ctx(struct swarmkv *db)
 	int tid=__gettid(db);
 	return &db->threads[tid];
 }
-void __exec_cmd(struct swarmkv *db, const node_t *acessing_node, const node_t *target_node, const struct swarmkv_cmd *cmd, struct future *future_of_caller);
+void __exec_cmd(struct swarmkv *db, const node_t *target_node, const struct swarmkv_cmd *cmd, struct future *future_of_caller);
 struct local_caller_ctx
 {
 	swarmkv_on_reply_callback_t * cb;
@@ -154,7 +154,7 @@ void exec_for_local(struct swarmkv *db, const struct swarmkv_cmd *cmd, const nod
 								local_caller_on_success,
 								local_caller_on_fail,
 								ctx);
-	__exec_cmd(db, &db->self, target_node, cmd, ctx->my_future);
+	__exec_cmd(db, target_node, cmd, ctx->my_future);
 	return;
 }
 struct remote_caller_ctx
@@ -176,7 +176,7 @@ void remote_calller_ctx_free(struct remote_caller_ctx *ctx)
 static void remoter_caller_ctx_send_reply(struct remote_caller_ctx *ctx, const struct swarmkv_reply *reply)
 {
 	struct swarmkv *db = ctx->db;
-	struct swarmkv_msg *msg=swarmkv_msg_new_by_reply(reply, &ctx->remote, ctx->remote_tid, ctx->sequence);
+	struct swarmkv_msg *msg=swarmkv_msg_new_by_reply(reply, &ctx->remote, ctx->remote_tid, &db->self, ctx->sequence);
 	int cur_tid=__gettid(db);
 	
 	if(0==node_compare(&db->self, &msg->caller))
@@ -217,7 +217,8 @@ void exec_for_remote(struct swarmkv *db, const struct swarmkv_msg *msg)
 								remote_caller_on_success,
 								remote_caller_on_fail,
 								ctx);
-	__exec_cmd(db, &msg->caller, NULL, msg->cmd, ctx->my_future);
+	__exec_cmd(db, &msg->executor, msg->cmd, ctx->my_future);
+	//Todo: implement monitor command here
 	return;
 }
 enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
@@ -694,7 +695,7 @@ static void peer_exec_on_success(void *result, void *user)
 		{
 			node_t target_node;
 			node_init_from_reply(&target_node, reply);
-			__exec_cmd(ctx->db, NULL, &target_node, ctx->cmd, ctx->future_of_mine);
+			__exec_cmd(ctx->db, &target_node, ctx->cmd, ctx->future_of_mine);
 		}
 		else
 		{
@@ -732,7 +733,7 @@ static void crdt_add_on_success(void *result, void *user)
 	assert(reply->type==SWARMKV_REPLY_STATUS);
 	if(ctx->future_of_caller)
 	{
-		__exec_cmd(ctx->db, &ctx->db->self, NULL, ctx->cmd, ctx->future_of_caller);
+		__exec_cmd(ctx->db, NULL, ctx->cmd, ctx->future_of_caller);
 	}
 	cmd_ctx_free(ctx);
 }
@@ -764,7 +765,7 @@ static void key_route_on_success(void *result, void *user)
 		}
 		if(n_replica_node>0)
 		{
-			__exec_cmd(ctx->db,  &ctx->db->self, replica_nodes+0, ctx->cmd, ctx->future_of_caller);
+			__exec_cmd(ctx->db,  replica_nodes+0, ctx->cmd, ctx->future_of_caller);
 			//__send_cmd(ctx->db, replica_nodes+0, ctx->cmd, ctx->future_of_caller);
 		}
 		if(self_is_a_replica)
@@ -773,7 +774,7 @@ static void key_route_on_success(void *result, void *user)
 			struct swarmkv_cmd *crdt_add_cmd=make_crdt_add_cmd(key, replica_nodes, n_replica_node);
 			crdt_add_ctx=cmd_ctx_new(ctx->db, ctx->cmd, n_replica_node>0?NULL:ctx->future_of_caller);
 			crdt_add_ctx->future_of_mine=future_create("crdt_add", crdt_add_on_success, generic_on_fail, crdt_add_ctx);
-			__exec_cmd(ctx->db, &ctx->db->self, &ctx->db->self, crdt_add_cmd, crdt_add_ctx->future_of_mine);
+			__exec_cmd(ctx->db, &ctx->db->self, crdt_add_cmd, crdt_add_ctx->future_of_mine);
 			swarmkv_cmd_free(crdt_add_cmd);
 		}
 		free(replica_nodes);
@@ -823,7 +824,7 @@ void __on_msg_callback(struct swarmkv_msg *msg, void *arg)
 		}
 	}
 }
-void __exec_cmd(struct swarmkv *db, const node_t *accessing_node, const node_t *target_node, const struct swarmkv_cmd *cmd, struct future *future_of_caller)
+void __exec_cmd(struct swarmkv *db, const node_t *target_node, const struct swarmkv_cmd *cmd, struct future *future_of_caller)
 {
 	struct swarmkv_cmd_spec *spec=NULL;	
 	struct swarmkv_reply *reply=NULL;
@@ -851,23 +852,24 @@ void __exec_cmd(struct swarmkv *db, const node_t *accessing_node, const node_t *
 	int target_tid=spec_gettid(spec, cmd, db->opts->nr_worker_threads);
 	
 	struct swarmkv_msg *msg=NULL;
-	if(target_node && node_compare(&db->self, target_node))
-	{
-		//cmd is executed in target node's on_msg_callback
-		long long sequence=swarmkv_rpc_launch(db->rpc_mgr, cur_tid, future_of_caller);
-		msg=swarmkv_msg_new_by_cmd(cmd, &db->self, cur_tid, sequence);
-		swarmkv_net_send(db->net, target_node, msg);
-		return;
-	}
+	//Because only worker thread has network thread, so command should be executed at worker thread first.
 	if(cur_tid != target_tid)
 	{
 		//cmd will be executed in target thread's on_msg_callback
 		long long sequence=swarmkv_rpc_launch(db->rpc_mgr, cur_tid, future_of_caller);
-		msg=swarmkv_msg_new_by_cmd(cmd, &db->self, cur_tid, sequence);
+		msg=swarmkv_msg_new_by_cmd(cmd, &db->self, cur_tid, target_node, sequence);
 		swarmkv_mesh_send(db->mesh, cur_tid, target_tid, msg);
 		return;
 	}
-
+	
+	if(!node_is_empty(target_node) && node_compare(&db->self, target_node))
+	{
+		//cmd is executed in target node's on_msg_callback
+		long long sequence=swarmkv_rpc_launch(db->rpc_mgr, cur_tid, future_of_caller);
+		msg=swarmkv_msg_new_by_cmd(cmd, &db->self, cur_tid, target_node, sequence);
+		swarmkv_net_send(db->net, target_node, msg);
+		return;
+	}
 	enum cmd_exec_result exec_ret=FINISHED;
 	struct timespec start, end;
 	clock_gettime(CLOCK_MONOTONIC_COARSE, &start);
@@ -892,7 +894,7 @@ void __exec_cmd(struct swarmkv *db, const node_t *accessing_node, const node_t *
 			node_init_from_reply(&peer, reply);
 			swarmkv_reply_free(reply);
 			ctx->future_of_mine=future_create("peer_exec", peer_exec_on_success, generic_on_fail, ctx);
-			__exec_cmd(db, &db->self, &peer, cmd, ctx->future_of_mine);
+			__exec_cmd(db, &peer, cmd, ctx->future_of_mine);
 			break;
 		}
 		case NEED_KEY_ROUTE:
@@ -900,7 +902,7 @@ void __exec_cmd(struct swarmkv *db, const node_t *accessing_node, const node_t *
 			struct swarmkv_cmd *keyspace_cmd=make_keyroute_cmd(spec->flag, cmd->argv[spec->key_offset], db->opts->dryrun? NULL:(&db->self));
 			struct cmd_ctx *ctx=cmd_ctx_new(db, cmd, future_of_caller);
 			ctx->future_of_mine=future_create("key_route", key_route_on_success, generic_on_fail, ctx);
-			__exec_cmd(db, &db->self, NULL, keyspace_cmd, ctx->future_of_mine);
+			__exec_cmd(db, NULL, keyspace_cmd, ctx->future_of_mine);
 			swarmkv_cmd_free(keyspace_cmd);
 			keyspace_cmd=NULL;
 			assert(reply==NULL);
@@ -908,8 +910,10 @@ void __exec_cmd(struct swarmkv *db, const node_t *accessing_node, const node_t *
 			break;
 		}
 		default:
+		{
 			assert(0);
 			break;
+		}
 	}
 	return;
 }
@@ -1230,7 +1234,7 @@ static void loop_timeout_cb(evutil_socket_t fd, short event, void *arg)
     struct swarmkv_thread_ctx *ctx = (struct swarmkv_thread_ctx *)arg;
     event_base_loopbreak(ctx->evbase);
 }
-void swarmkv_caller_loop(struct swarmkv *db, struct timeval *tv)
+void swarmkv_caller_loop(struct swarmkv *db, int flags, struct timeval *tv)
 {
 	int tid=__gettid(db);
 	//must initiate from caller threads, and caller thread ID is larger than worker thread ID
@@ -1241,13 +1245,13 @@ void swarmkv_caller_loop(struct swarmkv *db, struct timeval *tv)
 	{
 		timeout_event = event_new(ctx->evbase, -1, 0, loop_timeout_cb, ctx);
 		evtimer_add(timeout_event, tv);
-		event_base_loop(ctx->evbase, EVLOOP_NO_EXIT_ON_EMPTY);
+		event_base_loop(ctx->evbase, flags);
 		event_del(timeout_event);
 		event_free(timeout_event);
 	}
 	else
 	{
-		event_base_loop(ctx->evbase, EVLOOP_ONCE);
+		event_base_loop(ctx->evbase, flags);
 	}
 	
 	return;
@@ -1335,10 +1339,11 @@ struct swarmkv *swarmkv_open(struct swarmkv_options *opts, const char *db_name, 
 	{
 		goto error_out;
 	}
-	swarmkv_keyspace_set_exec_cmd_func(db->mod_keyspace, __exec_cmd, db);
+	swarmkv_keyspace_set_exec_cmd_handle(db->mod_keyspace, db);
 	swarmkv_keyspace_set_monitor_handle(db->mod_keyspace, db->mod_monitor);
 
-	db->mod_store=swarmkv_store_new(db->opts, __exec_cmd, db);
+	db->mod_store=swarmkv_store_new(db->opts);
+	swarmkv_store_set_exec_cmd_handle(db->mod_store, db);
 	swarmkv_store_set_monitor_handle(db->mod_store, db->mod_monitor);
 
 

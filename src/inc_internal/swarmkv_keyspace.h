@@ -19,7 +19,7 @@ struct keyspace_info
 	long long expires;	
 };
 void swarmkv_keyspace_info(struct swarmkv_module *mod_keyspace, struct keyspace_info *info);
-void swarmkv_keyspace_set_exec_cmd_func(struct swarmkv_module *mod_keyspace, exec_cmd_func *func, void *func_handle);
+void swarmkv_keyspace_set_exec_cmd_handle(struct swarmkv_module *mod_keyspace, struct swarmkv *db);
 void swarmkv_keyspace_set_monitor_handle(struct swarmkv_module *mod_keyspace, struct swarmkv_module *mod_monitor);
 
 enum cmd_exec_result keyslot_command(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply);

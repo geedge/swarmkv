@@ -338,6 +338,10 @@ void node_copy(node_t *dst, const node_t *src)
     memcpy(dst, src, sizeof(node_t));
 	return;
 }
+int node_is_empty(const node_t *node)
+{
+	return ((node==NULL)||(node->addr[0]==0));
+}
 void node_init(node_t *node, const char *ipv4, unsigned int port)
 {
 	memset(node, 0, sizeof(node_t));

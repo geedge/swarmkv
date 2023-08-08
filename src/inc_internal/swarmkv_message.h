@@ -16,6 +16,7 @@ struct swarmkv_msg
     int caller_tid;
     unsigned int payload_len;
     node_t caller;
+    node_t executor;
     union
     {
         struct swarmkv_cmd *cmd;
@@ -25,8 +26,8 @@ struct swarmkv_msg
 };
 #define SWARMKV_MSG_HDR_SIZE    offsetof(struct swarmkv_msg, payload)
 
-struct swarmkv_msg *swarmkv_msg_new_by_cmd(const struct swarmkv_cmd *cmd, const node_t *caller, int caller_tid, long long sequence);
-struct swarmkv_msg *swarmkv_msg_new_by_reply(const struct swarmkv_reply *reply, const node_t *caller, int caller_tid, long long sequence);
+struct swarmkv_msg *swarmkv_msg_new_by_cmd(const struct swarmkv_cmd *cmd, const node_t *caller, int caller_tid, const node_t *executer, long long sequence);
+struct swarmkv_msg *swarmkv_msg_new_by_reply(const struct swarmkv_reply *reply, const node_t *caller, int caller_tid, const node_t *executer, long long sequence);
 void swarmkv_msg_free(struct swarmkv_msg *msg);
 
 //on_msg_callback_t transfers ownership of msg to the callback function

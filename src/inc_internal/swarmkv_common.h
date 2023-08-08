@@ -116,6 +116,7 @@ int node_init_from_reply(node_t *node, const struct swarmkv_reply *reply);
 /* Return 0 if node1 == node 2 */
 int node_compare(const node_t *node1, const node_t *node2);
 void node_copy(node_t *dst, const node_t *src);
+int node_is_empty(const node_t *node);
 void node_init(node_t *node, const char *ipv4, unsigned int port);
 void node_init_from_string(node_t *node, const char *addr_str);
 int node_parse(const node_t *node, unsigned int *port, char *addr_str, size_t sz_addr);
@@ -123,7 +124,8 @@ void node_init_from_sockaddr(node_t *node, const struct sockaddr * sa);
 void node_to_sockaddr(const node_t *node, struct sockaddr *sockaddr);
 int http_blocking_request(enum evhttp_cmd_type type, const char* host, unsigned int port, const char* url, sds req_body, sds *resp_body);
 
-typedef void exec_cmd_func(struct swarmkv *db, const node_t *accessing_node, const node_t *target_node, const struct swarmkv_cmd *cmd, struct future *future_of_caller);
+//typedef void exec_cmd_func(struct swarmkv *db, const node_t *target_node, const struct swarmkv_cmd *cmd, struct future *future_of_caller);
 struct swarmkv_reply *swarmkv_command_on_argv(struct swarmkv *db, const char *target, int argc, sds *argv);
+void swarmkv_async_command_on_argv(struct swarmkv *db, swarmkv_on_reply_callback_t * cb, void *cb_arg, const char *target, int argc, sds *argv);
 
 int __gettid(struct swarmkv *db);

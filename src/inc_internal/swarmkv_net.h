@@ -4,7 +4,7 @@
 #include "swarmkv_cmd_spec.h"
 struct swarmkv_net;
 
-struct swarmkv_net *swarmkv_net_new(struct event_base *evbases[], int nr_worker_threads, struct swarmkv_options *opts, struct log_handle *logger, char **err);
+struct swarmkv_net *swarmkv_net_new(struct event_base *evbases[], int nr_threads, struct swarmkv_options *opts, struct log_handle *logger, char **err);
 void swarmkv_net_free(struct swarmkv_net *net);
 
 void swarmkv_net_set_on_msg_callback(struct swarmkv_net *net, on_msg_callback_t *cb, void *cb_arg);

@@ -129,41 +129,32 @@ struct swarmkv_reply *key_entry_list_replica_nodes(struct key_route_entry *key_e
 	}
 	return reply;
 }
-struct crdt_del_ctx
+struct crdt_op_ctx
 {
-	struct future *f;
 	node_t peer;
+	int is_del;
 	sds key;
 };
-void crdt_del_ctx_free(struct crdt_del_ctx *ctx)
+void crdt_op_ctx_free(struct crdt_op_ctx *ctx)
 {
-	future_destroy(ctx->f);
 	sdsfree(ctx->key);
 	free(ctx);
 }
 
-static void crdt_del_on_succ(void *result, void *user)
+void crdt_op_on_reply(const struct swarmkv_reply *reply, void * arg)
 {
-	
-	struct crdt_del_ctx *ctx = (struct crdt_del_ctx*)user;
-	const struct swarmkv_reply* reply=(const struct swarmkv_reply*) result;
-//	assert(reply->type==SWARMKV_REPLY_INTEGER);
-//	assert(reply->integer==1);
-	if(reply->type==SWARMKV_REPLY_INTEGER && reply->integer !=1)
+	struct crdt_op_ctx *ctx = (struct crdt_op_ctx*)arg;
+	if(ctx->is_del)
 	{
-//		printf("crdt del %s at %s:%u failed.\n", ctx->key, ctx->peer.ip_addr, ctx->peer.cluster_port);
+		if(reply->type==SWARMKV_REPLY_INTEGER && reply->integer !=1)
+		{
+	//		printf("crdt del %s at %s:%u failed.\n", ctx->key, ctx->peer.ip_addr, ctx->peer.cluster_port);
+		}
 	}
-	crdt_del_ctx_free(ctx);
+	crdt_op_ctx_free(ctx);
 	return;
 }
-static void crdt_del_on_fail(enum e_future_error err, const char * what, void * user)
-{
-	struct crdt_del_ctx *ctx = (struct crdt_del_ctx*)user;
-	crdt_del_ctx_free(ctx);
-	return;
-}
-
-void key_entry_deletion_notification(struct key_route_entry *key_entry, const node_t *self, exec_cmd_func *exec_cmd, struct swarmkv *exec_cmd_handle)
+void key_entry_deletion_notification(struct key_route_entry *key_entry, struct swarmkv *exec_cmd_handle)
 {
 	struct replica_node *replica=NULL, *tmp=NULL;
 	struct swarmkv_cmd *crdt_del_cmd=swarmkv_cmd_new(3);
@@ -172,16 +163,17 @@ void key_entry_deletion_notification(struct key_route_entry *key_entry, const no
 	crdt_del_cmd->argv[2]=sdsdup(key_entry->key);
 	HASH_ITER(hh, key_entry->hash_replica, replica, tmp)
 	{
-		struct crdt_del_ctx *ctx=ALLOC(struct crdt_del_ctx, 1);
+		struct crdt_op_ctx *ctx=ALLOC(struct crdt_op_ctx, 1);
 		node_copy(&ctx->peer, &replica->node);
 		ctx->key=sdsdup(key_entry->key);
-		ctx->f=future_create("crdt_del", crdt_del_on_succ, crdt_del_on_fail, ctx);
-		exec_cmd(exec_cmd_handle, self, &replica->node, crdt_del_cmd, ctx->f);
+		ctx->is_del=1;
+		swarmkv_async_command_on_argv(exec_cmd_handle, crdt_op_on_reply, ctx, replica->node.addr, crdt_del_cmd->argc, crdt_del_cmd->argv);
 	}
 	swarmkv_cmd_free(crdt_del_cmd);
 	return;
 }
-void key_entry_meet_replica(struct key_route_entry *key_entry, const node_t *self, exec_cmd_func *exec_cmd, struct swarmkv *exec_cmd_handle)
+
+void key_entry_meet_replica(struct key_route_entry *key_entry, struct swarmkv *exec_cmd_handle)
 {
 	struct replica_node *replica=NULL, *tmp=NULL;
 	int n_replica=HASH_COUNT(key_entry->hash_replica), i=0;
@@ -198,11 +190,10 @@ void key_entry_meet_replica(struct key_route_entry *key_entry, const node_t *sel
 	assert(i==n_replica);
 	HASH_ITER(hh, key_entry->hash_replica, replica, tmp)
 	{
-		struct crdt_del_ctx *ctx=ALLOC(struct crdt_del_ctx, 1);
+		struct crdt_op_ctx *ctx=ALLOC(struct crdt_op_ctx, 1);
 		node_copy(&ctx->peer, &replica->node);
 		ctx->key=sdsdup(key_entry->key);
-		ctx->f=future_create("crdt_meet", crdt_del_on_succ, crdt_del_on_fail, ctx);
-		exec_cmd(exec_cmd_handle, self, &replica->node, crdt_meet_cmd, ctx->f);
+		swarmkv_async_command_on_argv(exec_cmd_handle, crdt_op_on_reply, ctx, replica->node.addr, crdt_meet_cmd->argc, crdt_meet_cmd->argv);
 	}
 	swarmkv_cmd_free(crdt_meet_cmd);
 	return;
@@ -257,7 +248,6 @@ struct swarmkv_keyspace
 	struct consul_client *consul_client;
 
 	//reference, no need free	
-	exec_cmd_func *exec_cmd_func;
 	struct swarmkv *exec_cmd_handle;
 	struct swarmkv_module *mod_monitor;
 	struct log_handle *logger;
@@ -1171,11 +1161,10 @@ static struct swarmkv_keyspace *module2keyspace(struct swarmkv_module *module)
 	assert(ks==module->mod_ctx);
 	return ks;
 }
-void swarmkv_keyspace_set_exec_cmd_func(struct swarmkv_module *mod_keyspace, exec_cmd_func *func, void *func_handle)
+void swarmkv_keyspace_set_exec_cmd_handle(struct swarmkv_module *mod_keyspace, struct swarmkv *db)
 {	
 	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
-	ks->exec_cmd_func=func;
-	ks->exec_cmd_handle=func_handle;
+	ks->exec_cmd_handle=db;
 	return;
 }
 void swarmkv_keyspace_set_monitor_handle(struct swarmkv_module *mod_keyspace, struct swarmkv_module *mod_monitor)
@@ -1698,7 +1687,7 @@ enum cmd_exec_result key_route_generic(struct swarmkv_keyspace *ks, enum KEYSPAC
 				HASH_ADD_KEYPTR(hh, slot_rt->keyroute_table, key_entry->key, sdslen(key_entry->key), key_entry);
 			}
 			key_entry_add_replica_node(key_entry, new_replica);
-			key_entry_meet_replica(key_entry, &ks->self, ks->exec_cmd_func, ks->exec_cmd_handle);
+			key_entry_meet_replica(key_entry, ks->exec_cmd_handle);
 			*reply=key_entry_list_replica_nodes(key_entry);
 			break;
 		case KEYSPACE_XRADD:
@@ -1706,7 +1695,7 @@ enum cmd_exec_result key_route_generic(struct swarmkv_keyspace *ks, enum KEYSPAC
 			{
 				key_entry_add_replica_node(key_entry, new_replica);
 				*reply=key_entry_list_replica_nodes(key_entry);
-				key_entry_meet_replica(key_entry, &ks->self, ks->exec_cmd_func, ks->exec_cmd_handle);
+				key_entry_meet_replica(key_entry, ks->exec_cmd_handle);
 			}
 			else
 			{
@@ -1717,7 +1706,7 @@ enum cmd_exec_result key_route_generic(struct swarmkv_keyspace *ks, enum KEYSPAC
 			if(key_entry)
 			{
 				HASH_DELETE(hh, slot_rt->keyroute_table, key_entry);
-				key_entry_deletion_notification(key_entry, &ks->self, ks->exec_cmd_func, ks->exec_cmd_handle);
+				key_entry_deletion_notification(key_entry, ks->exec_cmd_handle);
 				key_entry_free(key_entry);
 				*reply=swarmkv_reply_new_integer(1);
 			}
@@ -2038,7 +2027,7 @@ void swarmkv_keyspace_periodic(struct swarmkv_module *mod_keyspace, int thread_i
 			key_entry=container_of(t, struct key_route_entry, timeout_handle);
 			assert(key_entry->is_expiring);
 			HASH_DELETE(hh, slot_rt->keyroute_table, key_entry);
-			key_entry_deletion_notification(key_entry, &ks->self, ks->exec_cmd_func, ks->exec_cmd_handle);
+			key_entry_deletion_notification(key_entry, ks->exec_cmd_handle);
 			key_entry_free(key_entry);
 			t=timeouts_get(slot_rt->expires);
 			j++;

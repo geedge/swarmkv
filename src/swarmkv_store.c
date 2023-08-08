@@ -153,7 +153,6 @@ struct swarmkv_store
 	size_t nr_worker_threads;
 	struct swarmkv_store_thread *threads;
 
-	exec_cmd_func *exec_cmd;
 	struct swarmkv *exec_cmd_handle;
 	uuid_t my_uuid;	
 	struct swarmkv_module *mod_monitor;
@@ -399,6 +398,8 @@ void scontainer_serialize(struct scontainer *ctr, char **blob, size_t *blob_sz)
 	memcpy(mpack_buff+offset, &ctr->op_timestamp, sizeof(ctr->op_timestamp));
 	offset+=sizeof(ctr->op_timestamp);
 
+	//We can add replica node list to the blob, but the merge process will consume more CPU time.
+
 	memcpy(mpack_buff+offset, &value_blob_sz, sizeof(size_t));
 	offset+=sizeof(size_t);
 
@@ -459,23 +460,35 @@ struct crdt_generic_ctx
 	struct swarmkv_store *store;
 	node_t peer;
 	sds key;
-	struct future *f;
 };
 void crdt_generic_ctx_free(struct crdt_generic_ctx *ctx)
 {		
 	sdsfree(ctx->key);
 	ctx->store=NULL;
-	future_destroy(ctx->f);
 	free(ctx);
 }
-
-static void crdt_generic_on_succ(void *result, void *user)
+static void store_remove_failed_peer(struct swarmkv_store *store, int tid, const node_t *peer)
+{
+	struct scontainer *ctr=NULL, *tmp=NULL;
+	HASH_ITER(hh, store->threads[tid].obj_table, ctr, tmp)
+	{
+		scontainer_remove_replica_node(ctr, peer);
+	}
+	return;
+}
+static void crdt_generic_on_reply(const struct swarmkv_reply *reply, void *user)
 {
 	struct crdt_generic_ctx *ctx=(struct crdt_generic_ctx *)user;
-	const struct swarmkv_reply *reply=(const struct swarmkv_reply*) result;
 	struct scontainer *ctr=NULL;
 	uuid_t uuid;
 	store_get_uuid(&(ctx->store->module), uuid);
+	int tid=__gettid(ctx->store->exec_cmd_handle);
+	if(reply->type==SWARMKV_REPLY_ERROR)
+	{
+		atomic_inc(&ctx->store->sync_err);
+		store_remove_failed_peer(ctx->store, tid, &ctx->peer);
+		goto error_out;
+	}
 	switch(ctx->op)
 	{
 		case CRDT_GET:
@@ -515,35 +528,13 @@ static void crdt_generic_on_succ(void *result, void *user)
 			atomic_inc(&ctx->store->sync_err);
 			break;
 	}
-
-	crdt_generic_ctx_free(ctx);
-	return;
-}
-static void store_remove_failed_peer(struct swarmkv_store *store, int tid, const node_t *peer)
-{
-	struct scontainer *ctr=NULL, *tmp=NULL;
-	HASH_ITER(hh, store->threads[tid].obj_table, ctr, tmp)
-	{
-		scontainer_remove_replica_node(ctr, peer);
-	}
-	return;
-}
-static void crdt_generic_on_fail(enum e_future_error err, const char * what, void * user)
-{
-	struct crdt_generic_ctx *ctx=(struct crdt_generic_ctx *)user;
-	atomic_inc(&ctx->store->sync_err);
-	int tid=__gettid(ctx->store->exec_cmd_handle);
-	if(err==FUTURE_ERROR_TIMEOUT)
-	{
-		store_remove_failed_peer(ctx->store, tid, &ctx->peer);
-	}
+error_out:
 	crdt_generic_ctx_free(ctx);
 	return;
 }
 
 void crdt_generic_call(struct swarmkv_store *store, enum CRDT_OP op, const struct swarmkv_cmd *cmd, const node_t *peer)
 {
-	const char *symbol[]={"crdt_get", "crdt_merge", "crdt_join"};
 	struct crdt_generic_ctx *ctx=NULL;
 	assert(peer);
 	ctx=ALLOC(struct crdt_generic_ctx, 1);
@@ -551,8 +542,7 @@ void crdt_generic_call(struct swarmkv_store *store, enum CRDT_OP op, const struc
 	ctx->store=store;
 	ctx->key=sdsdup(cmd->argv[2]);
 	node_copy(&ctx->peer, peer);
-	ctx->f=future_create(symbol[op], crdt_generic_on_succ, crdt_generic_on_fail, ctx);
-	store->exec_cmd(store->exec_cmd_handle, &store->self, peer, cmd, ctx->f);
+	swarmkv_async_command_on_argv(store->exec_cmd_handle, crdt_generic_on_reply, ctx, peer->addr, cmd->argc, cmd->argv);
 	return;
 }
 #define MAX_SYNC_PER_PERIOD	100000
@@ -605,7 +595,7 @@ void swarmkv_store_periodic(struct swarmkv_module * mod_store, int thread_id)
 	}
 }
 
-struct swarmkv_module *swarmkv_store_new(const struct swarmkv_options *opts, exec_cmd_func *send_cmd, void *handle_send_cmd)
+struct swarmkv_module *swarmkv_store_new(const struct swarmkv_options *opts)
 {
 	struct swarmkv_store *store=ALLOC(struct swarmkv_store, 1);
 	strncpy(store->module.name, "store", sizeof(store->module.name));
@@ -615,11 +605,14 @@ struct swarmkv_module *swarmkv_store_new(const struct swarmkv_options *opts, exe
 	uuid_copy(store->my_uuid, opts->bin_uuid);
 	node_init(&store->self, opts->cluster_announce_ip, opts->cluster_announce_port);
 
-	store->exec_cmd=send_cmd;
-	store->exec_cmd_handle=handle_send_cmd;
 	return &(store->module);
 }
-
+void swarmkv_store_set_exec_cmd_handle(struct swarmkv_module *mod_store, struct swarmkv *exec_cmd_handle)
+{
+	struct swarmkv_store *store=module2store(mod_store);
+	store->exec_cmd_handle=exec_cmd_handle;
+	return;
+}
 void swarmkv_store_free(struct swarmkv_module *mod_store)
 {
 	struct swarmkv_store *store=module2store(mod_store);
@@ -731,7 +724,7 @@ enum cmd_exec_result crdt_add_command(struct swarmkv_module *mod_store, const st
 		}
 		crdt_join_cmd=swarmkv_cmd_new(4);
 		crdt_join_cmd->argv[0]=sdsnew("crdt");
-		crdt_join_cmd->argv[1]=sdsnew("join");
+		crdt_join_cmd->argv[1]=sdsnew("meet");
 		crdt_join_cmd->argv[2]=sdsdup(ctr->obj.key);
 		crdt_join_cmd->argv[3]=node_addr2sds(&store->self);
 		crdt_generic_call(store, CRDT_JOIN, crdt_join_cmd, replica_nodes+i);
