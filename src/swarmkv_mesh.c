@@ -11,6 +11,7 @@
 #include <stdint.h>             /* Definition of uint64_t */
 #include <assert.h>
 #include <string.h>
+#include <pthread.h>	//sanity check
 
 #define	MODULE_SWAMRKV_MESH	module_name_str("swarmkv.mesh")
 #define	RINGBUF_SIZE		1024
@@ -24,6 +25,7 @@ struct swarmkv_mesh_thread
 	char *buff;
 	ringbuf_worker_t **workers;
 	struct swarmkv_mesh *ref_mesh;
+	int n_write, n_read;
 };
 struct swarmkv_mesh
 {
@@ -42,11 +44,6 @@ int swarmkv_mesh_send(struct swarmkv_mesh *mesh, int current_thread_id, int dest
 	struct swarmkv_mesh_thread *dest_thr=mesh->threads+dest_thread_id;
 	ringbuf_t *dest_ring=dest_thr->ring;
 	assert(msg->magic == SWARMKV_MSG_MAGIC);
-	if(curr_thr->workers[dest_thread_id]==NULL)
-	{
-		curr_thr->workers[dest_thread_id]=ringbuf_register(dest_ring, current_thread_id);
-		assert(curr_thr->workers[dest_thread_id]);
-	}
 	ssize_t offset=0;
 	offset=ringbuf_acquire(dest_ring, curr_thr->workers[dest_thread_id], sizeof(struct swarmkv_msg*));
 	if(offset == -1)
@@ -63,6 +60,7 @@ int swarmkv_mesh_send(struct swarmkv_mesh *mesh, int current_thread_id, int dest
 	{
 		assert(0);
 	}
+	dest_thr->n_write++;
 	return 0;
 error_out:
 	swarmkv_msg_free(msg);
@@ -77,28 +75,29 @@ void swarmkv_mesh_set_on_msg_cb(struct swarmkv_mesh *mesh, on_msg_callback_t cb_
 
 static void swarmkv_mesh_on_event(evutil_socket_t fd, short what, void * arg)
 {
-	struct swarmkv_mesh_thread *thread=(struct swarmkv_mesh_thread*)arg;
-	struct swarmkv_mesh *mesh=thread->ref_mesh;
-	ringbuf_t *ring=thread->ring;
+	struct swarmkv_mesh_thread *thr=(struct swarmkv_mesh_thread*)arg;
+	struct swarmkv_mesh *mesh=thr->ref_mesh;
+	ringbuf_t *ring=thr->ring;
 	uint64_t n_msg=0;
-	ssize_t s = read(thread->efd, &n_msg, sizeof(uint64_t));
+	ssize_t s = read(thr->efd, &n_msg, sizeof(uint64_t));
 	if(s!=sizeof(uint64_t))
 	{
 		assert(0);
 	}
 	size_t offset=0, len=0;
 	struct swarmkv_msg *msg=NULL;
-	len=ringbuf_consume(ring, &offset);
-	assert(n_msg <= len/sizeof(struct swarmkv_msg*));
 	for(uint64_t i=0; i<n_msg; i++)
 	{
-		msg=*(struct swarmkv_msg**)(thread->buff+offset);
+		len=ringbuf_consume(ring, &offset);
+		assert(len>0);
+		msg=*(struct swarmkv_msg**)(thr->buff+offset);
 		assert(msg->magic==SWARMKV_MSG_MAGIC);
+		ringbuf_release(ring, sizeof(struct swarmkv_msg*));
 		//ownership of msg is transferred to the callback function.
 		mesh->on_msg_recv(msg, mesh->msg_recv_arg);
-		offset+=sizeof(struct swarmkv_msg*);
+		offset=0;
+		thr->n_read++;
 	}
-	ringbuf_release(ring, n_msg*sizeof(struct swarmkv_msg*));
 	return;
 }
 struct swarmkv_mesh *swarmkv_mesh_new(struct event_base *evbase[], int nthreads, struct log_handle *logger)

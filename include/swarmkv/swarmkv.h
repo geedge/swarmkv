@@ -88,6 +88,7 @@ void swarmkv_register_thread(struct swarmkv *db);
 //	Block until we have an active event, then exit once all active events have had their callbacks run.
 #define	SWARMKV_LOOP_ONCE				0x01
 //flags	any combination of SWARMKV_LOOP_ONCE | SWARMKV_LOOP_NONBLOCK | SWARMKV_LOOP_NO_EXIT_ON_EMPTY
+//The flags are identicial to event_base_loop() of libevent. See https://libevent.org/doc/event_8h.html#a10b9c102337d0ece8607c9c01bc4f7c8
 void swarmkv_caller_loop(struct swarmkv *db, int flags, struct timeval *tv);
 void swarmkv_caller_loop_break(struct swarmkv *db);
 

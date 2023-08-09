@@ -237,6 +237,7 @@ enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct sw
 											"address: %s\r\n"
 											"uuid: %s\r\n"
 											"worker_threads: %d\r\n"
+											"caller_threads: %d\r\n"
 											"server_time_usec: %lld\r\n"
 											"up_time_in_seconds: %ld\r\n"
 											"up_time_in_days: %ld\r\n"
@@ -245,6 +246,7 @@ enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct sw
 											db->self.addr,
 											uuid_str,
 											db->opts->nr_worker_threads,
+											db->opts->nr_caller_threads,
 											server_time_us,
 											now_monotonic.tv_sec-db->boot_time.tv_sec,
 											(now_monotonic.tv_sec-db->boot_time.tv_sec)/(3600*24)
@@ -314,23 +316,23 @@ enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct sw
 	{
 		if(0==strcasecmp("Node", cmd->argv[1]))
 		{
-			*reply=swarmkv_reply_new_status(node_info_buff);
+			*reply=swarmkv_reply_new_string_fmt(node_info_buff);
 		}
 		else if(0==strcasecmp("Store", cmd->argv[1]))
 		{
-			*reply=swarmkv_reply_new_status(store_info_buff);
+			*reply=swarmkv_reply_new_string_fmt(store_info_buff);
 		}
 		else if(0==strcasecmp("Keyspace", cmd->argv[1]))
 		{
-			*reply=swarmkv_reply_new_status(ks_info_buff);
+			*reply=swarmkv_reply_new_string_fmt(ks_info_buff);
 		}
 		else if(0==strcasecmp("Network", cmd->argv[1]))
 		{
-			*reply=swarmkv_reply_new_status(net_info_buff);
+			*reply=swarmkv_reply_new_string_fmt(net_info_buff);
 		}
-		else if(0==strcasecmp("Thread", cmd->argv[1]))
+		else if(0==strcasecmp("Threads", cmd->argv[1]))
 		{
-			*reply=swarmkv_reply_new_integer(db->opts->nr_worker_threads);
+			*reply=swarmkv_reply_new_string_from_integer(db->opts->nr_worker_threads);
 		}
 		else
 		{
@@ -791,10 +793,10 @@ static int spec_gettid(struct swarmkv_cmd_spec *spec, const struct swarmkv_cmd *
 			tid=atoi(cmd->argv[2]);
 			break;
 		case KEY_OFFSET_SLOTID:
-			tid=atoi(cmd->argv[2])%nr_worker_threads;
+			tid=swarmkv_keyspace_get_tid(spec->module, atoi(cmd->argv[2]));
 			break;
 		default:
-			tid=key_hash_slot(cmd->argv[spec->key_offset], sdslen(cmd->argv[spec->key_offset]))%nr_worker_threads;
+			tid=key2tid(cmd->argv[spec->key_offset], nr_worker_threads);
 			break;
 	}
 	return tid;
@@ -852,7 +854,7 @@ void __exec_cmd(struct swarmkv *db, const node_t *target_node, const struct swar
 	int target_tid=spec_gettid(spec, cmd, db->opts->nr_worker_threads);
 	
 	struct swarmkv_msg *msg=NULL;
-	//Because only worker thread has network thread, so command should be executed at worker thread first.
+	//Only worker threads can do network communication, so command should be executed at worker thread first.
 	if(cur_tid != target_tid)
 	{
 		//cmd will be executed in target thread's on_msg_callback

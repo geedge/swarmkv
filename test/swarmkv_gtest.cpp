@@ -560,14 +560,14 @@ protected:
 		
 		const char *cluster_name="swarmkv-2-nodes";
 		swarmkv_cli_create_cluster(cluster_name, "127.0.0.1:5210 127.0.0.1:5211");
-		
+		unsigned int very_long_timeout_us=600*1000*1000;
 		logger=log_handle_create(log_path, 0);
 		struct swarmkv_options* opts1=swarmkv_options_new();
 		swarmkv_options_set_cluster_port(opts1, 5210);
 		swarmkv_options_set_health_check_port(opts1, 6210);
 		swarmkv_options_set_logger(opts1, logger);
 		swarmkv_options_set_sync_interval_us(opts1, 10*1000);
-		swarmkv_options_set_cluster_timeout_us(opts1, 600*1000*1000);
+		swarmkv_options_set_cluster_timeout_us(opts1, very_long_timeout_us);
 		swarmkv_options_set_worker_thread_number(opts1, 1);
 		swarmkv_options_set_caller_thread_number(opts1, 1);
 		db1=swarmkv_open(opts1, cluster_name, &err);
@@ -582,9 +582,9 @@ protected:
 		swarmkv_options_set_cluster_port(opts2, 5211);
 		swarmkv_options_set_health_check_port(opts2, 6211);
 		swarmkv_options_set_logger(opts2, logger);
-		swarmkv_options_set_cluster_timeout_us(opts2, 600*1000*1000);
+		swarmkv_options_set_cluster_timeout_us(opts2, very_long_timeout_us);
 		swarmkv_options_set_sync_interval_us(opts2, 10*1000);
-		swarmkv_options_set_worker_thread_number(opts2, 1);
+		swarmkv_options_set_worker_thread_number(opts2, 2);
 		swarmkv_options_set_caller_thread_number(opts2, 1);
 		db2=swarmkv_open(opts2, cluster_name, &err);
 		if(err)

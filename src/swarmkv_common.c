@@ -11,7 +11,6 @@
 #include <stdio.h>
 #include <arpa/inet.h>
 
-
 int str2integer(const char *str, long long *integer)
 {
 	char *endptr=NULL;
@@ -479,7 +478,11 @@ struct swarmkv_reply *swarmkv_reply_dup(const struct swarmkv_reply *origin)
 }
 void swarmkv_reply_merge_array(struct swarmkv_reply **dst, struct swarmkv_reply *src)
 {
-	if(src->type==SWARMKV_REPLY_NIL) return;
+	if(src->type==SWARMKV_REPLY_NIL)
+	{
+		swarmkv_reply_free(src);
+		return;
+	}
 	if(*dst==NULL)
 	{
 		*dst=swarmkv_reply_new_array(0);
@@ -735,6 +738,10 @@ int key_hash_slot(const char *key, size_t keylen)
 		return slot_id;
 	}
 	return XXH32(key+s+1, e-s-1, KEYSPACE_XXHASH_SEED)%KEYSPACE_SLOT_NUM;
+}
+int key2tid(const sds key, int nr_worker_threads)
+{
+	return key_hash_slot(key, sdslen(key))%nr_worker_threads;
 }
 struct http_client
 {

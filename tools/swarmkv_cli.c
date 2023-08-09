@@ -517,14 +517,10 @@ struct swarmkv_reply *cluster_keys_command(struct swarmkv *db, char *argv[], siz
 	for(i=0; i<nodes_reply->n_element; i++)
 	{
 		thread_reply=swarmkv_command_on(db, nodes_reply->elements[i]->str, "info threads");
-		for(int j=0; j<thread_reply->integer; j++)
+		for(int j=0; j<atoll(thread_reply->str); j++)
 		{
 			keyspace_keys_reply=swarmkv_command_on(db, nodes_reply->elements[i]->str, "keyspace keys %d %s", j, argv[2]);
 			swarmkv_reply_merge_array(&reply, keyspace_keys_reply);
-			if(keyspace_keys_reply->type==SWARMKV_REPLY_NIL)
-			{
-				swarmkv_reply_free(keyspace_keys_reply);
-			}
 			keyspace_keys_reply=NULL;
 		}
 		swarmkv_reply_free(thread_reply);
@@ -561,7 +557,7 @@ struct swarmkv_reply *cluster_info_command(struct swarmkv *db, char *argv[], siz
 		reply->elements[i]=swarmkv_reply_new_array(2);
 		reply->elements[i]->elements[0]=swarmkv_reply_new_string_fmt(nodes_reply->elements[i]->str);
 		aligned_info=str_replace(per_node_info_reply->str, "\n", "\n      ");
-		reply->elements[i]->elements[1]=swarmkv_reply_new_status(aligned_info);
+		reply->elements[i]->elements[1]=swarmkv_reply_new_string_fmt(aligned_info);
 		free(aligned_info);
 		swarmkv_reply_free(per_node_info_reply);
 	}
@@ -1251,6 +1247,7 @@ int main(int argc, char * argv[])
 	swarmkv_options_set_consul_port(opts, g_config.consul_port);
 	swarmkv_options_set_worker_thread_number(opts, 1);
 	swarmkv_options_set_caller_thread_number(opts, 1);
+	swarmkv_options_set_cluster_timeout_us(opts, 1000*1000);
 	swarmkv_options_set_logger(opts, logger);
 	char *err=NULL;
 	g_config.db=swarmkv_open(opts, g_config.db_name, &err);

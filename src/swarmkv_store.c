@@ -150,15 +150,14 @@ struct swarmkv_store
 {
 	struct swarmkv_module module;
 	node_t self;
-	size_t nr_worker_threads;
 	struct swarmkv_store_thread *threads;
 
 	struct swarmkv *exec_cmd_handle;
-	uuid_t my_uuid;	
 	struct swarmkv_module *mod_monitor;
 	long long sync_err;
 	long long sync_ok;
 	long long synced;
+	const struct swarmkv_options *opts;
 };
 
 
@@ -179,7 +178,7 @@ int __store_gettid(sds key, int nr_worker_threads)
 }
 int store_gettid(struct swarmkv_module * mod_store, sds key)
 {
-	return __store_gettid(key, module2store(mod_store)->nr_worker_threads);
+	return __store_gettid(key, module2store(mod_store)->opts->nr_worker_threads);
 }
 struct scontainer
 {
@@ -300,13 +299,13 @@ void store_iterate_sobj(struct swarmkv_store *store, int tid, sobj_callback_func
 struct scontainer *store_lookup_scontainer(struct swarmkv_store *store, sds key)
 {
 	struct scontainer *ctr=NULL;
-	int tid=__store_gettid(key, store->nr_worker_threads);
+	int designated_tid=key2tid(key, store->opts->nr_worker_threads);
 	int real_tid=__gettid(store->exec_cmd_handle);
-	assert(tid==real_tid);
-	ctr=scontainer_find(&(store->threads[tid].obj_table), key);
-	if(0==pthread_mutex_trylock(&store->threads[tid].sanity_lock))
+	assert(designated_tid==real_tid);
+	ctr=scontainer_find(&(store->threads[designated_tid].obj_table), key);
+	if(0==pthread_mutex_trylock(&store->threads[designated_tid].sanity_lock))
 	{
-		pthread_mutex_unlock(&store->threads[tid].sanity_lock);
+		pthread_mutex_unlock(&store->threads[designated_tid].sanity_lock);
 	}
 	else
 	{
@@ -338,7 +337,7 @@ struct sobj *store_lookup(struct swarmkv_module *mod_store, sds key)
 void store_get_uuid(struct swarmkv_module* mod_store, uuid_t uuid)
 {
 	struct swarmkv_store *store=module2store(mod_store);
-	uuid_copy(uuid, store->my_uuid);
+	uuid_copy(uuid, store->opts->bin_uuid);
 	return;
 }
 void store_get_node_addr(struct swarmkv_module* mod_store, node_t *node)
@@ -600,9 +599,9 @@ struct swarmkv_module *swarmkv_store_new(const struct swarmkv_options *opts)
 	struct swarmkv_store *store=ALLOC(struct swarmkv_store, 1);
 	strncpy(store->module.name, "store", sizeof(store->module.name));
 	store->module.mod_ctx=store;
-	store->nr_worker_threads=opts->nr_worker_threads;
+	store->opts=opts;
 	store->threads=ALLOC(struct swarmkv_store_thread, opts->nr_worker_threads);
-	uuid_copy(store->my_uuid, opts->bin_uuid);
+
 	node_init(&store->self, opts->cluster_announce_ip, opts->cluster_announce_port);
 
 	return &(store->module);
@@ -618,7 +617,7 @@ void swarmkv_store_free(struct swarmkv_module *mod_store)
 	struct swarmkv_store *store=module2store(mod_store);
 	struct scontainer *ctr=NULL, *tmp=NULL;
 	
-	for(size_t i=0; i<store->nr_worker_threads; i++)
+	for(size_t i=0; i<store->opts->nr_worker_threads; i++)
 	{
 
 		HASH_ITER(hh, store->threads[i].obj_table, ctr, tmp)
@@ -641,11 +640,11 @@ void swarmkv_store_set_monitor_handle(struct swarmkv_module *mod_store, struct s
 void swarmkv_store_info(struct swarmkv_module *mod_store, struct store_info *info)
 {
 	struct swarmkv_store *store=module2store(mod_store);
-	info->shards=store->nr_worker_threads;
+	info->shards=store->opts->nr_worker_threads;
 	info->keys=0;
 	info->keys_to_sync=0;
 	struct swarmkv_store_thread *thread=NULL;
-	for(size_t i=0; i<store->nr_worker_threads; i++)
+	for(size_t i=0; i<store->opts->nr_worker_threads; i++)
 	{
 		thread = store->threads+i;
 		info->keys_to_sync += __sync_add_and_fetch(&thread->keys_to_sync, 0);
@@ -870,11 +869,11 @@ enum cmd_exec_result crdt_keys_command(struct swarmkv_module *mod_store, const s
 //CRDT KEYS tid pattern
     int i=0, n_matched=0;
 	struct pattern_match_arg cb_arg;
-	int thread_id=atoll(cmd->argv[3]);
-	cb_arg.pattern=cmd->argv[4];
+	int thread_id=atoll(cmd->argv[2]);
+	cb_arg.pattern=cmd->argv[3];
     utarray_new(cb_arg.matched_replies, &ut_array_matched_reply);
 	struct swarmkv_store *store=module2store(mod_store);
-	if(thread_id>store->nr_worker_threads)
+	if(thread_id>store->opts->nr_worker_threads)
 	{
 		*reply=swarmkv_reply_new_error("Invalid thread id");
 		return FINISHED;

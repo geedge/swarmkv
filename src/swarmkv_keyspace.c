@@ -129,6 +129,10 @@ struct swarmkv_reply *key_entry_list_replica_nodes(struct key_route_entry *key_e
 	}
 	return reply;
 }
+static int slot_is_my_thread(int slot_id, int thread_id, int nr_threads)
+{
+	return (slot_id%nr_threads)==thread_id;
+}
 struct crdt_op_ctx
 {
 	node_t peer;
@@ -1742,17 +1746,19 @@ enum cmd_exec_result key_route_generic(struct swarmkv_keyspace *ks, enum KEYSPAC
 UT_icd ut_swarmkv_reply_pointer_icd = {sizeof(struct swarmkv_reply *), NULL, NULL, NULL};
 enum cmd_exec_result keyspace_keys_command(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
 {
-/* KEYSPACE KEYS key-pattern */
+/* KEYSPACE KEYS tid pattern */
 
 	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
 	size_t i=0, n_matched=0;
 	struct slot_runtime *slot_rt=NULL;
 	struct key_route_entry *key_entry=NULL, *tmp=NULL;
 	int is_matched=0;
-	UT_array* matched_replies=NULL;
+	UT_array *matched_replies=NULL;
 	struct swarmkv_reply *r=NULL;
-
-	const sds pattern=cmd->argv[2];
+	int real_tid=__gettid(ks->exec_cmd_handle);
+	int thread_id=atoll(cmd->argv[2]);
+	assert(real_tid==thread_id);
+	const sds pattern=cmd->argv[3];
 	utarray_new(matched_replies, &ut_swarmkv_reply_pointer_icd);
 	for(i=0; i<KEYSPACE_SLOT_NUM; i++)
 	{
@@ -1763,7 +1769,7 @@ enum cmd_exec_result keyspace_keys_command(struct swarmkv_module *mod_keyspace, 
 			pthread_mutex_unlock(&slot_rt->sanity_lock);
 			continue;
 		}
-		
+		slot_is_my_thread(i, thread_id, ks->opts->nr_worker_threads);
 		HASH_ITER(hh, slot_rt->keyroute_table, key_entry, tmp)
 		{
 			is_matched=stringmatchlen(pattern, sdslen(pattern), key_entry->key, sdslen(key_entry->key), 0);
@@ -1987,7 +1993,11 @@ enum cmd_exec_result persist_command(struct swarmkv_module *mod_keyspace, const 
 	return ret;
 
 }
-
+int swarmkv_keyspace_get_tid(struct swarmkv_module *mod_keyspace, int slot_id)
+{
+	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
+	return slot_id%ks->opts->nr_worker_threads;
+}
 #define ACTIVE_EXPIRE_CYCLE_KEYS_PER_LOOP 1000
 void swarmkv_keyspace_periodic(struct swarmkv_module *mod_keyspace, int thread_id)
 {
@@ -2006,6 +2016,7 @@ void swarmkv_keyspace_periodic(struct swarmkv_module *mod_keyspace, int thread_i
 	for(i=0; i<KEYSPACE_SLOT_NUM; i++)
 	{
 		if(i%ks->opts->nr_worker_threads!=thread_id) continue;
+		if(!slot_is_my_thread(i, thread_id, ks->opts->nr_worker_threads))continue;
 		slot_rt=ks->slot_rts+i;
 		if(!slot_rt->I_am_owner) continue;
 		if(ks->opts->sanity_check)

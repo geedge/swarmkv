@@ -52,6 +52,7 @@ sds keyslots2json(void *slot_container_base, size_t sz_slot_container, size_t of
 void health_response2active_nodes(const char *resp_buff, node_t *nodes, uuid_t *uuids, size_t *n_node);
 void leader_response2leader_node(const char *resp_body, node_t *leader);
 int key_hash_slot(const char* key, size_t keylen);
+int key2tid(const sds key, int nr_worker_threads);
 int str2integer(const char *str, long long *integer);
 char *str_replace(char *orig, char *rep, char *with);
 struct swarmkv_options
