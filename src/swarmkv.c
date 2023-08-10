@@ -316,19 +316,19 @@ enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct sw
 	{
 		if(0==strcasecmp("Node", cmd->argv[1]))
 		{
-			*reply=swarmkv_reply_new_string_fmt(node_info_buff);
+			*reply=swarmkv_reply_new_status(node_info_buff);
 		}
 		else if(0==strcasecmp("Store", cmd->argv[1]))
 		{
-			*reply=swarmkv_reply_new_string_fmt(store_info_buff);
+			*reply=swarmkv_reply_new_status(store_info_buff);
 		}
 		else if(0==strcasecmp("Keyspace", cmd->argv[1]))
 		{
-			*reply=swarmkv_reply_new_string_fmt(ks_info_buff);
+			*reply=swarmkv_reply_new_status(ks_info_buff);
 		}
 		else if(0==strcasecmp("Network", cmd->argv[1]))
 		{
-			*reply=swarmkv_reply_new_string_fmt(net_info_buff);
+			*reply=swarmkv_reply_new_status(net_info_buff);
 		}
 		else if(0==strcasecmp("Threads", cmd->argv[1]))
 		{
@@ -853,23 +853,29 @@ void __exec_cmd(struct swarmkv *db, const node_t *target_node, const struct swar
 
 	int target_tid=spec_gettid(spec, cmd, db->opts->nr_worker_threads);
 	
-	struct swarmkv_msg *msg=NULL;
-	//Only worker threads can do network communication, so command should be executed at worker thread first.
+	struct swarmkv_msg *msg=NULL;	
+	if(!node_is_empty(target_node) && node_compare(&db->self, target_node))
+	{
+		//cmd is executed in target node's on_msg_callback
+		long long sequence=swarmkv_rpc_launch(db->rpc_mgr, cur_tid, future_of_caller);
+		msg=swarmkv_msg_new_by_cmd(cmd, &db->self, cur_tid, target_node, sequence);
+		if(cur_tid >= db->opts->nr_worker_threads)
+		{
+			//Only worker threads can do network communication, so command should be executed at worker thread first.
+			swarmkv_mesh_send(db->mesh, cur_tid, random()%db->opts->nr_worker_threads, msg);
+		}
+		else
+		{
+			swarmkv_net_send(db->net, target_node, msg);
+		}
+		return;
+	}
 	if(cur_tid != target_tid)
 	{
 		//cmd will be executed in target thread's on_msg_callback
 		long long sequence=swarmkv_rpc_launch(db->rpc_mgr, cur_tid, future_of_caller);
 		msg=swarmkv_msg_new_by_cmd(cmd, &db->self, cur_tid, target_node, sequence);
 		swarmkv_mesh_send(db->mesh, cur_tid, target_tid, msg);
-		return;
-	}
-	
-	if(!node_is_empty(target_node) && node_compare(&db->self, target_node))
-	{
-		//cmd is executed in target node's on_msg_callback
-		long long sequence=swarmkv_rpc_launch(db->rpc_mgr, cur_tid, future_of_caller);
-		msg=swarmkv_msg_new_by_cmd(cmd, &db->self, cur_tid, target_node, sequence);
-		swarmkv_net_send(db->net, target_node, msg);
 		return;
 	}
 	enum cmd_exec_result exec_ret=FINISHED;

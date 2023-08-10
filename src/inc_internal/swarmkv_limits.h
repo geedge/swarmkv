@@ -1,6 +1,7 @@
 #pragma once
 
 #define KEYSPACE_SLOT_NUM 		16384
+#define STORE_SHARD_NUM         128
 #define SWARMKV_MAX_NODE_NUM	1024
 #define	MAX_REPLICA_NUM		8
 #define	SWARMKV_THREAD_MAX	16

@@ -451,7 +451,7 @@ enum CRDT_OP
 {
 	CRDT_GET,
 	CRDT_MERGE,
-	CRDT_JOIN
+	CRDT_MEET
 };
 struct crdt_generic_ctx
 {
@@ -482,6 +482,7 @@ static void crdt_generic_on_reply(const struct swarmkv_reply *reply, void *user)
 	uuid_t uuid;
 	store_get_uuid(&(ctx->store->module), uuid);
 	int tid=__gettid(ctx->store->exec_cmd_handle);
+	long long error_before=ctx->store->sync_err;
 	if(reply->type==SWARMKV_REPLY_ERROR)
 	{
 		atomic_inc(&ctx->store->sync_err);
@@ -513,8 +514,8 @@ static void crdt_generic_on_reply(const struct swarmkv_reply *reply, void *user)
 				atomic_inc(&ctx->store->sync_err);
 			}
 			break;
-		case CRDT_JOIN:
-			if(reply->type==SWARMKV_REPLY_INTEGER && reply->integer==1)
+		case CRDT_MEET:
+			if(reply->type==SWARMKV_REPLY_INTEGER)
 			{
 				atomic_inc(&ctx->store->sync_ok);
 			}
@@ -527,6 +528,7 @@ static void crdt_generic_on_reply(const struct swarmkv_reply *reply, void *user)
 			atomic_inc(&ctx->store->sync_err);
 			break;
 	}
+	assert(ctx->store->sync_err==error_before);
 error_out:
 	crdt_generic_ctx_free(ctx);
 	return;
@@ -557,33 +559,30 @@ void swarmkv_store_periodic(struct swarmkv_module * mod_store, int thread_id)
 
 	struct swarmkv_store_thread *thr=&store->threads[real_tid];
 	thr->calls++;
-	struct sync_master *sync_master=sync_master_new();
+
 	DL_FOREACH_SAFE(thr->sync_queue, ctr, tmp)
 	{
 		char *blob=NULL;
 		size_t blob_sz=0;
 		scontainer_serialize(ctr, &blob, &blob_sz);
-		sync_master_add_obj(sync_master, ctr->obj.key, blob, blob_sz,
-						utarray_front(ctr->replica_node_list), utarray_len(ctr->replica_node_list));
+		struct swarmkv_cmd *cmd=swarmkv_cmd_new(4);
+		cmd->argv[0]=sdsnew("crdt");
+		cmd->argv[1]=sdsnew("merge");
+		cmd->argv[2]=sdsnew(ctr->obj.key);
+		cmd->argv[3]=sdsnewlen(blob, blob_sz);
+		for(int i=0; i<utarray_len(ctr->replica_node_list); i++)
+		{
+			node_t *peer=utarray_eltptr(ctr->replica_node_list, i);
+			crdt_generic_call(store, CRDT_MERGE, cmd, peer);
+		}
+		swarmkv_cmd_free(cmd);
+		free(blob);
 		DL_DELETE(thr->sync_queue, ctr);
 		ctr->is_in_sync_q=0;
 		store->synced++;
 		n_synced++;
 		if(n_synced>=MAX_SYNC_PER_PERIOD) break;
 	}
-	node_t peer;
-	struct swarmkv_cmd *cmd=NULL;
-	int ret=1;
-	while(1)
-	{
-		ret=sync_master_get_cmd(sync_master, &peer, &cmd);
-		if(!ret) break;	
-		crdt_generic_call(store, CRDT_MERGE, cmd, &peer);
-		//printf("Debug: %s synced %s -> %s\n", cmd->argv[2], store->self.addr, peer.addr);
-		swarmkv_cmd_free(cmd);
-		cmd=NULL;
-	}
-	sync_master_free(sync_master);
 	thr->n_keys=HASH_COUNT(thr->obj_table);
 	DL_COUNT(thr->sync_queue, ctr, thr->keys_to_sync);
 	clock_gettime(CLOCK_MONOTONIC, &end);
@@ -640,7 +639,7 @@ void swarmkv_store_set_monitor_handle(struct swarmkv_module *mod_store, struct s
 void swarmkv_store_info(struct swarmkv_module *mod_store, struct store_info *info)
 {
 	struct swarmkv_store *store=module2store(mod_store);
-	info->shards=store->opts->nr_worker_threads;
+	info->shards=STORE_SHARD_NUM;
 	info->keys=0;
 	info->keys_to_sync=0;
 	struct swarmkv_store_thread *thread=NULL;
@@ -714,20 +713,20 @@ enum cmd_exec_result crdt_add_command(struct swarmkv_module *mod_store, const st
 		assert(node_compare(replica_nodes+i, &store->self)!=0);
 		scontainer_add_replica_node(ctr, replica_nodes+i);
 	}
-	struct swarmkv_cmd *crdt_join_cmd=NULL;
+	struct swarmkv_cmd *crdt_meet_cmd=NULL;
 	for(size_t i=0; i<n_replica_node; i++)
 	{
 		if(i<max_pull_node_num)
 		{
 			crdt_generic_call(store, CRDT_GET, crdt_get_cmd, replica_nodes+i);
 		}
-		crdt_join_cmd=swarmkv_cmd_new(4);
-		crdt_join_cmd->argv[0]=sdsnew("crdt");
-		crdt_join_cmd->argv[1]=sdsnew("meet");
-		crdt_join_cmd->argv[2]=sdsdup(ctr->obj.key);
-		crdt_join_cmd->argv[3]=node_addr2sds(&store->self);
-		crdt_generic_call(store, CRDT_JOIN, crdt_join_cmd, replica_nodes+i);
-		swarmkv_cmd_free(crdt_join_cmd);
+		crdt_meet_cmd=swarmkv_cmd_new(4);
+		crdt_meet_cmd->argv[0]=sdsnew("crdt");
+		crdt_meet_cmd->argv[1]=sdsnew("meet");
+		crdt_meet_cmd->argv[2]=sdsdup(ctr->obj.key);
+		crdt_meet_cmd->argv[3]=node_addr2sds(&store->self);
+		crdt_generic_call(store, CRDT_MEET, crdt_meet_cmd, replica_nodes+i);
+		swarmkv_cmd_free(crdt_meet_cmd);
 	}
 	swarmkv_cmd_free(crdt_get_cmd);
 	crdt_get_cmd=NULL;

@@ -746,8 +746,8 @@ int key2tid(const sds key, int nr_worker_threads)
 struct http_client
 {
 	int response_code;
-	struct event_base* evbase;
-	struct evhttp_connection* evhttpconn;
+	struct event_base *evbase;
+	struct evhttp_connection *evhttpconn;
 	struct evhttp_request *req;	
 	int error_happens;
 	sds response_body;

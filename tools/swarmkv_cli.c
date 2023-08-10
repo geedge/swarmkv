@@ -557,7 +557,7 @@ struct swarmkv_reply *cluster_info_command(struct swarmkv *db, char *argv[], siz
 		reply->elements[i]=swarmkv_reply_new_array(2);
 		reply->elements[i]->elements[0]=swarmkv_reply_new_string_fmt(nodes_reply->elements[i]->str);
 		aligned_info=str_replace(per_node_info_reply->str, "\n", "\n      ");
-		reply->elements[i]->elements[1]=swarmkv_reply_new_string_fmt(aligned_info);
+		reply->elements[i]->elements[1]=swarmkv_reply_new_status(aligned_info);
 		free(aligned_info);
 		swarmkv_reply_free(per_node_info_reply);
 	}
