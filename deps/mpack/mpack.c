@@ -5991,7 +5991,7 @@ static bool mpack_file_tree_read(mpack_tree_t* tree, mpack_file_tree_t* file_tre
     long total = 0;
     while (total < size) {
         size_t read = fread(file_tree->data + total, 1, (size_t)(size - total), file);
-        if (read <= 0) {
+        if (read == 0) {
             mpack_tree_init_error(tree, mpack_error_io);
             MPACK_FREE(file_tree->data);
             return false;

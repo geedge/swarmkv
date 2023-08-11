@@ -98,7 +98,7 @@ static void ftb_perturb(struct fair_token_bucket *ftb, struct timeval now)
 long long fair_token_bucket_consume(struct fair_token_bucket *ftb, struct timeval now, const char *key, size_t keylen, long long weight, enum tb_consume_type cmd, long long tokens)
 {
     ftb->debug_consume_call++;
-    if(weight>FAIR_TB_WEIGHT_MAX || weight<0)
+    if(weight>FAIR_TB_WEIGHT_MAX || weight<=0)
         return -1;
     ST_hyperloglog_add(ftb->hll[weight-1], key, keylen, now);
 

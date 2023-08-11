@@ -792,8 +792,8 @@ double test_fair_token_bucket(struct sftb_class *classes, size_t n_class, long l
 	}
 	long long available_tokens=CIR*duration_s+CBS;
 	double index=max_min_fairness_index(available_tokens, classes, n_class);
-	int print=1;
-	if(print)
+	//int print=1;
+	//if(print)
 	{
 		printf("class\tweight\tdemand\tallocated\tideal\r\n");
 		for(size_t i=0; i<n_class; i++)

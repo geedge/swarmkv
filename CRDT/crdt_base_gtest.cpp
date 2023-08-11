@@ -796,9 +796,9 @@ TEST(ORMap, SetGet)
 		uuid_generate(uuid);
 		map[i]=OR_map_new(uuid);
 	}
-	size_t round=100;
+	size_t ROUND=100;
 	char key_buffer[256], val_buffer[256];
-	for(i=0; i<round; i++)
+	for(i=0; i<ROUND; i++)
 	{
 		snprintf(key_buffer, sizeof(key_buffer), "%s-%zu", key_prefix, i);
 		snprintf(val_buffer, sizeof(val_buffer), "%s-%zu", val_prefix, i);
@@ -807,7 +807,7 @@ TEST(ORMap, SetGet)
 	OR_map_sync(map, 2);
 	struct OR_map_kv *kv_result;
 	size_t success_cnt=0;
-	for(i=0; i<round; i++)
+	for(i=0; i<ROUND; i++)
 	{		
 		snprintf(key_buffer, sizeof(key_buffer), "%s-%zu", key_prefix, i);
 		snprintf(val_buffer, sizeof(val_buffer), "%s-%zu", val_prefix, i);
@@ -820,7 +820,7 @@ TEST(ORMap, SetGet)
 		}
 		OR_map_kv_free(kv_result);
 	}
-	EXPECT_EQ(success_cnt, round);
+	EXPECT_EQ(success_cnt, ROUND);
 	for(i=0; i<2; i++)
 	{
 		OR_map_free(map[i]);
@@ -838,9 +838,9 @@ TEST(ORMap, Incrby)
 		uuid_generate(uuid);
 		map[i]=OR_map_new(uuid);
 	}
-	size_t round=100;
+	size_t ROUND=100;
 	char key_buffer[256];
-	for(i=0; i<round; i++)
+	for(i=0; i<ROUND; i++)
 	{
 		snprintf(key_buffer, sizeof(key_buffer), "%s-%zu", key_prefix, i);
 		OR_map_incrby(map[i%2], key_buffer, strlen(key_buffer)+1, i, &result_integer);
@@ -850,7 +850,7 @@ TEST(ORMap, Incrby)
 
 	struct OR_map_kv *result;
 	size_t success_cnt=0;
-	for(i=0; i<round; i++)
+	for(i=0; i<ROUND; i++)
 	{		
 		snprintf(key_buffer, sizeof(key_buffer), "%s-%zu", key_prefix, i);
 		result=OR_map_get(map[i%2], key_buffer, strlen(key_buffer)+1);
@@ -862,16 +862,16 @@ TEST(ORMap, Incrby)
 		}
 		OR_map_kv_free(result);
 	}
-	EXPECT_EQ(success_cnt, round);
+	EXPECT_EQ(success_cnt, ROUND);
 
-	for(i=0; i<round; i++)
+	for(i=0; i<ROUND; i++)
 	{
 		snprintf(key_buffer, sizeof(key_buffer), "%s-%zu", key_prefix, i);
 		OR_map_incrby(map[i%2], key_buffer, strlen(key_buffer)+1, 998, &result_integer);
 	}
 	OR_map_sync(map, 2);
 	success_cnt=0;
-	for(i=0; i<round; i++)
+	for(i=0; i<ROUND; i++)
 	{		
 		snprintf(key_buffer, sizeof(key_buffer), "%s-%zu", key_prefix, i);
 		result=OR_map_get(map[i%2], key_buffer, strlen(key_buffer)+1);
@@ -883,7 +883,7 @@ TEST(ORMap, Incrby)
 		}
 		OR_map_kv_free(result);
 	}
-	EXPECT_EQ(success_cnt, round);
+	EXPECT_EQ(success_cnt, ROUND);
 	
 	for(i=0; i<2; i++)
 	{
@@ -901,9 +901,9 @@ TEST(ORMap, Incrby5K)
 		map[i]=OR_map_new(uuid);
 	}
 	long long result_integer=0;
-	size_t round=5000;
+	size_t ROUND=5000;
 	const char *key="priority-1";
-	for(i=0; i<round; i++)
+	for(i=0; i<ROUND; i++)
 	{
 		OR_map_incrby(map[i%2], key, strlen(key), 1, &result_integer);
 		OR_map_incrby(map[(i+1)%2], key, strlen(key), -1, &result_integer);
@@ -930,9 +930,9 @@ TEST(ORMap, Remove)
 		uuid_generate(uuid);
 		map[i]=OR_map_new(uuid);
 	}
-	size_t round=100;
+	size_t ROUND=100;
 	char key_buffer[256], val_buffer[256];
-	for(i=0; i<round; i++)
+	for(i=0; i<ROUND; i++)
 	{
 		snprintf(key_buffer, sizeof(key_buffer), "%s-%zu", key_prefix, i);
 		if(i%3==0)
@@ -954,7 +954,7 @@ TEST(ORMap, Remove)
 	OR_map_merge_blob(map[0], blob, blob_sz);
 	free(blob);
 	
-	for(i=0; i<round/2; i++)
+	for(i=0; i<ROUND/2; i++)
 	{	
 		snprintf(key_buffer, sizeof(key_buffer), "%s-%zu", key_prefix, i);
 		OR_map_remove(map[i%2], key_buffer, strlen(key_buffer)+1);
@@ -968,24 +968,24 @@ TEST(ORMap, Remove)
 	size_t success_cnt=0, n_kv=0;
 	int ret=0;
 	n_kv=OR_map_cardinality(map[0]);
-	EXPECT_EQ(n_kv, round-round/2);
+	EXPECT_EQ(n_kv, ROUND-ROUND/2);
 	n_kv=OR_map_cardinality(map[1]);
-	EXPECT_EQ(n_kv, round-round/2);
+	EXPECT_EQ(n_kv, ROUND-ROUND/2);
 	
-	for(i=0; i<round; i++)
+	for(i=0; i<ROUND; i++)
 	{
 		snprintf(key_buffer, sizeof(key_buffer), "%s-%zu", key_prefix, i);
 		ret=OR_map_exisits(map[(i+1)%2], key_buffer, strlen(key_buffer)+1);
-		if(i<round/2)
+		if(i<ROUND/2)
 		{
 			success_cnt += (ret==0?1:0);
 		}
 		else
 		{
-			success_cnt += (ret==1?1:1);
+			success_cnt += (ret==1?1:0);
 		}
 	}
-	EXPECT_EQ(success_cnt, round);
+	EXPECT_EQ(success_cnt, ROUND);
 	for(i=0; i<2; i++)
 	{
 		OR_map_free(map[i]);
@@ -1003,9 +1003,9 @@ TEST(ORMap, ObservedRemove)
 		uuid_generate(uuid);
 		map[i]=OR_map_new(uuid);
 	}
-	size_t round=100;
+	size_t ROUND=100;
 	char key_buffer[256], val_buffer[256];
-	for(i=0; i<round; i++)
+	for(i=0; i<ROUND; i++)
 	{
 		snprintf(key_buffer, sizeof(key_buffer), "%s-%zu", key_prefix, i);
 		snprintf(val_buffer, sizeof(val_buffer), "%s-%zu", val_prefix, i);			
@@ -1256,7 +1256,7 @@ static void CMS_sync(struct CM_sketch *list[], size_t n)
 }
 TEST(CMSketch, Merge)
 {
-	size_t replica_number=2, round=10;
+	size_t replica_number=2, ROUND=10;
 	long long key=1234;
 	struct CM_sketch *cms[replica_number];
 	uuid_t uuid;
@@ -1265,7 +1265,7 @@ TEST(CMSketch, Merge)
 		uuid_generate(uuid);
 		cms[i]=CM_sketch_new(uuid);
 	}
-	for(size_t i=0; i<round; i++)
+	for(size_t i=0; i<ROUND; i++)
 	{
 		CM_sketch_add_n(cms[i%replica_number], (char*) &key, sizeof(key), 1);
 	}
@@ -1274,7 +1274,7 @@ TEST(CMSketch, Merge)
 	for(size_t i=0; i<replica_number; i++)
 	{
 		ret=CM_sketch_query(cms[i], (char *)&key, sizeof(key));
-		EXPECT_EQ(ret, round);
+		EXPECT_EQ(ret, ROUND);
 	}
 	for(size_t i=0; i<replica_number; i++)
 	{
@@ -1283,7 +1283,7 @@ TEST(CMSketch, Merge)
 }
 TEST(CMSketch, Idempotent)
 {
-	size_t replica_number=8, round=10000, i=0;
+	size_t replica_number=8, ROUND=10000, i=0;
 	struct CM_sketch *cms[replica_number];
 	uuid_t uuid;
 	
@@ -1293,7 +1293,7 @@ TEST(CMSketch, Idempotent)
 		cms[i]=CM_sketch_new(uuid);
 	}
 	int n_added=0;
-	for(i=0; i<round; i++)
+	for(i=0; i<ROUND; i++)
 	{
 		CM_sketch_add_n(cms[i%replica_number], (char*) &i, sizeof(i), i);
 		n_added+=i;
@@ -1305,7 +1305,7 @@ TEST(CMSketch, Idempotent)
 	struct CM_sketch_info info;
 	CM_sketch_info(cms[0], &info);
 
-	for(i=0; i<round; i++)
+	for(i=0; i<ROUND; i++)
 	{
 		ret=CM_sketch_query(cms[(i+1)%replica_number], (char*) &i, sizeof(i));
 		if((double)ret<((double)i+info.error_rate*n_added))
@@ -1313,7 +1313,7 @@ TEST(CMSketch, Idempotent)
 			success++;
 		}
 	}
-	EXPECT_GE((double)success/round, info.confidence);
+	EXPECT_GE((double)success/ROUND, info.confidence);
 	for(i=0; i<replica_number; i++)
 	{
 		CM_sketch_free(cms[i]);
@@ -1535,7 +1535,7 @@ TEST(STHyperLogLog, VariousWindow70k)
 		st_case[i].n_replica=1;
 		st_case[i].est_count=st_hll_test_sliding_window(st_case+i);		
 	}
-	int success=st_hll_case_print(st_case, n_case);
+	st_hll_case_print(st_case, n_case);
 	//70000 using linear estimation, which is the worst case for precision 15.
 	//Much better at precision 9.
 	//EXPECT_EQ(success, n_case);
@@ -1547,7 +1547,7 @@ TEST(STHyperLogLog, VariousWindow70k)
 		st_case[i].n_replica=1;
 		st_case[i].est_count=st_hll_test_sliding_window(st_case+i);		
 	}
-	success=st_hll_case_print(st_case, n_case);
+	int success=st_hll_case_print(st_case, n_case);
 	EXPECT_EQ(success, n_case);
 }
 TEST(STHyperLogLog, Debug)
@@ -1653,7 +1653,7 @@ TEST(STHyperLogLog, Reconfigure)
 	{
 		h[i]=ST_hyperloglog_new(precision, time_window_s, start);
 	}
-	int key=1319823, j=0;
+	int key=1319823;
 	int n_add=0;
 	int add_per_step=100;
 	step.tv_sec=0;
@@ -1664,7 +1664,7 @@ TEST(STHyperLogLog, Reconfigure)
 		timeradd(&now, &step, &now);
 		for(int i=0; i<add_per_step; i++)
 		{
-			j=random()%n_replica;
+			int j=random()%n_replica;
 			key++;
 			ST_hyperloglog_add(h[j], (const char *)&key, sizeof(key), now);
 			n_add++;
@@ -1702,7 +1702,7 @@ TEST(STHyperLogLog, Reconfigure)
 		timeradd(&now, &step, &now);
 		for(int i=0; i<add_per_step; i++)
 		{
-			j=random()%n_replica;
+			int j=random()%n_replica;
 			key++;
 			ST_hyperloglog_add(h[j], (const char *)&key, sizeof(key), now);
 			n_add++;
@@ -1736,9 +1736,9 @@ TEST(GArray, Basic)
 		uuid_generate(uuid);
 		a[i]=g_array_new(uuid, array_sz);
 	}
-	int r=0, round=100;
+	int r=0, ROUND=100;
 	long long increment=77;
-	for(int i=0; i<round; i++)
+	for(int i=0; i<ROUND; i++)
 	{
 		r=random()%n_replica;
 		for(int j=0; j<array_sz; j++)
@@ -1758,7 +1758,7 @@ TEST(GArray, Basic)
 	{
 		r=random()%n_replica;
 		value=g_array_get(a[r], i);
-		if(value == (long long)round*increment) success++;
+		if(value == (long long)ROUND*increment) success++;
 	}
 	EXPECT_EQ(success, array_sz);
 	g_array_reset(a[0]);
@@ -1779,7 +1779,7 @@ TEST(GArray, Reset)
 	uuid_t uuid;
 	size_t n_replica=2;
 	int array_sz=1024;
-	size_t round=100;
+	size_t ROUND=100;
 	struct g_array *a[n_replica];
 	for(size_t i=0; i<n_replica; i++)
 	{
@@ -1788,7 +1788,7 @@ TEST(GArray, Reset)
 	}
 	long long idx=1, value=0;
 	srandom(17);
-	for(size_t i=0; i<round; i++)
+	for(size_t i=0; i<ROUND; i++)
 	{
 		g_array_incrby(a[0], idx, 100);
 		g_array_incrby(a[1], idx, 100);

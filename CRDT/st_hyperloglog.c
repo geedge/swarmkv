@@ -43,7 +43,10 @@ struct ST_hyperloglog *ST_hyperloglog_new(unsigned char precision, int time_wind
     struct ST_hyperloglog *h=ALLOC(struct ST_hyperloglog, 1);
     // Ensure the precision is somewhat sane
     if (precision < HLL_MIN_PRECISION || precision > HLL_MAX_PRECISION)
+    {
+        free(h);
         return NULL;
+    }
 
     // Store precision
     h->cfg.precision = precision;

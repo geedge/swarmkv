@@ -125,8 +125,6 @@ static void cms_bin_log_add(struct cms_bin *bin, const uint64_t *hashes, size_t 
         c=MIN(c, bin->bins[idx]);
     }
    
-    long pr=(long)pow(CMLS16_BASE, c);
-    long r=random()%pr;
     for(int t=0; t<times; t++)
     {
         int increase=increase_decision(c);
