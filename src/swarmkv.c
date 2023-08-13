@@ -101,7 +101,10 @@ void swarmkv_register_thread(struct swarmkv *db)
 	db->threads[thread_id].thread_id=thread_id;
 	return;
 }
-
+struct swarmkv_options *swarmkv_get0_options(struct swarmkv *db)
+{
+	return db->opts;
+}
 int __gettid(struct swarmkv *db)
 {
 	int sys_tid=syscall(SYS_gettid);

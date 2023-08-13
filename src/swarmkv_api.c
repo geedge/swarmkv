@@ -36,7 +36,8 @@ struct swarmkv_options* swarmkv_options_new(void)
 	opts->nr_worker_threads=1;
 	opts->nr_caller_threads=1;
 	opts->is_assigned_to_db=0;
-	opts->run_for_leader_flag=1;
+	opts->run_for_leader_enabled=1;
+	opts->batch_sync_enabled=0;
 	return opts;
 }
 void swarmkv_options_free(struct swarmkv_options *opt)
@@ -106,9 +107,9 @@ int swarmkv_options_set_log_path(struct swarmkv_options *opts, const char *logpa
     opts->logpath=logpath;
     return 0;
 }
-int swarmkv_options_set_disable_run_for_leader(struct swarmkv_options *opts)
+int swarmkv_options_set_run_for_leader_enabled(struct swarmkv_options *opts, int value)
 {
-	opts->run_for_leader_flag=0;
+	opts->run_for_leader_enabled=value;
 	return 0;
 }
 int swarmkv_options_set_consul_host(struct swarmkv_options *opts, const char* ip_addr)
@@ -136,6 +137,15 @@ int swarmkv_options_set_worker_thread_number(struct swarmkv_options *opts, int n
 {
 	opts->nr_worker_threads=nr_worker_threads;
 	return 0;
+}
+int swarmkv_options_set_batch_sync_enabled(struct swarmkv_options *opts, int value)
+{
+	opts->batch_sync_enabled=1;
+	return 0;
+}
+int swarmkv_options_get_worker_thread_number(const struct swarmkv_options *opts)
+{
+	return opts->nr_worker_threads;
 }
 
 void swarmkv_set(struct swarmkv * db,

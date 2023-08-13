@@ -64,9 +64,15 @@ int swarmkv_options_set_log_path(struct swarmkv_options *opts, const char *logpa
 int swarmkv_options_set_consul_port(struct swarmkv_options *opts, unsigned int consul_port);
 int swarmkv_options_set_consul_host(struct swarmkv_options *opts, const char *ip_addr);
 int swarmkv_options_set_dryrun(struct swarmkv_options *opts);
-int swarmkv_options_set_disable_run_for_leader(struct swarmkv_options *opts);
+//Default 1: Enabled.
+int swarmkv_options_set_run_for_leader_enabled(struct swarmkv_options *opts, int value);
+//Default 0: Disabled. 
+//Enabling batch synchronization requires all cluster nodes using same worker thread number.
+int swarmkv_options_set_batch_sync_enabled(struct swarmkv_options *opts, int value);
 int swarmkv_options_set_caller_thread_number(struct swarmkv_options *opts, int nr_caller_threads);
 int swarmkv_options_set_worker_thread_number(struct swarmkv_options *opts, int nr_worker_threads);
+int swarmkv_options_get_worker_thread_number(const struct swarmkv_options *opts);
+
 
 int swarmkv_options_set_cluster_announce_ip(struct swarmkv_options *opts, const char *ip_addr);
 int swarmkv_options_set_cluster_announce_port(struct swarmkv_options *opts, unsigned int cluster_announce_port);
@@ -77,7 +83,7 @@ struct swarmkv;
 /* The ownership of opts is transferred to swarmkv instance.*/
 struct swarmkv *swarmkv_open(struct swarmkv_options *opts, const char *cluster_name, char **err);
 void swarmkv_close(struct swarmkv * db);
-
+struct swarmkv_options *swarmkv_get0_options(struct swarmkv *db);
 
 void swarmkv_register_thread(struct swarmkv *db);
 

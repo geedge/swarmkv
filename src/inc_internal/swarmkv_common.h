@@ -62,7 +62,7 @@ struct swarmkv_options
 	unsigned int health_check_port;
 	unsigned int health_check_announce_port;
 	int dryrun;
-	int run_for_leader_flag;
+	int run_for_leader_enabled;
 	unsigned int consul_port;
     unsigned int cluster_timeout_us;
 	unsigned int sync_interval_us;
@@ -78,6 +78,7 @@ struct swarmkv_options
 	int total_threads;
 	int is_assigned_to_db;
 	int sanity_check;
+	int batch_sync_enabled;
 };
 
 struct swarmkv_cmd

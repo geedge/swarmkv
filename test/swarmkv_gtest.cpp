@@ -568,8 +568,9 @@ protected:
 		swarmkv_options_set_logger(opts1, logger);
 		swarmkv_options_set_sync_interval_us(opts1, 10*1000);
 		swarmkv_options_set_cluster_timeout_us(opts1, very_long_timeout_us);
-		swarmkv_options_set_worker_thread_number(opts1, 1);
+		swarmkv_options_set_worker_thread_number(opts1, 2);
 		swarmkv_options_set_caller_thread_number(opts1, 1);
+		swarmkv_options_set_batch_sync_enabled(opts1, 1);
 		db1=swarmkv_open(opts1, cluster_name, &err);
 		if(err)
 		{
@@ -586,6 +587,7 @@ protected:
 		swarmkv_options_set_sync_interval_us(opts2, 10*1000);
 		swarmkv_options_set_worker_thread_number(opts2, 2);
 		swarmkv_options_set_caller_thread_number(opts2, 1);
+		swarmkv_options_set_batch_sync_enabled(opts2, 1);
 		db2=swarmkv_open(opts2, cluster_name, &err);
 		if(err)
 		{
@@ -608,6 +610,37 @@ protected:
 struct log_handle *SwarmkvTwoNodes::logger;
 struct swarmkv *SwarmkvTwoNodes::db1;
 struct swarmkv *SwarmkvTwoNodes::db2;
+TEST_F(SwarmkvTwoNodes, KeyspaceKeys)
+{
+	struct swarmkv *db[2];
+	db[0]=SwarmkvTwoNodes::db1;
+	db[1]=SwarmkvTwoNodes::db2;
+	struct swarmkv_reply *reply=NULL;
+	const char *key="low-level-test-230813";
+
+	reply=swarmkv_command(db[0], "SET %s value1", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	EXPECT_STREQ(reply->str, "OK");
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db[1], "KEYSPACE RLIST %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
+	EXPECT_EQ(reply->n_element, 1);
+	swarmkv_reply_free(reply);
+
+	int nr_worker_thread=0;
+	const struct swarmkv_options *opts=NULL;
+	opts=swarmkv_get0_options(db[0]);
+	nr_worker_thread=swarmkv_options_get_worker_thread_number(opts);
+	long long n_key=0;
+	for(int i=0; i<nr_worker_thread; i++)
+	{
+		reply=swarmkv_command(db[1], "KEYSPACE KEYS %d %s", i, key);
+		if(reply->type==SWARMKV_REPLY_ARRAY) n_key+=reply->n_element;
+		swarmkv_reply_free(reply);
+	}
+	EXPECT_EQ(n_key, 1);
+}
 TEST_F(SwarmkvTwoNodes, SET_GET)
 {
 	struct swarmkv *db1=SwarmkvTwoNodes::db1;
@@ -1363,8 +1396,8 @@ TEST_F(SwarmkvTwoNodes, TypeHash)
 		EXPECT_STREQ(reply->str, "female");
 		swarmkv_reply_free(reply);
 	}
-
 }
+
 TEST_F(SwarmkvTwoNodes, Wait)
 {
 	//return;
@@ -1395,6 +1428,7 @@ TEST(CloudNative, AnnounceIPPort)
 		swarmkv_options_set_health_check_port(opts[i], health_check_port_base+i);
 		swarmkv_options_set_bind_address(opts[i], bind_ip);
 		swarmkv_options_set_cluster_announce_ip(opts[i], annouce_ip);
+
 		db[i]=swarmkv_open(opts[i], cluster_name, &err);
 		if(err)
 		{

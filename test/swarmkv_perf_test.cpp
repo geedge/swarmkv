@@ -206,7 +206,7 @@ TEST(Performance, Sync)
 		swarmkv_options_set_worker_thread_number(opts[i], WORKER_THREAD_NUMBER);
 		swarmkv_options_set_cluster_timeout_us(opts[i], 1000*1000);
 		swarmkv_options_set_sync_interval_us(opts[i], 100*1000);
-		swarmkv_options_set_disable_run_for_leader(opts[i]);
+		swarmkv_options_set_run_for_leader_enabled(opts[i], 0);
 		db[i]=swarmkv_open(opts[i], cluster_name, &err);
 		if(err)
 		{
@@ -360,7 +360,7 @@ TEST(Resilience, AddSlotOwner)
 		swarmkv_options_set_logger(opts[i], logger);
 		swarmkv_options_set_worker_thread_number(opts[i], WORKER_THREAD_NUMBER);
 		swarmkv_options_set_cluster_timeout_us(opts[i], 100*1000);
-		swarmkv_options_set_disable_run_for_leader(opts[i]);
+		swarmkv_options_set_run_for_leader_enabled(opts[i], 0);
 		db[i]=swarmkv_open(opts[i], cluster_name, &err);
 		if(err)
 		{

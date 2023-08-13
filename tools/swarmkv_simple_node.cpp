@@ -123,7 +123,7 @@ int main(int argc, char ** argv)
 	swarmkv_options_set_worker_thread_number(opts, worker_thread_number);
 	swarmkv_options_set_cluster_timeout_us(opts, 500000);
 	swarmkv_options_set_sync_interval_us(opts, 500);
-	//swarmkv_options_set_disable_run_for_leader(opts);
+	//swarmkv_options_set_run_for_leader_enabled(opts);
 	struct swarmkv *db=swarmkv_open(opts, cluster_name, &err);
 	if(err)
 	{

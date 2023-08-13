@@ -231,7 +231,8 @@ struct swarmkv_keyspace
 	int readable_tid;
 	node_t self;
 	uuid_t uuid;
-	pthread_rwlock_t rwlock;
+
+
 	struct slot_runtime slot_rts[KEYSPACE_SLOT_NUM];
 
 	char consul_agent_host[MAX_IPV4_ADDR_LEN];
@@ -1177,24 +1178,6 @@ void swarmkv_keyspace_set_monitor_handle(struct swarmkv_module *mod_keyspace, st
 	ks->mod_monitor=mod_monitor;
 	return;
 }
-void keyspace_lock(struct swarmkv_module *mod_keyspace, enum cmd_key_flag flag, const sds key)
-{
-	if(!key) return;
-	int slot_id=key_hash_slot(key, sdslen(key));
-	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
-	struct slot_runtime *slot_rt=ks->slot_rts+slot_id;
-	pthread_mutex_lock(&slot_rt->sanity_lock);
-	return;
-}
-void keyspace_unlock(struct swarmkv_module *mod_keyspace, enum cmd_key_flag flag, const sds key)
-{
-	if(!key) return;
-	int slot_id=key_hash_slot(key, sdslen(key));
-	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
-	struct slot_runtime *slot_rt=ks->slot_rts+slot_id;
-	pthread_mutex_unlock(&slot_rt->sanity_lock);
-	return;
-}
 void *swarmkv_keyspace_thread(void *arg)
 {
 	struct swarmkv_keyspace *ks=(struct swarmkv_keyspace *)arg;
@@ -1260,7 +1243,7 @@ struct swarmkv_module *swarmkv_keyspace_new(struct swarmkv_options *opts, const 
 		log_fatal(ks->logger, MODULE_SWARMKV_KEYSPACE, "consul service register failed.");
 		goto error_out;
 	}
-	if(opts->run_for_leader_flag)
+	if(opts->run_for_leader_enabled)
 	{
 		consul_watch_leadership_changes_async(ks);
 	}
@@ -1763,13 +1746,11 @@ enum cmd_exec_result keyspace_keys_command(struct swarmkv_module *mod_keyspace, 
 	for(i=0; i<KEYSPACE_SLOT_NUM; i++)
 	{
 		slot_rt=ks->slot_rts+i;
-		pthread_mutex_lock(&slot_rt->sanity_lock);
 		if(!slot_rt->I_am_owner && slot_rt->state!=STATE_IMPORTING)
 		{
-			pthread_mutex_unlock(&slot_rt->sanity_lock);
 			continue;
 		}
-		slot_is_my_thread(i, thread_id, ks->opts->nr_worker_threads);
+		if(!slot_is_my_thread(i, thread_id, ks->opts->nr_worker_threads)) continue;
 		HASH_ITER(hh, slot_rt->keyroute_table, key_entry, tmp)
 		{
 			is_matched=stringmatchlen(pattern, sdslen(pattern), key_entry->key, sdslen(key_entry->key), 0);
@@ -1779,7 +1760,6 @@ enum cmd_exec_result keyspace_keys_command(struct swarmkv_module *mod_keyspace, 
 				utarray_push_back(matched_replies, &r);
 			}
 		}
-		pthread_mutex_unlock(&slot_rt->sanity_lock);
 	}
 	n_matched=utarray_len(matched_replies);
 	if(n_matched>0)

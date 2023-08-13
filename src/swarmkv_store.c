@@ -559,29 +559,53 @@ void swarmkv_store_periodic(struct swarmkv_module * mod_store, int thread_id)
 
 	struct swarmkv_store_thread *thr=&store->threads[real_tid];
 	thr->calls++;
-
+	struct sync_master *sync_master=sync_master_new();
 	DL_FOREACH_SAFE(thr->sync_queue, ctr, tmp)
 	{
 		char *blob=NULL;
 		size_t blob_sz=0;
 		scontainer_serialize(ctr, &blob, &blob_sz);
-		struct swarmkv_cmd *cmd=swarmkv_cmd_new(4);
-		cmd->argv[0]=sdsnew("crdt");
-		cmd->argv[1]=sdsnew("merge");
-		cmd->argv[2]=sdsnew(ctr->obj.key);
-		cmd->argv[3]=sdsnewlen(blob, blob_sz);
-		for(int i=0; i<utarray_len(ctr->replica_node_list); i++)
+		if(store->opts->batch_sync_enabled)
 		{
-			node_t *peer=utarray_eltptr(ctr->replica_node_list, i);
-			crdt_generic_call(store, CRDT_MERGE, cmd, peer);
+			sync_master_add_obj(sync_master, ctr->obj.key, blob, blob_sz,
+							utarray_front(ctr->replica_node_list), utarray_len(ctr->replica_node_list));
+
 		}
-		swarmkv_cmd_free(cmd);
-		free(blob);
+		else
+		{
+			struct swarmkv_cmd *cmd=swarmkv_cmd_new(4);
+			cmd->argv[0]=sdsnew("crdt");
+			cmd->argv[1]=sdsnew("merge");
+			cmd->argv[2]=sdsnew(ctr->obj.key);
+			cmd->argv[3]=sdsnewlen(blob, blob_sz);
+			for(int i=0; i<utarray_len(ctr->replica_node_list); i++)
+			{
+				node_t *peer=utarray_eltptr(ctr->replica_node_list, i);
+				crdt_generic_call(store, CRDT_MERGE, cmd, peer);
+			}
+			swarmkv_cmd_free(cmd);
+			free(blob);
+		}
 		DL_DELETE(thr->sync_queue, ctr);
 		ctr->is_in_sync_q=0;
 		store->synced++;
 		n_synced++;
 		if(n_synced>=MAX_SYNC_PER_PERIOD) break;
+	}
+	if(store->opts->batch_sync_enabled)
+	{
+		node_t peer;
+		struct swarmkv_cmd *cmd=NULL;
+		int ret=1;
+		while(1)
+		{
+			ret=sync_master_get_cmd(sync_master, &peer, &cmd);
+			if(!ret) break;	
+			crdt_generic_call(store, CRDT_MERGE, cmd, &peer);
+			swarmkv_cmd_free(cmd);
+			cmd=NULL;
+		}
+		sync_master_free(sync_master);	
 	}
 	thr->n_keys=HASH_COUNT(thr->obj_table);
 	DL_COUNT(thr->sync_queue, ctr, thr->keys_to_sync);
