@@ -49,6 +49,7 @@ struct swarmkv_thread_ctx
 	pthread_t thr;
 	int sys_tid;
 	int thread_id;
+	int recusion_depth;
 	struct swarmkv *db;
 	struct event_base *evbase;
 	int is_dispatching;
@@ -82,9 +83,6 @@ struct swarmkv
 	struct swarmkv_cmd_spec *command_table;
 	struct timespec boot_time;
 
-	pthread_mutex_t lock_tunnel;
-	node_t tunnel_for;
-	struct future *f_tunnel;
 };
 struct swarmkv *module2db(struct swarmkv_module *module)
 {
@@ -117,11 +115,6 @@ int __gettid(struct swarmkv *db)
 	}
 	assert(0);
 	return -1;
-}
-struct swarmkv_thread_ctx *swarmkv_get_thread_ctx(struct swarmkv *db)
-{
-	int tid=__gettid(db);
-	return &db->threads[tid];
 }
 void __exec_cmd(struct swarmkv *db, const node_t *target_node, const struct swarmkv_cmd *cmd, struct future *future_of_caller);
 struct local_caller_ctx
@@ -353,31 +346,6 @@ enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct sw
 	}
 
 	return FINISHED;
-}
-struct tunnel_ctx
-{
-	struct swarmkv *db;
-	struct swarmkv_reply *reply;
-	int is_async;
-	int is_callback_executed;
-};
-void tunnel_on_reply_cb(const struct swarmkv_reply *reply, void * arg)
-{
-	struct tunnel_ctx *ctx=(struct tunnel_ctx*)arg;
-	struct swarmkv *db=ctx->db;
-	if(ctx->is_async)
-	{
-		struct promise* p=future_to_promise(db->f_tunnel);
-		promise_success(p, (void*)reply);
-		db->f_tunnel=NULL;
-		free(ctx);
-	}
-	else
-	{
-		ctx->is_callback_executed=1;
-		ctx->reply=swarmkv_reply_dup(reply);
-	}
-	pthread_mutex_unlock(&db->lock_tunnel);
 }
 enum cmd_exec_result ping_command(struct swarmkv_module *mod_db, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
 {
@@ -796,7 +764,7 @@ static int spec_gettid(struct swarmkv_cmd_spec *spec, const struct swarmkv_cmd *
 			tid=atoi(cmd->argv[2]);
 			break;
 		case KEY_OFFSET_SLOTID:
-			tid=swarmkv_keyspace_get_tid(spec->module, atoi(cmd->argv[2]));
+			tid=swarmkv_keyspace_slot2tid(spec->module, atoi(cmd->argv[2]));
 			break;
 		default:
 			tid=key2tid(cmd->argv[spec->key_offset], nr_worker_threads);
@@ -881,6 +849,8 @@ void __exec_cmd(struct swarmkv *db, const node_t *target_node, const struct swar
 		swarmkv_mesh_send(db->mesh, cur_tid, target_tid, msg);
 		return;
 	}
+	db->threads[cur_tid].recusion_depth++;
+	assert(db->threads[cur_tid].recusion_depth<8);
 	enum cmd_exec_result exec_ret=FINISHED;
 	struct timespec start, end;
 	clock_gettime(CLOCK_MONOTONIC_COARSE, &start);
@@ -895,7 +865,7 @@ void __exec_cmd(struct swarmkv *db, const node_t *target_node, const struct swar
 		{
 			struct promise *p=future_to_promise(future_of_caller);
 			promise_success(p, reply);
-			swarmkv_reply_free(reply);			
+			swarmkv_reply_free(reply);		
 			break;
 		}
 		case REDIRECT:
@@ -904,6 +874,8 @@ void __exec_cmd(struct swarmkv *db, const node_t *target_node, const struct swar
 			struct cmd_ctx *ctx=cmd_ctx_new(db, cmd, future_of_caller);
 			node_init_from_reply(&peer, reply);
 			swarmkv_reply_free(reply);
+			//Should never redirect to myself
+			assert(node_compare(&peer, &db->self));
 			ctx->future_of_mine=future_create("peer_exec", peer_exec_on_success, generic_on_fail, ctx);
 			__exec_cmd(db, &peer, cmd, ctx->future_of_mine);
 			break;
@@ -926,6 +898,7 @@ void __exec_cmd(struct swarmkv *db, const node_t *target_node, const struct swar
 			break;
 		}
 	}
+	db->threads[cur_tid].recusion_depth--;
 	return;
 }
 
@@ -1345,7 +1318,7 @@ struct swarmkv *swarmkv_open(struct swarmkv_options *opts, const char *db_name, 
 	node_init(&db->self, opts->cluster_announce_ip, opts->cluster_announce_port);
 	
 
-	db->mod_keyspace=swarmkv_keyspace_new(db->opts, db_name, db->logger, err);
+	db->mod_keyspace=swarmkv_keyspace_new(db->ref_evbases, db->opts->nr_worker_threads, db->opts, db_name, db->logger, err);
 	if(*err)
 	{
 		goto error_out;

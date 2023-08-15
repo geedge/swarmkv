@@ -743,79 +743,7 @@ int key2tid(const sds key, int nr_worker_threads)
 {
 	return key_hash_slot(key, sdslen(key))%nr_worker_threads;
 }
-struct http_client
-{
-	int response_code;
-	struct event_base *evbase;
-	struct evhttp_connection *evhttpconn;
-	struct evhttp_request *req;	
-	int error_happens;
-	sds response_body;
-};
-void __http_blocking_request_cb(struct evhttp_request *req, void *arg)
-{	
-	struct http_client* client = (struct http_client*) arg;
-	if(!req || !evhttp_request_get_response_code(req))
-	{
-		client->error_happens=1;
-	}
-	else
-	{		
-		client->response_code=evhttp_request_get_response_code(req);
-		if(client->response_code==200)
-		{
-			struct evbuffer *buf=NULL;
-			buf=evhttp_request_get_input_buffer(client->req);
-			size_t len = evbuffer_get_length(buf);
-			client->response_body=sdsnewlen(SDS_NOINIT, len);
-			evbuffer_remove(buf, client->response_body, len);
-		}
-	}
-	event_base_loopbreak(client->evbase);
-}
-int http_blocking_request(enum evhttp_cmd_type type, const char *host, unsigned int port, const char *url, const sds req_body, sds *resp_body)
-{
-	struct http_client client_data;
-	struct http_client* client=&client_data;
-	memset(&client_data, 0, sizeof(client_data));
-	client->evbase=event_base_new();	//temporary evbase for blocking query
-    client->evhttpconn = evhttp_connection_base_new(client->evbase, NULL, host, port);
-    client->req = evhttp_request_new(__http_blocking_request_cb, client);
 
-	struct evkeyvalq *output_headers = evhttp_request_get_output_headers(client->req);
-	char hostname[256]="";
-	snprintf(hostname, sizeof(hostname), "%s:%u", host, port);
-	evhttp_add_header(output_headers, "Host", hostname);
-	evhttp_add_header(output_headers, "Connection", "close");
-	if(req_body)
-	{
-		struct evbuffer* output_buffer = evhttp_request_get_output_buffer(client->req);
-		evbuffer_add(output_buffer, req_body, sdslen(req_body));
-		char number[64];
-		snprintf(number, sizeof(number), "%zu", sdslen(req_body));
-		evhttp_add_header(output_headers, "Content-Type", "application/json");
-		evhttp_add_header(output_headers, "Content-Length", number);
-	}
-    evhttp_make_request(client->evhttpconn, client->req, type, url);
-    evhttp_connection_set_timeout(client->evhttpconn, 5);
-    event_base_dispatch(client->evbase);
-	if(client->response_code == 200)
-	{
-		if(resp_body)
-		{
-			*resp_body=client->response_body;
-		}
-		else
-		{
-			sdsfree(client->response_body);			
-		}	
-		client->response_body=NULL;
-	}
-//	evhttp_request_free(client->req);
-	evhttp_connection_free(client->evhttpconn);
-	event_base_free(client->evbase);
-	return client->response_code;	
-}
 //Source: https://stackoverflow.com/a/779960
 char *str_replace(char *orig, char *rep, char *with) 
 {
