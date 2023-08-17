@@ -25,61 +25,52 @@ void *blocking_call_thread(void *thread_arg)
 	char key[256]={0}, value[256]={0};
 	uuid_t uuid;
 	char uuid_str[36];
+	swarmkv_register_thread(db);
 	int *success=ALLOC(int, 1);
 	uuid_generate(uuid);
 	uuid_unparse_lower(uuid, uuid_str);
 
-	struct cmd_exec_arg *arg=NULL;
-	unsigned long long set_success_counter=0, get_success_counter=0, del_success_counter=0;
-	arg=cmd_exec_arg_new();
-
+	struct swarmkv_reply *reply=NULL;
 	for(i=0; i<n_key; i++)
 	{
 		snprintf(key, sizeof(key), "%s-key-%zu", uuid_str, i);
-		snprintf(value, sizeof(value), "%s-val-%zu", uuid_str, i);	
-		cmd_exec_arg_clear(arg);
-		cmd_exec_arg_expect_OK(arg);
-		swarmkv_set(db, key, strlen(key), value, strlen(value), cmd_exec_generic_callback, arg);
-		set_success_counter+=cmd_exec_arg_wait(arg, PERF_TEST_EXEC_TO_MS);
+		snprintf(value, sizeof(value), "%s-val-%zu", uuid_str, i);
+		reply=swarmkv_command(db, "SET %s %s", key, value);
+		EXPECT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+		EXPECT_STREQ(reply->str, "OK");
+		swarmkv_reply_free(reply);
 	}
 	wait_for_sync();
 	for(i=0; i<n_key; i++)
 	{
 		snprintf(key, sizeof(key), "%s-key-%zu", uuid_str, i);
-		snprintf(value, sizeof(value), "%s-val-%zu", uuid_str, i);	
-		cmd_exec_arg_clear(arg);
-		cmd_exec_arg_expect_cstring(arg, value);
-		swarmkv_get(db, key, strlen(key), cmd_exec_generic_callback, arg);	
-		get_success_counter+=cmd_exec_arg_wait(arg, PERF_TEST_EXEC_TO_MS);
+		snprintf(value, sizeof(value), "%s-val-%zu", uuid_str, i);
+		reply=swarmkv_command(db, "GET %s", key);
+		EXPECT_EQ(reply->type, SWARMKV_REPLY_STRING);
+		EXPECT_STREQ(reply->str, value);
+		swarmkv_reply_free(reply);
 	}
 
 	wait_for_sync();
 	for(i=0; i<n_key; i++)
 	{
 		snprintf(key, sizeof(key), "%s-key-%zu", uuid_str, i);
-		cmd_exec_arg_clear(arg);
-		cmd_exec_arg_expect_integer(arg, 1);
-		swarmkv_del(db, key, strlen(key), cmd_exec_generic_callback, arg);
-		del_success_counter+=cmd_exec_arg_wait(arg, PERF_TEST_EXEC_TO_MS);
+		reply=swarmkv_command(db, "DEL %s", key);
+		EXPECT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+		EXPECT_EQ(reply->integer, 1);
+		swarmkv_reply_free(reply);
 	}
-	cmd_exec_arg_free(arg);
-	
+
 	sleep(10);
-	*success=0;
-	if( n_key==get_success_counter && 
-		get_success_counter==set_success_counter &&
-		get_success_counter==del_success_counter)
-	{
-		*success=1;
-	}
+	*success=1;
 
 	return success;
 }
 
 TEST(Performance, Nthreads)
 {
-	int NODE_NUMBER=3;
-	int CALLBACK_THREAD_NUMBER=4;
+	int NODE_NUMBER=2;
+	int CALLER_THREAD_NUMBER=2;
 	int WORKER_THREAD_NUMBER=2;
 	int i=0, j=0;
 	struct swarmkv *db[NODE_NUMBER];
@@ -102,6 +93,7 @@ TEST(Performance, Nthreads)
 		swarmkv_options_set_health_check_port(opts[i], 6310+i);
 		swarmkv_options_set_logger(opts[i], logger);
 		swarmkv_options_set_worker_thread_number(opts[i], WORKER_THREAD_NUMBER);
+		swarmkv_options_set_caller_thread_number(opts[i], CALLER_THREAD_NUMBER);
 		db[i]=swarmkv_open(opts[i], cluster_name, &err);
 		if(err)
 		{
@@ -114,7 +106,7 @@ TEST(Performance, Nthreads)
 	pthread_t threads[NODE_NUMBER][WORKER_THREAD_NUMBER];	
 	for(i=0; i<NODE_NUMBER; i++)
 	{
-		for(j=0; j<CALLBACK_THREAD_NUMBER; j++)
+		for(j=0; j<CALLER_THREAD_NUMBER; j++)
 		{
 			pthread_create(&(threads[i][j]), NULL, blocking_call_thread, db[i]);
 		}
@@ -148,28 +140,21 @@ size_t g_token_bucket_number=200*1000;
 void *background_tconsume_thread(void *thread_arg)
 {
 	struct swarmkv *db=(struct swarmkv *)thread_arg;
+	swarmkv_register_thread(db);
 
-	struct cmd_exec_arg *arg=NULL;
-	arg=cmd_exec_arg_new();
-	cmd_exec_arg_diable_sync_check(arg);
 	char key[256];
-	int ret=0;
-	long long tokens=1;
 	size_t round=0, got_token_cnt=0;
 	int start=random()%16;
+	struct swarmkv_reply *reply=NULL;
 	while(g_tconsume_running_flag)
 	{
 		snprintf(key, sizeof(key), "tb-%zu", (round+start)%g_token_bucket_number);
-		cmd_exec_arg_expect_integer(arg, tokens);
-		arg->print_reply_on_fail=1;
-		swarmkv_tconsume(db, key, strlen(key), tokens, cmd_exec_generic_callback, arg);
-		ret=cmd_exec_arg_wait(arg, PERF_TEST_EXEC_TO_MS);
-		cmd_exec_arg_clear(arg);		
-		if(ret==1) got_token_cnt++;
-		else printf("tconsume %s failed\n", key);
+		reply=swarmkv_command(db, "TCONSUME %s 1", key);
+		EXPECT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+		got_token_cnt+=reply->integer;
+		swarmkv_reply_free(reply);
 		round++;
 	}
-	cmd_exec_arg_free(arg);
 	int *success=ALLOC(int, 1);
 	EXPECT_EQ(got_token_cnt, round);
 	if(got_token_cnt==round)
@@ -181,7 +166,7 @@ void *background_tconsume_thread(void *thread_arg)
 TEST(Performance, Sync)
 {
 	size_t NODE_NUMBER=2;
-	size_t CALL_THREAD_PER_NODE=2;
+	size_t CALLER_THREAD_NUMBER=2;
 	size_t WORKER_THREAD_NUMBER=1;
 	
 	struct swarmkv *db[NODE_NUMBER];
@@ -204,6 +189,7 @@ TEST(Performance, Sync)
 		swarmkv_options_set_health_check_port(opts[i], health_port_start+i);
 		swarmkv_options_set_logger(opts[i], logger);
 		swarmkv_options_set_worker_thread_number(opts[i], WORKER_THREAD_NUMBER);
+		swarmkv_options_set_caller_thread_number(opts[i], CALLER_THREAD_NUMBER+1);
 		swarmkv_options_set_cluster_timeout_us(opts[i], 1000*1000);
 		swarmkv_options_set_sync_interval_us(opts[i], 100*1000);
 		swarmkv_options_set_run_for_leader_enabled(opts[i], 0);
@@ -214,6 +200,7 @@ TEST(Performance, Sync)
 			free(err);
 			err=NULL;
 		}
+		swarmkv_register_thread(db[i]);
 	}
 	char key[256]={0};
 	struct swarmkv_reply *reply=NULL;
@@ -230,10 +217,10 @@ TEST(Performance, Sync)
 	}
 	srand(171);
 	g_tconsume_running_flag=1;
-	pthread_t threads[NODE_NUMBER][CALL_THREAD_PER_NODE];
+	pthread_t threads[NODE_NUMBER][CALLER_THREAD_NUMBER];
 	for(size_t i=0; i<NODE_NUMBER; i++)
 	{
-		for(size_t j=0; j<CALL_THREAD_PER_NODE; j++)
+		for(size_t j=0; j<CALLER_THREAD_NUMBER; j++)
 		{
 			pthread_create(&(threads[i][j]), NULL, background_tconsume_thread, db[i]);
 		}
@@ -244,7 +231,7 @@ TEST(Performance, Sync)
 	int *successful_backgroud_running_thread=NULL;
 	for(size_t i=0; i<NODE_NUMBER; i++)
 	{
-		for(size_t j=0; j<CALL_THREAD_PER_NODE; j++)
+		for(size_t j=0; j<CALLER_THREAD_NUMBER; j++)
 		{
 			pthread_join(threads[i][j], (void**)&successful_backgroud_running_thread);	
 
@@ -267,69 +254,45 @@ int g_running_flag=0;
 void *migration_background_thread(void *thread_arg)
 {
 	struct swarmkv *db=(struct swarmkv *)thread_arg;
+	swarmkv_register_thread(db);
 	uuid_t uuid;
 	char uuid_str[36];
 	uuid_generate(uuid);
 	uuid_unparse_lower(uuid, uuid_str);
-	struct cmd_exec_arg *arg=NULL;
-	arg=cmd_exec_arg_new();
 
 	char key[256], value[256];
-	int ret=0;
 	int static_key_cnt=1024;
+	struct swarmkv_reply *reply=NULL;
+	snprintf(value, sizeof(value), "background-running-value"); 
 	for(int i=0; i<static_key_cnt; i++)
 	{
 		snprintf(key, sizeof(key), "static-key-%d-of-%s", i, uuid_str);
-		snprintf(value, sizeof(value), "background-running-value"); 
-
-		cmd_exec_arg_clear(arg);		
-		cmd_exec_arg_expect_OK(arg);
-		swarmkv_set(db, key, strlen(key), value, strlen(value), cmd_exec_generic_callback, arg);
-		ret+=cmd_exec_arg_wait(arg, PERF_TEST_EXEC_TO_MS);
+		
+		reply=swarmkv_command(db, "SET %s %s", key, value);
+		EXPECT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+		swarmkv_reply_free(reply);
 	}
-	EXPECT_EQ(ret, static_key_cnt);
-
-	snprintf(value, sizeof(value), "background-running-value");	
-	ret=3;
 	int seq=0;
 	while(g_running_flag)
 	{
-		ret=0;
 		snprintf(key, sizeof(key), "ephemeral-key-of-%s-%d", uuid_str, seq);
 		seq++;
-		cmd_exec_arg_clear(arg);		
-		cmd_exec_arg_expect_OK(arg);
-		swarmkv_set(db, key, strlen(key), value, strlen(value), cmd_exec_generic_callback, arg);
-		ret+=cmd_exec_arg_wait(arg, PERF_TEST_EXEC_TO_MS);
-		if(ret!=1)
-		{
-			printf("set %s failed\n", key);
-		}		
-		cmd_exec_arg_clear(arg);		
-		cmd_exec_arg_expect_cstring(arg, value);		
-		swarmkv_get(db, key, strlen(key), cmd_exec_generic_callback, arg); 
-		ret+=cmd_exec_arg_wait(arg, PERF_TEST_EXEC_TO_MS);
-		if(ret!=2)
-		{
-			printf("get %s failed\n", key);
-		}
+		reply=swarmkv_command(db, "SET %s %s", key, value);
+		EXPECT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+		swarmkv_reply_free(reply);
+		
+		reply=swarmkv_command(db, "GET %s", key);
+		EXPECT_EQ(reply->type, SWARMKV_REPLY_STRING);
+		EXPECT_STREQ(reply->str, value);
+		swarmkv_reply_free(reply);
 
-		cmd_exec_arg_clear(arg);
-		cmd_exec_arg_expect_integer(arg, 1);
-		swarmkv_del(db, key, strlen(key), cmd_exec_generic_callback, arg);
-		ret+=cmd_exec_arg_wait(arg, PERF_TEST_EXEC_TO_MS);
-		if(ret!=3)
-		{
-			printf("del %s failed\n", key);
-		}
+		reply=swarmkv_command(db, "DEL %s", key);
+		EXPECT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+		EXPECT_EQ(reply->integer, 1);
+		swarmkv_reply_free(reply);
 	}
-	cmd_exec_arg_free(arg);
 	int *success=ALLOC(int, 1);
-	EXPECT_EQ(ret, 3);
-	if(ret==3)
-		*success=1;
-	else
-		*success=0;
+	*success=1;
 	return success;
 }
 TEST(Resilience, AddSlotOwner)
@@ -359,6 +322,7 @@ TEST(Resilience, AddSlotOwner)
 		swarmkv_options_set_health_check_port(opts[i], health_port_start+i);
 		swarmkv_options_set_logger(opts[i], logger);
 		swarmkv_options_set_worker_thread_number(opts[i], WORKER_THREAD_NUMBER);
+		swarmkv_options_set_caller_thread_number(opts[i], CALLER_THREAD_NUMBER);
 		swarmkv_options_set_cluster_timeout_us(opts[i], 100*1000);
 		swarmkv_options_set_run_for_leader_enabled(opts[i], 0);
 		db[i]=swarmkv_open(opts[i], cluster_name, &err);
@@ -430,6 +394,8 @@ TEST(Resilience, Failover)
 		opts[i]=swarmkv_options_new();
 		swarmkv_options_set_cluster_port(opts[i], p2p_port_start+i);
 		swarmkv_options_set_health_check_port(opts[i], health_port_start+i);
+		swarmkv_options_set_worker_thread_number(opts[i], 1);
+		swarmkv_options_set_caller_thread_number(opts[i], 1);
 		db[i]=swarmkv_open(opts[i], cluster_name, &err);
 		if(err)
 		{
@@ -438,6 +404,7 @@ TEST(Resilience, Failover)
 			err=NULL;
 		}
 		ASSERT_TRUE(err==NULL);
+		swarmkv_register_thread(db[i]);
 	}
 	size_t KEY_NUMBER=1024;
 	struct swarmkv_reply *reply=NULL;

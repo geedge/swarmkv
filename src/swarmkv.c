@@ -134,7 +134,15 @@ static void local_caller_on_success(void *result, void *user)
 static void local_caller_on_fail(enum e_future_error err, const char * what, void * user)
 {
 	struct local_caller_ctx *ctx=(struct local_caller_ctx*)user;
-	struct swarmkv_reply *reply=swarmkv_reply_new_error(what);
+	struct swarmkv_reply *reply=NULL;
+	if(err==FUTURE_ERROR_CANCEL)
+	{
+		reply=swarmkv_reply_new_error("cancelled");
+	}
+	else
+	{
+		reply=swarmkv_reply_new_error(what);
+	}
 	ctx->cb(reply, ctx->cb_arg);
 	future_destroy(ctx->my_future);
 	free(ctx);
@@ -1213,7 +1221,7 @@ char *swarmkv_get_command_hint(struct swarmkv *db, const char* cmd_name)
     sdsfreesplitres(argv,argc);
 	return NULL;
 }
-static void loop_timeout_cb(evutil_socket_t fd, short event, void *arg)
+static void evloop_timeout_cb(evutil_socket_t fd, short event, void *arg)
 {
     struct swarmkv_thread_ctx *ctx = (struct swarmkv_thread_ctx *)arg;
     event_base_loopbreak(ctx->evbase);
@@ -1227,7 +1235,7 @@ void swarmkv_caller_loop(struct swarmkv *db, int flags, struct timeval *tv)
 	struct event *timeout_event = NULL;
 	if(tv)
 	{
-		timeout_event = event_new(ctx->evbase, -1, 0, loop_timeout_cb, ctx);
+		timeout_event = event_new(ctx->evbase, -1, 0, evloop_timeout_cb, ctx);
 		evtimer_add(timeout_event, tv);
 		event_base_loop(ctx->evbase, flags);
 		event_del(timeout_event);
@@ -1246,13 +1254,6 @@ void swarmkv_caller_loop_break(struct swarmkv *db)
 	//must initiate from caller threads, and caller thread ID is larger than worker thread ID
 	assert(tid >= db->opts->nr_worker_threads);
 	event_base_loopbreak(db->ref_evbases[tid]);
-}
-struct event_base *swarmkv_get_event_base(struct swarmkv *db)
-{
-	int tid=__gettid(db);
-	//must initiate from caller threads, and caller thread ID is larger than worker thread ID
-	assert(tid >= db->opts->nr_worker_threads);
-	return db->threads[tid].evbase;
 }
 struct swarmkv *swarmkv_open(struct swarmkv_options *opts, const char *db_name, char **err)
 {
@@ -1311,8 +1312,6 @@ struct swarmkv *swarmkv_open(struct swarmkv_options *opts, const char *db_name, 
 		goto error_out;
 	}
 	swarmkv_net_set_on_msg_callback(db->net, __on_msg_callback, db);
-
-
 	swarmkv_net_set_monitor_handle(db->net, db->mod_monitor);
 
 	node_init(&db->self, opts->cluster_announce_ip, opts->cluster_announce_port);
@@ -1376,16 +1375,19 @@ void swarmkv_close(struct swarmkv * db)
 		pthread_join(db->threads[i].thr, NULL);
 	}
 
+	swarmkv_rpc_mgr_free(db->rpc_mgr);
+	db->rpc_mgr=NULL;
+	swarmkv_monitor_free(db->mod_monitor);
+	db->mod_monitor=NULL;
 	swarmkv_store_free(db->mod_store);
 	db->mod_store=NULL;
 	swarmkv_keyspace_free(db->mod_keyspace);
 	db->mod_keyspace=NULL;
-	swarmkv_monitor_free(db->mod_monitor);
-	db->mod_monitor=NULL;
 	swarmkv_mesh_free(db->mesh);
-	swarmkv_rpc_mgr_free(db->rpc_mgr);
+	db->mesh=NULL;
 	swarmkv_net_free(db->net);
 	db->net=NULL;
+
 
 	struct swarmkv_cmd_spec *spec=NULL, *tmp_spec=NULL;
 	
