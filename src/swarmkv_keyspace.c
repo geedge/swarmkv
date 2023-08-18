@@ -1119,7 +1119,7 @@ error_out:
 	free(ks);
 	return NULL;
 }
-void swarmkv_keysapce_start(struct swarmkv_module *mod_keyspace)
+void swarmkv_keyspace_start(struct swarmkv_module *mod_keyspace)
 {
 	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
 	if(ks->opts->dryrun)

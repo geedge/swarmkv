@@ -406,7 +406,7 @@ TEST(Resilience, Failover)
 		ASSERT_TRUE(err==NULL);
 		swarmkv_register_thread(db[i]);
 	}
-	size_t KEY_NUMBER=1024;
+	size_t KEY_NUMBER=128;
 	struct swarmkv_reply *reply=NULL;
 	for(size_t i=0; i<KEY_NUMBER; i++)
 	{

@@ -76,9 +76,16 @@ enum cmd_exec_result set_command(struct swarmkv_module *mod_store, const struct 
 	}
 	else if(obj->type==OBJ_TYPE_INTEGER)
 	{
-		PN_counter_set(obj->counter, int_value);		
-		*reply=swarmkv_reply_new_status("OK");
-		sobj_need_sync(mod_store, obj);
+		if(*endptr=='\0')
+		{
+			PN_counter_set(obj->counter, int_value);		
+			*reply=swarmkv_reply_new_status("OK");
+			sobj_need_sync(mod_store, obj);		
+		}
+		else
+		{
+			*reply=swarmkv_reply_new_error(error_value_not_integer);
+		}
 	}
 	else
 	{

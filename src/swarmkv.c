@@ -1339,6 +1339,8 @@ struct swarmkv *swarmkv_open(struct swarmkv_options *opts, const char *db_name, 
 	}
 	
 	swarmkv_threads_run(db);
+	
+	swarmkv_keyspace_start(db->mod_keyspace);
 
 	char str_uuid[37]="";
 	uuid_unparse(db->opts->bin_uuid, str_uuid);
