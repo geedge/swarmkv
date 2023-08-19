@@ -207,40 +207,44 @@ Reply message
 
 ## Node design
 
+### Lock design
+
+The swarmkv node adopts a share-nothing design to maximum multithread scalability.  The three data modules are:
+
+- The store Module stores actual CRDT objects. It's a key-CRDT hash table which is sharded by worker thread numbers. The access of worker threads to the key-CRDT hash table is lock-free.
+- The keyspace Module stores replica addresses of keys. It's a key-route hash table which has 16384 slots. A worker thread can only access its designate slots. The access of worker threads to the key-route hash table is lock-free.
+- The monitor Module collects runtime metrics for diagnostic. It's lock-free by taking advantage of [HdrHistogram_c](https://github.com/HdrHistogram/HdrHistogram_c)'s interval recorder.
+
+If a thread need to access data of other threads, it will send message via mesh (ringbuf) to the target thread. The mesh is lock-free.
+
 ### Thread model
+There two thread types in a swarmkv node:
+- The Caller thread is the thread that calls the swarmkv API.
+- The Worker thread is the thread that runs the event loop and processes commands.
 
-A swarmkv instance has one key space thread and several (configurable) worker threads. Swarmkv uses [libevent](https://github.com/libevent/libevent) as a peer-to-peer communication infrastructure.  
+A swarmkv instance has configurable worker threads. Swarmkv uses [libevent](https://github.com/libevent/libevent) for peer-to-peer communication and run event loop. 
+Each worker thread reads and writes its own shard of KV store and Keyspace table. If a worker thread receives a command for a key that is not in its shard, it will forward the command with mesh (ringbuf) to the worker thread that owns the key. If a worker thread receives a command targeted to a remote node, this is most likely from the caller thread, it will forward with network.
 
-The keyspace thread communicates with Consul. Some of the operations are blocking style, so swarmkv uses a seperated keyspace thread. 
-
-- Watch global slot table changes.
-- Watch leadership changes, run for leader if allowed.
-- For leader node:
-  - Watch cluster health check, remove failed node from cluster by assigning its node to other nodes.
-
-The worker thread 0 is responsible for:
-
-- Accept TCP connections from new peers, and then load balance new peers to worker threads (by peer IP). 
+<img src="./imgs/thread_model.svg" alt="Thread Model" /> 
 
 All worker threads are responsible for:
-
-- Send KV command message, which is from swarmkv API caller to destination peers.
+- Watch global slot table changes.
+- Run periodic tasks. 
+- Send command message, which is from swarmkv API caller to destination peers.
 - Receive KV command message, and then process it based on command type:
   - Key routing request (from the requester, object reader/writer): lookup the value owner, and then send key routing response.
   - Object operation request (from the requester): lookup the value, perform the operation and then send value operation response.
   - Key routing response (from the key owner): send the request to the decoded value owner.
   - Object operation response (from object owner): update local cache, and invoke the user-specified callback.
-- For multi-thread scalability, each worker thread maintains connections to all active peers. It's possible that the connection number between two nodes is more than one.
+- For multi-thread scalability, each worker thread maintains connections to all active peers. It's possible that there are one or more connections between two nodes.
 
-### Lock design
+The worker thread 0 has extra tasks including:
 
-For a swarmkv node, it has three modules. Each module has its own internal data structure.
+- Accept TCP connections from new peers, and then load balance new peers to worker threads (by peer IP). 
+- Watch leadership changes, run for leader if allowed.
+- For leader node:
+  - Watch cluster health check, remove failed node from cluster by assigning its node to other nodes.
 
-- Store Module stores actual CRDT objects. It's a key-CRDT hash table which has 8 shards. Each shard is protected by a read-write lock. Lock contention happens when writing on keys of same shard.
-- Keyspace Module stores replica addresses of keys. It's a key-route hash table which has 16384 slots. Each slot is protected by a mutex lock. Lock contention happens when wrting on keys of same slot.
-- Monitor Module collects runtime metrics for diagnostic. It's lock-free by taking advantage of [HdrHistogram_c](https://github.com/HdrHistogram/HdrHistogram_c)'s interval recorder.
-
-[Todo] Lock free API powered by completion queue.
 ## Source code layout
 
 The source files are organized as follows:
@@ -251,10 +255,12 @@ The source files are organized as follows:
 - src/swarmkv_sync.c batching CRDT syncronization.
 - src/swarmkv_keyspace.c: The control plane of SwarmKV. Interact with [HashiCorp Consul](https://www.consul.io/) for node discovery, slot assignment, and leader election.
 - src/swarmkv_message.c: Message is encoded to [MessagePack](https://msgpack.org/index.html) format by [mpack](https://github.com/ludocode/mpack) library.
+- src/swarmkv_mesh.c: Lock-free inter-threads communication via [ringbuf](https://github.com/rmind/ringbuf)
 - src/swarmkv_net.c: High performance P2P communication via [libevent](https://libevent.org/).
-- src/swarmkv_message.c Collecting performance metrics.
+- src/swarmkv_rpc.c: Remote procedure call (Command -> Reply) implementation.
+- src/swarmkv_monitor.c Collecting performance metrics.
 - src/t_xxx.c Implementing SwarmKV commands of various data types.
-- src/deps/ Dependencies in source codes format, such as [uthash](https://troydhanson.github.io/uthash/), [sds](https://github.com/antirez/sds), [mpack](https://github.com/ludocode/mpack), [timeout](https://25thandclement.com/~william/projects/timeout.c.html), [cJSON](https://github.com/DaveGamble/cJSON), [HDRHistogram](https://github.com/HdrHistogram/HdrHistogram_c)
+- src/deps/ Dependencies in source codes format, such as [uthash](https://troydhanson.github.io/uthash/), [sds](https://github.com/antirez/sds), [mpack](https://github.com/ludocode/mpack), [timeout](https://25thandclement.com/~william/projects/timeout.c.html), [cJSON](https://github.com/DaveGamble/cJSON), [HDRHistogram](https://github.com/HdrHistogram/HdrHistogram_c).
 - src/vendor/  Dependencies in archive format.
 - CRDT/ Implementing Conflict-free replicated data types.
 - test/ Unit tests.
@@ -305,4 +311,3 @@ Woo, Shinae, et al. "Elastic scaling of stateful network functions." *15th {USEN
 [Redis Cluster Specification](https://redis.io/topics/cluster-spec)
 
 [C implementation of the Raft consensus protocol](https://github.com/willemt/raft) by Willem-Hendrik Thiart.
-
