@@ -66,6 +66,16 @@ void *blocking_call_thread(void *thread_arg)
 
 	return success;
 }
+#define	PERF_NTHREAD_CLUSTER_PORT_START 5310
+#define	PERF_NTHREAD_HEALTH_PORT_START 6310
+#define PERF_DATA_SYNC_CLUSTER_PORT_START 7310
+#define PERF_DATA_SYNC_HEALTH_PORT_START 8310
+#define PERF_ASYNC_EXEC_CLUSTER_PORT_START 9310
+#define PERF_ASYNC_EXEC_HEALTH_PORT_START 10310
+#define PERF_RESILIENCE_ADD_SLOT_OWNER_CLUSTER_PORT_START 11310
+#define	PERF_RESILIENCE_ADD_SLOT_OWNER_HEALTH_PORT_START 12310
+#define PERF_RESILIENCE_FAILOVER_CLUSTER_PORT_START 13310
+#define	PERF_RESILIENCE_FAILOVER_HEALTH_PORT_START 14310
 
 TEST(Performance, Nthreads)
 {
@@ -80,7 +90,7 @@ TEST(Performance, Nthreads)
 	char node_list_str[1024]={0};
 	for(i=0; i<NODE_NUMBER; i++)
 	{
-		snprintf(node_list_str+strlen(node_list_str), sizeof(node_list_str)-strlen(node_list_str), "127.0.0.1:%d ", 5310+i);
+		snprintf(node_list_str+strlen(node_list_str), sizeof(node_list_str)-strlen(node_list_str), "127.0.0.1:%d ", PERF_NTHREAD_CLUSTER_PORT_START+i);
 	}
 	const char *cluster_name="swarmkv-n-threads";
 	swarmkv_cli_create_cluster(cluster_name, node_list_str);
@@ -89,8 +99,8 @@ TEST(Performance, Nthreads)
 	for(i=0; i<NODE_NUMBER; i++)
 	{
 		opts[i]=swarmkv_options_new();	
-		swarmkv_options_set_cluster_port(opts[i], 5310+i);
-		swarmkv_options_set_health_check_port(opts[i], 6310+i);
+		swarmkv_options_set_cluster_port(opts[i], PERF_NTHREAD_CLUSTER_PORT_START+i);
+		swarmkv_options_set_health_check_port(opts[i], PERF_NTHREAD_HEALTH_PORT_START+i);
 		swarmkv_options_set_logger(opts[i], logger);
 		swarmkv_options_set_worker_thread_number(opts[i], WORKER_THREAD_NUMBER);
 		swarmkv_options_set_caller_thread_number(opts[i], CALLER_THREAD_NUMBER);
@@ -163,7 +173,7 @@ void *background_tconsume_thread(void *thread_arg)
 		*success=0;
 	return success;
 }
-TEST(Performance, Sync)
+TEST(Performance, DataSync)
 {
 	size_t NODE_NUMBER=2;
 	size_t CALLER_THREAD_NUMBER=2;
@@ -172,11 +182,10 @@ TEST(Performance, Sync)
 	struct swarmkv *db[NODE_NUMBER];
 	char *err=NULL;
 	const char *log_path="./swarmkv-sync.log";
-	unsigned int p2p_port_start=9310, health_port_start=10310;
 	char node_list_str[1024]={0};
 	for(size_t i=0; i<NODE_NUMBER; i++)
 	{
-		snprintf(node_list_str+strlen(node_list_str), sizeof(node_list_str)-strlen(node_list_str), "127.0.0.1:%zu ", p2p_port_start+i);
+		snprintf(node_list_str+strlen(node_list_str), sizeof(node_list_str)-strlen(node_list_str), "127.0.0.1:%zu ", PERF_DATA_SYNC_CLUSTER_PORT_START+i);
 	}
 	const char *cluster_name="swarmkv-sync";
 	swarmkv_cli_create_cluster(cluster_name, node_list_str);
@@ -185,8 +194,8 @@ TEST(Performance, Sync)
 	for(size_t i=0; i<NODE_NUMBER; i++)
 	{
 		opts[i]=swarmkv_options_new();
-		swarmkv_options_set_cluster_port(opts[i], p2p_port_start+i);
-		swarmkv_options_set_health_check_port(opts[i], health_port_start+i);
+		swarmkv_options_set_cluster_port(opts[i], PERF_DATA_SYNC_CLUSTER_PORT_START+i);
+		swarmkv_options_set_health_check_port(opts[i], PERF_DATA_SYNC_HEALTH_PORT_START+i);
 		swarmkv_options_set_logger(opts[i], logger);
 		swarmkv_options_set_worker_thread_number(opts[i], WORKER_THREAD_NUMBER);
 		swarmkv_options_set_caller_thread_number(opts[i], CALLER_THREAD_NUMBER+1);
@@ -248,7 +257,89 @@ TEST(Performance, Sync)
 	}
 
 	log_handle_destroy(logger);
+}
+struct async_exec_ctx
+{
+	int expected_reply_cnt;
+	int reply_cnt;
+	struct swarmkv *db;
+};
+void async_on_reply_cb(const struct swarmkv_reply *reply, void * arg)
+{
+	struct async_exec_ctx *ctx=(struct async_exec_ctx *)arg;
+	EXPECT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	if(reply->type != SWARMKV_REPLY_STATUS)
+	{
+		swarmkv_reply_print(reply, stdout);
+	}
+	ctx->reply_cnt++;
+	if(ctx->reply_cnt==ctx->expected_reply_cnt)
+	{
+		swarmkv_caller_loop_break(ctx->db);
+	}
+}
+TEST(Performance, AsyncExec)
+{
+	int NODE_NUMBER=1;
+	int CALLER_THREAD_NUMBER=1;
+	int WORKER_THREAD_NUMBER=1;
+	int i=0;
+	struct swarmkv *db[NODE_NUMBER];
+	char *err=NULL;
+	const char *log_path="./swarmkv-async-exec.log";
 
+	char node_list_str[1024]={0};
+	for(i=0; i<NODE_NUMBER; i++)
+	{
+		snprintf(node_list_str+strlen(node_list_str), sizeof(node_list_str)-strlen(node_list_str), "127.0.0.1:%d ", PERF_ASYNC_EXEC_CLUSTER_PORT_START+i);
+	}
+	const char *cluster_name="swarmkv-async-exec";
+	swarmkv_cli_create_cluster(cluster_name, node_list_str);
+	struct log_handle * logger=log_handle_create(log_path, 0);
+	struct swarmkv_options* opts[NODE_NUMBER];
+	for(i=0; i<NODE_NUMBER; i++)
+	{
+		opts[i]=swarmkv_options_new();	
+		swarmkv_options_set_cluster_port(opts[i], PERF_ASYNC_EXEC_CLUSTER_PORT_START+i);
+		swarmkv_options_set_health_check_port(opts[i], PERF_ASYNC_EXEC_HEALTH_PORT_START+i);
+		swarmkv_options_set_cluster_timeout_us(opts[i], 2000*1000);
+		swarmkv_options_set_logger(opts[i], logger);
+		swarmkv_options_set_worker_thread_number(opts[i], WORKER_THREAD_NUMBER);
+		swarmkv_options_set_caller_thread_number(opts[i], CALLER_THREAD_NUMBER);
+		db[i]=swarmkv_open(opts[i], cluster_name, &err);
+		if(err)
+		{
+			printf("swarmkv_open %d instance failed: %s\n", i, err);
+			free(err);
+			err=NULL;
+		}
+		swarmkv_register_thread(db[i]);
+	}
+	int key_number=65536;
+	struct async_exec_ctx ctx;
+	ctx.expected_reply_cnt=key_number;
+	ctx.reply_cnt=0;
+	ctx.db=db[0];
+	struct timespec start, end;
+	clock_gettime(CLOCK_REALTIME, &start);
+	for(i=0; i<key_number; i++)
+	{
+		swarmkv_async_command(db[0], async_on_reply_cb, &ctx, "SET async-key-%d by-node-%d", i, 0);
+		//swarmkv_caller_loop(db[0], SWARMKV_LOOP_NONBLOCK|SWARMKV_LOOP_ONCE, NULL);
+	}
+	clock_gettime(CLOCK_REALTIME, &end);
+	double elapsed_ms=(end.tv_sec-start.tv_sec)*1000.0+(end.tv_nsec-start.tv_nsec)/1000000.0;
+	printf("Async SET %d keys, elapsed %lf ms, %lf keys/s\n", key_number, elapsed_ms, key_number*1000.0/elapsed_ms);
+	swarmkv_caller_loop(db[0], SWARMKV_LOOP_NO_EXIT_ON_EMPTY, NULL);
+
+	
+	for(i=0; i<NODE_NUMBER; i++)
+	{
+		//close slowly to cover more code branches.
+		sleep(2);
+		swarmkv_close(db[i]);
+	}
+	log_handle_destroy(logger);
 }
 int g_running_flag=0;
 void *migration_background_thread(void *thread_arg)
@@ -305,11 +396,11 @@ TEST(Resilience, AddSlotOwner)
 	struct swarmkv *db[NODE_NUMBER+CANDINATE_NUMBER];
 	char *err=NULL;
 	const char *log_path="./swarmkv-migration-11.log";
-	unsigned int p2p_port_start=7310, health_port_start=8310;
 	char node_list_str[1024]={0};
 	for(i=0; i<NODE_NUMBER; i++)
 	{
-		snprintf(node_list_str+strlen(node_list_str), sizeof(node_list_str)-strlen(node_list_str), "127.0.0.1:%d ", p2p_port_start+i);
+		snprintf(node_list_str+strlen(node_list_str), sizeof(node_list_str)-strlen(node_list_str), "127.0.0.1:%d ",
+		 PERF_RESILIENCE_ADD_SLOT_OWNER_CLUSTER_PORT_START+i);
 	}
 	const char *cluster_name="swarmkv-migration";
 	swarmkv_cli_create_cluster(cluster_name, node_list_str);
@@ -318,8 +409,8 @@ TEST(Resilience, AddSlotOwner)
 	for(i=0; i<NODE_NUMBER+CANDINATE_NUMBER; i++)
 	{
 		opts[i]=swarmkv_options_new();	
-		swarmkv_options_set_cluster_port(opts[i], p2p_port_start+i);
-		swarmkv_options_set_health_check_port(opts[i], health_port_start+i);
+		swarmkv_options_set_cluster_port(opts[i], PERF_RESILIENCE_ADD_SLOT_OWNER_CLUSTER_PORT_START+i);
+		swarmkv_options_set_health_check_port(opts[i], PERF_RESILIENCE_ADD_SLOT_OWNER_HEALTH_PORT_START+i);
 		swarmkv_options_set_logger(opts[i], logger);
 		swarmkv_options_set_worker_thread_number(opts[i], WORKER_THREAD_NUMBER);
 		swarmkv_options_set_caller_thread_number(opts[i], CALLER_THREAD_NUMBER);
@@ -347,7 +438,7 @@ TEST(Resilience, AddSlotOwner)
 	int offset=0;
 	for(i=0; i<CANDINATE_NUMBER; i++)
 	{
-		offset+=snprintf(candinate_string+offset, sizeof(candinate_string)-offset, "127.0.0.1:%u ", p2p_port_start+NODE_NUMBER+i);
+		offset+=snprintf(candinate_string+offset, sizeof(candinate_string)-offset, "127.0.0.1:%u ", PERF_RESILIENCE_ADD_SLOT_OWNER_CLUSTER_PORT_START+NODE_NUMBER+i);
 	}
 	swarmkv_cli_add_slot_owner(cluster_name, candinate_string);
 	sleep(10);
@@ -380,11 +471,10 @@ TEST(Resilience, Failover)
 	struct swarmkv *db[NODE_NUMBER];
 	char *err=NULL;
 
-	unsigned int p2p_port_start=11310, health_port_start=12310;
 	char node_list_str[1024]={0};
 	for(size_t i=1; i<NODE_NUMBER; i++)
 	{
-		snprintf(node_list_str+strlen(node_list_str), sizeof(node_list_str)-strlen(node_list_str), "127.0.0.1:%zu ", p2p_port_start+i);
+		snprintf(node_list_str+strlen(node_list_str), sizeof(node_list_str)-strlen(node_list_str), "127.0.0.1:%zu ", PERF_RESILIENCE_FAILOVER_CLUSTER_PORT_START+i);
 	}
 	const char *cluster_name="swarmkv-failover";
 	swarmkv_cli_create_cluster(cluster_name, node_list_str);
@@ -392,8 +482,8 @@ TEST(Resilience, Failover)
 	for(size_t i=0; i<NODE_NUMBER; i++)
 	{
 		opts[i]=swarmkv_options_new();
-		swarmkv_options_set_cluster_port(opts[i], p2p_port_start+i);
-		swarmkv_options_set_health_check_port(opts[i], health_port_start+i);
+		swarmkv_options_set_cluster_port(opts[i], PERF_RESILIENCE_FAILOVER_CLUSTER_PORT_START+i);
+		swarmkv_options_set_health_check_port(opts[i], PERF_RESILIENCE_FAILOVER_HEALTH_PORT_START+i);
 		swarmkv_options_set_worker_thread_number(opts[i], 1);
 		swarmkv_options_set_caller_thread_number(opts[i], 1);
 		db[i]=swarmkv_open(opts[i], cluster_name, &err);
@@ -436,7 +526,7 @@ TEST(Resilience, Failover)
 		swarmkv_reply_free(reply);
 		for(size_t j=1; j<NODE_NUMBER; j++)
 		{
-			snprintf(target, sizeof(target), "127.0.0.1:%zu", p2p_port_start+j);
+			snprintf(target, sizeof(target), "127.0.0.1:%zu", PERF_RESILIENCE_FAILOVER_CLUSTER_PORT_START+j);
 			reply=swarmkv_command_on(db[1], target, "CRDT RLIST fo-%zu", i);
 			EXPECT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
 			EXPECT_EQ(reply->n_element, NODE_NUMBER-2);

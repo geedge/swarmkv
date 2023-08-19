@@ -76,7 +76,7 @@ static void rpc_timeout_callback(evutil_socket_t fd, short events, void *arg)
 long long swarmkv_rpc_launch(struct swarmkv_rpc_mgr *mgr, int thread_id, struct future *f)
 {
 	struct swarmkv_rpc *rpc=ALLOC(struct swarmkv_rpc, 1);
-	rpc->sequence=++mgr->seq_generator;
+	rpc->sequence=__atomic_add_fetch(&mgr->seq_generator, 1, __ATOMIC_SEQ_CST);
 	struct timeval timeout={mgr->timeout_us/(1000*1000), mgr->timeout_us%(1000*1000)};
 	rpc->timeout_ev=event_new(mgr->evbases[thread_id], -1, 0, rpc_timeout_callback, rpc);
 	event_add(rpc->timeout_ev, &timeout);

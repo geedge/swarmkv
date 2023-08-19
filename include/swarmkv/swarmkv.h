@@ -87,14 +87,21 @@ struct swarmkv_options *swarmkv_get0_options(struct swarmkv *db);
 
 void swarmkv_register_thread(struct swarmkv *db);
 
-//Do not exit the loop because we have no pending events. 
-#define	SWARMKV_LOOP_NO_EXIT_ON_EMPTY	0x04
-//Do not block: see which events are ready now, run the callbacks of the highest-priority ones, then exit.
-#define	SWARMKV_LOOP_NONBLOCK			0x02
-//	Block until we have an active event, then exit once all active events have had their callbacks run.
-#define	SWARMKV_LOOP_ONCE				0x01
-//flags	any combination of SWARMKV_LOOP_ONCE | SWARMKV_LOOP_NONBLOCK | SWARMKV_LOOP_NO_EXIT_ON_EMPTY
-//The flags are identicial to event_base_loop() of libevent. See https://libevent.org/doc/event_8h.html#a10b9c102337d0ece8607c9c01bc4f7c8
+/* Do not exit the loop because we have no pending events. */
+#define	SWARMKV_LOOP_NO_EXIT_ON_EMPTY 0x04
+/* Do not block, see which events are ready now, run the callbacks of the highest-priority ones, then exit.*/
+#define	SWARMKV_LOOP_NONBLOCK 0x02
+/* Block until we have an active event, then exit once all active events have had their callbacks run. */
+#define	SWARMKV_LOOP_ONCE 0x01
+/**
+ * Run the event loop for the specified amount of time. swarmkv_on_reply_callback_t will be called when the reply is ready.
+ * By default, this loop will run the event base until either there are no more pending or active events, or until something calls swarmkv_caller_loop_break().
+ * You can override this behavior with the 'flags' argument.
+ * @param db swarmkv instance to loop, the caller thread must be registered by swarmkv_register_thread() before calling this function.
+ * @param flags	any combination of SWARMKV_LOOP_ONCE | SWARMKV_LOOP_NONBLOCK | SWARMKV_LOOP_NO_EXIT_ON_EMPTY.
+ * The flags are identicial to event_base_loop() of libevent. See https://libevent.org/doc/event_8h.html#a10b9c102337d0ece8607c9c01bc4f7c8
+ * @param tv Timeout for select/poll in milliseconds, or NULL for no timeout.
+ */
 void swarmkv_caller_loop(struct swarmkv *db, int flags, struct timeval *tv);
 void swarmkv_caller_loop_break(struct swarmkv *db);
 

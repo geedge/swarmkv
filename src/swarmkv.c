@@ -44,7 +44,7 @@ const char* SWARMKV_VERSION="3.0.0";
 
 
 
-struct swarmkv_thread_ctx
+struct swarmkv_thread
 {
 	pthread_t thr;
 	int sys_tid;
@@ -66,7 +66,7 @@ struct swarmkv
 	struct swarmkv_options *opts;
 
 	int thread_counter;
-	struct swarmkv_thread_ctx *threads;
+	struct swarmkv_thread *threads;
 	pthread_barrier_t barrier;
 
 	struct event_base **ref_evbases;
@@ -312,8 +312,8 @@ enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct sw
 												net_info.output_buffer_sz,
 												net_info.instantaneous_input_kbps,
 												net_info.instantaneous_output_kbps,
-												net_info.instantaneous_input_cps,
-												net_info.instantaneous_output_cps
+												net_info.instantaneous_input_msgs,
+												net_info.instantaneous_output_msgs
 												);
 
 	if(cmd->argc>1)
@@ -476,39 +476,39 @@ struct swarmkv_cmd_spec *get_spec_by_argv(struct swarmkv *db, size_t argc, char*
 }
 void __swarmkv_periodic(evutil_socket_t fd, short what, void * arg)
 {
-	struct swarmkv_thread_ctx *thread=(struct swarmkv_thread_ctx *)arg;
-	swarmkv_store_periodic(thread->db->mod_store, thread->thread_id);
-	swarmkv_keyspace_periodic(thread->db->mod_keyspace, thread->thread_id);
+	struct swarmkv_thread *thr=(struct swarmkv_thread *)arg;
+	swarmkv_store_periodic(thr->db->mod_store, thr->thread_id);
+	swarmkv_keyspace_periodic(thr->db->mod_keyspace, thr->thread_id);
 }
 void *swarmkv_worker_thread(void *arg)
 {
 	struct swarmkv *db = (struct swarmkv *)arg;
 	swarmkv_register_thread(db);
 	int tid=__gettid(db);
-	struct swarmkv_thread_ctx *ctx = db->threads+tid;
+	struct swarmkv_thread *thr = db->threads+tid;
 	char thread_name[16];
-	snprintf(thread_name, sizeof(thread_name), "swarmkv-%u", ctx->thread_id);
+	snprintf(thread_name, sizeof(thread_name), "swarmkv-%u", thr->thread_id);
 	prctl(PR_SET_NAME, (unsigned long long) thread_name, NULL, NULL, NULL);
 
 	struct timeval sync_interval = {db->opts->sync_interval_us/(1000*1000), db->opts->sync_interval_us%(1000*1000)};
-	struct event * periodic_ev=event_new(ctx->evbase, -1, EV_PERSIST, __swarmkv_periodic, ctx);
+	struct event * periodic_ev=event_new(thr->evbase, -1, EV_PERSIST, __swarmkv_periodic, thr);
 	evtimer_add(periodic_ev, &sync_interval);
 	
-	ctx->is_dispatching=1;
+	thr->is_dispatching=1;
 	pthread_barrier_wait(&db->barrier);
 
 	
-	int ret=event_base_dispatch(ctx->evbase);
+	int ret=event_base_dispatch(thr->evbase);
 	event_del(periodic_ev);
 	event_free(periodic_ev);
 
-	if(ctx->is_dispatching)
+	if(thr->is_dispatching)
 	{
 		log_fatal(db->logger, MODULE_SWAMRKV_CORE, "worker thread event_base_dispatch() exit abnormally, ret=%d", ret);
 	}
 	else
 	{
-		log_info(ctx->db->logger, MODULE_SWAMRKV_CORE, "%s worker thread %d exited", ctx->db->db_name, ctx->sys_tid);
+		log_info(thr->db->logger, MODULE_SWAMRKV_CORE, "%s worker thread %d exited", thr->db->db_name, thr->sys_tid);
 	}	
 	return NULL;
 }
@@ -1223,27 +1223,27 @@ char *swarmkv_get_command_hint(struct swarmkv *db, const char* cmd_name)
 }
 static void evloop_timeout_cb(evutil_socket_t fd, short event, void *arg)
 {
-    struct swarmkv_thread_ctx *ctx = (struct swarmkv_thread_ctx *)arg;
-    event_base_loopbreak(ctx->evbase);
+    struct swarmkv_thread *thr = (struct swarmkv_thread *)arg;
+    event_base_loopbreak(thr->evbase);
 }
 void swarmkv_caller_loop(struct swarmkv *db, int flags, struct timeval *tv)
 {
 	int tid=__gettid(db);
 	//must initiate from caller threads, and caller thread ID is larger than worker thread ID
 	assert(tid >= db->opts->nr_worker_threads);
-	struct swarmkv_thread_ctx *ctx=db->threads+tid;
+	struct swarmkv_thread *thr=db->threads+tid;
 	struct event *timeout_event = NULL;
 	if(tv)
 	{
-		timeout_event = event_new(ctx->evbase, -1, 0, evloop_timeout_cb, ctx);
+		timeout_event = event_new(thr->evbase, -1, 0, evloop_timeout_cb, thr);
 		evtimer_add(timeout_event, tv);
-		event_base_loop(ctx->evbase, flags);
+		event_base_loop(thr->evbase, flags);
 		event_del(timeout_event);
 		event_free(timeout_event);
 	}
 	else
 	{
-		event_base_loop(ctx->evbase, flags);
+		event_base_loop(thr->evbase, flags);
 	}
 	
 	return;
@@ -1262,7 +1262,7 @@ struct swarmkv *swarmkv_open(struct swarmkv_options *opts, const char *db_name, 
 	db=ALLOC(struct swarmkv, 1);
 	strncpy(db->db_name, db_name, sizeof(db->db_name));
 	opts->total_threads=opts->nr_caller_threads+opts->nr_worker_threads;
-	db->threads=ALLOC(struct swarmkv_thread_ctx,opts->total_threads);
+	db->threads=ALLOC(struct swarmkv_thread, opts->total_threads);
     /* adds locking, only required if accessed from separate threads */
 	evthread_use_pthreads();
 

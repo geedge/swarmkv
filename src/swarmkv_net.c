@@ -54,11 +54,7 @@ struct snet_conn
 struct snet_stat
 {
 	long long input_msgs, output_msgs;
-	long long input_replies, output_replies;
-	long long input_cmds, output_cmds;
 	long long input_bytes, output_bytes;
-	long long timed_out_rpcs;
-	long long unknown_sequence;
 	long long input_buffer_sz, output_buffer_sz;
 };
 struct snet_thread
@@ -91,10 +87,10 @@ struct swarmkv_net
 	void *on_msg_cb_arg;
 	struct event * stat_ev;
 	long long last_input_bytes, last_output_bytes;
-	long long last_input_cmds, last_output_cmds;
+	long long last_input_msgs, last_output_msgs;
 	struct timespec last_stats;
 	double instantaneous_input_kbps, instantaneous_output_kbps;
-	double instantaneous_input_cps, instantaneous_output_cps;
+	double instantaneous_input_msgs, instantaneous_output_msgs;
 };
 
 static void peer_conn_read_cb(struct bufferevent *bev, void *arg);
@@ -339,6 +335,7 @@ static void peer_conn_read_cb(struct bufferevent *bev, void *arg)
 			//swarmkv_msg_free(msg);
 			msg=NULL;
 			evbuffer_drain(input, msg_sz);
+			thr->stat.input_msgs++;
 			thr->stat.input_bytes += msg_sz;
 			conn->recv_state=RECEIVING_HDR;
 		}
@@ -410,7 +407,8 @@ static void snet_stat_periodic(evutil_socket_t fd, short what, void * arg)
 	struct swarmkv_net *net= (struct swarmkv_net *)arg;
 	struct timespec now;
 	long long input_bytes=0, output_bytes=0;
-	long long input_cmds=0, output_cmds=0;
+	long long input_msgs=0, output_msgs=0;
+
 	clock_gettime(CLOCK_MONOTONIC, &now);
 	if(now.tv_sec == net->last_stats.tv_sec)
 	{
@@ -422,21 +420,21 @@ static void snet_stat_periodic(evutil_socket_t fd, short what, void * arg)
 	{
 		input_bytes += net->threads[i].stat.input_bytes;
 		output_bytes += net->threads[i].stat.output_bytes;
-		input_cmds += net->threads[i].stat.input_cmds;
-		output_cmds += net->threads[i].stat.output_cmds;
+		input_msgs += net->threads[i].stat.input_msgs;
+		output_msgs += net->threads[i].stat.output_msgs;
 	}
 	
 	long long diff_sec=MAX(now.tv_sec - net->last_stats.tv_sec, 1);
 	net->instantaneous_input_kbps=(input_bytes - net->last_input_bytes)*8/1000/diff_sec;
 	net->instantaneous_output_kbps=(output_bytes - net->last_output_bytes)*8/1000/diff_sec;
-	net->instantaneous_input_cps=(input_cmds - net->last_input_cmds)/diff_sec;
-	net->instantaneous_output_cps=(output_cmds - net->last_output_cmds)/diff_sec;
+	net->instantaneous_input_msgs=(input_msgs - net->last_input_msgs)/diff_sec;
+	net->instantaneous_output_msgs=(output_msgs - net->last_output_msgs)/diff_sec;
 
 	clock_gettime(CLOCK_MONOTONIC, &net->last_stats);
 	net->last_input_bytes=input_bytes;
 	net->last_output_bytes=output_bytes;
-	net->last_input_cmds=input_cmds;
-	net->last_output_cmds=output_cmds;
+	net->last_input_msgs=input_msgs;
+	net->last_output_msgs=output_msgs;
 
 	return;
 }
@@ -538,8 +536,8 @@ void swarmkv_net_info(struct swarmkv_net *net, struct snet_info *info)
 	}
 	info->instantaneous_input_kbps=net->instantaneous_input_kbps;
 	info->instantaneous_output_kbps=net->instantaneous_output_kbps;
-	info->instantaneous_input_cps=net->instantaneous_input_cps;
-	info->instantaneous_output_cps=net->instantaneous_output_cps;
+	info->instantaneous_input_msgs=net->instantaneous_input_msgs;
+	info->instantaneous_output_msgs=net->instantaneous_output_msgs;
 	return;
 }
 

@@ -19,10 +19,10 @@ struct snet_info
 	long long connections;
 
 	long long input_bytes;
-	long long input_msgs;	//input_cmds + input_replies
+	long long input_msgs;
 
 	long long output_bytes;
-	long long output_msgs;	//output_cmds + output_replies
+	long long output_msgs;	
 	
 	long long input_buffer_sz;
 	long long output_buffer_sz;
@@ -30,7 +30,7 @@ struct snet_info
 	double instantaneous_input_kbps;
 	double instantaneous_output_kbps;
 
-	double instantaneous_input_cps;
-	double instantaneous_output_cps;
+	double instantaneous_input_msgs;
+	double instantaneous_output_msgs;
 };
 void swarmkv_net_info(struct swarmkv_net *net, struct snet_info *info);
