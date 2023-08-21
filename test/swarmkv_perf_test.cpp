@@ -280,9 +280,9 @@ void async_on_reply_cb(const struct swarmkv_reply *reply, void * arg)
 }
 TEST(Performance, AsyncExec)
 {
-	int NODE_NUMBER=1;
+	int NODE_NUMBER=2;
 	int CALLER_THREAD_NUMBER=1;
-	int WORKER_THREAD_NUMBER=1;
+	int WORKER_THREAD_NUMBER=3;
 	int i=0;
 	struct swarmkv *db[NODE_NUMBER];
 	char *err=NULL;
@@ -302,7 +302,7 @@ TEST(Performance, AsyncExec)
 		opts[i]=swarmkv_options_new();	
 		swarmkv_options_set_cluster_port(opts[i], PERF_ASYNC_EXEC_CLUSTER_PORT_START+i);
 		swarmkv_options_set_health_check_port(opts[i], PERF_ASYNC_EXEC_HEALTH_PORT_START+i);
-		swarmkv_options_set_cluster_timeout_us(opts[i], 2000*1000);
+		swarmkv_options_set_cluster_timeout_us(opts[i], 20000*1000);
 		swarmkv_options_set_logger(opts[i], logger);
 		swarmkv_options_set_worker_thread_number(opts[i], WORKER_THREAD_NUMBER);
 		swarmkv_options_set_caller_thread_number(opts[i], CALLER_THREAD_NUMBER);
@@ -315,7 +315,7 @@ TEST(Performance, AsyncExec)
 		}
 		swarmkv_register_thread(db[i]);
 	}
-	int key_number=65536;
+	int key_number=128*1024;
 	struct async_exec_ctx ctx;
 	ctx.expected_reply_cnt=key_number;
 	ctx.reply_cnt=0;
@@ -325,13 +325,14 @@ TEST(Performance, AsyncExec)
 	for(i=0; i<key_number; i++)
 	{
 		swarmkv_async_command(db[0], async_on_reply_cb, &ctx, "SET async-key-%d by-node-%d", i, 0);
-		//swarmkv_caller_loop(db[0], SWARMKV_LOOP_NONBLOCK|SWARMKV_LOOP_ONCE, NULL);
+		swarmkv_caller_loop(db[0], SWARMKV_LOOP_NONBLOCK|SWARMKV_LOOP_NO_EXIT_ON_EMPTY, NULL);
 	}
+	swarmkv_caller_loop(db[0], SWARMKV_LOOP_NO_EXIT_ON_EMPTY, NULL);
+
 	clock_gettime(CLOCK_REALTIME, &end);
 	double elapsed_ms=(end.tv_sec-start.tv_sec)*1000.0+(end.tv_nsec-start.tv_nsec)/1000000.0;
 	printf("Async SET %d keys, elapsed %lf ms, %lf keys/s\n", key_number, elapsed_ms, key_number*1000.0/elapsed_ms);
-	swarmkv_caller_loop(db[0], SWARMKV_LOOP_NO_EXIT_ON_EMPTY, NULL);
-
+	
 	
 	for(i=0; i<NODE_NUMBER; i++)
 	{

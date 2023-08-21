@@ -205,7 +205,15 @@ static void remote_caller_on_success(void *result, void *user)
 static void remote_caller_on_fail(enum e_future_error err, const char * what, void * user)
 {
 	struct remote_caller_ctx *ctx=(struct remote_caller_ctx*)user;
-	struct swarmkv_reply *reply=swarmkv_reply_new_error(what);
+	struct swarmkv_reply *reply=NULL;
+	if(err==FUTURE_ERROR_CANCEL)
+	{
+		reply=swarmkv_reply_new_error("cancelled");
+	}
+	else
+	{
+		reply=swarmkv_reply_new_error(what);
+	}
 	remoter_caller_ctx_send_reply(ctx, reply);
 	remote_calller_ctx_free(ctx);
 	return;
