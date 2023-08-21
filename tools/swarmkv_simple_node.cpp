@@ -121,6 +121,7 @@ int main(int argc, char ** argv)
 	swarmkv_options_set_health_check_announce_port(opts, healthcheck_announce_port);
 
 	swarmkv_options_set_worker_thread_number(opts, worker_thread_number);
+	swarmkv_options_set_caller_thread_number(opts, 1);
 	swarmkv_options_set_cluster_timeout_us(opts, 500000);
 	swarmkv_options_set_sync_interval_us(opts, 500);
 	//swarmkv_options_set_run_for_leader_enabled(opts);
@@ -132,6 +133,8 @@ int main(int argc, char ** argv)
 		err=NULL;
 		return -1;
 	}
+	swarmkv_register_thread(db);
+
 	struct timeval start, end;
 	long long eplapsed_second=0;
 	gettimeofday(&start, NULL);

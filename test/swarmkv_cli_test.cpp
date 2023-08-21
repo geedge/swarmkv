@@ -175,12 +175,14 @@ protected:
 		swarmkv_options_set_cluster_port(opts, 5210);
 		swarmkv_options_set_health_check_port(opts, 6210);
 		swarmkv_options_set_logger(opts, logger);
+		swarmkv_options_set_caller_thread_number(opts, 1);
 		db=swarmkv_open(opts, cluster_name, &err);
 		if(err)
 		{
 			printf("swarmkv_open failed: %s.\n", err);
 			free(err);
 		}
+		swarmkv_register_thread(db);
 	}
 	static void TearDownTestCase()
 	{
@@ -201,6 +203,7 @@ TEST_F(SwarmkvCliNodes, Basic)
 	struct cmd_exec_arg* reply_arg=NULL;
 	reply_arg=cmd_exec_arg_new();
 
+	int thread_id=0;
 	swarmkv_cli_set_db("swarmkv-cli-nodes");
 
 	cmd_exec_arg_expect_OK(reply_arg);
@@ -240,7 +243,7 @@ TEST_F(SwarmkvCliNodes, Basic)
 
 	swarmkv_cli_attach("127.0.0.1", 5210);
 	cmd_exec_arg_expect_cstring(reply_arg, "1) \"zhangsan\"");
-	swarmkv_cli_system_cmd(reply_arg, result, sizeof(result), swarmkv_expect_reply_string, "CRDT KEYS %s", "zhangsan");
+	swarmkv_cli_system_cmd(reply_arg, result, sizeof(result), swarmkv_expect_reply_string, "CRDT KEYS %d %s", thread_id, "zhangsan");
 	cmd_exec_arg_clear(reply_arg);
 
 	cmd_exec_arg_expect_integer(reply_arg, 1);
@@ -248,7 +251,7 @@ TEST_F(SwarmkvCliNodes, Basic)
 	cmd_exec_arg_clear(reply_arg);
 
 	cmd_exec_arg_expect_NIL(reply_arg);
-	swarmkv_cli_system_cmd(reply_arg, result, sizeof(result), swarmkv_expect_reply_nil, "CRDT KEYS %s", "lisi");
+	swarmkv_cli_system_cmd(reply_arg, result, sizeof(result), swarmkv_expect_reply_nil, "CRDT KEYS %d %s",  thread_id, "lisi");
 	cmd_exec_arg_clear(reply_arg);
 	swarmkv_cli_detach();
 
@@ -277,6 +280,8 @@ TEST_F(SwarmkvCliNodes, ReplicaDel)
 	char result[2048]={0};
 	struct cmd_exec_arg* reply_arg=NULL;
 	reply_arg=cmd_exec_arg_new();
+
+	swarmkv_cli_set_db("swarmkv-cli-nodes");
 
 	cmd_exec_arg_expect_OK(reply_arg);
 	swarmkv_cli_system_cmd(reply_arg, result, sizeof(result), swarmkv_expect_reply_string, "set %s %s", "xiaolv", "CQ");
@@ -546,6 +551,7 @@ protected:
 		swarmkv_options_set_cluster_port(opts1, 5210);
 		swarmkv_options_set_health_check_port(opts1, 6210);
 		swarmkv_options_set_logger(opts1, logger);
+		swarmkv_options_set_caller_thread_number(opts1, 1);
 		db1=swarmkv_open(opts1, cluster_name, &err);
 		if(err)
 		{
@@ -553,11 +559,13 @@ protected:
 			free(err);
 			err=NULL;
 		}
+		swarmkv_register_thread(db1);
 
 		struct swarmkv_options* opts2=swarmkv_options_new();
 		swarmkv_options_set_cluster_port(opts2, 5211);
 		swarmkv_options_set_health_check_port(opts2, 6211);
 		swarmkv_options_set_logger(opts2, logger);
+		swarmkv_options_set_caller_thread_number(opts2, 1);
 		db2=swarmkv_open(opts2, cluster_name, &err);
 		if(err)
 		{
@@ -565,6 +573,7 @@ protected:
 			free(err);
 			err=NULL;
 		}
+		swarmkv_register_thread(db2);
 
 	}
 	static void TearDownTestCase()

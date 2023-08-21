@@ -111,6 +111,7 @@ void *scalable_worker_thread(void *thread_arg)
 	g_signal=cmd_exec_arg_new();
 	void cmd_exec_arg_set_cb(struct cmd_exec_arg *arg, proc_result_callback_t *cb, void* cb_arg);
 
+	swarmkv_register_thread(db);
 	gettimeofday(&global_start, NULL);
 //	while(cmd_cnt<SCALABLE_MAX_KEY)
 	while(1)
@@ -121,6 +122,7 @@ void *scalable_worker_thread(void *thread_arg)
 		swarmkv_scalable_expect_cstring(scalable_ctx, value);
 		swarmkv_async_command(db, scalable_gather_result_callback, scalable_ctx,
 							"GET scalable-key-%lld", cmd_cnt%SCALABLE_MAX_KEY);
+		swarmkv_caller_loop(db, SWARMKV_LOOP_ONCE, NULL);
 		cmd_cnt++;
 		cmd_cnt_of_this_second++;
 		if(cmd_cnt_of_this_second==cmd_rate)
@@ -173,6 +175,7 @@ TEST(Scalability, MultiThreads)
 	swarmkv_options_set_health_check_port(opts, 6212);
 	swarmkv_options_set_logger(opts, logger);
 	swarmkv_options_set_worker_thread_number(opts, 2);
+	swarmkv_options_set_caller_thread_number(opts, 1);
 	swarmkv_options_set_cluster_timeout_us(opts, 500*1000);
 	struct swarmkv *db=swarmkv_open(opts, cluster_name, &err);
 	if(err)
