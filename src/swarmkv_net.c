@@ -142,7 +142,7 @@ struct snet_conn *snet_conn_new_by_fd(struct snet_thread *thr, evutil_socket_t f
 	evutil_make_socket_closeonexec(fd);
 	node_init_from_sockaddr(&conn->connected_from, addr);
 
-	conn->bev=bufferevent_socket_new(thr->evbase, fd, BEV_OPT_DEFER_CALLBACKS|BEV_OPT_THREADSAFE);//BEV_OPT_UNLOCK_CALLBACKS|
+	conn->bev=bufferevent_socket_new(thr->evbase, fd, BEV_OPT_DEFER_CALLBACKS|BEV_OPT_UNLOCK_CALLBACKS);//BEV_OPT_UNLOCK_CALLBACKS|BEV_OPT_THREADSAFE
 	//use BEV_OPT_THREADSAFE option for safely access from threads that calling swarmkv_net_send.
 	//? use BEV_OPT_UNLOCK_CALLBACKS option because swarmkv_net_send write buffer to output_buffer, and peer_conn_read_cb read input_buffer.
 	conn->fd=fd;

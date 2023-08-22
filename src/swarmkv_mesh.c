@@ -38,6 +38,7 @@ struct swarmkv_mesh
 	void *on_msg_cb_arg;
 	long long n_send, n_recv;
 	long long n_drop;
+	long long n_void_consume;
 };
 //The swarmkv_mesh_send takes the ownership of msg.
 int swarmkv_mesh_send(struct swarmkv_mesh *mesh, int current_thread_id, int dest_thread_id, struct swarmkv_msg *msg)
@@ -83,8 +84,7 @@ void swarmkv_mesh_set_on_msg_cb(struct swarmkv_mesh *mesh, on_msg_callback_t cb_
 	mesh->on_msg_cb_arg=cb_arg;
 	return;
 }
-
-static void eventfd_on_read_cb(evutil_socket_t fd, short what, void * arg)
+static void mesh_on_eventfd_read_cb(evutil_socket_t fd, short what, void * arg)
 {
 	struct swarmkv_mesh_thread *thr=(struct swarmkv_mesh_thread*)arg;
 	struct swarmkv_mesh *mesh=thr->ref_mesh;
@@ -107,7 +107,11 @@ static void eventfd_on_read_cb(evutil_socket_t fd, short what, void * arg)
 	while(i<n_msg)
 	{
 		len=ringbuf_consume(ring, &offset);
-		if(len==0) continue; 
+		if(len==0)
+		{
+			mesh->n_void_consume++;
+			continue;
+		}
 		//The ringbuf adopts a two-phase write, two concurrent producers may generates gap in the buffer.
 		//So it is possible that consumer wakes up, but sees a zero-length message.
 		msg=*(struct swarmkv_msg**)(thr->buff+offset);
@@ -142,7 +146,7 @@ struct swarmkv_mesh *swarmkv_mesh_new(struct event_base *evbase[], int nthreads,
 			log_fatal(mesh->ref_logger, MODULE_SWAMRKV_MESH, "eventfd() failed: %s", strerror(errno));
 			assert(0);
 		}
-		mesh->threads[i].ev=event_new(evbase[i], mesh->threads[i].efd, EV_READ|EV_PERSIST, eventfd_on_read_cb, mesh->threads+i);
+		mesh->threads[i].ev=event_new(evbase[i], mesh->threads[i].efd, EV_READ|EV_PERSIST, mesh_on_eventfd_read_cb, mesh->threads+i);
 		event_add(mesh->threads[i].ev, NULL);
 		mesh->threads[i].ref_mesh=mesh;
 		mesh->threads[i].evbase=evbase[i];

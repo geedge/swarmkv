@@ -1302,12 +1302,24 @@ struct swarmkv *swarmkv_open(struct swarmkv_options *opts, const char *db_name, 
 	{
 	}
 	db->ref_evbases=ALLOC(struct event_base*, opts->total_threads);
+	struct event_config *ev_cfg=event_config_new();
+	int ret=event_config_set_max_dispatch_interval(ev_cfg, NULL, 1000, 0);
+	assert(ret==0);
 	for(int i=0; i<opts->total_threads; i++)
 	{
-		db->threads[i].evbase=event_base_new();
+		if(i>opts->nr_worker_threads)
+		{
+			//db->threads[i].evbase=event_base_new_with_config(ev_cfg);
+			db->threads[i].evbase=event_base_new();
+		}
+		else
+		{
+			db->threads[i].evbase=event_base_new();
+		}
 		db->threads[i].db=db;
 		db->ref_evbases[i]=db->threads[i].evbase;
 	}
+	event_config_free(ev_cfg);
 	db->rpc_mgr=swarmkv_rpc_mgr_new(db->opts, db->ref_evbases, opts->total_threads);
 	db->mesh=swarmkv_mesh_new(db->ref_evbases, opts->total_threads, db->logger);
 	swarmkv_mesh_set_on_msg_cb(db->mesh, __on_msg_callback, db);
