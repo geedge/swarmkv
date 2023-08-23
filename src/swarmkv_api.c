@@ -38,6 +38,8 @@ struct swarmkv_options* swarmkv_options_new(void)
 	opts->is_assigned_to_db=0;
 	opts->run_for_leader_enabled=1;
 	opts->batch_sync_enabled=0;
+	opts->eb_max_callbacks=-1;
+	opts->eb_max_interval=NULL;
 	return opts;
 }
 void swarmkv_options_free(struct swarmkv_options *opt)
@@ -48,6 +50,7 @@ void swarmkv_options_free(struct swarmkv_options *opt)
 	}
 	else
 	{
+		if(opt->eb_max_interval) free(opt->eb_max_interval);
 		free(opt);
 	}
 	return;
@@ -146,6 +149,16 @@ int swarmkv_options_set_batch_sync_enabled(struct swarmkv_options *opts, int val
 int swarmkv_options_get_worker_thread_number(const struct swarmkv_options *opts)
 {
 	return opts->nr_worker_threads;
+}
+int swarmkv_options_set_max_dispatch_interval(struct swarmkv_options *opts, const struct timeval *max_interval, int max_callbacks)
+{
+	if(max_interval)
+	{
+		opts->eb_max_interval=ALLOC(struct timeval, 1);
+		memcpy(opts->eb_max_interval, max_interval, sizeof(struct timeval));
+	}
+	opts->eb_max_callbacks=max_callbacks;
+	return 0;
 }
 
 void swarmkv_set(struct swarmkv * db,

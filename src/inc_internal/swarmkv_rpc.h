@@ -9,3 +9,4 @@ void swarmkv_rpc_mgr_free(struct swarmkv_rpc_mgr *mgr);
 //Return a sequence number, which can be used to complete the request
 long long swarmkv_rpc_launch(struct swarmkv_rpc_mgr *mgr, int thread_id, struct future *f);
 void swarmkv_rpc_complete(struct swarmkv_rpc_mgr *mgr, int thread_id, long long sequence, void *response);
+size_t swarmkv_rpc_mgr_count(struct swarmkv_rpc_mgr *mgr, int thread_id);

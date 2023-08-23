@@ -213,8 +213,8 @@ static void remote_caller_on_fail(enum e_future_error err, const char * what, vo
 	else
 	{
 		reply=swarmkv_reply_new_error(what);
+		remoter_caller_ctx_send_reply(ctx, reply);
 	}
-	remoter_caller_ctx_send_reply(ctx, reply);
 	remote_calller_ctx_free(ctx);
 	return;
 }
@@ -668,7 +668,7 @@ static void generic_on_fail(enum e_future_error err, const char * what, void * u
 	if(ctx->future_of_caller)
 	{
 		struct promise *p=future_to_promise(ctx->future_of_caller);
-		promise_failed(p, FUTURE_ERROR_EXCEPTION, what);
+		promise_failed(p, err, what);
 	}
 	cmd_ctx_free(ctx);
 }
@@ -1263,6 +1263,13 @@ void swarmkv_caller_loop_break(struct swarmkv *db)
 	assert(tid >= db->opts->nr_worker_threads);
 	event_base_loopbreak(db->ref_evbases[tid]);
 }
+size_t swarmkv_caller_get_pending_commands(struct swarmkv *db)
+{
+	int tid=__gettid(db);
+	//must initiate from caller threads, and caller thread ID is larger than worker thread ID
+	assert(tid >= db->opts->nr_worker_threads);
+	return swarmkv_rpc_mgr_count(db->rpc_mgr, tid);
+}
 struct swarmkv *swarmkv_open(struct swarmkv_options *opts, const char *db_name, char **err)
 {
 	struct swarmkv *db = NULL;
@@ -1303,14 +1310,14 @@ struct swarmkv *swarmkv_open(struct swarmkv_options *opts, const char *db_name, 
 	}
 	db->ref_evbases=ALLOC(struct event_base*, opts->total_threads);
 	struct event_config *ev_cfg=event_config_new();
-	int ret=event_config_set_max_dispatch_interval(ev_cfg, NULL, 1000, 0);
+	int ret=event_config_set_max_dispatch_interval(ev_cfg, opts->eb_max_interval, opts->eb_max_callbacks, 0);
 	assert(ret==0);
 	for(int i=0; i<opts->total_threads; i++)
 	{
 		if(i>opts->nr_worker_threads)
 		{
-			//db->threads[i].evbase=event_base_new_with_config(ev_cfg);
-			db->threads[i].evbase=event_base_new();
+			db->threads[i].evbase=event_base_new_with_config(ev_cfg);
+			//event_base_priority_init(db->threads[i].evbase, 2);
 		}
 		else
 		{

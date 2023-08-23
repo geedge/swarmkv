@@ -73,6 +73,29 @@ int swarmkv_options_set_caller_thread_number(struct swarmkv_options *opts, int n
 int swarmkv_options_set_worker_thread_number(struct swarmkv_options *opts, int nr_worker_threads);
 int swarmkv_options_get_worker_thread_number(const struct swarmkv_options *opts);
 
+/**
+ * This function has change the behavior of swarmkv_caller_loop().
+ * Record an interval and/or a number of callbacks after which the event base
+ * should check for new events.  By default, the event base will run as many
+ * events are as activated at the highest activated priority before checking
+ * for new events.  If you configure it by setting max_interval, it will check
+ * the time after each callback, and not allow more than max_interval to
+ * elapse before checking for new events.  If you configure it by setting
+ * max_callbacks to a value >= 0, it will run no more than max_callbacks
+ * callbacks before checking for new events.
+ * 
+ * Same as event_config_set_max_dispatch_interval(), see https://libevent.org/doc/event_8h.html#aeb08f9ff880ff8a07eb623124f48f979
+ *
+ * @param opts The swarmkv options object.
+ * @param max_interval An interval after which Libevent should stop running
+ *     callbacks and check for more events, or NULL if there should be
+ *     no such interval.
+ * @param max_callbacks A number of callbacks after which Libevent should
+ *     stop running callbacks and check for more events, or -1 if there
+ *     should be no such limit.
+ * @return 0 on success, -1 on failure.
+ **/
+int swarmkv_options_set_max_dispatch_interval(struct swarmkv_options *opts, const struct timeval *max_interval, int max_callbacks);
 
 int swarmkv_options_set_cluster_announce_ip(struct swarmkv_options *opts, const char *ip_addr);
 int swarmkv_options_set_cluster_announce_port(struct swarmkv_options *opts, unsigned int cluster_announce_port);
@@ -104,7 +127,7 @@ void swarmkv_register_thread(struct swarmkv *db);
  */
 void swarmkv_caller_loop(struct swarmkv *db, int flags, struct timeval *tv);
 void swarmkv_caller_loop_break(struct swarmkv *db);
-
+size_t swarmkv_caller_get_pending_commands(struct swarmkv *db);
 //Blocking function
 struct swarmkv_reply *swarmkv_command(struct swarmkv *db, const char *format, ...)__attribute__ ((format (printf, 2, 3)));
 struct swarmkv_reply *swarmkv_command_on(struct swarmkv *db, const char *target, const char *format, ...)__attribute__ ((format (printf, 3, 4)));

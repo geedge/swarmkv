@@ -147,6 +147,7 @@ struct swarmkv_mesh *swarmkv_mesh_new(struct event_base *evbase[], int nthreads,
 			assert(0);
 		}
 		mesh->threads[i].ev=event_new(evbase[i], mesh->threads[i].efd, EV_READ|EV_PERSIST, mesh_on_eventfd_read_cb, mesh->threads+i);
+		//event_priority_set(mesh->threads[i].ev, 1);
 		event_add(mesh->threads[i].ev, NULL);
 		mesh->threads[i].ref_mesh=mesh;
 		mesh->threads[i].evbase=evbase[i];

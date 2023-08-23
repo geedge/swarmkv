@@ -79,6 +79,9 @@ struct swarmkv_options
 	int is_assigned_to_db;
 	int sanity_check;
 	int batch_sync_enabled;
+	struct timeval *eb_max_interval; //An interval after which Libevent should stop running callbacks and check for more events, or NULL if there should be no such interval.
+	int eb_max_callbacks;  //A number of callbacks after which Libevent should stop running callbacks and check for more events, or -1 if there should be no such limit.
+	
 };
 
 struct swarmkv_cmd

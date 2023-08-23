@@ -86,7 +86,7 @@ void scalable_gather_result_callback(const struct swarmkv_reply* reply, void * c
 	return;
 }
 
-void *scalable_worker_thread(void *thread_arg)
+void *running_thread(void *thread_arg)
 {
 	char value[256]={0};
 	struct scalable_result_ctx *scalable_ctx=NULL;
@@ -164,7 +164,7 @@ void *scalable_worker_thread(void *thread_arg)
 TEST(Scalability, MultiThreads)
 {
 	char *err=NULL;
-	int worker_thread_number=1;
+	int caller_thread_number=1;
 	const char *log_path="./scalability-test.log";
 	struct log_handle * logger=log_handle_create(log_path, 0);
 
@@ -175,7 +175,7 @@ TEST(Scalability, MultiThreads)
 	swarmkv_options_set_health_check_port(opts, 6212);
 	swarmkv_options_set_logger(opts, logger);
 	swarmkv_options_set_worker_thread_number(opts, 2);
-	swarmkv_options_set_caller_thread_number(opts, 1);
+	swarmkv_options_set_caller_thread_number(opts, caller_thread_number);
 	swarmkv_options_set_cluster_timeout_us(opts, 500*1000);
 	struct swarmkv *db=swarmkv_open(opts, cluster_name, &err);
 	if(err)
@@ -186,16 +186,16 @@ TEST(Scalability, MultiThreads)
 	}
 
 	int i=0;
-	pthread_t threads[worker_thread_number];
-	for(i=0; i<worker_thread_number; i++)
+	pthread_t threads[caller_thread_number];
+	for(i=0; i<caller_thread_number; i++)
 	{
-		pthread_create(&(threads[i]), NULL, scalable_worker_thread, db);
+		pthread_create(&(threads[i]), NULL, running_thread, db);
 	}
 	sleep(100);
 
 	int *successful_scalable_worker_thread=NULL;
 
-	for(i=0; i<worker_thread_number; i++)
+	for(i=0; i<caller_thread_number; i++)
 	{
 		pthread_join(threads[i], (void**)&successful_scalable_worker_thread);
 		EXPECT_EQ(*successful_scalable_worker_thread, 1);
