@@ -27,7 +27,6 @@ struct swarmkv_mesh_thread
 	struct swarmkv_mesh *ref_mesh;
 	long long n_send, n_recv;
 	struct event_base *evbase;
-	pthread_mutex_t mutex;
 };
 struct swarmkv_mesh
 {
@@ -40,7 +39,6 @@ struct swarmkv_mesh
 	long long n_drop;
 	long long n_void_consume;
 };
-//The swarmkv_mesh_send takes the ownership of msg.
 int swarmkv_mesh_send(struct swarmkv_mesh *mesh, int current_thread_id, int dest_thread_id, struct swarmkv_msg *msg)
 {
 	assert(current_thread_id<mesh->nr_thread);
@@ -52,7 +50,6 @@ int swarmkv_mesh_send(struct swarmkv_mesh *mesh, int current_thread_id, int dest
 	ringbuf_t *dest_ring=dest_thr->ring;
 	assert(msg->magic == SWARMKV_MSG_MAGIC);
 	ssize_t offset=0;
-	//pthread_mutex_lock(&dest_thr->mutex);
 	offset=ringbuf_acquire(dest_ring, curr_thr->workers[dest_thread_id], sizeof(struct swarmkv_msg*));
 	if(offset == -1)
 	{
@@ -71,11 +68,9 @@ int swarmkv_mesh_send(struct swarmkv_mesh *mesh, int current_thread_id, int dest
 	}
 	curr_thr->n_send++;
 	mesh->n_send++;
-	//pthread_mutex_unlock(&dest_thr->mutex);
 	return 0;
 error_out:
 	swarmkv_msg_free(msg);
-	pthread_mutex_unlock(&dest_thr->mutex);
 	return -1;
 }
 void swarmkv_mesh_set_on_msg_cb(struct swarmkv_mesh *mesh, on_msg_callback_t cb_func, void *cb_arg)
@@ -151,7 +146,6 @@ struct swarmkv_mesh *swarmkv_mesh_new(struct event_base *evbase[], int nthreads,
 		event_add(mesh->threads[i].ev, NULL);
 		mesh->threads[i].ref_mesh=mesh;
 		mesh->threads[i].evbase=evbase[i];
-		pthread_mutex_init(&mesh->threads[i].mutex, NULL);
 	}
 	for(int i=0; i<mesh->nr_thread; i++)
 	{

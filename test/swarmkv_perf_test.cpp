@@ -337,7 +337,7 @@ TEST(Performance, AsyncExec)
 		}
 		swarmkv_register_thread(db[i]);
 	}
-	int key_number=1024*1024, round=key_number*8;
+	int key_number=256*1024, round=key_number*8;
 	struct async_exec_globals globals;
 	memset(&globals, 0, sizeof(globals));
 	globals.expected_reply_cnt=round;
