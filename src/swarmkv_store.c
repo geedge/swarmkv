@@ -487,7 +487,7 @@ static void crdt_generic_on_reply(const struct swarmkv_reply *reply, void *user)
 	long long error_before=ctx->store->sync_err;
 	if(reply->type==SWARMKV_REPLY_ERROR)
 	{
-		if(strcasestr(reply->str, "timeout"))
+		if(strcasestr(reply->str, "timed out"))
 		{
 			int tid=__gettid(ctx->store->exec_cmd_handle);
 			atomic_inc(&ctx->store->sync_err);
