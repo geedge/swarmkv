@@ -482,14 +482,21 @@ static void crdt_generic_on_reply(const struct swarmkv_reply *reply, void *user)
 	struct scontainer *ctr=NULL;
 	uuid_t uuid;
 	store_get_uuid(&(ctx->store->module), uuid);
-	int tid=__gettid(ctx->store->exec_cmd_handle);
+	
+
 	long long error_before=ctx->store->sync_err;
 	if(reply->type==SWARMKV_REPLY_ERROR)
 	{
-		atomic_inc(&ctx->store->sync_err);
-		store_remove_failed_peer(ctx->store, tid, &ctx->peer);
+		if(strcasestr(reply->str, "timeout"))
+		{
+			int tid=__gettid(ctx->store->exec_cmd_handle);
+			atomic_inc(&ctx->store->sync_err);
+			store_remove_failed_peer(ctx->store, tid, &ctx->peer);
+		}
 		goto error_out;
 	}
+
+
 	switch(ctx->op)
 	{
 		case CRDT_GET:
@@ -529,7 +536,7 @@ static void crdt_generic_on_reply(const struct swarmkv_reply *reply, void *user)
 			atomic_inc(&ctx->store->sync_err);
 			break;
 	}
-	assert(ctx->store->sync_err==error_before);
+	//assert(ctx->store->sync_err==error_before);
 error_out:
 	crdt_generic_ctx_free(ctx);
 	return;

@@ -91,11 +91,13 @@ struct swarmkv *module2db(struct swarmkv_module *module)
 	assert(db==module->mod_ctx);
 	return db;
 }
+__thread int __sys_tid=-1;
 void swarmkv_register_thread(struct swarmkv *db)
 {
 	int thread_id = atomic_fetch_add(&db->thread_counter, 1);
 	assert(thread_id < db->opts->nr_worker_threads + db->opts->nr_caller_threads);
-	db->threads[thread_id].sys_tid=syscall(SYS_gettid);
+	if(__sys_tid<0) __sys_tid=syscall(SYS_gettid);
+	db->threads[thread_id].sys_tid=__sys_tid;
 	db->threads[thread_id].thread_id=thread_id;
 	return;
 }
@@ -103,12 +105,13 @@ struct swarmkv_options *swarmkv_get0_options(struct swarmkv *db)
 {
 	return db->opts;
 }
+
 int __gettid(struct swarmkv *db)
 {
-	int sys_tid=syscall(SYS_gettid);
+//	int __sys_tid=syscall(SYS_gettid);
 	for(int i=0; i<db->opts->nr_worker_threads + db->opts->nr_caller_threads; i++)
 	{
-		if(db->threads[i].sys_tid==sys_tid)
+		if(db->threads[i].sys_tid==__sys_tid)
 		{
 			return db->threads[i].thread_id;
 		}
