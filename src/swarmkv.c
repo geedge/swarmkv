@@ -39,7 +39,7 @@
 #include <ctype.h>
 #include <stdatomic.h>
 
-const char* SWARMKV_VERSION="3.0.0";
+const char* SWARMKV_VERSION="4.0.0";
 #define	MODULE_SWAMRKV_CORE	module_name_str("swarmkv.core")
 
 
@@ -247,12 +247,36 @@ enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct sw
 	clock_gettime(CLOCK_MONOTONIC, &now_monotonic);
 	char uuid_str[37];
 	uuid_unparse(db->opts->bin_uuid, uuid_str);
+	sds pending_cmds=sdsnew("[");
+	size_t rpc_cnt=0;
+	for(int i=0; i<db->opts->total_threads; i++)
+	{
+		rpc_cnt=swarmkv_rpc_mgr_count(db->rpc_mgr, i);
+		pending_cmds=sdscatprintf(pending_cmds, "%zu", rpc_cnt);
+		if(i==db->opts->nr_worker_threads-1)
+		{
+			pending_cmds=sdscatprintf(pending_cmds, "], [");
+		}
+		else if(i==db->opts->total_threads-1)
+		{
+			pending_cmds=sdscatprintf(pending_cmds, "]");
+		}
+		else
+		{
+			pending_cmds=sdscatprintf(pending_cmds, ", ");
+		}
+	}
+	struct swarmkv_rpc_mgr_info rpc_info;
+	swarmkv_rpc_mgr_info(db->rpc_mgr, &rpc_info);
 	snprintf(node_info_buff, sizeof(node_info_buff), "# Node\r\n"
 											"swarmkv_version: %s\r\n"
 											"address: %s\r\n"
 											"uuid: %s\r\n"
 											"worker_threads: %d\r\n"
 											"caller_threads: %d\r\n"
+											"pending_cmds: %s\r\n"
+											"timed_out_cmds: %lld\r\n"
+											"unknown_sequence: %lld\r\n"
 											"server_time_usec: %lld\r\n"
 											"up_time_in_seconds: %ld\r\n"
 											"up_time_in_days: %ld\r\n"
@@ -262,14 +286,17 @@ enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct sw
 											uuid_str,
 											db->opts->nr_worker_threads,
 											db->opts->nr_caller_threads,
+											pending_cmds,
+											rpc_info.timed_out_rpcs,
+											rpc_info.unknown_sequence,
 											server_time_us,
 											now_monotonic.tv_sec-db->boot_time.tv_sec,
 											(now_monotonic.tv_sec-db->boot_time.tv_sec)/(3600*24)
 											);
+	sdsfree(pending_cmds);
 	struct store_info sto_info;
 	swarmkv_store_info(db->mod_store, &sto_info);
 	snprintf(store_info_buff, sizeof(store_info_buff), "# Store\r\n"
-													"shards: %lld\r\n"
 													"keys: %lld\r\n"
 													"to_sync: %lld\r\n"
 													"synced: %lld\r\n"
@@ -277,7 +304,6 @@ enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct sw
 													"sync_err: %lld\r\n"
 													"sync_interval_in_msec: %.3f\r\n"
 													,
-													sto_info.shards,
 													sto_info.keys,
 													sto_info.keys_to_sync,
 													sto_info.synced,
@@ -488,6 +514,7 @@ struct swarmkv_cmd_spec *get_spec_by_argv(struct swarmkv *db, size_t argc, char*
 void __swarmkv_periodic(evutil_socket_t fd, short what, void * arg)
 {
 	struct swarmkv_thread *thr=(struct swarmkv_thread *)arg;
+	
 	swarmkv_store_periodic(thr->db->mod_store, thr->thread_id);
 	swarmkv_keyspace_periodic(thr->db->mod_keyspace, thr->thread_id);
 }
@@ -791,6 +818,7 @@ static int spec_gettid(struct swarmkv_cmd_spec *spec, const struct swarmkv_cmd *
 	}
 	return tid;
 }
+#define MONITOR_INTER_THREAD_RPC	"inter-thread-rpc"
 void __on_msg_callback(struct swarmkv_msg *msg, void *arg)
 {
 	struct swarmkv *db = (struct swarmkv *)arg;
@@ -802,7 +830,7 @@ void __on_msg_callback(struct swarmkv_msg *msg, void *arg)
 		exec_for_remote(db, msg);
 		swarmkv_msg_free(msg);
 	}
-	else
+	else//MSG_TYPE_REPLY
 	{
 		if(msg->caller_tid!=cur_tid)
 		{
@@ -811,7 +839,19 @@ void __on_msg_callback(struct swarmkv_msg *msg, void *arg)
 		}
 		else
 		{
-			swarmkv_rpc_complete(db->rpc_mgr, cur_tid, msg->sequence, msg->reply);
+			long long latency_us=-1;
+			latency_us=swarmkv_rpc_complete(db->rpc_mgr, cur_tid, msg->sequence, msg->reply);
+			if(latency_us>=0)
+			{
+				if(node_compare(&db->self, &msg->executor))
+				{
+					swarmkv_monitor_record_peer(db->mod_monitor, &msg->executor, latency_us, cur_tid);
+				}
+				else
+				{
+					swarmkv_monitor_record_event(db->mod_monitor, MONITOR_INTER_THREAD_RPC, latency_us);
+				}
+			}
 			swarmkv_msg_free(msg);
 		}
 	}
@@ -1330,10 +1370,13 @@ struct swarmkv *swarmkv_open(struct swarmkv_options *opts, const char *db_name, 
 		db->ref_evbases[i]=db->threads[i].evbase;
 	}
 	event_config_free(ev_cfg);
+
+	db->mod_monitor=swarmkv_monitor_new(db->opts);
+
 	db->rpc_mgr=swarmkv_rpc_mgr_new(db->opts, db->ref_evbases, opts->total_threads);
 	db->mesh=swarmkv_mesh_new(db->ref_evbases, opts->total_threads, db->logger);
 	swarmkv_mesh_set_on_msg_cb(db->mesh, __on_msg_callback, db);
-	db->mod_monitor=swarmkv_monitor_new(db->opts);
+	
 
 	//Note: if the cluster_port is 0, swarmkv_net_new updates db->self.cluster_port.
 	db->net=swarmkv_net_new(db->ref_evbases, db->opts->nr_worker_threads, opts, db->logger, err);
@@ -1365,9 +1408,9 @@ struct swarmkv *swarmkv_open(struct swarmkv_options *opts, const char *db_name, 
 	struct swarmkv_cmd_spec *spec=NULL, *tmp_spec=NULL;
 	HASH_ITER(hh, db->command_table, spec, tmp_spec)
 	{
-		swarmkv_monitor_register_commands(db->mod_monitor, spec->name);
+		swarmkv_monitor_register_command(db->mod_monitor, spec->name);
 	}
-	
+	swarmkv_monitor_register_event(db->mod_monitor, MONITOR_INTER_THREAD_RPC);
 	swarmkv_threads_run(db);
 	
 	swarmkv_keyspace_start(db->mod_keyspace);

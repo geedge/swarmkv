@@ -1069,10 +1069,12 @@ void swarmkv_keyspace_set_exec_cmd_handle(struct swarmkv_module *mod_keyspace, s
 	ks->exec_cmd_handle=db;
 	return;
 }
+#define MONITOR_KEY_EXPIRE_EVENT_EXPIRE	"keyspace-expire-cycle"
 void swarmkv_keyspace_set_monitor_handle(struct swarmkv_module *mod_keyspace, struct swarmkv_module *mod_monitor)
 {
 	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
 	ks->mod_monitor=mod_monitor;
+	swarmkv_monitor_register_event(mod_monitor, MONITOR_KEY_EXPIRE_EVENT_EXPIRE);
 	return;
 }
 

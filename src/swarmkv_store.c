@@ -484,7 +484,7 @@ static void crdt_generic_on_reply(const struct swarmkv_reply *reply, void *user)
 	store_get_uuid(&(ctx->store->module), uuid);
 	
 
-	long long error_before=ctx->store->sync_err;
+	 __attribute__ ((unused)) long long error_before=ctx->store->sync_err;
 	if(reply->type==SWARMKV_REPLY_ERROR)
 	{
 		if(strcasestr(reply->str, "timed out"))
@@ -554,8 +554,9 @@ void crdt_generic_call(struct swarmkv_store *store, enum CRDT_OP op, const struc
 	swarmkv_async_command_on_argv(store->exec_cmd_handle, crdt_generic_on_reply, ctx, peer->addr, cmd->argc, cmd->argv);
 	return;
 }
+#define MONITOR_SYNC_EVENT_NAME		"crdt-sync-cycle"
 #define MAX_SYNC_PER_PERIOD	100000
-void store_batch_sync(struct swarmkv_store *store, int tid)
+int store_batch_sync(struct swarmkv_store *store, int tid)
 {
 	int n_synced=0;
 	struct swarmkv_store_thread *thr=&store->threads[tid];
@@ -605,6 +606,7 @@ void store_batch_sync(struct swarmkv_store *store, int tid)
 		cmd=NULL;
 	}
 	sync_master_free(sync_master);
+	return n_synced;
 }
 void swarmkv_store_periodic(struct swarmkv_module * mod_store, int thread_id)
 {
@@ -620,7 +622,7 @@ void swarmkv_store_periodic(struct swarmkv_module * mod_store, int thread_id)
 	thr->calls++;
 	if(store->opts->batch_sync_enabled)
 	{
-		store_batch_sync(store, real_tid);
+		n_synced=store_batch_sync(store, real_tid);
 	}
 	else
 	{
@@ -656,7 +658,7 @@ void swarmkv_store_periodic(struct swarmkv_module * mod_store, int thread_id)
 
 	if(n_synced)
 	{
-		swarmkv_monitor_record_event(store->mod_monitor, "crdt-sync-cycle", timespec_diff_usec(&start, &end));
+		swarmkv_monitor_record_event(store->mod_monitor, MONITOR_SYNC_EVENT_NAME, timespec_diff_usec(&start, &end));
 	}
 }
 
@@ -702,11 +704,11 @@ void swarmkv_store_set_monitor_handle(struct swarmkv_module *mod_store, struct s
 {
 	struct swarmkv_store *store=module2store(mod_store);
 	store->mod_monitor=mod_monitor;
+	swarmkv_monitor_register_event(mod_monitor, MONITOR_SYNC_EVENT_NAME);
 }
 void swarmkv_store_info(struct swarmkv_module *mod_store, struct store_info *info)
 {
 	struct swarmkv_store *store=module2store(mod_store);
-	info->shards=STORE_SHARD_NUM;
 	info->keys=0;
 	info->keys_to_sync=0;
 	struct swarmkv_store_thread *thread=NULL;
@@ -714,7 +716,7 @@ void swarmkv_store_info(struct swarmkv_module *mod_store, struct store_info *inf
 	{
 		thread = store->threads+i;
 		info->keys_to_sync += __sync_add_and_fetch(&thread->keys_to_sync, 0);
-		info->keys_to_sync += __sync_add_and_fetch(&thread->n_keys, 0);
+		info->keys += __sync_add_and_fetch(&thread->n_keys, 0);
 	}
 	info->sync_ok=__sync_add_and_fetch(&store->sync_ok, 0);
 	info->sync_err=__sync_add_and_fetch(&store->sync_err, 0);

@@ -305,7 +305,7 @@ void *async_caller_thread(void *thread_arg)
 	struct swarmkv *db=(struct swarmkv *)thread_arg;
 
 
-	int key_number=128*1024, round=key_number*2;
+	int key_number=1024*1024, round=key_number*4;
 	struct async_exec_globals globals;
 	memset(&globals, 0, sizeof(globals));
 	globals.expected_reply_cnt=round;

@@ -52,7 +52,6 @@ void swarmkv_store_set_exec_cmd_handle(struct swarmkv_module *mod_store, struct 
 struct store_info
 {
 	long long keys;
-	long long shards;
 	long long keys_to_sync;
 	long long sync_ok;
 	long long sync_err;

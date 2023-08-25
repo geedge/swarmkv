@@ -95,6 +95,7 @@ long long swarmkv_rpc_launch(struct swarmkv_rpc_mgr *mgr, int thread_id, struct 
 	struct swarmkv_rpc_thr *thr=mgr->threads+thread_id;
 	struct swarmkv_rpc *rpc=ALLOC(struct swarmkv_rpc, 1);
 	rpc->sequence=__atomic_add_fetch(&mgr->seq_generator, 1, __ATOMIC_SEQ_CST);
+	clock_gettime(CLOCK_REALTIME, &rpc->start);
 	//struct timeval timeout={mgr->timeout_us/(1000*1000), mgr->timeout_us%(1000*1000)};
 	rpc->timeout_ev=event_new(thr->evbase, -1, 0, rpc_timeout_callback, rpc);
 	event_priority_set(rpc->timeout_ev, 1);
@@ -105,21 +106,33 @@ long long swarmkv_rpc_launch(struct swarmkv_rpc_mgr *mgr, int thread_id, struct 
 	HASH_ADD(hh, thr->rpc_table, sequence, sizeof(rpc->sequence), rpc);
 	return rpc->sequence;
 }
-void swarmkv_rpc_complete(struct swarmkv_rpc_mgr *mgr, int thread_id, long long sequence, void *reply)
+long long swarmkv_rpc_complete(struct swarmkv_rpc_mgr *mgr, int thread_id, long long sequence, void *reply)
 {
 	struct swarmkv_rpc *rpc=NULL;
+	long long latency=-1;
 	HASH_FIND(hh, mgr->threads[thread_id].rpc_table, &sequence, sizeof(sequence), rpc);
 	if(rpc==NULL)
 	{
 		mgr->unknown_sequence++;
-		return;
+		return -1;
 	}
+	struct timespec end;
+	clock_gettime(CLOCK_REALTIME, &end);
+	latency=timespec_diff_usec(&rpc->start, &end);
+
 	struct promise *p=future_to_promise(rpc->f);
 	promise_success(p, reply);
 	swarmkv_rpc_free(rpc);
+	return latency;
 }
 size_t swarmkv_rpc_mgr_count(struct swarmkv_rpc_mgr *mgr, int thread_id)
 {
 	assert(thread_id>=0 && thread_id<mgr->nr_worker_threads);
 	return HASH_COUNT(mgr->threads[thread_id].rpc_table);
+}
+void swarmkv_rpc_mgr_info(struct swarmkv_rpc_mgr *mgr, struct swarmkv_rpc_mgr_info *info)
+{
+	info->timed_out_rpcs=mgr->timed_out_rpcs;
+	info->unknown_sequence=mgr->unknown_sequence;
+	return;
 }
