@@ -1343,6 +1343,19 @@ TEST_F(SwarmkvTwoNodes, TypeBulkTokenBucket)
 	swarmkv_reply_free(reply);
 
 }
+TEST_F(SwarmkvTwoNodes, Info)
+{
+	struct swarmkv *db[2];
+	db[0]=SwarmkvTwoNodes::db1;
+	db[1]=SwarmkvTwoNodes::db2;
+	struct swarmkv_reply *reply=NULL;
+	for(size_t i=0; i<2; i++)
+	{
+		reply=swarmkv_command(db[i%2], "INFO");
+		ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+		swarmkv_reply_free(reply);
+	}
+}
 TEST_F(SwarmkvTwoNodes, TypeHash)
 {
 	struct swarmkv *db[2];

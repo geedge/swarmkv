@@ -375,8 +375,11 @@ struct swarmkv_reply *swarmkv_command_on_argv(struct swarmkv *db, const char *ta
 		node_init_from_sds(&target_node, target);
         exec_for_local(db, cmd, &target_node, blocking_query_cb, &ctx);
     }
+	long long pending_cmds=0;
+	pending_cmds=swarmkv_caller_get_pending_commands(db);
 	if(ctx.reply==NULL)
 	{
+		assert(pending_cmds==1);
 		swarmkv_caller_loop(db, SWARMKV_LOOP_NO_EXIT_ON_EMPTY, NULL);
 	}
 	assert(ctx.reply!=NULL);

@@ -49,16 +49,7 @@ struct fair_token_bucket *fair_token_bucket_new(uuid_t uuid, struct timeval now,
     ftb->per_weight_quantum=CIR;
     return ftb;
 }
-void fair_token_bucket_configure(struct fair_token_bucket *ftb, struct timeval now, long long CIR, long long CBS, long long divisor)
-{
-    if(divisor > ftb->divisor)
-    {
-        ftb->divisor=divisor;
-        g_array_resize(ftb->sfq, ftb->divisor);
-    }
-    OC_token_bucket_configure(ftb->bucket, now, CIR, CBS);
-    return;
-}
+
 void fair_token_bucket_free(struct fair_token_bucket *ftb)
 {
     for(int i=0; i<FAIR_TB_WEIGHT_MAX; i++)
@@ -84,9 +75,16 @@ static void ftb_quantum_estimation(struct fair_token_bucket *ftb, struct timeval
     OC_token_bucket_info(ftb->bucket, now, &info);
     long long available=info.available;
 	//available=MAX(available-info.CIR*(2-1)/2, 0);
-
+    if(info.CIR==0)//Infinite Tokens
+    {
+        ftb->per_weight_quantum=0;
+    }
+    else
+    {
+        ftb->per_weight_quantum=available/MAX(1, total_weight);
+    }
     ftb->total_weight=total_weight; 
-    ftb->per_weight_quantum=available/MAX(1, total_weight);
+   
     ftb->n_active_key=n_active_key;
 }
 static void ftb_perturb(struct fair_token_bucket *ftb, struct timeval now)
@@ -116,7 +114,7 @@ long long fair_token_bucket_consume(struct fair_token_bucket *ftb, struct timeva
     deficit_est=g_array_get(ftb->sfq, sfq_idx);
     deficit_est/=MAX(1, ftb->n_active_key/ftb->divisor);
     ftb->debug_last_defict=deficit_est;
-    if(tokens + deficit_est > ftb->per_weight_quantum*weight)
+    if(tokens + deficit_est > ftb->per_weight_quantum*weight && ftb->per_weight_quantum>0)
     {
         ftb->debug_last_allocated=-1;
         return 0;
@@ -129,7 +127,17 @@ long long fair_token_bucket_consume(struct fair_token_bucket *ftb, struct timeva
     ftb->debug_last_allocated=allocated_tokens;
     return allocated_tokens;
 }
-
+void fair_token_bucket_configure(struct fair_token_bucket *ftb, struct timeval now, long long CIR, long long CBS, long long divisor)
+{
+    if(divisor > ftb->divisor)
+    {
+        ftb->divisor=divisor;
+        g_array_resize(ftb->sfq, ftb->divisor);
+    }
+    OC_token_bucket_configure(ftb->bucket, now, CIR, CBS);
+    ftb_perturb(ftb, now);
+    return;
+}
 void fair_token_bucket_info(const struct fair_token_bucket *ftb, struct timeval now, struct fair_token_bucket_info *info)
 {
     for(int i=0; i<FAIR_TB_WEIGHT_MAX; i++)

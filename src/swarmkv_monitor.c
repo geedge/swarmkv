@@ -371,10 +371,11 @@ enum cmd_exec_result latency_command(struct swarmkv_module *mod_monitor, const s
     else if(!strcasecmp(cmd->argv[1], "peer"))
     {
         struct recorder *merged_table=NULL;
+        //Dirty code: Reading all worker threads' peer recorder tables is not thread-safe. 
+        //It's OK only if the worker threads are not adding new peers.
         recorder_table_merge(monitor->peers, monitor->nr_worker_threads, &merged_table);
         *reply=latency_generic(&merged_table, cmd->argc>2?cmd->argv[2]:NULL);
         recorder_table_free(&merged_table);
-        
     }
     else if(!strcasecmp(cmd->argv[1], "reset"))
     {
