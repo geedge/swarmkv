@@ -274,5 +274,10 @@ void bulk_token_bucket_merge_blob(struct bulk_token_bucket *btb, const char * bl
 size_t bulk_token_bucket_mem_size(const struct bulk_token_bucket *btb)
 {
 	//to do
-    return 0;
+	size_t sz=0;
+	sz+=sizeof(struct bulk_token_bucket);
+	sz+=ST_hyperloglog_mem_size(btb->hll);
+	sz+=sizeof(struct refill_mark)*btb->cfg.bucket_num;
+	sz+=g_array_mem_size(btb->consumed);
+    return sz;
 }

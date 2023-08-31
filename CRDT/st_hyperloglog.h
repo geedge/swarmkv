@@ -33,6 +33,7 @@ void ST_hyperloglog_merge(struct ST_hyperloglog *dst, const struct ST_hyperloglo
 void ST_hyperloglog_merge_blob(struct ST_hyperloglog *dst, const char *blob, size_t blob_sz);
 double ST_hyperloglog_error_for_precision(unsigned char precision);
 void ST_hyperloglog_configure(struct ST_hyperloglog *h, unsigned char precision, int time_window_seconds, const struct timeval now);
+size_t ST_hyperloglog_mem_size(const struct ST_hyperloglog *h);
 #ifdef __cplusplus
 }
 #endif

@@ -501,7 +501,7 @@ static void crdt_generic_on_reply(const struct swarmkv_reply *reply, void *user)
 	{
 		case CRDT_GET:
 			ctr=store_lookup_scontainer(ctx->store, ctx->key);
-			if(ctr && reply->type==SWARMKV_REPLY_STRING)
+			if(ctr && reply->type==SWARMKV_REPLY_VERBATIM)
 			{
 				sobj_merge_blob(&ctr->obj, reply->str, reply->len, uuid);
 				ctr->is_pending=0;
@@ -818,7 +818,7 @@ enum cmd_exec_result crdt_get_command(struct swarmkv_module *mod_store, const st
 		if(ctr->obj.type!=OBJ_TYPE_UNDEFINED)
 		{
 			scontainer_serialize(ctr, &blob, &blob_sz);
-			*reply=swarmkv_reply_new_string(blob, blob_sz);
+			*reply=swarmkv_reply_new_verbatim(blob, blob_sz, "crd");
 			free(blob);
 		}
 		else

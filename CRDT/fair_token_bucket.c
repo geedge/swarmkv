@@ -256,6 +256,12 @@ size_t fair_token_bucket_mem_size(const struct fair_token_bucket *ftb)
 {
     size_t sz=0;
     sz += sizeof(struct fair_token_bucket);
+    for(int i=0; i<FAIR_TB_WEIGHT_MAX; i++)
+    {
+        sz += ST_hyperloglog_mem_size(ftb->hll[i]);
+    }
+    sz+=g_array_mem_size(ftb->sfq);
+    sz+=OC_token_bucket_mem_size(ftb->bucket);
     //to do
     return sz;
 }

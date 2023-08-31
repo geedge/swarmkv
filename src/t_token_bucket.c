@@ -260,7 +260,7 @@ enum cmd_exec_result ftconsume_command(struct swarmkv_module *mod_store, const s
 	}
 	long long weight=0;
 	weight=strtol(cmd->argv[3], &endptr, 10);
-	if(*endptr!='\0' || weight<1 || weight>20)
+	if(*endptr!='\0' || weight<1 || weight>FAIR_TB_WEIGHT_MAX)
 	{
 		*reply=swarmkv_reply_new_error(error_arg_not_valid_integer, cmd->argv[3]);
 		return FINISHED;

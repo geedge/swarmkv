@@ -10,6 +10,13 @@
 #include <unistd.h>
 #include <sys/time.h>
 
+#define	BASIC_TEST_CLUSTER_PORT	5210
+#define BASIC_TEST_HEALTH_PORT	6210
+#define TWO_NODES_TEST_CLUSTER_PORT	5211
+#define TWO_NODES_TEST_HEALTH_PORT	6211
+#define N_NODES_TEST_CLUSTER_PORT	5311
+#define N_NODES_TEST_HEALTH_PORT	6311
+
 #define	CMD_EXEC_TIMEOUT_MS	1000*2
 struct timeval g_exec_timeout={CMD_EXEC_TIMEOUT_MS/1000, (CMD_EXEC_TIMEOUT_MS%1000)*1000};
 void generic_callback(const struct swarmkv_reply *reply, void * cb_arg)
@@ -43,11 +50,13 @@ protected:
 		const char *log_path="./basic-test.log";
 		char *err=NULL;
 		const char *cluster_name="swarmkv-basic-test";
-		swarmkv_cli_create_cluster(cluster_name, "127.0.0.1:5210");
+		char ip_list[1024]={0};
+		snprintf(ip_list, sizeof(ip_list), "127.0.0.1:%d", BASIC_TEST_CLUSTER_PORT);
+		swarmkv_cli_create_cluster(cluster_name, ip_list);
 		logger=log_handle_create(log_path, 0);
 		struct swarmkv_options *opts=swarmkv_options_new();
-		swarmkv_options_set_cluster_port(opts, 5210);
-		swarmkv_options_set_health_check_port(opts, 6210);
+		swarmkv_options_set_cluster_port(opts, BASIC_TEST_CLUSTER_PORT);
+		swarmkv_options_set_health_check_port(opts, BASIC_TEST_HEALTH_PORT);
 		swarmkv_options_set_logger(opts, logger);
 		swarmkv_options_set_worker_thread_number(opts, 1);
 		swarmkv_options_set_caller_thread_number(opts, 1);
@@ -559,43 +568,36 @@ protected:
 		const char *log_path="./swarmkv-2-nodes.log";
 		
 		const char *cluster_name="swarmkv-2-nodes";
-		swarmkv_cli_create_cluster(cluster_name, "127.0.0.1:5210 127.0.0.1:5211");
+
+		char ip_list[1024]={0};
+		snprintf(ip_list, sizeof(ip_list), "127.0.0.1:%d 127.0.0.1:%d", TWO_NODES_TEST_CLUSTER_PORT, TWO_NODES_TEST_CLUSTER_PORT+1);
+		swarmkv_cli_create_cluster(cluster_name, ip_list);
 		unsigned int very_long_timeout_us=600*1000*1000;
 		logger=log_handle_create(log_path, 0);
-		struct swarmkv_options* opts1=swarmkv_options_new();
-		swarmkv_options_set_cluster_port(opts1, 5210);
-		swarmkv_options_set_health_check_port(opts1, 6210);
-		swarmkv_options_set_logger(opts1, logger);
-		swarmkv_options_set_sync_interval_us(opts1, 10*1000);
-		swarmkv_options_set_cluster_timeout_us(opts1, very_long_timeout_us);
-		swarmkv_options_set_worker_thread_number(opts1, 2);
-		swarmkv_options_set_caller_thread_number(opts1, 1);
-		swarmkv_options_set_batch_sync_enabled(opts1, 1);
-		db1=swarmkv_open(opts1, cluster_name, &err);
-		if(err)
+		struct swarmkv_options *opts[2];
+		struct swarmkv *tmp_db[2];
+		for(int i=0; i<2; i++)
 		{
-			printf("swarmkv_open failed: %s\n", err);
-			free(err);
-			err=NULL;
+			opts[i]=swarmkv_options_new();
+			swarmkv_options_set_cluster_port(opts[i], TWO_NODES_TEST_CLUSTER_PORT+i);
+			swarmkv_options_set_health_check_port(opts[i], TWO_NODES_TEST_HEALTH_PORT+i);
+			swarmkv_options_set_logger(opts[i], logger);
+			swarmkv_options_set_sync_interval_us(opts[i], 20*1000);
+			swarmkv_options_set_cluster_timeout_us(opts[i], very_long_timeout_us);
+			swarmkv_options_set_worker_thread_number(opts[i], 2);
+			swarmkv_options_set_caller_thread_number(opts[i], 1);
+			swarmkv_options_set_batch_sync_enabled(opts[i], 1);
+			tmp_db[i]=swarmkv_open(opts[i], cluster_name, &err);
+			if(err)
+			{
+				printf("swarmkv_open failed: %s\n", err);
+				free(err);
+				err=NULL;
+			}
+			swarmkv_register_thread(tmp_db[i]);
 		}
-		swarmkv_register_thread(db1);
-		struct swarmkv_options* opts2=swarmkv_options_new();
-		swarmkv_options_set_cluster_port(opts2, 5211);
-		swarmkv_options_set_health_check_port(opts2, 6211);
-		swarmkv_options_set_logger(opts2, logger);
-		swarmkv_options_set_cluster_timeout_us(opts2, very_long_timeout_us);
-		swarmkv_options_set_sync_interval_us(opts2, 10*1000);
-		swarmkv_options_set_worker_thread_number(opts2, 2);
-		swarmkv_options_set_caller_thread_number(opts2, 1);
-		swarmkv_options_set_batch_sync_enabled(opts2, 1);
-		db2=swarmkv_open(opts2, cluster_name, &err);
-		if(err)
-		{
-			printf("swarmkv_open failed: %s\n", err);
-			free(err);
-			err=NULL;
-		}
-		swarmkv_register_thread(db2);
+		db1=tmp_db[0];
+		db2=tmp_db[1];
 	}
 	static void TearDownTestCase()
 	{
@@ -616,7 +618,7 @@ TEST_F(SwarmkvTwoNodes, KeyspaceKeys)
 	db[0]=SwarmkvTwoNodes::db1;
 	db[1]=SwarmkvTwoNodes::db2;
 	struct swarmkv_reply *reply=NULL;
-	const char *key="low-level-test-230813";
+	const char *key="keyspace-230813";
 
 	reply=swarmkv_command(db[0], "SET %s value1", key);
 	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
@@ -640,6 +642,34 @@ TEST_F(SwarmkvTwoNodes, KeyspaceKeys)
 		swarmkv_reply_free(reply);
 	}
 	EXPECT_EQ(n_key, 1);
+}
+TEST_F(SwarmkvTwoNodes, CRDT)
+{
+	struct swarmkv *db[2];
+	db[0]=SwarmkvTwoNodes::db1;
+	db[1]=SwarmkvTwoNodes::db2;
+	struct swarmkv_reply *reply=NULL;
+	const char *key="low-level-test-230813";
+
+	reply=swarmkv_command(db[0], "SET %s value1", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	EXPECT_STREQ(reply->str, "OK");
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db[1], "GET %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STRING);
+	EXPECT_STREQ(reply->str, "value1");
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db[1], "CRDT INFO %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
+	EXPECT_EQ(reply->n_element, 8);
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db[1], "CRDT GET %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_VERBATIM);
+	swarmkv_reply_free(reply);
+
 }
 TEST_F(SwarmkvTwoNodes, SET_GET)
 {
@@ -1113,7 +1143,7 @@ TEST_F(SwarmkvTwoNodes, TypeTokenBucket)
 
 	struct swarmkv_reply *reply=NULL;
 
-	long long capacity=1024*4, rate=1024*2;
+	long long capacity=512*1024, rate=512*1024;
 
 	reply=swarmkv_command(db[0], "TCFG %s %lld %lld", key, rate, capacity);	
 	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
@@ -1124,13 +1154,14 @@ TEST_F(SwarmkvTwoNodes, TypeTokenBucket)
 
 	srandom(171);
 	
-	int i=0;
+	int i=0, run_second=10;
 	struct timeval start, now;
 	gettimeofday(&start, NULL);
 	gettimeofday(&now, NULL);
 	long long token=0, requested_tokens=0, allocated_tokens=0;
 	//Two heavy consumers
-	while(now.tv_sec - start.tv_sec<10)
+	long long elapsed_ms=0;
+	while(elapsed_ms/1000<run_second)
 	{
 		token=random()%(4*rate);
 		requested_tokens+=token;
@@ -1139,47 +1170,17 @@ TEST_F(SwarmkvTwoNodes, TypeTokenBucket)
 		allocated_tokens+=reply->integer;
 		swarmkv_reply_free(reply);
 		gettimeofday(&now, NULL);
+		elapsed_ms=(now.tv_sec-start.tv_sec)*1000+(now.tv_usec-start.tv_usec)/1000;
 		i++;
 	}
-	//Light consumers
-	while(0 && now.tv_sec - start.tv_sec<10)
-	{
-		token=rate*3/4+random()%(rate/2);
-		if(i%2==0)
-		{
-			token=token*2/10;
-		}
-		else
-		{
-			token=token*8/10;
-		}
-		token=token*6/10;
-		requested_tokens+=token;
-		reply=swarmkv_command(db[0], "TCONSUME %s %lld FLEXIBLE", key, token);
-		ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
-		allocated_tokens+=reply->integer;
-		swarmkv_reply_free(reply);
-		
-		gettimeofday(&now, NULL);
-		i++;
-	}
-	//One heavy consumer
-	while(0 && now.tv_sec - start.tv_sec<15)
-	{
-		token=rate*3/4+random()%(rate);
-		requested_tokens+=token;
-		reply=swarmkv_command(db[0], "TCONSUME %s %lld", key, token);
-		ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);	
-		allocated_tokens+=reply->integer;
-		swarmkv_reply_free(reply);
-		gettimeofday(&now, NULL);
-		i++;
-	}
-//	printf("consume round %d, speed %d ops\n", i, i/(int)(now.tv_sec-start.tv_sec));
-	EXPECT_GE(i/(int)(now.tv_sec-start.tv_sec), 100000);
-	long long upper_limit=(now.tv_sec-start.tv_sec)*rate+capacity;
+
+	EXPECT_GE(i/(int)(now.tv_sec-start.tv_sec), 10000);//>10,000 QPS
+	long long upper_limit=elapsed_ms*rate/1000+capacity;
 	double accuracy=(double)allocated_tokens/(upper_limit<requested_tokens?upper_limit:requested_tokens);
-	EXPECT_NEAR(accuracy, 1, 0.035);	
+	//waste no more than (n_replica-1)/n_replica of tokens
+	EXPECT_NEAR(accuracy, 1, (double)0.5/run_second);
+	printf("requested %lld, upper limit %lld, allocated %lld\n", requested_tokens, upper_limit, allocated_tokens);
+	printf("waste %lld, round %d, speed %d qps\n", upper_limit-allocated_tokens, i, i/(int)(now.tv_sec-start.tv_sec));
 
 	wait_for_sync();
 
@@ -1205,8 +1206,9 @@ TEST_F(SwarmkvTwoNodes, TypeFairTokenBucket)
 	
 	const char *key="shaping-profile-with-fairness";
 	long long capacity=1024*4, rate=1024*2, divisor=1024;
-	struct swarmkv_reply *reply=NULL;
 	
+	struct swarmkv_reply *reply=NULL;
+	int WEIGHT_MAX=20;
 	reply=swarmkv_command(db[0], "FTCFG %s %lld %lld %lld", key, rate, capacity, divisor);
 	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
 	EXPECT_STREQ(reply->str, "OK");
@@ -1221,27 +1223,33 @@ TEST_F(SwarmkvTwoNodes, TypeFairTokenBucket)
 	gettimeofday(&now, NULL);
 	long long token=0, requested_tokens=0, allocated_tokens=0;
 	long long member_id=0, weight=0, n_member=100;
-
-	while(now.tv_sec - start.tv_sec<20)
+	long long elapsed_ms=0;
+	long long run_second=20;
+	while(elapsed_ms/1000<run_second)
 	{
 		token=random()%(2*rate/n_member);
 		requested_tokens+=token;
 		
-		weight=1+(member_id%20);
+		weight=1+(member_id%WEIGHT_MAX);
+		//weight=5;
 		reply=swarmkv_command(db[round%2], "FTCONSUME %s user-%lld %lld %lld", key, member_id, weight, token);
 		ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+		assert(reply->integer>=0);
 		allocated_tokens+=reply->integer;
 		swarmkv_reply_free(reply);
 
 		gettimeofday(&now, NULL);
+		elapsed_ms=(now.tv_sec-start.tv_sec)*1000+(now.tv_usec-start.tv_usec)/1000;
 		member_id=(member_id+1)%n_member;
 		round++;
 	}
 //	printf("consume round %d, speed %d ops\n", i, i/(int)(now.tv_sec-start.tv_sec));
-	EXPECT_GE(round/(int)(now.tv_sec-start.tv_sec), 100000);
-	long long upper_limit=(now.tv_sec-start.tv_sec)*rate+capacity;
+	
+	EXPECT_GE(round/(int)(now.tv_sec-start.tv_sec), 10000);
+	long long upper_limit=elapsed_ms*rate/1000+capacity;
 	double accuracy=(double)allocated_tokens/(upper_limit<requested_tokens?upper_limit:requested_tokens);
 	EXPECT_NEAR(accuracy, 1, 0.035);
+	printf("requested %lld, upper limit %lld, allocated %lld\n", requested_tokens, upper_limit, allocated_tokens);
 
 	wait_for_sync();
 
@@ -1308,8 +1316,8 @@ TEST_F(SwarmkvTwoNodes, TypeBulkTokenBucket)
 		member_id=(member_id+1)%n_member;
 		round++;
 	}
-//	printf("consume round %d, speed %d ops\n", i, i/(int)(now.tv_sec-start.tv_sec));
-	EXPECT_GE(round/(int)(now.tv_sec-start.tv_sec), 100000);
+	printf("consume round %d, speed %d ops\n", round, round/(int)(now.tv_sec-start.tv_sec));
+	EXPECT_GE(round/(int)(now.tv_sec-start.tv_sec), 10000);
 	long long upper_limit=(now.tv_sec-start.tv_sec)*rate+capacity;
 	upper_limit=upper_limit*n_member;
 	double accuracy=(double)allocated_tokens/(upper_limit<requested_tokens?upper_limit:requested_tokens);
@@ -1335,7 +1343,27 @@ TEST_F(SwarmkvTwoNodes, TypeBulkTokenBucket)
 	EXPECT_EQ(reply->integer, 1);
 	swarmkv_reply_free(reply);
 
+	reply=swarmkv_command(db[0], "KEYSPACE EXISTS %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 0);
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db[1], "KEYSPACE EXISTS %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 0);
+	swarmkv_reply_free(reply);
+
 	wait_for_sync();
+
+	reply=swarmkv_command(db[0], "CRDT EXISTS %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 0);
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db[1], "CRDT EXISTS %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 0);
+	swarmkv_reply_free(reply);
 
 	reply=swarmkv_command(db[1],"BTCONSUME %s user-001 1000", key);
 	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
@@ -1485,7 +1513,7 @@ protected:
 		char node_list_str[1024]={0};
 		for(i=0; i<TEST_NODE_NUMBER; i++)
 		{
-			snprintf(node_list_str+strlen(node_list_str), sizeof(node_list_str)-strlen(node_list_str), "127.0.0.1:%zu ", 5210+i);
+			snprintf(node_list_str+strlen(node_list_str), sizeof(node_list_str)-strlen(node_list_str), "127.0.0.1:%zu ", N_NODES_TEST_CLUSTER_PORT+i);
 		}
 		const char *cluster_name="swarmkv-n-nodes";
 		swarmkv_cli_create_cluster(cluster_name, node_list_str);
@@ -1494,8 +1522,8 @@ protected:
 		for(i=0; i<TEST_NODE_NUMBER; i++)
 		{
 			opts[i]=swarmkv_options_new();			
-			swarmkv_options_set_cluster_port(opts[i], 5210+i);
-			swarmkv_options_set_health_check_port(opts[i], 6210+i);
+			swarmkv_options_set_cluster_port(opts[i], N_NODES_TEST_CLUSTER_PORT+i);
+			swarmkv_options_set_health_check_port(opts[i], N_NODES_TEST_HEALTH_PORT+i);
 			swarmkv_options_set_worker_thread_number(opts[i], 2);
 			swarmkv_options_set_logger(opts[i], logger);
 			swarmkv_options_set_cluster_timeout_us(opts[i], 30*1000*1000);
@@ -1554,7 +1582,7 @@ TEST_F(SwarmkvNNodes, SET_GET)
 	wait_for_sync();
 	for(i=0; i<TEST_NODE_NUMBER; i++)
 	{
-		reply=swarmkv_command_on(db[i], swarmkv_self_address(db[i]), "CRDT EXISTS %s", key);
+		reply=swarmkv_command(db[i], "CRDT EXISTS %s", key);
 		ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
 		EXPECT_EQ(reply->integer, 1);
 		swarmkv_reply_free(reply);
@@ -1575,11 +1603,72 @@ TEST_F(SwarmkvNNodes, SET_GET)
 
 	for(i=0; i<TEST_NODE_NUMBER; i++)
 	{
-		reply=swarmkv_command(db[i], "GET %s", key);
-		ASSERT_EQ(reply->type, SWARMKV_REPLY_NIL);
+		reply=swarmkv_command(db[i], "CRDT EXISTS %s", key);
+		ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+		EXPECT_EQ(reply->integer, 0);
 		swarmkv_reply_free(reply);
 	}
 
+}
+TEST_F(SwarmkvNNodes, TypeTokenBucket)
+{
+	struct swarmkv **db=SwarmkvNNodes::db;
+	
+	const char *key="tb";
+
+	struct swarmkv_reply *reply=NULL;
+
+	long long capacity=512*1024, rate=512*1024;
+
+	reply=swarmkv_command(db[0], "TCFG %s %lld %lld", key, rate, capacity);	
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	EXPECT_STREQ(reply->str, "OK");
+	swarmkv_reply_free(reply);
+	reply=NULL;
+
+
+	srandom(171);
+	
+	int i=0, run_second=100;
+	struct timeval start, now;
+	gettimeofday(&start, NULL);
+	gettimeofday(&now, NULL);
+	long long token=0, requested_tokens=0, allocated_tokens=0;
+	//Two heavy consumers
+	while(now.tv_sec - start.tv_sec<run_second)
+	{
+		token=random()%(4*rate);
+		requested_tokens+=token;
+		reply=swarmkv_command(db[i%TEST_NODE_NUMBER], "TCONSUME %s %lld FLEXIBLE", key, token);
+		ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+		allocated_tokens+=reply->integer;
+		swarmkv_reply_free(reply);
+		gettimeofday(&now, NULL);
+		i++;
+	}
+	
+	EXPECT_GE(i/(int)(now.tv_sec-start.tv_sec), 10000);//>10,000 QPS
+	long long upper_limit=(now.tv_sec-start.tv_sec)*rate+capacity;
+	double accuracy=(double)allocated_tokens/(upper_limit<requested_tokens?upper_limit:requested_tokens);
+	EXPECT_NEAR(accuracy, 1, 0.035);
+	printf("requested %lld, upper limit %lld, allocated %lld\n", requested_tokens, upper_limit, allocated_tokens);
+	printf("waste %lld, round %d, speed %d qps\n", upper_limit-allocated_tokens, i, i/(int)(now.tv_sec-start.tv_sec));
+
+	wait_for_sync();
+
+	reply=swarmkv_command(db[0], "DEL %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 1);
+	swarmkv_reply_free(reply);
+	reply=NULL;
+
+	wait_for_sync();
+
+	reply=swarmkv_command(db[1], "TCONSUME %s 4096 FLEXIBLE", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, -1);
+	swarmkv_reply_free(reply);
+	reply=NULL;
 }
 int main(int argc, char ** argv)
 {

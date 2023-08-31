@@ -22,3 +22,5 @@
 #define error_cluster_addslotowner_node_is_not_active	"ERR candinate node %s is not active"
 #define error_cluster_addslotowner_node_has_slot 		"ERR candinate node %s already has some slots"
 
+#define error_network_error "ERR network error of peer %s, reason: %s"
+#define error_thread_rpc_buffer_full "ERR thread rpc buffer is full"

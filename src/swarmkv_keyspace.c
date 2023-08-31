@@ -1540,7 +1540,8 @@ enum KEYSPACE_OP
 	KEYSPACE_RADD,
 	KEYSPACE_XRADD,
 	KEYSPACE_DEL,
-    KEYSPACE_RDEL
+    KEYSPACE_RDEL,
+	KEYSPACE_EXISTS
 };
 
 enum cmd_exec_result key_route_generic(struct swarmkv_keyspace *ks, enum KEYSPACE_OP op, const sds key, const node_t *new_replica, struct swarmkv_reply **reply)
@@ -1628,6 +1629,9 @@ enum cmd_exec_result key_route_generic(struct swarmkv_keyspace *ks, enum KEYSPAC
                  *reply=swarmkv_reply_new_integer(0);
             }
             break;
+		case KEYSPACE_EXISTS:
+			*reply=swarmkv_reply_new_integer(key_entry?1:0);
+			break;
 		default:
 			assert(0);
 			break;
@@ -1737,7 +1741,16 @@ enum cmd_exec_result keyspace_xradd_command(struct swarmkv_module *mod_keyspace,
 	ret=key_route_generic(ks, KEYSPACE_XRADD, key, &new_replica, reply);
 	return ret;
 }
-
+enum cmd_exec_result keyspace_exists_command(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
+{
+/*KEYSPACE EXISTS <key>*/
+	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
+	enum cmd_exec_result ret=FINISHED;
+	sds key=cmd->argv[2];
+	
+	ret=key_route_generic(ks, KEYSPACE_EXISTS, key, NULL, reply);
+	return ret;
+}
 enum cmd_exec_result del_command(struct swarmkv_module *mod_keyspace, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
 {
 /*DEL <key> */

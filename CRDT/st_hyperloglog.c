@@ -521,3 +521,13 @@ double ST_hyperloglog_error_for_precision(unsigned char precision)
 
     return 1.04 / sqrt(NUM_REG(precision));
 }
+size_t ST_hyperloglog_mem_size(const struct ST_hyperloglog *h)
+{
+    // Determine how many registers are needed
+    int num_reg = NUM_REG(h->cfg.precision);
+
+    // Get the full words required
+    int words = INT_CEIL(num_reg, REG_PER_WORD);
+
+    return sizeof(struct ST_hyperloglog) + sizeof(uint32_t)*words;
+}

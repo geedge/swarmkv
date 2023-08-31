@@ -9,7 +9,7 @@ void swarmkv_net_free(struct swarmkv_net *net);
 
 void swarmkv_net_set_on_msg_callback(struct swarmkv_net *net, on_msg_callback_t *cb, void *cb_arg);
 //swamrkv_net_send takes the ownership of msg.
-void swarmkv_net_send(struct swarmkv_net *net, const node_t *dest, struct swarmkv_msg *msg);
+int swarmkv_net_send(struct swarmkv_net *net, const node_t *dest, struct swarmkv_msg *msg, const char **err_str);
 
 void swarmkv_net_set_monitor_handle(struct swarmkv_net *net, struct swarmkv_module *mod_monitor);
 
@@ -22,7 +22,8 @@ struct snet_info
 	long long input_msgs;
 
 	long long output_bytes;
-	long long output_msgs;	
+	long long output_msgs;
+	long long output_drop_msgs;
 	
 	long long input_buffer_sz;
 	long long output_buffer_sz;

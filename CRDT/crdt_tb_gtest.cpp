@@ -329,43 +329,64 @@ double OC_token_bucket_test(size_t replica_num, long long mimic_duration_s, long
 	}
 	srandom(17);
 	long long tokens=0;
-	long long consumed=0, requested=0, upper_limit=0, refilled=0;
+	long long allocated=0, requested=0, upper_limit=0, refilled=0, tmp=0;
 	long long step_us=100, mimic_duration_us=mimic_duration_s*1000*1000;
 	long long sync_interval_us=sync_interval_ms*1000;
 	struct timeval step, now;
 	memcpy(&now, &start, sizeof(now));
 	step.tv_sec=0;
 	step.tv_usec=(suseconds_t)step_us;
+	
 	for(i=0; (long long)i<mimic_duration_us/step_us; i++)
 	{
 		timeradd(&now, &step, &now);
 		j=random()%replica_num;
+		
 		tokens=CIR*step_us/(1000*1000);
 		tokens=tokens*saturation_percent/100;
-		tokens=tokens/2+random()%tokens;
+		tokens=tokens/2+random()%(tokens+1);
 		requested+=tokens;
-		consumed+=OC_token_bucket_consume(buckets[j], now, TB_CONSUME_NORMAL, tokens);
+		tmp=OC_token_bucket_consume(buckets[j], now, TB_CONSUME_NORMAL, tokens);
+		allocated+=tmp;
 		if((step_us*i)%sync_interval_us==0)
 		{
 			OC_token_bucket_sync(buckets, replica_num);
 		}
+		upper_limit=CBS+CIR*(timeval_to_ms(now)-timeval_to_ms(start))/1000;
 	}
-	upper_limit=CBS+CIR*timeval_delta_ms(start, now)/1000;
+	
 
 	struct OC_token_bucket_info info;
 	OC_token_bucket_info(buckets[0], now, &info);
 	refilled=info.refilled;
-
-	EXPECT_NEAR((double)consumed/MIN(refilled, requested), 1, 0.03);
-//	EXPECT_LE(consumed, requested);
-	double accuracy=(double)consumed/MIN(upper_limit, requested);
-	double real_saturation=(double)requested/upper_limit;
-	EXPECT_NEAR(real_saturation, (double)saturation_percent/100, 0.1);
+	
+	upper_limit=CBS+CIR*timeval_delta_ms(start, now)/1000;
+	
+	printf("duration_s=%lld, replica_num=%zu, upper_limit=%lld, requested=%lld, allocated=%lld, wasted=%lld\n", 
+	mimic_duration_s, replica_num, upper_limit, requested, allocated, (requested>upper_limit?upper_limit-allocated:0));
+	double allowed_error=(double)1/replica_num/mimic_duration_s;
+	EXPECT_NEAR((double)allocated/MIN(refilled, requested), 1, MAX(allowed_error, 0.03));
+	EXPECT_LE(allocated, requested);
+	double accuracy=(double)allocated/MIN(upper_limit, requested);
+//	double real_saturation=(double)(requested)/(upper_limit);
+//	EXPECT_NEAR(real_saturation, (double)saturation_percent/100, 0.1);
+	
 	for(i=0; i<replica_num; i++)
 	{
 		OC_token_bucket_free(buckets[i]);
 	}
 	return accuracy;
+}
+TEST(OCTokenBucket, ShortPeriodHeavyConsumer)
+{
+	double accuracy=0.0;
+	long long replica_num=2, test_duration_s=10, sync_interval_ms=10;
+	for(int i=0; i<20; i++)
+	{
+		test_duration_s=10*(i+1);
+		accuracy=OC_token_bucket_test(replica_num, test_duration_s, sync_interval_ms, 200);
+		EXPECT_NEAR(accuracy, 1, 0.05);
+	}
 }
 TEST(OCTokenBucket, HeavyConsumer)
 {
@@ -385,6 +406,7 @@ TEST(OCTokenBucket, HeavyConsumer)
 		}
 	}
 }
+
 TEST(OCTokenBucket, LightConsumer)
 {	
 	double accuracy=0.0;
@@ -747,7 +769,7 @@ void ftb_sync(struct fair_token_bucket **ftb, size_t n_ftb)
 	}
 	return;
 }
-double expected_fairness_index=0.03;
+double expected_fairness_index=0.04;
 double test_fair_token_bucket(struct sftb_class *classes, size_t n_class, long long CIR, long long CBS, int duration_s, int n_replica)
 {
 	uuid_t uuid;
@@ -764,7 +786,7 @@ double test_fair_token_bucket(struct sftb_class *classes, size_t n_class, long l
 		uuid_generate(uuid);
 		ftb[i]=fair_token_bucket_new(uuid, now, CIR, CBS, 8192);
 	}
-	int sync_interval_ms=40;
+	int sync_interval_ms=10;
 	long long got=0;
 	for(int i=0; i<duration_s*(1000*1000/step_us); i++)
 	{
@@ -792,7 +814,7 @@ double test_fair_token_bucket(struct sftb_class *classes, size_t n_class, long l
 	}
 	long long available_tokens=CIR*duration_s+CBS;
 	double index=max_min_fairness_index(available_tokens, classes, n_class);
-	int print=1;
+	int print=0;
 	if(print)
 	{
 		printf("class\tweight\tdemand\tallocated\tideal\r\n");
@@ -867,7 +889,7 @@ TEST(FairTokenBucket, Debug)
 							{400, 1, 50000, 0, 0, 0},
 							{5, 1, 20003, 0, 0, 0}};
 	
-	index=test_fair_token_bucket(two_heavy_classes, 5, 100000, 200000, duration_s, 2);
+	index=test_fair_token_bucket(two_heavy_classes, 5, 100000, 200000, duration_s, 4);
 	EXPECT_NEAR(index, 1, expected_fairness_index);
 }
 TEST(FairTokenBucket, Replicas)

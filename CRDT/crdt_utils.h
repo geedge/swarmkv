@@ -27,5 +27,6 @@
 #endif
 #define timeval_delta_ms(start, end) ((end.tv_sec-start.tv_sec)*1000 + (end.tv_usec-start.tv_usec)/1000)
 #define timeval_delta_us(start, end) ((end.tv_sec-start.tv_sec)*1000*1000 + (end.tv_usec-start.tv_usec))
+#define	timeval_to_ms(t)	((t).tv_sec*1000+(t).tv_usec/1000)
 #define likely(x)       __builtin_expect((x),1)
 #define unlikely(x)     __builtin_expect((x),0)

@@ -185,7 +185,7 @@ static void remoter_caller_ctx_send_reply(struct remote_caller_ctx *ctx, const s
 	struct swarmkv *db = ctx->db;
 	struct swarmkv_msg *msg=swarmkv_msg_new_by_reply(reply, &ctx->remote, ctx->remote_tid, &db->self, ctx->sequence);
 	int cur_tid=__gettid(db);
-	
+	const char *err_str=NULL;
 	if(0==node_compare(&db->self, &msg->caller))
 	{
 		assert(cur_tid != msg->caller_tid);
@@ -193,7 +193,7 @@ static void remoter_caller_ctx_send_reply(struct remote_caller_ctx *ctx, const s
 	}
 	else
 	{
-		swarmkv_net_send(ctx->db->net, &ctx->remote, msg);
+		swarmkv_net_send(ctx->db->net, &ctx->remote, msg, &err_str);
 	}	
 	return;
 }
@@ -332,6 +332,7 @@ enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct sw
 												"output_bytes: %lld\r\n"
 												"input_msgs: %lld\r\n"
 												"output_msgs: %lld\r\n"
+												"output_drop_msgs: %lld\r\n"
 												"input_buffer: %lld\r\n"
 												"output_buffer: %lld\r\n"
 												"instantaneous_input_kbps: %.2f\r\n"
@@ -345,6 +346,7 @@ enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct sw
 												net_info.output_bytes,
 												net_info.input_msgs,
 												net_info.output_msgs,
+												net_info.output_drop_msgs,
 												net_info.input_buffer_sz,
 												net_info.output_buffer_sz,
 												net_info.instantaneous_input_kbps,
@@ -889,14 +891,29 @@ void __exec_cmd(struct swarmkv *db, const node_t *target_node, const struct swar
 		//cmd is executed in target node's on_msg_callback
 		long long sequence=swarmkv_rpc_launch(db->rpc_mgr, cur_tid, future_of_caller);
 		msg=swarmkv_msg_new_by_cmd(cmd, &db->self, cur_tid, target_node, sequence);
+		int ret=0;
 		if(cur_tid >= db->opts->nr_worker_threads)
 		{
 			//Only worker threads can do network communication, so command should be executed at worker thread first.
-			swarmkv_mesh_send(db->mesh, cur_tid, random()%db->opts->nr_worker_threads, msg);
+			ret=swarmkv_mesh_send(db->mesh, cur_tid, random()%db->opts->nr_worker_threads, msg);
+			if(ret<0)
+			{
+				reply=swarmkv_reply_new_error(error_thread_rpc_buffer_full);
+			}
 		}
 		else
 		{
-			swarmkv_net_send(db->net, target_node, msg);
+			const char *err_str=NULL;
+			ret=swarmkv_net_send(db->net, target_node, msg, &err_str);
+			if(ret<0)
+			{
+				reply=swarmkv_reply_new_error(error_network_error, node_addr2sds(target_node), err_str);
+			}
+		}
+		if(reply)
+		{
+			swarmkv_rpc_complete(db->rpc_mgr, cur_tid, cur_tid, reply);
+			swarmkv_reply_free(reply);
 		}
 		return;
 	}
@@ -905,7 +922,14 @@ void __exec_cmd(struct swarmkv *db, const node_t *target_node, const struct swar
 		//cmd will be executed in target thread's on_msg_callback
 		long long sequence=swarmkv_rpc_launch(db->rpc_mgr, cur_tid, future_of_caller);
 		msg=swarmkv_msg_new_by_cmd(cmd, &db->self, cur_tid, target_node, sequence);
-		swarmkv_mesh_send(db->mesh, cur_tid, target_tid, msg);
+		int ret=0;
+		ret=swarmkv_mesh_send(db->mesh, cur_tid, target_tid, msg);
+		if(ret<0)
+		{
+			reply=swarmkv_reply_new_error(error_thread_rpc_buffer_full);
+			swarmkv_rpc_complete(db->rpc_mgr, cur_tid, cur_tid, reply);
+			swarmkv_reply_free(reply);
+		}
 		return;
 	}
 	db->threads[cur_tid].recusion_depth++;
@@ -1137,7 +1161,7 @@ void command_spec_init(struct swarmkv *db)
 					1, 2, CMD_KEY_NA, REPLY_NA,  NOT_AUTO_ROUTE,
 					crdt_rlist_command, db->mod_store);
 	command_register(&(db->command_table), "CRDT INFO", "key",
-					1, 1, CMD_KEY_NA, REPLY_EMPTY_ARRAY, NOT_AUTO_ROUTE,
+					1, 2, CMD_KEY_NA, REPLY_EMPTY_ARRAY, NOT_AUTO_ROUTE,
 					crdt_info_command, db->mod_store);
 
 	/* low-level keyspace operation commands */
@@ -1155,8 +1179,10 @@ void command_spec_init(struct swarmkv *db)
 					keyspace_keys_command, db->mod_keyspace);
     command_register(&(db->command_table), "KEYSPACE RDEL", "key IP:port",
 					1, 2, CMD_KEY_RW, REPLY_NA, AUTO_ROUTE,
-					keyspace_rdel_command, db->mod_keyspace);
-
+					keyspace_rdel_command, db->mod_keyspace); 
+    command_register(&(db->command_table), "KEYSPACE EXISTS", "key",
+					1, 2, CMD_KEY_RO, REPLY_NA, AUTO_ROUTE,
+					keyspace_exists_command, db->mod_keyspace);
 
 	/* low-level keyspace reorgnization commands */
 	command_register(&(db->command_table), "KEYSPACE SETSLOT", "slot IMPORTING|MIGRATING|NODE|STABLE IP:port",

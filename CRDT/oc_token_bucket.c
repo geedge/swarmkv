@@ -14,11 +14,13 @@ struct OC_configuration
 	long long refill_interval_ms;
 	struct timeval write_timestamp;
 };
+#define	timeval_to_ms(t)	((t).tv_sec*1000+(t).tv_usec/1000)
 struct OC_token_bucket
 {
 	struct OC_configuration cfg;
 	long long refilled;
-	struct timeval refill_timestamp;
+	long long refill_time_ms;
+	//struct timeval refill_timestamp;
 	struct PN_counter *consumed;
 
 	/* Local variables */
@@ -34,7 +36,8 @@ struct OC_token_bucket *OC_token_bucket_new(uuid_t my_id, struct timeval now, lo
 	bucket->cfg.CIR=CIR;
 	bucket->cfg.CBS=CBS;
 	bucket->cfg.refill_interval_ms=OCTB_REFILL_INTERVAL_MS_DEFAULT;
-	memcpy(&bucket->refill_timestamp, &now, sizeof(bucket->cfg.write_timestamp));
+	bucket->refill_time_ms=timeval_to_ms(now);
+	bucket->no_reserve=0;
 	bucket->refilled=bucket->cfg.CBS;
 	return bucket;
 }
@@ -58,28 +61,30 @@ void OC_token_bucket_set_no_reserve(struct OC_token_bucket *bucket)
 
 long long OC_token_bucket_consume(struct OC_token_bucket *bucket, struct timeval now, enum tb_consume_type cmd, long long tokens)
 {
-	long long delta_time_ms=timeval_delta_ms(bucket->refill_timestamp, now);
+	long long delta_time_ms=timeval_to_ms(now)-bucket->refill_time_ms;
 	long long consumed=PN_counter_get(bucket->consumed);
 	long long refilled=bucket->refilled;
 	assert(refilled>=0);
 	assert(consumed>=0);
-
+	
 	long long new_refilled=0;
 	long long available=tb_available(bucket->cfg.CIR, bucket->cfg.CBS, consumed, 
 				refilled, delta_time_ms, bucket->cfg.refill_interval_ms, &new_refilled);
-
+	
 	int infinite_flag=0;
     if(bucket->cfg.CBS==0 && bucket->cfg.CIR==0)
     {
 		infinite_flag=1;
 		new_refilled += tokens;
     }
+	
 	size_t n_replica=PN_counter_replica_num(bucket->consumed);
 	if(refilled!=new_refilled)
 	{
 		bucket->refilled=new_refilled;
-		memcpy(&bucket->refill_timestamp, &now, sizeof(bucket->refill_timestamp));
+		bucket->refill_time_ms=timeval_to_ms(now);
 	}
+	
 	long long allocated=0;
 	if(infinite_flag)
 	{
@@ -87,7 +92,6 @@ long long OC_token_bucket_consume(struct OC_token_bucket *bucket, struct timeval
 	}
 	else
 	{
-		//allocated=tb_consume_quantum_based(available, bucket->deficit, bucket->quantum, cmd, tokens);
 		if(bucket->no_reserve) n_replica=1;
 		allocated=tb_consume_reserve_based(bucket->cfg.CIR, available, n_replica, cmd, tokens);
 	}
@@ -95,13 +99,14 @@ long long OC_token_bucket_consume(struct OC_token_bucket *bucket, struct timeval
 	{
 		PN_counter_incrby(bucket->consumed, allocated);
 	}
-	assert(allocated>=0);	
+
+	assert(allocated>=0);
 	return allocated;
 }
 
 void OC_token_bucket_info(struct OC_token_bucket *bucket, struct timeval now, struct OC_token_bucket_info *info)
 {
-	long long delta_time_ms=timeval_delta_ms(bucket->refill_timestamp, now);
+	long long delta_time_ms=timeval_to_ms(now)-bucket->refill_time_ms;
 
 	info->CIR=bucket->cfg.CIR;
 	info->CBS=bucket->cfg.CBS;
@@ -161,7 +166,8 @@ void OC_token_bucket_merge(struct OC_token_bucket *dst, const struct OC_token_bu
 	if(dst->refilled < src->refilled)//Bigger refilled wins
 	{
 		dst->refilled=src->refilled;
-		memcpy(&dst->refill_timestamp, &src->refill_timestamp, sizeof(dst->refill_timestamp));
+		dst->refill_time_ms=src->refill_time_ms;
+		//memcpy(&dst->refill_timestamp, &src->refill_timestamp, sizeof(dst->refill_timestamp));
 	}	
 	return;
 }

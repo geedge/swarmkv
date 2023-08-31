@@ -56,6 +56,7 @@ struct snet_stat
 	long long input_msgs, output_msgs;
 	long long input_bytes, output_bytes;
 	long long input_buffer_sz, output_buffer_sz;
+	long long output_drop_msgs;
 };
 struct snet_thread
 {
@@ -533,6 +534,7 @@ void swarmkv_net_info(struct swarmkv_net *net, struct snet_info *info)
 		info->output_msgs += thr->stat.output_msgs;
 		info->input_buffer_sz += thr->stat.input_buffer_sz;
 		info->output_buffer_sz += thr->stat.output_buffer_sz;
+		info->output_drop_msgs += thr->stat.output_drop_msgs;
 	}
 	info->instantaneous_input_kbps=net->instantaneous_input_kbps;
 	info->instantaneous_output_kbps=net->instantaneous_output_kbps;
@@ -584,8 +586,8 @@ void swarmkv_net_set_on_msg_callback(struct swarmkv_net *net, on_msg_callback_t 
 	net->on_msg_cb_arg=cb_arg;
 	return;
 }
-
-void swarmkv_net_send(struct swarmkv_net *net, const node_t *dest, struct swarmkv_msg *msg)
+#define	MAX_OUTPUT_BUFFER_SIZE	1024*1024*64
+int swarmkv_net_send(struct swarmkv_net *net, const node_t *dest, struct swarmkv_msg *msg, const char **err_str)
 {
 	int tid=__gettid((struct swarmkv *)(net->on_msg_cb_arg));
 	assert(tid<net->nr_threads);
@@ -606,7 +608,8 @@ void swarmkv_net_send(struct swarmkv_net *net, const node_t *dest, struct swarmk
 			log_fatal(net->logger, MODULE_SWAMRKV_NET, "connect to %s failed, reason %d (%s).",
 									dest->addr,
 									err, evutil_socket_error_to_string(err));
-			return;
+			*err_str=evutil_socket_error_to_string(err);
+			return -1;
 		}
 	}
 	char *data=NULL;
@@ -615,15 +618,20 @@ void swarmkv_net_send(struct swarmkv_net *net, const node_t *dest, struct swarmk
 	swarmkv_msg_free(msg);
 	struct evbuffer* output_buffer=NULL;
 	output_buffer=bufferevent_get_output(conn->bev);
-	if(output_buffer)
+	if(!output_buffer) output_buffer=conn->buff_for_sending;
+	int ret=0;
+	if(evbuffer_get_length(output_buffer) + size > MAX_OUTPUT_BUFFER_SIZE)
 	{
-		evbuffer_add(output_buffer, data, size);
+		thr->stat.output_drop_msgs++;
+		*err_str="output buffer is full";
+		ret=-1;
 	}
 	else
 	{
-		evbuffer_add(conn->buff_for_sending, data, size);
+		evbuffer_add(output_buffer, data, size);
+		thr->stat.output_bytes += size;
+		thr->stat.output_msgs ++;
 	}
 	free(data);
-	thr->stat.output_bytes += size;
-	thr->stat.output_msgs++;
+	return ret;
 }

@@ -22,6 +22,7 @@ void g_array_serialize(const struct g_array *ga, char **blob, size_t *blob_sz);
 struct g_array *g_array_deserialize(const char *blob, size_t blob_sz);
 void g_array_merge(struct g_array *dst, const struct g_array *src);
 void g_array_merge_blob(struct g_array *ga, const char *blob, size_t blob_sz);
+size_t g_array_mem_size(const struct g_array *ga);
 #ifdef __cplusplus
 }
 #endif

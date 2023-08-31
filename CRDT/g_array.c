@@ -228,3 +228,15 @@ void g_array_merge_blob(struct g_array *ga, const char *blob, size_t blob_sz)
 	g_array_free(src);
 	return;
 }
+size_t g_array_mem_size(const struct g_array *ga)
+{
+	size_t sz=0;
+	struct counter_array *item=NULL, *tmp=NULL;
+	sz += sizeof(struct g_array);
+	HASH_ITER(hh, ga->hash, item, tmp)
+	{
+		sz += G_ARRAY_ITEM_HEADER_SIZE;
+		sz += item->array_sz*sizeof(struct counter_item);
+	}
+	return sz;
+}
