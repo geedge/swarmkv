@@ -28,18 +28,18 @@ void tconsume_callback(const struct swarmkv_reply* reply, void * cb_arg)
 
 static void help()
 {
-	fprintf(stderr, "Welcome to Swarmkv Node\n");
+	fprintf(stderr, "Welcome to Swarmkv Simple Node\n");
 	fprintf(stderr,
 		"simple_node <-n| -h | -p |-t> arg\n"
 		"Usage:\n"
 		"  -n <Cluster Name>\n"
 		"  -h <Ip:port>\n"
-		"  -c <Consul Ip:Consul port>\n"
-		"  -a <Cluster Announce ip:Cluster Announce Port>\n"
-		"  -b <Health Check Announce Ip:Health Check Announce Port>\n"
+		"  -c <Consul IP:port>\n"
+		"  -a <Cluster Announce IP:port>\n"
+		"  -b <Health Check Announce IP:port>\n"
 		"  -t <Thread Number>\n"
 		"  -k <Key Number>\n"
-		"  -l <Consul Heal Check Port>\n"
+		"  -l <Consul Health Check Port>\n"
 		"e.g.:./simple_node -n demo -h 127.0.0.1:5210 -a 127.0.0.1:5210  -t 1 -k 1\n");
 	    exit(1);
 }

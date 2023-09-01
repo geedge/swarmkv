@@ -1,6 +1,6 @@
 
 include_directories(${PROJECT_SOURCE_DIR}/include/
-					${PROJECT_SOURCE_DIR}/src/inc_internal
+					${PROJECT_SOURCE_DIR}/src/
 					${PROJECT_SOURCE_DIR}/deps/sds/
 					${PROJECT_SOURCE_DIR}/deps/log/
 					${PROJECT_SOURCE_DIR}/deps/cJSON/

@@ -18,7 +18,7 @@
 #define N_NODES_TEST_HEALTH_PORT	6311
 
 #define	CMD_EXEC_TIMEOUT_MS	1000*2
-struct timeval g_exec_timeout={CMD_EXEC_TIMEOUT_MS/1000, (CMD_EXEC_TIMEOUT_MS%1000)*1000};
+
 void generic_callback(const struct swarmkv_reply *reply, void * cb_arg)
 {
 	struct cmd_exec_arg *arg=(struct cmd_exec_arg*)cb_arg;
@@ -32,7 +32,7 @@ void generic_callback(const struct swarmkv_reply *reply, void * cb_arg)
 	}
 	return;
 }
-int g_current_thread_id=0;
+static int g_current_thread_id=0;
 void copy_reply_callback(const struct swarmkv_reply *reply, void * cb_arg)
 {
 	struct swarmkv_reply **copy=(struct swarmkv_reply **)cb_arg;

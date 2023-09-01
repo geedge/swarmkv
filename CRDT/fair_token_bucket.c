@@ -74,7 +74,6 @@ static void ftb_quantum_estimation(struct fair_token_bucket *ftb, struct timeval
     struct OC_token_bucket_info info;
     OC_token_bucket_info(ftb->bucket, now, &info);
     long long available=info.available;
-	//available=MAX(available-info.CIR*(2-1)/2, 0);
     if(info.CIR==0)//Infinite Tokens
     {
         ftb->per_weight_quantum=0;

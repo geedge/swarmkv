@@ -786,7 +786,7 @@ double test_fair_token_bucket(struct sftb_class *classes, size_t n_class, long l
 		uuid_generate(uuid);
 		ftb[i]=fair_token_bucket_new(uuid, now, CIR, CBS, 8192);
 	}
-	int sync_interval_ms=10;
+	int sync_interval_ms=200;
 	long long got=0;
 	for(int i=0; i<duration_s*(1000*1000/step_us); i++)
 	{
@@ -796,6 +796,7 @@ double test_fair_token_bucket(struct sftb_class *classes, size_t n_class, long l
 		for(size_t j=0; j<n_class; j++)
 		{
 			int idx=(j+k)%n_class;
+			//r=idx%n_replica;
 			long long this_demand=classes[idx].requested_CIR*step_us/(1000*1000);
 			got=fair_token_bucket_consume(ftb[r], now, 
 								(const char*) &(classes[idx].class_id),
@@ -814,7 +815,7 @@ double test_fair_token_bucket(struct sftb_class *classes, size_t n_class, long l
 	}
 	long long available_tokens=CIR*duration_s+CBS;
 	double index=max_min_fairness_index(available_tokens, classes, n_class);
-	int print=0;
+	int print=1;
 	if(print)
 	{
 		printf("class\tweight\tdemand\tallocated\tideal\r\n");
@@ -822,14 +823,17 @@ double test_fair_token_bucket(struct sftb_class *classes, size_t n_class, long l
 		{
 			if((double)classes[i].allocated_tokens/classes[i].ideal_tokens< 1.1 &&
 			(double) classes[i].allocated_tokens/classes[i].ideal_tokens > 0.9)
-				continue;
+			{
+
+			}
+				//continue;
 			printf("%lld\t%lld\t%lld\t%lld\t%lld\r\n", classes[i].class_id,
 										classes[i].weight,
 										classes[i].demand_tokens/duration_s,
 										classes[i].allocated_tokens/duration_s,
 										classes[i].ideal_tokens/duration_s);
 		}
-		printf("CIR %lld fairness index %f\r\n", CIR, index);
+		printf("Replica %d,  sync interval %d ms, fairness index %f\r\n", n_replica, sync_interval_ms, index);
 	}
 	for(int i=0; i<n_replica; i++)
 	{
@@ -848,7 +852,7 @@ TEST(FairTokenBucket, Basic)
 								{4, 1, 20000, 0, 0, 0},
 								{5, 1, 50000, 0, 0, 0}};
 	
-	index=test_fair_token_bucket(one_heavy_classes, 1, 120000, 200000, duration_s, 2);
+	index=test_fair_token_bucket(one_heavy_classes, 5, 120000, 200000, duration_s, 2);
 	EXPECT_NEAR(index, 1, expected_fairness_index);
 
 	struct sftb_class all_light_classes[5]={{1, 1, 20000, 0, 0, 0}, 
@@ -875,7 +879,7 @@ TEST(FairTokenBucket, Basic)
 								{4, 1, 60000, 0, 0, 0},
 								{5, 1, 40000, 0, 0, 0}};
 	
-	index=test_fair_token_bucket(all_heavy_classes, 5, 100000, 200000, duration_s, 1);
+	index=test_fair_token_bucket(all_heavy_classes, 5, 100000, 200000, duration_s, 2);
 	EXPECT_NEAR(index, 1, expected_fairness_index);
 	
 }
@@ -888,8 +892,10 @@ TEST(FairTokenBucket, Debug)
 							{3, 1, 50000, 0, 0, 0},
 							{400, 1, 50000, 0, 0, 0},
 							{5, 1, 20003, 0, 0, 0}};
-	
-	index=test_fair_token_bucket(two_heavy_classes, 5, 100000, 200000, duration_s, 4);
+	for(int i=1; i<6; i++)
+	{
+		index=test_fair_token_bucket(two_heavy_classes, 5, 100000, 200000, duration_s, i);
+	}
 	EXPECT_NEAR(index, 1, expected_fairness_index);
 }
 TEST(FairTokenBucket, Replicas)
