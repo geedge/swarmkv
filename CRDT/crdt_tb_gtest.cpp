@@ -786,7 +786,7 @@ double test_fair_token_bucket(struct sftb_class *classes, size_t n_class, long l
 		uuid_generate(uuid);
 		ftb[i]=fair_token_bucket_new(uuid, now, CIR, CBS, 8192);
 	}
-	int sync_interval_ms=200;
+	int sync_interval_ms=50;
 	long long got=0;
 	for(int i=0; i<duration_s*(1000*1000/step_us); i++)
 	{
@@ -852,7 +852,7 @@ TEST(FairTokenBucket, Basic)
 								{4, 1, 20000, 0, 0, 0},
 								{5, 1, 50000, 0, 0, 0}};
 	
-	index=test_fair_token_bucket(one_heavy_classes, 5, 120000, 200000, duration_s, 2);
+	index=test_fair_token_bucket(one_heavy_classes, 5, 120000, 200000, duration_s, 1);
 	EXPECT_NEAR(index, 1, expected_fairness_index);
 
 	struct sftb_class all_light_classes[5]={{1, 1, 20000, 0, 0, 0}, 
@@ -870,7 +870,7 @@ TEST(FairTokenBucket, Basic)
 								{400, 1, 50000, 0, 0, 0},
 								{5, 1, 20003, 0, 0, 0}};
 	
-	index=test_fair_token_bucket(two_heavy_classes, 5, 100000, 200000, duration_s, 2);
+	index=test_fair_token_bucket(two_heavy_classes, 5, 100000, 200000, duration_s, 1);
 	EXPECT_NEAR(index, 1, expected_fairness_index);
 
 	struct sftb_class all_heavy_classes[5]={{1, 1, 40000, 0, 0, 0}, 
@@ -879,7 +879,7 @@ TEST(FairTokenBucket, Basic)
 								{4, 1, 60000, 0, 0, 0},
 								{5, 1, 40000, 0, 0, 0}};
 	
-	index=test_fair_token_bucket(all_heavy_classes, 5, 100000, 200000, duration_s, 2);
+	index=test_fair_token_bucket(all_heavy_classes, 5, 100000, 200000, duration_s, 1);
 	EXPECT_NEAR(index, 1, expected_fairness_index);
 	
 }
@@ -926,7 +926,7 @@ TEST(FairTokenBucket, Weight)
 {
 	double index=0;
 	long long duration_s=500;
-	int n_replica=3;
+	int n_replica=1;
 	struct sftb_class one_heavy_classes[5]={{1, 1, 20000, 0, 0, 0}, 
 								{2, 2, 20000, 0, 0, 0},
 								{3, 3, 20000, 0, 0, 0},
@@ -952,7 +952,7 @@ TEST(FairTokenBucket, Weight)
 								{5, 10, 50000, 0, 0, 0}};
 	
 	double t2_heavy_index=test_fair_token_bucket(t2_heavy_classes, 5, 120000, 200000, duration_s, n_replica);
-	EXPECT_NEAR(t2_heavy_index, 1, 0.02);
+	EXPECT_NEAR(t2_heavy_index, 1, expected_fairness_index);
 
 	struct sftb_class t3_heavy_classes[5]={{1, 1, 40000, 0, 0, 0}, 
 								{2, 2, 20000, 0, 0, 0},

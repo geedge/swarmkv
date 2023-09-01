@@ -1,7 +1,7 @@
 #include "fair_token_bucket.h"
 #include "oc_token_bucket.h"
 #include "st_hyperloglog.h"
-#include "g_array.h"
+//#include "g_array.h"
 #include "crdt_utils.h"
 #include "xxhash.h"
 
@@ -19,12 +19,13 @@ struct fair_token_bucket
     /* Sync Variables*/
     uuid_t uuid;
     long long divisor;
-    long long perturb_seed;
-    struct g_array *sfq;  //per-key deficit estimation
+    struct timeval last_cfg;
     struct ST_hyperloglog *hll[FAIR_TB_WEIGHT_MAX]; //counting active keys
     struct OC_token_bucket *bucket;
     
     /* Local Variables*/
+    long long perturb_seed;
+    long long *sfq;  //per-key deficit estimation
     struct timeval last_pertub;
     long long per_weight_quantum; //updated every PERTUB_INTERVAL_MS
     long long total_weight;
@@ -43,10 +44,12 @@ struct fair_token_bucket *fair_token_bucket_new(uuid_t uuid, struct timeval now,
     {
         ftb->hll[i]=ST_hyperloglog_new(9, 5, now);
     }
-    ftb->sfq=g_array_new(uuid, ftb->divisor);
+    //ftb->sfq=g_array_new(uuid, ftb->divisor);
+    ftb->sfq=ALLOC(long long, divisor);
     ftb->bucket=OC_token_bucket_new(uuid, now, CIR, CBS);
-    OC_token_bucket_set_no_reserve(ftb->bucket);
+    //OC_token_bucket_set_no_reserve(ftb->bucket);
     ftb->per_weight_quantum=CIR;
+    memcpy(&ftb->last_cfg, &now, sizeof(ftb->last_cfg));
     return ftb;
 }
 
@@ -56,7 +59,8 @@ void fair_token_bucket_free(struct fair_token_bucket *ftb)
     {
         ST_hyperloglog_free(ftb->hll[i]);
     }
-    g_array_free(ftb->sfq);
+    //g_array_free(ftb->sfq);
+    free(ftb->sfq);
     OC_token_bucket_free(ftb->bucket);
     free(ftb);
 }
@@ -89,7 +93,8 @@ static void ftb_quantum_estimation(struct fair_token_bucket *ftb, struct timeval
 static void ftb_perturb(struct fair_token_bucket *ftb, struct timeval now)
 {
     ftb_quantum_estimation(ftb, now);
-    g_array_reset(ftb->sfq);
+    //g_array_reset(ftb->sfq);
+    memset(ftb->sfq, 0, sizeof(long long)*ftb->divisor);
     ftb->perturb_seed++;
 }
 long long fair_token_bucket_consume(struct fair_token_bucket *ftb, struct timeval now, const char *key, size_t keylen, long long weight, enum tb_consume_type cmd, long long tokens)
@@ -110,8 +115,10 @@ long long fair_token_bucket_consume(struct fair_token_bucket *ftb, struct timeva
     sfq_idx=XXH3_64bits_withSeed(key, keylen, ftb->perturb_seed)%ftb->divisor;
     
     long long deficit_est=0;
-    deficit_est=g_array_get(ftb->sfq, sfq_idx);
+    //deficit_est=g_array_get(ftb->sfq, sfq_idx);
+    deficit_est=ftb->sfq[sfq_idx];
     deficit_est/=MAX(1, ftb->n_active_key/ftb->divisor);
+
     ftb->debug_last_defict=deficit_est;
     if(tokens + deficit_est > ftb->per_weight_quantum*weight && ftb->per_weight_quantum>0)
     {
@@ -121,18 +128,18 @@ long long fair_token_bucket_consume(struct fair_token_bucket *ftb, struct timeva
     long long allocated_tokens=OC_token_bucket_consume(ftb->bucket, now, cmd, tokens);
     if(allocated_tokens)
     {
-        g_array_incrby(ftb->sfq, sfq_idx, allocated_tokens);
+        //g_array_incrby(ftb->sfq, sfq_idx, allocated_tokens);
+        ftb->sfq[sfq_idx]+=allocated_tokens;
     }
     ftb->debug_last_allocated=allocated_tokens;
     return allocated_tokens;
 }
 void fair_token_bucket_configure(struct fair_token_bucket *ftb, struct timeval now, long long CIR, long long CBS, long long divisor)
 {
-    if(divisor > ftb->divisor)
-    {
-        ftb->divisor=divisor;
-        g_array_resize(ftb->sfq, ftb->divisor);
-    }
+    ftb->divisor=divisor;
+    ftb->sfq=(long long*)realloc(ftb->sfq, sizeof(long long)*ftb->divisor);
+    //g_array_resize(ftb->sfq, ftb->divisor);
+    memcpy(&ftb->last_cfg, &now, sizeof(ftb->last_cfg));
     OC_token_bucket_configure(ftb->bucket, now, CIR, CBS);
     ftb_perturb(ftb, now);
     return;
@@ -152,8 +159,7 @@ struct ftb_header
     long long magic;
     long long payload_sz;
     long long divisor;
-    long long pertub_seed;
-    struct timeval last_pertub;
+    struct timeval last_cfg;
 };
 size_t fair_token_bucket_serialized_size(const struct fair_token_bucket *ftb)
 {
@@ -163,7 +169,7 @@ size_t fair_token_bucket_serialized_size(const struct fair_token_bucket *ftb)
     {
         sz += ST_hyperloglog_serialized_size(ftb->hll[i]);
     }
-    sz += g_array_serialized_size(ftb->sfq);
+//    sz += g_array_serialized_size(ftb->sfq);
     sz += OC_token_bucket_serialized_size(ftb->bucket);
     return sz;
 }
@@ -175,8 +181,7 @@ void fair_token_bucket_serialize(const struct fair_token_bucket *ftb, char **blo
     hdr.magic=0x5210;
     hdr.payload_sz=sz;
     hdr.divisor=ftb->divisor;
-    hdr.pertub_seed=ftb->perturb_seed;
-    memcpy(&hdr.last_pertub, &ftb->last_pertub, sizeof(hdr.last_pertub));
+    memcpy(&hdr.last_cfg, &ftb->last_cfg, sizeof(hdr.last_cfg));
     char *buffer=ALLOC(char, sz);
     memcpy(buffer+offset, &hdr, sizeof(hdr));
 	offset += sizeof(hdr);
@@ -189,11 +194,13 @@ void fair_token_bucket_serialize(const struct fair_token_bucket *ftb, char **blo
         offset += ST_hyperloglog_serialized_size(ftb->hll[i]);
         free(tmp_buff);
     }
+    /*
     g_array_serialize(ftb->sfq, &tmp_buff, &tmp_sz);
     memcpy(buffer+offset, tmp_buff, tmp_sz);
     assert(tmp_sz==g_array_serialized_size(ftb->sfq));
     offset += g_array_serialized_size(ftb->sfq);
     free(tmp_buff);
+    */
     OC_token_bucket_serialize(ftb->bucket, &tmp_buff, &tmp_sz);
     memcpy(buffer+offset, tmp_buff, tmp_sz);
     offset += OC_token_bucket_serialized_size(ftb->bucket);
@@ -212,16 +219,17 @@ struct fair_token_bucket *fair_token_bucket_deserialize(const char *blob, size_t
     assert(hdr.magic==0x5210);
     assert(hdr.payload_sz<=blob_sz);
     struct fair_token_bucket *ftb=ALLOC(struct fair_token_bucket, 1);
-    ftb->perturb_seed=hdr.pertub_seed;
     ftb->divisor=hdr.divisor;
-    memcpy(&ftb->last_pertub, &hdr.last_pertub, sizeof(ftb->last_pertub));
+    memcpy(&ftb->last_cfg, &hdr.last_cfg, sizeof(ftb->last_cfg));
     for(int i=0; i<FAIR_TB_WEIGHT_MAX; i++)
     {
         ftb->hll[i]=ST_hyperloglog_deserialize(blob+offset, blob_sz-offset);
         offset += ST_hyperloglog_serialized_size(ftb->hll[i]);
     }
+    /*
     ftb->sfq=g_array_deserialize(blob+offset, blob_sz-offset);
     offset += g_array_serialized_size(ftb->sfq);
+    */
     ftb->bucket=OC_token_bucket_deserialize(blob+offset, blob_sz-offset);
     offset += OC_token_bucket_serialized_size(ftb->bucket);
     assert(offset==hdr.payload_sz);
@@ -229,18 +237,17 @@ struct fair_token_bucket *fair_token_bucket_deserialize(const char *blob, size_t
 }
 void fair_token_bucket_merge(struct fair_token_bucket *dst, const struct fair_token_bucket *src)
 {
-    dst->divisor=MAX(dst->divisor, src->divisor);
     for(int i=0; i<FAIR_TB_WEIGHT_MAX; i++)
     {
         ST_hyperloglog_merge(dst->hll[i], src->hll[i]);
     }
-    if(timercmp(&dst->last_pertub, &src->last_pertub, <))//Last-Write-Wins
+    if(timercmp(&dst->last_cfg, &src->last_cfg, <))//Last-Write-Wins
     {
-        dst->perturb_seed=src->perturb_seed;
-        memcpy(&dst->last_pertub, &src->last_pertub, sizeof(dst->last_pertub));
-        ftb_quantum_estimation(dst, dst->last_pertub);
+        dst->divisor=src->divisor;
+        dst->sfq=(long long*)realloc(dst->sfq, sizeof(long long)*dst->divisor);
+        memcpy(&dst->last_cfg, &src->last_cfg, sizeof(dst->last_cfg));
     }
-    g_array_merge(dst->sfq, src->sfq);
+    //g_array_merge(dst->sfq, src->sfq);
     OC_token_bucket_merge(dst->bucket, src->bucket);
     return;
 }
@@ -259,8 +266,8 @@ size_t fair_token_bucket_mem_size(const struct fair_token_bucket *ftb)
     {
         sz += ST_hyperloglog_mem_size(ftb->hll[i]);
     }
-    sz+=g_array_mem_size(ftb->sfq);
+    //sz+=g_array_mem_size(ftb->sfq);
+    sz+=sizeof(long long)*ftb->divisor;
     sz+=OC_token_bucket_mem_size(ftb->bucket);
-    //to do
     return sz;
 }

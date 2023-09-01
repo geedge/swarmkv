@@ -5,6 +5,7 @@
 * - Resources are allocated in order of increasing demand
 * - No source gets a resource share larger than its demand
 * - Sources with unsatisfied demands get an equal share of the resource
+* Notes: The Fair Token Bucket CRDT doesn't guarrantee max-min fairness when a key is distributed to multiple nodes.
 * Author: contact@zhengchao.io
 */
 
