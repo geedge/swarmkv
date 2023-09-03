@@ -1302,7 +1302,7 @@ TEST_F(SwarmkvTwoNodes, TypeBulkTokenBucket)
 	long long token=0, requested_tokens=0, allocated_tokens=0;
 	long long member_id=0, n_member=100;
 
-	while(now.tv_sec - start.tv_sec<15)
+	while(now.tv_sec - start.tv_sec<30)
 	{
 		token=random()%(2*rate/n_member);
 		requested_tokens+=token;

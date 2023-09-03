@@ -65,10 +65,10 @@ Create swarmkv cluster with `swarmkv-xxx/build/tools/swarmkv-cli`
 
 ```
 [zhengchao@centos7-vm-dev tools]$ ./swarmkv-cli --cluster-create swarmkv-basic-test 127.0.0.1:5210
-consul KV init slot table /v1/kv/swarmkv/swarmkv-basic-test/slots.
+consul KV init slot table http://127.0.0.1:8500/v1/kv/swarmkv/swarmkv-basic-test/slots.
 OK
 [zhengchao@centos7-vm-dev tools]$ ./swarmkv-cli --cluster-create swarmkv-2-nodes 127.0.0.1:5210 127.0.0.1:5220
-consul KV init slot table /v1/kv/swarmkv/swarmkv-2-nodes/slots.
+consul KV init slot table http://127.0.0.1:8500/v1/kv/swarmkv/swarmkv-2-nodes/slots.
 OK
 ```
 

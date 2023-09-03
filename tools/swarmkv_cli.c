@@ -125,12 +125,12 @@ static int consul_kv_init_block(char *cluster_name, char *argv[], size_t argc)
 	resp_code_put=http_blocking_request(EVHTTP_REQ_PUT, g_config.consul_host, g_config.consul_port, url, slot_json, NULL);
 	if(resp_code_put==200)
 	{
-		fprintf(stderr, "consul KV init slot table %s.\n", url);
+		fprintf(stderr, "consul KV init slot table http://%s:%u%s\n", g_config.consul_host, g_config.consul_port, url);
 		ret=0;
 	}
 	else
 	{		
-		fprintf(stderr, "consul KV init slot table %s failed.\n", url);	
+		fprintf(stderr, "consul KV init slot table http://%s:%u%s failed.\n", g_config.consul_host, g_config.consul_port, url);
 		ret=-1;
 	}
 	sdsfree(slot_json);
