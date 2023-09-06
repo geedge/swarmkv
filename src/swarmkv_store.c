@@ -361,7 +361,7 @@ void sobj_need_sync(struct swarmkv_module *mod_store, struct sobj *obj)
 int sobj_get_random_replica(struct sobj *obj, node_t *out)
 {
 	struct scontainer *ctr=container_of(obj, struct scontainer, obj);
-	if(!ctr->replica_node_list) return 0;
+	if(!ctr->replica_node_list || 0==utarray_len(ctr->replica_node_list)) return 0;
 	node_t *replica=(node_t*)utarray_eltptr(ctr->replica_node_list, 0);
 	node_copy(out, replica);
 	return 1;
