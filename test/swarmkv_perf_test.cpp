@@ -68,8 +68,8 @@ void *blocking_call_thread(void *thread_arg)
 }
 #define	PERF_NTHREAD_CLUSTER_PORT_START 5310
 #define	PERF_NTHREAD_HEALTH_PORT_START 6310
-#define PERF_DATA_SYNC_CLUSTER_PORT_START 7310
-#define PERF_DATA_SYNC_HEALTH_PORT_START 8310
+#define PERF_TB_CLUSTER_PORT_START 7310
+#define PERF_TB_HEALTH_PORT_START 8310
 #define PERF_ASYNC_EXEC_CLUSTER_PORT_START 9310
 #define PERF_ASYNC_EXEC_HEALTH_PORT_START 10310
 #define PERF_RESILIENCE_ADD_SLOT_OWNER_CLUSTER_PORT_START 11310
@@ -174,7 +174,7 @@ void *background_tconsume_thread(void *thread_arg)
 		*success=0;
 	return success;
 }
-TEST(Performance, DataSync)
+TEST(Performance, TokenBucket)
 {
 	size_t NODE_NUMBER=2;
 	size_t CALLER_THREAD_NUMBER=2;
@@ -182,21 +182,21 @@ TEST(Performance, DataSync)
 	
 	struct swarmkv *db[NODE_NUMBER];
 	char *err=NULL;
-	const char *log_path="./swarmkv-sync.log";
+	const char *log_path="./swarmkv-tb.log";
 	char node_list_str[1024]={0};
 	for(size_t i=0; i<NODE_NUMBER; i++)
 	{
-		snprintf(node_list_str+strlen(node_list_str), sizeof(node_list_str)-strlen(node_list_str), "127.0.0.1:%zu ", PERF_DATA_SYNC_CLUSTER_PORT_START+i);
+		snprintf(node_list_str+strlen(node_list_str), sizeof(node_list_str)-strlen(node_list_str), "127.0.0.1:%zu ", PERF_TB_CLUSTER_PORT_START+i);
 	}
-	const char *cluster_name="swarmkv-sync";
+	const char *cluster_name="swarmkv-tb";
 	swarmkv_cli_create_cluster(cluster_name, node_list_str);
 	struct log_handle * logger=log_handle_create(log_path, 0);
 	struct swarmkv_options *opts[NODE_NUMBER];
 	for(size_t i=0; i<NODE_NUMBER; i++)
 	{
 		opts[i]=swarmkv_options_new();
-		swarmkv_options_set_cluster_port(opts[i], PERF_DATA_SYNC_CLUSTER_PORT_START+i);
-		swarmkv_options_set_health_check_port(opts[i], PERF_DATA_SYNC_HEALTH_PORT_START+i);
+		swarmkv_options_set_cluster_port(opts[i], PERF_TB_CLUSTER_PORT_START+i);
+		swarmkv_options_set_health_check_port(opts[i], PERF_TB_HEALTH_PORT_START+i);
 		swarmkv_options_set_logger(opts[i], logger);
 		swarmkv_options_set_worker_thread_number(opts[i], WORKER_THREAD_NUMBER);
 		swarmkv_options_set_caller_thread_number(opts[i], CALLER_THREAD_NUMBER+1);
@@ -304,8 +304,7 @@ void *async_caller_thread(void *thread_arg)
 {
 	struct swarmkv *db=(struct swarmkv *)thread_arg;
 
-
-	int key_number=1024*1024, round=key_number*4;
+	int key_number=1024*1024, round=key_number*16;
 	struct async_exec_globals globals;
 	memset(&globals, 0, sizeof(globals));
 	globals.expected_reply_cnt=round;
@@ -347,13 +346,20 @@ void *async_caller_thread(void *thread_arg)
 			}
 			last_loop_ts_ms=curent_ts_ms;
 		}
-		if(swarmkv_caller_get_pending_commands(db)>100)
+		long long pending_cmd=swarmkv_caller_get_pending_commands(db);
+		struct timeval to={0, 10};
+		while(pending_cmd>100)
 		{
-			usleep(10);
+			swarmkv_caller_loop(db, SWARMKV_LOOP_NO_EXIT_ON_EMPTY, &to);
+			break;
+			pending_cmd=swarmkv_caller_get_pending_commands(db);
 		}
 	}
 	globals.cmd_inprogress=0;
-	swarmkv_caller_loop(db, SWARMKV_LOOP_NO_EXIT_ON_EMPTY, NULL);
+	if(globals.reply_cnt!=globals.expected_reply_cnt)
+	{
+		swarmkv_caller_loop(db, SWARMKV_LOOP_NO_EXIT_ON_EMPTY, NULL);
+	}
 	clock_gettime(CLOCK_REALTIME, &end);
 	double elapsed_ms=(end.tv_sec-start.tv_sec)*1000.0+(end.tv_nsec-start.tv_nsec)/1000000.0;
 	printf("Async SET %d, Get %d, elapsed %lf ms, %lf cmds/s\n", key_number, round-key_number, elapsed_ms, round*1000.0/elapsed_ms);
@@ -370,7 +376,7 @@ TEST(Performance, AsyncExec)
 {
 	int NODE_NUMBER=2;
 	int CALLER_THREAD_NUMBER=1;
-	int WORKER_THREAD_NUMBER=2;
+	int WORKER_THREAD_NUMBER=1;
 
 	struct swarmkv *db[NODE_NUMBER];
 	char *err=NULL;

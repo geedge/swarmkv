@@ -11,7 +11,7 @@ void swarmkv_rpc_mgr_free(struct swarmkv_rpc_mgr *mgr);
 long long swarmkv_rpc_launch(struct swarmkv_rpc_mgr *mgr, int thread_id, struct future *f);
 //Return latency in microseconds, or -1 if failed to complete the rpc.
 long long swarmkv_rpc_complete(struct swarmkv_rpc_mgr *mgr, int thread_id, long long sequence, void *response);
-size_t swarmkv_rpc_mgr_count(struct swarmkv_rpc_mgr *mgr, int thread_id);
+long long swarmkv_rpc_mgr_count(struct swarmkv_rpc_mgr *mgr, int thread_id);
 struct swarmkv_rpc_mgr_info
 {
     long long timed_out_rpcs;

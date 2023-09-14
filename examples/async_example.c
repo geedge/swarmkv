@@ -32,16 +32,12 @@ int main(int argc, char **argv)
             free(err);
             return -1;
         }
+        swarmkv_register_thread(db[i]);
     }
     struct my_context *ctx=NULL;
     ctx=(struct my_context*)calloc(sizeof(struct my_context), 1);
     swarmkv_async_command(db[0], my_on_reply_callback, ctx, "HSET uid001 name zhangsan age 18");
-    
-    while(!ctx->got_reply)
-    {
-        //do something else
-        sleep(1);
-    }
+    swarmkv_caller_loop(db[0], SWARMKV_LOOP_ONCE, NULL);
     printf("HSET %lld items\n", ctx->reply_integer);
     free(ctx);
     for(size_t i=0; i<2; i++)

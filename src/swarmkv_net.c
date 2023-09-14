@@ -299,7 +299,6 @@ static void peer_conn_read_cb(struct bufferevent *bev, void *arg)
 				conn->recv_state=RECEIVING_HDR;
 				break;
 			}
-			thr->stat.input_bytes += SWARMKV_MSG_HDR_SIZE;
 			hdr = (struct swarmkv_msg*) recv_buff;
 			if(hdr->magic != SWARMKV_MSG_MAGIC)
 			{

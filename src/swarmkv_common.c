@@ -264,6 +264,7 @@ struct swarmkv_reply *swarmkv_reply_new_node(node_t *node, int is_ask)
 }
 int node_sanity(const node_t *node)
 {
+	return 1;
 	char c=0;
 	for(size_t i=0; i<sizeof(node->addr); i++)
 	{

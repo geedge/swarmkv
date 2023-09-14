@@ -89,7 +89,6 @@ static void mesh_on_eventfd_read_cb(evutil_socket_t fd, short what, void * arg)
 	int tid=__gettid((struct swarmkv *)(mesh->on_msg_cb_arg));
 	assert(tid==thr->thread_id);
 
-	//pthread_mutex_lock(&thr->mutex);
 	ssize_t s = read(thr->efd, &n_msg, sizeof(uint64_t));
 	if(s!=sizeof(uint64_t))
 	{

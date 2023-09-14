@@ -205,8 +205,6 @@ struct slot_runtime
 	node_t rebalancing_peer;//rebalancing_peer is used for state MIGRATING and IMPORTING
 
 	struct key_route_entry *keyroute_table;
-
-	pthread_mutex_t sanity_lock;
 };
 void http_connection_close_callback(struct evhttp_connection *conn, void *arg)
 {
@@ -279,13 +277,16 @@ void health_check_cb(struct evhttp_request *request, void *arg)
 	struct evkeyvalq *output_headers = evhttp_request_get_output_headers(request);
 
 	 //HTTP header
-	evhttp_add_header(output_headers, "Server", "Swarmkv v3.0");
+	evhttp_add_header(output_headers, "Server", SWARMKV_VERSION);
 	evhttp_add_header(output_headers, "Content-Type", "text/plain; charset=UTF-8");//utf8
 	evhttp_add_header(output_headers, "Connection", "close");
 	
 	evbuffer_add_printf(evbuf_reply, "SwarmKV node of cluster %s is running", ks->db_name);
 	evhttp_send_reply(request, HTTP_OK, "OK", evbuf_reply);
 	evbuffer_free(evbuf_reply);
+	struct evhttp_connection *conn=evhttp_request_get_connection(request);
+	struct bufferevent * bev=evhttp_connection_get_bufferevent(conn);
+	bufferevent_priority_set(bev, 0);
 	return;
 }
 
@@ -1039,7 +1040,6 @@ int keyslots_init(struct swarmkv_keyspace *ks)
 		slot=&(slot_rt->slot);
 		slot->slot_id=i;
 		node_copy(&slot->owner, &ks->self);
-		pthread_mutex_init(&slot_rt->sanity_lock, NULL);
 	}
 
 	char url[SWARMKV_URL_MAX]="";
@@ -1168,13 +1168,11 @@ void swarmkv_keyspace_free(struct swarmkv_module* module)
 	for(i=0; i<KEYSPACE_SLOT_NUM; i++)
 	{
 		slot_rt=ks->slot_rts+i;
-	
 		HASH_ITER(hh, slot_rt->keyroute_table, key_entry, tmp_key_entry)
 		{
 			HASH_DELETE(hh, slot_rt->keyroute_table, key_entry);
 			key_entry_free(key_entry);
 		}
-		pthread_mutex_destroy(&slot_rt->sanity_lock);
 	}
 	for(i=0; i<ks->opts->nr_worker_threads; i++)
 	{
@@ -1278,13 +1276,12 @@ enum cmd_exec_result keyspace_setslot_command(struct swarmkv_module *mod_keyspac
 	}
 	slot_rt=&(ks->slot_rts[slot_id]);
 	
-	pthread_mutex_lock(&slot_rt->sanity_lock);
 	slot_rt->state=state;
 	if(state!=STATE_STABLE)
 	{
 		node_copy(&slot_rt->rebalancing_peer, &peer_node);
 	}
-	pthread_mutex_unlock(&slot_rt->sanity_lock);
+
 	*reply=swarmkv_reply_new_status("OK");
 
 	return FINISHED;
@@ -1437,9 +1434,7 @@ enum cmd_exec_result keyspace_getkeysinslot_command(struct swarmkv_module *mod_k
 	slot_rt=ks->slot_rts+slot_id;
 	char *blob=NULL;
 	size_t blob_sz;
-	pthread_mutex_lock(&slot_rt->sanity_lock);
 	key_slot_serialize(slot_rt, &blob, &blob_sz);
-	pthread_mutex_unlock(&slot_rt->sanity_lock);
 	*reply=swarmkv_reply_new_string(blob, blob_sz);
 	free(blob);
 	blob=NULL;

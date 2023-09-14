@@ -127,7 +127,7 @@ void swarmkv_register_thread(struct swarmkv *db);
  */
 void swarmkv_caller_loop(struct swarmkv *db, int flags, struct timeval *tv);
 void swarmkv_caller_loop_break(struct swarmkv *db);
-size_t swarmkv_caller_get_pending_commands(struct swarmkv *db);
+long long swarmkv_caller_get_pending_commands(struct swarmkv *db);
 //Blocking function
 struct swarmkv_reply *swarmkv_command(struct swarmkv *db, const char *format, ...)__attribute__ ((format (printf, 2, 3)));
 struct swarmkv_reply *swarmkv_command_on(struct swarmkv *db, const char *target, const char *format, ...)__attribute__ ((format (printf, 3, 4)));

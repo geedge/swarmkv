@@ -39,7 +39,7 @@
 #include <ctype.h>
 #include <stdatomic.h>
 
-const char* SWARMKV_VERSION="4.0.0";
+
 #define	MODULE_SWAMRKV_CORE	module_name_str("swarmkv.core")
 
 
@@ -269,7 +269,7 @@ enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct sw
 	struct swarmkv_rpc_mgr_info rpc_info;
 	swarmkv_rpc_mgr_info(db->rpc_mgr, &rpc_info);
 	snprintf(node_info_buff, sizeof(node_info_buff), "# Node\r\n"
-											"swarmkv_version: %s\r\n"
+											"version: %s\r\n"
 											"address: %s\r\n"
 											"uuid: %s\r\n"
 											"worker_threads: %d\r\n"
@@ -337,8 +337,8 @@ enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct sw
 												"output_buffer: %lld\r\n"
 												"instantaneous_input_kbps: %.2f\r\n"
 												"instantaneous_output_kbps: %.2f\r\n"
-												"instantaneous_input_cps: %.2f\r\n"
-												"instantaneous_output_cps: %.2f\r\n"
+												"instantaneous_input_msgs: %.2f\r\n"
+												"instantaneous_output_msgs: %.2f\r\n"
 												,
 												(double)db->opts->cluster_timeout_us/1000,
 												net_info.connections,
@@ -1332,7 +1332,7 @@ void swarmkv_caller_loop_break(struct swarmkv *db)
 	assert(tid >= db->opts->nr_worker_threads);
 	event_base_loopbreak(db->ref_evbases[tid]);
 }
-size_t swarmkv_caller_get_pending_commands(struct swarmkv *db)
+long long swarmkv_caller_get_pending_commands(struct swarmkv *db)
 {
 	int tid=__gettid(db);
 	//must initiate from caller threads, and caller thread ID is larger than worker thread ID
@@ -1386,7 +1386,7 @@ struct swarmkv *swarmkv_open(struct swarmkv_options *opts, const char *db_name, 
 		if(i>opts->nr_worker_threads)
 		{
 			db->threads[i].evbase=event_base_new_with_config(ev_cfg);
-			//event_base_priority_init(db->threads[i].evbase, 2);
+			event_base_priority_init(db->threads[i].evbase, 2);
 		}
 		else
 		{

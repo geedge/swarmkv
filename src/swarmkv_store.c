@@ -466,7 +466,7 @@ void crdt_generic_ctx_free(struct crdt_generic_ctx *ctx)
 	ctx->store=NULL;
 	free(ctx);
 }
-static void store_remove_failed_peer(struct swarmkv_store *store, int tid, const node_t *peer)
+__attribute__ ((unused)) static void store_remove_failed_peer(struct swarmkv_store *store, int tid, const node_t *peer)
 {
 	struct scontainer *ctr=NULL, *tmp=NULL;
 	if(tid>=store->opts->nr_worker_threads) return;//swarmkv_close() is called.
@@ -479,27 +479,28 @@ static void store_remove_failed_peer(struct swarmkv_store *store, int tid, const
 static void crdt_generic_on_reply(const struct swarmkv_reply *reply, void *user)
 {
 	struct crdt_generic_ctx *ctx=(struct crdt_generic_ctx *)user;
-	struct scontainer *ctr=NULL;
+	
 	uuid_t uuid;
 	store_get_uuid(&(ctx->store->module), uuid);
 	
-
-	 __attribute__ ((unused)) long long error_before=ctx->store->sync_err;
+	__attribute__ ((unused)) long long error_before=ctx->store->sync_err;
 	if(reply->type==SWARMKV_REPLY_ERROR)
 	{
 		if(strcasestr(reply->str, "timed out"))
 		{
-			int tid=__gettid(ctx->store->exec_cmd_handle);
+			__attribute__ ((unused)) int tid=__gettid(ctx->store->exec_cmd_handle);
 			atomic_inc(&ctx->store->sync_err);
-			store_remove_failed_peer(ctx->store, tid, &ctx->peer);
+			//Time consuming operation, block the event loop.
+			//store_remove_failed_peer(ctx->store, tid, &ctx->peer);
 		}
 		goto error_out;
 	}
 
-
 	switch(ctx->op)
 	{
 		case CRDT_GET:
+		{
+			struct scontainer *ctr=NULL;
 			ctr=store_lookup_scontainer(ctx->store, ctx->key);
 			if(ctr && reply->type==SWARMKV_REPLY_VERBATIM)
 			{
@@ -512,7 +513,10 @@ static void crdt_generic_on_reply(const struct swarmkv_reply *reply, void *user)
 				atomic_inc(&ctx->store->sync_err);
 			}
 			break;
+		}
 		case CRDT_MERGE:
+		{
+			
 			if(reply->type==SWARMKV_REPLY_INTEGER && reply->integer>0)
 			{
 				atomic_add(&ctx->store->sync_ok, reply->integer);
@@ -522,7 +526,9 @@ static void crdt_generic_on_reply(const struct swarmkv_reply *reply, void *user)
 				atomic_inc(&ctx->store->sync_err);
 			}
 			break;
+		}
 		case CRDT_MEET:
+		{
 			if(reply->type==SWARMKV_REPLY_INTEGER)
 			{
 				atomic_inc(&ctx->store->sync_ok);
@@ -532,9 +538,12 @@ static void crdt_generic_on_reply(const struct swarmkv_reply *reply, void *user)
 				atomic_inc(&ctx->store->sync_err);
 			}
 			break;
+		}
 		default:
+		{
 			atomic_inc(&ctx->store->sync_err);
 			break;
+		}
 	}
 	//assert(ctx->store->sync_err==error_before);
 error_out:

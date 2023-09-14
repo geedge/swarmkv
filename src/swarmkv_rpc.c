@@ -125,7 +125,7 @@ long long swarmkv_rpc_complete(struct swarmkv_rpc_mgr *mgr, int thread_id, long 
 	swarmkv_rpc_free(rpc);
 	return latency;
 }
-size_t swarmkv_rpc_mgr_count(struct swarmkv_rpc_mgr *mgr, int thread_id)
+long long swarmkv_rpc_mgr_count(struct swarmkv_rpc_mgr *mgr, int thread_id)
 {
 	assert(thread_id>=0 && thread_id<mgr->nr_worker_threads);
 	return HASH_COUNT(mgr->threads[thread_id].rpc_table);
