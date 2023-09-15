@@ -20,6 +20,7 @@ struct snet_info
 
 	long long input_bytes;
 	long long input_msgs;
+	long long input_error_msgs;
 
 	long long output_bytes;
 	long long output_msgs;

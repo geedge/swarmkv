@@ -57,6 +57,7 @@ struct snet_stat
 	long long input_bytes, output_bytes;
 	long long input_buffer_sz, output_buffer_sz;
 	long long output_drop_msgs;
+	long long input_error_msgs;
 };
 struct snet_thread
 {
@@ -309,6 +310,7 @@ static void peer_conn_read_cb(struct bufferevent *bev, void *arg)
 					snet_conn_table_remove(conn);
 				}
 				snet_conn_free(conn);
+				thr->stat.input_error_msgs++;
 				break;
 			}
 			if(!conn->is_in_conn_table && !conn->is_duplicated)
@@ -528,6 +530,7 @@ void swarmkv_net_info(struct swarmkv_net *net, struct snet_info *info)
 
 		info->input_bytes += thr->stat.input_bytes;
 		info->input_msgs += thr->stat.input_msgs;
+		info->input_error_msgs += thr->stat.input_error_msgs;
 
 		info->output_bytes += thr->stat.output_bytes;
 		info->output_msgs += thr->stat.output_msgs;

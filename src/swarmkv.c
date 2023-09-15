@@ -188,6 +188,7 @@ static void remoter_caller_ctx_send_reply(struct remote_caller_ctx *ctx, const s
 	const char *err_str=NULL;
 	if(0==node_compare(&db->self, &msg->caller))
 	{
+		//Thread can not send message to itself.
 		assert(cur_tid != msg->caller_tid);
 		swarmkv_mesh_send(db->mesh, cur_tid, msg->caller_tid, msg);
 	}
@@ -268,6 +269,8 @@ enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct sw
 	}
 	struct swarmkv_rpc_mgr_info rpc_info;
 	swarmkv_rpc_mgr_info(db->rpc_mgr, &rpc_info);
+	struct mesh_info mesh_info;
+	swarmkv_mesh_info(db->mesh, &mesh_info);
 	snprintf(node_info_buff, sizeof(node_info_buff), "# Node\r\n"
 											"version: %s\r\n"
 											"address: %s\r\n"
@@ -277,6 +280,8 @@ enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct sw
 											"pending_cmds: %s\r\n"
 											"timed_out_cmds: %lld\r\n"
 											"unknown_sequence: %lld\r\n"
+											"mesh_queued_msgs: %lld\r\n"
+											"mesh_drop_msgs: %lld\r\n"
 											"server_time_usec: %lld\r\n"
 											"up_time_in_seconds: %ld\r\n"
 											"up_time_in_days: %ld\r\n"
@@ -289,6 +294,8 @@ enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct sw
 											pending_cmds,
 											rpc_info.timed_out_rpcs,
 											rpc_info.unknown_sequence,
+											mesh_info.queued_msgs,
+											mesh_info.drop_msgs,
 											server_time_us,
 											now_monotonic.tv_sec-db->boot_time.tv_sec,
 											(now_monotonic.tv_sec-db->boot_time.tv_sec)/(3600*24)
@@ -332,6 +339,7 @@ enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct sw
 												"output_bytes: %lld\r\n"
 												"input_msgs: %lld\r\n"
 												"output_msgs: %lld\r\n"
+												"input_error_msgs: %lld\r\n"
 												"output_drop_msgs: %lld\r\n"
 												"input_buffer: %lld\r\n"
 												"output_buffer: %lld\r\n"
@@ -346,6 +354,7 @@ enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct sw
 												net_info.output_bytes,
 												net_info.input_msgs,
 												net_info.output_msgs,
+												net_info.input_error_msgs,
 												net_info.output_drop_msgs,
 												net_info.input_buffer_sz,
 												net_info.output_buffer_sz,
@@ -455,6 +464,7 @@ enum cmd_exec_result __attribute__((optimize("O0"))) debug_command(struct swarmk
 
 enum cmd_exec_result config_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
 {
+	//Unused
 	return FINISHED;
 }
 enum cmd_exec_result command_list_command(struct swarmkv_module *mod_db, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
@@ -1527,5 +1537,3 @@ const char *swarmkv_self_address(const struct swarmkv *db)
 {
 	return db->self.addr;
 }
-
-

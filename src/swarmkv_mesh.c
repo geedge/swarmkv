@@ -14,7 +14,7 @@
 #include <pthread.h>	//sanity check
 
 #define	MODULE_SWAMRKV_MESH	module_name_str("swarmkv.mesh")
-#define	RINGBUF_SIZE		8*1024*1024
+#define	RINGBUF_SIZE		8*16*1024
 
 struct swarmkv_mesh_thread
 {
@@ -25,7 +25,7 @@ struct swarmkv_mesh_thread
 	char *buff;
 	ringbuf_worker_t **workers;
 	struct swarmkv_mesh *ref_mesh;
-	long long n_send, n_recv;
+	long long enqueue_msgs, dequeue_msgs;
 	struct event_base *evbase;
 };
 struct swarmkv_mesh
@@ -35,8 +35,8 @@ struct swarmkv_mesh
 	struct log_handle *ref_logger;
 	on_msg_callback_t *on_msg_cb_func;
 	void *on_msg_cb_arg;
-	long long n_send, n_recv;
-	long long n_drop;
+	long long enqueue_msgs, dequeue_msgs;
+	long long drop_msgs;
 	long long n_void_consume;
 };
 int swarmkv_mesh_send(struct swarmkv_mesh *mesh, int current_thread_id, int dest_thread_id, struct swarmkv_msg *msg)
@@ -50,11 +50,16 @@ int swarmkv_mesh_send(struct swarmkv_mesh *mesh, int current_thread_id, int dest
 	ringbuf_t *dest_ring=dest_thr->ring;
 	assert(msg->magic == SWARMKV_MSG_MAGIC);
 	ssize_t offset=0;
-	offset=ringbuf_acquire(dest_ring, curr_thr->workers[dest_thread_id], sizeof(struct swarmkv_msg*));
+	int retry=0;
+	do{
+		offset=ringbuf_acquire(dest_ring, curr_thr->workers[dest_thread_id], sizeof(struct swarmkv_msg*));
+		retry++;
+	}while(offset==-1 && retry<3);
 	if(offset == -1)
 	{
-		mesh->n_drop++;
-		log_warn(mesh->ref_logger, MODULE_SWAMRKV_MESH, "ringbuf is full, drop the message");
+		mesh->drop_msgs++;
+		log_warn(mesh->ref_logger, MODULE_SWAMRKV_MESH, "ringbuf is full, queued=%lld, drop the message", 
+		dest_thr->enqueue_msgs-dest_thr->dequeue_msgs);
 		goto error_out;
 	}
 	memcpy(dest_thr->buff+offset, &msg, sizeof(struct swarmkv_msg*));
@@ -66,8 +71,8 @@ int swarmkv_mesh_send(struct swarmkv_mesh *mesh, int current_thread_id, int dest
 	{
 		assert(0);
 	}
-	curr_thr->n_send++;
-	mesh->n_send++;
+	dest_thr->enqueue_msgs++;
+	mesh->enqueue_msgs++;
 	return 0;
 error_out:
 	swarmkv_msg_free(msg);
@@ -112,8 +117,8 @@ static void mesh_on_eventfd_read_cb(evutil_socket_t fd, short what, void * arg)
 		assert(msg->magic==SWARMKV_MSG_MAGIC);
 		ringbuf_release(ring, sizeof(struct swarmkv_msg*));
 		mesh->on_msg_cb_func(msg, mesh->on_msg_cb_arg);
-		thr->n_recv++;
-		mesh->n_recv++;
+		thr->dequeue_msgs++;
+		mesh->dequeue_msgs++;
 		offset=0;
 		i++;
 	}
@@ -170,4 +175,11 @@ void swarmkv_mesh_free(struct swarmkv_mesh *mesh)
 	}
 	free(mesh->threads);
 	free(mesh);
+}
+
+void swarmkv_mesh_info(struct swarmkv_mesh *mesh, struct mesh_info *info)
+{
+	info->queued_msgs=mesh->enqueue_msgs-mesh->dequeue_msgs;
+	info->drop_msgs=mesh->drop_msgs;
+	return;
 }
