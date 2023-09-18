@@ -1190,7 +1190,7 @@ void swarmkv_keyspace_info(struct swarmkv_module *mod_keyspace, struct keyspace_
 	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
 	int i=0;
 	struct slot_runtime *slot_rt=NULL;
-
+	memset(info, 0, sizeof(struct keyspace_info));
 	info->health_check_port=ks->opts->health_check_announce_port;
 	info->keys=0;
 	info->expires=0;

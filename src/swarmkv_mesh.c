@@ -35,7 +35,6 @@ struct swarmkv_mesh
 	struct log_handle *ref_logger;
 	on_msg_callback_t *on_msg_cb_func;
 	void *on_msg_cb_arg;
-	long long enqueue_msgs, dequeue_msgs;
 	long long drop_msgs;
 	long long n_void_consume;
 };
@@ -58,8 +57,7 @@ int swarmkv_mesh_send(struct swarmkv_mesh *mesh, int current_thread_id, int dest
 	if(offset == -1)
 	{
 		mesh->drop_msgs++;
-		log_warn(mesh->ref_logger, MODULE_SWAMRKV_MESH, "ringbuf is full, queued=%lld, drop the message", 
-		dest_thr->enqueue_msgs-dest_thr->dequeue_msgs);
+		log_warn(mesh->ref_logger, MODULE_SWAMRKV_MESH, "ringbuf of thread %d is full", dest_thread_id);
 		goto error_out;
 	}
 	memcpy(dest_thr->buff+offset, &msg, sizeof(struct swarmkv_msg*));
@@ -71,8 +69,7 @@ int swarmkv_mesh_send(struct swarmkv_mesh *mesh, int current_thread_id, int dest
 	{
 		assert(0);
 	}
-	dest_thr->enqueue_msgs++;
-	mesh->enqueue_msgs++;
+	curr_thr->enqueue_msgs++;
 	return 0;
 error_out:
 	swarmkv_msg_free(msg);
@@ -118,7 +115,6 @@ static void mesh_on_eventfd_read_cb(evutil_socket_t fd, short what, void * arg)
 		ringbuf_release(ring, sizeof(struct swarmkv_msg*));
 		mesh->on_msg_cb_func(msg, mesh->on_msg_cb_arg);
 		thr->dequeue_msgs++;
-		mesh->dequeue_msgs++;
 		offset=0;
 		i++;
 	}
@@ -179,7 +175,13 @@ void swarmkv_mesh_free(struct swarmkv_mesh *mesh)
 
 void swarmkv_mesh_info(struct swarmkv_mesh *mesh, struct mesh_info *info)
 {
-	info->queued_msgs=mesh->enqueue_msgs-mesh->dequeue_msgs;
-	info->drop_msgs=mesh->drop_msgs;
+	//info->queued_msgs=mesh->enqueue_msgs-mesh->dequeue_msgs;
+	memset(info, 0, sizeof(struct mesh_info));
+	for(int i=0; i<mesh->nr_thread; i++)
+	{
+		info->queued_msgs+=mesh->threads[i].enqueue_msgs;
+		info->queued_msgs-=mesh->threads[i].dequeue_msgs;
+	}
+	info->enqueue_drops=mesh->drop_msgs;
 	return;
 }

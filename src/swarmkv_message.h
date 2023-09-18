@@ -13,6 +13,8 @@ struct swarmkv_msg
     unsigned int magic;
     enum MSG_TYPE type;
     long long sequence;
+    long long ts_val; //TS Value in usec
+    long long ts_ecr; //TS Echo Reply in usec
     int caller_tid;
     unsigned int payload_len;
     node_t caller;

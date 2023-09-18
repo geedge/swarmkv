@@ -10,6 +10,6 @@ void swarmkv_mesh_free(struct swarmkv_mesh *mesh);
 struct mesh_info
 {
 	long long queued_msgs;
-	long long drop_msgs;
+	long long enqueue_drops;
 };
 void swarmkv_mesh_info(struct swarmkv_mesh *mesh, struct mesh_info *info);

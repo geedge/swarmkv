@@ -721,6 +721,7 @@ void swarmkv_store_info(struct swarmkv_module *mod_store, struct store_info *inf
 	info->keys=0;
 	info->keys_to_sync=0;
 	struct swarmkv_store_thread *thread=NULL;
+	memset(info, 0, sizeof(struct store_info));
 	for(size_t i=0; i<store->opts->nr_worker_threads; i++)
 	{
 		thread = store->threads+i;
