@@ -1258,7 +1258,8 @@ int main(int argc, char * argv[])
 	struct log_handle * logger=log_handle_create("swarmkv-cli.log", 0);
 	struct swarmkv_options *opts=swarmkv_options_new();
 	swarmkv_options_set_dryrun(opts);
-	swarmkv_options_set_cluster_port(opts, g_config.cluster_port);//listen on random port
+	//If g_config.cluster_port is not specified (cluster_port==0), listen on random port.
+	swarmkv_options_set_cluster_port(opts, g_config.cluster_port);
     swarmkv_options_set_consul_host(opts, g_config.consul_host);
 	swarmkv_options_set_consul_port(opts, g_config.consul_port);
 	swarmkv_options_set_worker_thread_number(opts, 1);

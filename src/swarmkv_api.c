@@ -128,7 +128,6 @@ int swarmkv_options_set_consul_port(struct swarmkv_options *opts, unsigned int c
 int swarmkv_options_set_dryrun(struct swarmkv_options *opts)
 {
 	opts->dryrun=1;
-	opts->cluster_port=15210;//overrides default p2p port
 	return 0;
 }
 int swarmkv_options_set_caller_thread_number(struct swarmkv_options *opts, int nr_caller_threads)
