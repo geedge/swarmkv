@@ -488,8 +488,15 @@ void swarmkv_reply_merge_array(struct swarmkv_reply **dst, struct swarmkv_reply 
 	{
 		*dst=swarmkv_reply_new_array(0);
 	}
-	if((*dst)->type!=SWARMKV_REPLY_ARRAY || src->type!=SWARMKV_REPLY_ARRAY)
+	if((*dst)->type!=SWARMKV_REPLY_ARRAY)
 	{
+		return;
+	}
+	if(src->type!=SWARMKV_REPLY_ARRAY)
+	{
+		(*dst)->elements=(struct swarmkv_reply **)realloc((*dst)->elements, ((*dst)->n_element+1)*sizeof(struct swarmkv_reply*));
+		(*dst)->elements[(*dst)->n_element]=src;
+		(*dst)->n_element+=1;
 		return;
 	}
 	(*dst)->elements=(struct swarmkv_reply **)realloc((*dst)->elements, ((*dst)->n_element+src->n_element)*sizeof(struct swarmkv_reply*));
@@ -500,7 +507,7 @@ void swarmkv_reply_merge_array(struct swarmkv_reply **dst, struct swarmkv_reply 
 		src->elements[i]=NULL;
 	}
 	(*dst)->n_element+=src->n_element;
-	src->n_element=0;
+	src->n_element=0;//Only free the parent strutcture.
 	swarmkv_reply_free(src);
 	return;
 }

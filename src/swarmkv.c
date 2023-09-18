@@ -295,7 +295,7 @@ enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct sw
 											rpc_info.timed_out_rpcs,
 											rpc_info.unknown_sequence,
 											mesh_info.queued_msgs,
-											mesh_info.drop_msgs,
+											mesh_info.enqueue_drops,
 											server_time_us,
 											now_monotonic.tv_sec-db->boot_time.tv_sec,
 											(now_monotonic.tv_sec-db->boot_time.tv_sec)/(3600*24)
@@ -868,6 +868,7 @@ void __on_msg_callback(struct swarmkv_msg *msg, void *arg)
 		}
 	}
 }
+#define	INTER_THREAD_RPC_TIMEOUT_AHEAD	1000
 void __exec_cmd(struct swarmkv *db, const node_t *target_node, const struct swarmkv_cmd *cmd, struct future *future_of_caller)
 {
 	struct swarmkv_cmd_spec *spec=NULL;	
@@ -899,7 +900,8 @@ void __exec_cmd(struct swarmkv *db, const node_t *target_node, const struct swar
 	if(!node_is_empty(target_node) && node_compare(&db->self, target_node))
 	{
 		//cmd is executed in target node's on_msg_callback
-		long long sequence=swarmkv_rpc_launch(db->rpc_mgr, cur_tid, future_of_caller);
+		struct swarmkv_rpc *rpc=swarmkv_rpc_launch(db->rpc_mgr, cur_tid, future_of_caller);
+		long long sequence=swarmkv_rpc_get_sequence(rpc);
 		msg=swarmkv_msg_new_by_cmd(cmd, &db->self, cur_tid, target_node, sequence);
 		int ret=0;
 		if(cur_tid >= db->opts->nr_worker_threads)
@@ -910,6 +912,7 @@ void __exec_cmd(struct swarmkv *db, const node_t *target_node, const struct swar
 			{
 				reply=swarmkv_reply_new_error(error_thread_rpc_buffer_full);
 			}
+			swarmkv_rpc_set_timeout(rpc, db->opts->cluster_timeout_us+INTER_THREAD_RPC_TIMEOUT_AHEAD);
 		}
 		else
 		{
@@ -919,6 +922,7 @@ void __exec_cmd(struct swarmkv *db, const node_t *target_node, const struct swar
 			{
 				reply=swarmkv_reply_new_error(error_network_error, node_addr2sds(target_node), err_str);
 			}
+			swarmkv_rpc_set_peer(rpc, target_node);
 		}
 		if(reply)
 		{
@@ -930,7 +934,9 @@ void __exec_cmd(struct swarmkv *db, const node_t *target_node, const struct swar
 	if(cur_tid != target_tid)
 	{
 		//cmd will be executed in target thread's on_msg_callback
-		long long sequence=swarmkv_rpc_launch(db->rpc_mgr, cur_tid, future_of_caller);
+		struct swarmkv_rpc *rpc=swarmkv_rpc_launch(db->rpc_mgr, cur_tid, future_of_caller);
+		swarmkv_rpc_set_timeout(rpc, db->opts->cluster_timeout_us+INTER_THREAD_RPC_TIMEOUT_AHEAD);
+		long long sequence=swarmkv_rpc_get_sequence(rpc);
 		msg=swarmkv_msg_new_by_cmd(cmd, &db->self, cur_tid, target_node, sequence);
 		int ret=0;
 		ret=swarmkv_mesh_send(db->mesh, cur_tid, target_tid, msg);
@@ -1409,7 +1415,7 @@ struct swarmkv *swarmkv_open(struct swarmkv_options *opts, const char *db_name, 
 
 	db->mod_monitor=swarmkv_monitor_new(db->opts);
 
-	db->rpc_mgr=swarmkv_rpc_mgr_new(db->opts, db->ref_evbases, opts->total_threads);
+	db->rpc_mgr=swarmkv_rpc_mgr_new(db->ref_evbases, opts->total_threads, opts->cluster_timeout_us);
 	db->mesh=swarmkv_mesh_new(db->ref_evbases, opts->total_threads, db->logger);
 	swarmkv_mesh_set_on_msg_cb(db->mesh, __on_msg_callback, db);
 	

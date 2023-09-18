@@ -14,6 +14,7 @@ struct swarmkv_rpc
 	struct event *timeout_ev;
 	struct future * f;
 	struct timespec start;
+	node_t target_peer;	//For inter-node rpc
 	int thread_id;
 	struct swarmkv_rpc_mgr *ref_mgr;
 	UT_hash_handle hh;
@@ -28,7 +29,7 @@ struct swarmkv_rpc_mgr
 {
 	long long seq_generator;
 	int nr_worker_threads;
-	unsigned int timeout_us;
+	unsigned int default_timeout_us;
 	struct swarmkv_rpc_thr *threads;
 
 	//stats
@@ -43,15 +44,15 @@ void swarmkv_rpc_free(struct swarmkv_rpc *rpc)
 	HASH_DELETE(hh, thr->rpc_table, rpc);
 	free(rpc);
 }
-struct swarmkv_rpc_mgr *swarmkv_rpc_mgr_new(const struct swarmkv_options *opts, struct event_base *evbases[], int nr_threads)
+struct swarmkv_rpc_mgr *swarmkv_rpc_mgr_new(struct event_base *evbases[], int nr_threads, long long default_timeout_us)
 {
 	struct swarmkv_rpc_mgr *mgr=ALLOC(struct swarmkv_rpc_mgr, 1);
 	mgr->seq_generator=0;
 	mgr->nr_worker_threads=nr_threads;
-	mgr->timeout_us=opts->cluster_timeout_us;
+	mgr->default_timeout_us=default_timeout_us;
 	mgr->threads=ALLOC(struct swarmkv_rpc_thr, nr_threads);
 	
-	struct timeval duration={mgr->timeout_us/(1000*1000), mgr->timeout_us%(1000*1000)};
+	struct timeval duration={mgr->default_timeout_us/(1000*1000), mgr->default_timeout_us%(1000*1000)};
 	struct swarmkv_rpc_thr *thr=NULL;
 	for(int i=0; i<nr_threads; i++)
 	{
@@ -86,11 +87,20 @@ static void rpc_timeout_callback(evutil_socket_t fd, short events, void *arg)
 	struct swarmkv_rpc *rpc=(struct swarmkv_rpc *)arg;
 	rpc->ref_mgr->timed_out_rpcs++;
 	struct promise *p=future_to_promise(rpc->f);
-	promise_failed(p, FUTURE_ERROR_TIMEOUT, "rpc timed out");
+	char error_str[128];
+	if(!node_is_empty(&rpc->target_peer))
+	{
+		snprintf(error_str, sizeof(error_str), "peer %s timed out", rpc->target_peer.addr);
+	}
+	else
+	{
+		snprintf(error_str, sizeof(error_str), "inter-thread rpc timed out");
+	}
+	promise_failed(p, FUTURE_ERROR_TIMEOUT, error_str);
 	swarmkv_rpc_free(rpc);
 }
 
-long long swarmkv_rpc_launch(struct swarmkv_rpc_mgr *mgr, int thread_id, struct future *f)
+struct swarmkv_rpc *swarmkv_rpc_launch(struct swarmkv_rpc_mgr *mgr, int thread_id, struct future *f)
 {
 	struct swarmkv_rpc_thr *thr=mgr->threads+thread_id;
 	struct swarmkv_rpc *rpc=ALLOC(struct swarmkv_rpc, 1);
@@ -104,7 +114,23 @@ long long swarmkv_rpc_launch(struct swarmkv_rpc_mgr *mgr, int thread_id, struct 
 	rpc->ref_mgr=mgr;
 	rpc->f=f;
 	HASH_ADD(hh, thr->rpc_table, sequence, sizeof(rpc->sequence), rpc);
+	return rpc;
+}
+long long swarmkv_rpc_get_sequence(const struct swarmkv_rpc *rpc)
+{
 	return rpc->sequence;
+}
+void swarmkv_rpc_set_peer(struct swarmkv_rpc *rpc, const node_t *peer)
+{
+	node_copy(&rpc->target_peer, peer);
+	return;
+}
+void swarmkv_rpc_set_timeout(struct swarmkv_rpc *rpc, long long timeout_us)
+{
+	struct timeval timeout={timeout_us/(1000*1000), timeout_us%(1000*1000)};
+	event_del(rpc->timeout_ev);
+	event_add(rpc->timeout_ev, &timeout);
+	return;
 }
 long long swarmkv_rpc_complete(struct swarmkv_rpc_mgr *mgr, int thread_id, long long sequence, void *reply)
 {

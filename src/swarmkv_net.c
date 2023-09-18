@@ -40,6 +40,7 @@ struct snet_conn
 	node_t connected_from;
 	int thread_id;
 	int need_to_be_kill;
+	long long ts_ecr;
 	enum receive_state recv_state;	
 	const struct swarmkv_msg *receiving_hdr;//pointer of receiving buffer
 	int is_in_conn_table;
@@ -96,9 +97,8 @@ struct swarmkv_net
 };
 
 static void peer_conn_read_cb(struct bufferevent *bev, void *arg);
-void connect_peer_eventcb(struct bufferevent *bev, short events, void *arg);
+void peer_connected_event_cb(struct bufferevent *bev, short events, void *arg);
 static void peer_conn_write_cb(struct bufferevent *bev, void *arg);
-static void peer_conn_read_cb(struct bufferevent *bev, void *arg);
 static void peer_conn_event_cb(struct bufferevent *bev, short events, void *arg);
 
 struct snet_conn *snet_conn_new_by_connecting(struct snet_thread *thr, const node_t *dest)
@@ -111,7 +111,7 @@ struct snet_conn *snet_conn_new_by_connecting(struct snet_thread *thr, const nod
 	
 	//http://www.wangafu.net/~nickm/libevent-book/Ref6_bufferevent.html
 	conn->bev=bufferevent_socket_new(base, -1, BEV_OPT_DEFER_CALLBACKS|BEV_OPT_THREADSAFE);//BEV_OPT_UNLOCK_CALLBACKS|
-	bufferevent_setcb(conn->bev, NULL, NULL, connect_peer_eventcb, conn);
+	bufferevent_setcb(conn->bev, NULL, NULL, peer_connected_event_cb, conn);
 	node_copy(&conn->peer_listen_addr, dest);
 	conn->thread_id=thr->thread_id;
 	conn->ref_thr=thr;
@@ -318,8 +318,15 @@ static void peer_conn_read_cb(struct bufferevent *bev, void *arg)
 				snet_conn_set_peer(conn, &hdr->caller);
 				snet_conn_table_add(thr, conn);			
 			}
+			conn->ts_ecr=hdr->ts_val;
 			conn->recv_state=RECEIVING_PAYLOAD;
 			conn->receiving_hdr=(struct swarmkv_msg *)recv_buff;
+			long long now_us=ustime();
+			if(hdr->ts_ecr && now_us > hdr->ts_ecr)
+			{
+				//If now_us < hdr->ts_ecr, may be manually time adjustment 
+				swarmkv_monitor_record_peer(thr->mod_monitor, &conn->peer_listen_addr, now_us-hdr->ts_ecr, thr->thread_id);
+			}
 		}
 		if(conn->recv_state==RECEIVING_PAYLOAD)
 		{
@@ -362,7 +369,7 @@ static void peer_conn_event_cb(struct bufferevent *bev, short events, void *arg)
 	snet_conn_free(conn);
 	return;
 }
-void connect_peer_eventcb(struct bufferevent *bev, short events, void *arg)
+void peer_connected_event_cb(struct bufferevent *bev, short events, void *arg)
 {
 	struct snet_conn* conn= (struct snet_conn*) arg;
 	struct snet_thread* thr=conn->ref_thr;
@@ -616,6 +623,8 @@ int swarmkv_net_send(struct swarmkv_net *net, const node_t *dest, struct swarmkv
 	}
 	char *data=NULL;
 	size_t size=0;
+	msg->ts_val=ustime();
+	msg->ts_ecr=conn->ts_ecr;
 	swarmkv_msg_serialize(msg,  &data, &size);
 	swarmkv_msg_free(msg);
 	struct evbuffer* output_buffer=NULL;
