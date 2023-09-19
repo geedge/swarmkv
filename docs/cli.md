@@ -25,3 +25,6 @@ Prefixing by two number are repeat times and interval (unit: second, default: 0 
 ```
 
 Low-level commands don't have auto-route ability. If you execute low-level command via `swarmkv-cli`, you should execute `ATTACH IP:port` first. The `DETACH` command exits attaching model.
+
+### Known Bugs
+If a swarmkv-cli instance attempts to connect to itself using an address other than 127.0.0.1:port, it will result in a crash.

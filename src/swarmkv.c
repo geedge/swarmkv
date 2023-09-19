@@ -83,6 +83,9 @@ struct swarmkv
 	struct swarmkv_cmd_spec *command_table;
 	struct timespec boot_time;
 
+	//For statistics
+	long long local_cmds;
+	long long remote_cmds;
 };
 struct swarmkv *module2db(struct swarmkv_module *module)
 {
@@ -162,6 +165,7 @@ void exec_for_local(struct swarmkv *db, const struct swarmkv_cmd *cmd, const nod
 								local_caller_on_fail,
 								ctx);
 	__exec_cmd(db, target_node, cmd, ctx->my_future);
+	db->local_cmds++;
 	return;
 }
 struct remote_caller_ctx
@@ -234,6 +238,7 @@ void exec_for_remote(struct swarmkv *db, const struct swarmkv_msg *msg)
 								remote_caller_on_fail,
 								ctx);
 	__exec_cmd(db, &msg->executor, msg->cmd, ctx->my_future);
+	db->remote_cmds++;
 	//Todo: implement monitor command here
 	return;
 }
@@ -278,6 +283,8 @@ enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct sw
 											"worker_threads: %d\r\n"
 											"caller_threads: %d\r\n"
 											"pending_cmds: %s\r\n"
+											"local_cmds: %lld\r\n"
+											"remote_cmds: %lld\r\n"
 											"timed_out_cmds: %lld\r\n"
 											"unknown_sequence: %lld\r\n"
 											"mesh_queued_msgs: %lld\r\n"
@@ -292,6 +299,8 @@ enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct sw
 											db->opts->nr_worker_threads,
 											db->opts->nr_caller_threads,
 											pending_cmds,
+											db->local_cmds,
+											db->remote_cmds,
 											rpc_info.timed_out_rpcs,
 											rpc_info.unknown_sequence,
 											mesh_info.queued_msgs,

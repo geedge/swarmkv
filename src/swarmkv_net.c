@@ -105,7 +105,7 @@ struct snet_conn *snet_conn_new_by_connecting(struct snet_thread *thr, const nod
 {
 	struct event_base *base=thr->evbase;
 	
-	struct snet_conn* conn=ALLOC(struct snet_conn, 1);
+	struct snet_conn *conn=ALLOC(struct snet_conn, 1);
 	conn->buff_for_sending=evbuffer_new();
 	conn->fd=-1;
 	
@@ -132,18 +132,16 @@ error_out:
 	return NULL;
 
 }
-struct snet_conn *snet_conn_new_by_fd(struct snet_thread *thr, evutil_socket_t fd, struct sockaddr * addr)
+struct snet_conn *snet_conn_new_by_fd(struct snet_thread *thr, evutil_socket_t fd, const node_t *peer)
 {
-	struct snet_conn* conn=NULL;
-	conn=ALLOC(struct snet_conn, 1);
+	struct snet_conn *conn=ALLOC(struct snet_conn, 1);
 	conn->buff_for_sending=evbuffer_new();
 	int yes=1;
 	setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, (char*)&yes, sizeof(yes));
 //	evbuffer_enable_locking(conn->buff_for_sending, NULL);
 	evutil_make_socket_nonblocking(fd);
 	evutil_make_socket_closeonexec(fd);
-	node_init_from_sockaddr(&conn->connected_from, addr);
-
+	node_copy(&conn->connected_from, peer);
 	conn->bev=bufferevent_socket_new(thr->evbase, fd, BEV_OPT_DEFER_CALLBACKS|BEV_OPT_UNLOCK_CALLBACKS);//BEV_OPT_UNLOCK_CALLBACKS|BEV_OPT_THREADSAFE
 	//use BEV_OPT_THREADSAFE option for safely access from threads that calling swarmkv_net_send.
 	//? use BEV_OPT_UNLOCK_CALLBACKS option because swarmkv_net_send write buffer to output_buffer, and peer_conn_read_cb read input_buffer.
@@ -403,14 +401,6 @@ void peer_connected_event_cb(struct bufferevent *bev, short events, void *arg)
 		snet_conn_free(conn);
     }
 }
-
-static int get_net_thread_id(const node_t *node, size_t n_thread)
-{
-	int thread_id=(int)(XXH32(node, sizeof(node_t), 171))%n_thread;
-	return thread_id;
-}
-
-
 static void snet_stat_periodic(evutil_socket_t fd, short what, void * arg)
 {
 	struct swarmkv_net *net= (struct swarmkv_net *)arg;
@@ -447,20 +437,51 @@ static void snet_stat_periodic(evutil_socket_t fd, short what, void * arg)
 
 	return;
 }
+struct peek_msg_hdr_ctx
+{
+	struct event *ev;
+	struct swarmkv_net *ref_net;
+	node_t peer;
+	int retry;
+};
+void peek_msg_hdr_cb(evutil_socket_t fd, short what, void * arg)
+{
+	struct peek_msg_hdr_ctx *ctx=(struct peek_msg_hdr_ctx*) arg;
+	struct swarmkv_net *net = ctx->ref_net;
+	unsigned char buf[SWARMKV_MSG_HDR_SIZE];
+	ssize_t n = 0;
+
+	n = recv(fd, buf, sizeof(buf), MSG_PEEK);
+	if(n!=sizeof(buf))
+	{
+		ctx->retry++;
+		if(ctx->retry<3) return;
+
+		log_error(net->logger, MODULE_SWAMRKV_NET, "peek message header of connection from %s failed.",
+								ctx->peer.addr);
+		goto failed;
+	}
+	struct swarmkv_msg *hdr=(struct swarmkv_msg *)buf;
+	int tid=hdr->caller_tid%net->nr_threads;
+	struct snet_thread *thr=net->threads+tid;
+	struct snet_conn *conn=NULL;
+	conn=snet_conn_new_by_fd(thr, fd, &ctx->peer);
+
+	log_debug(net->logger, MODULE_SWAMRKV_NET, "accept connection from %s (tid=%d).",
+							conn->connected_from.addr, hdr->caller_tid);
+failed:
+	event_del(ctx->ev);
+	event_free(ctx->ev);
+	free(ctx);
+}
 static void accept_peer_connection_cb(struct evconnlistener *listener, evutil_socket_t fd, struct sockaddr * addr, int socklen, void *arg)
 {
 	struct swarmkv_net *net = (struct swarmkv_net*) arg;
-	struct snet_thread *thr=NULL;
-	struct snet_conn *conn=NULL;
-	node_t peer;
-	node_init_from_sockaddr(&peer, addr);
-	int thread_id=get_net_thread_id(&peer, net->nr_threads);
-	thr=net->threads+thread_id;
-	conn=snet_conn_new_by_fd(thr, fd, addr);
-
-	log_debug(net->logger, MODULE_SWAMRKV_NET, "accept connection from %s.",
-							conn->connected_from.addr);
-
+	struct peek_msg_hdr_ctx *ctx=ALLOC(struct peek_msg_hdr_ctx, 1);
+	ctx->ref_net=net;
+	node_init_from_sockaddr(&ctx->peer, addr);
+	ctx->ev = event_new(net->threads[0].evbase, fd, EV_READ|EV_PERSIST, peek_msg_hdr_cb, ctx);
+	event_add(ctx->ev, NULL);
 	return;
 }
 static void __accept_error_cb(struct evconnlistener *listener, void *arg)
