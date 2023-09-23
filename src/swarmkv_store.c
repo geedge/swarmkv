@@ -484,17 +484,6 @@ static void crdt_generic_on_reply(const struct swarmkv_reply *reply, void *user)
 	store_get_uuid(&(ctx->store->module), uuid);
 	
 	__attribute__ ((unused)) long long error_before=ctx->store->sync_err;
-	if(reply->type==SWARMKV_REPLY_ERROR)
-	{
-		if(strcasestr(reply->str, "timed out"))
-		{
-			__attribute__ ((unused)) int tid=__gettid(ctx->store->exec_cmd_handle);
-			atomic_inc(&ctx->store->sync_err);
-			//Time consuming operation, block the event loop.
-			//store_remove_failed_peer(ctx->store, tid, &ctx->peer);
-		}
-		goto error_out;
-	}
 
 	switch(ctx->op)
 	{
@@ -516,13 +505,18 @@ static void crdt_generic_on_reply(const struct swarmkv_reply *reply, void *user)
 		}
 		case CRDT_MERGE:
 		{
-			
 			if(reply->type==SWARMKV_REPLY_INTEGER && reply->integer>0)
 			{
 				atomic_add(&ctx->store->sync_ok, reply->integer);
 			}
 			else
 			{
+				if(0 && reply->type==SWARMKV_REPLY_ERROR && strcasestr(reply->str, "timed out"))
+				{
+					struct scontainer *ctr=NULL;
+					ctr=store_lookup_scontainer(ctx->store, ctx->key);		
+					scontainer_remove_replica_node(ctr, &ctx->peer);
+				}
 				atomic_inc(&ctx->store->sync_err);
 			}
 			break;
@@ -546,7 +540,6 @@ static void crdt_generic_on_reply(const struct swarmkv_reply *reply, void *user)
 		}
 	}
 	//assert(ctx->store->sync_err==error_before);
-error_out:
 	crdt_generic_ctx_free(ctx);
 	return;
 }

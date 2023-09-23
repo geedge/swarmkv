@@ -103,14 +103,12 @@ static void peer_conn_event_cb(struct bufferevent *bev, short events, void *arg)
 
 struct snet_conn *snet_conn_new_by_connecting(struct snet_thread *thr, const node_t *dest)
 {
-	struct event_base *base=thr->evbase;
-	
 	struct snet_conn *conn=ALLOC(struct snet_conn, 1);
 	conn->buff_for_sending=evbuffer_new();
 	conn->fd=-1;
 	
 	//http://www.wangafu.net/~nickm/libevent-book/Ref6_bufferevent.html
-	conn->bev=bufferevent_socket_new(base, -1, BEV_OPT_DEFER_CALLBACKS|BEV_OPT_THREADSAFE);//BEV_OPT_UNLOCK_CALLBACKS|
+	conn->bev=bufferevent_socket_new(thr->evbase, -1, BEV_OPT_DEFER_CALLBACKS|BEV_OPT_UNLOCK_CALLBACKS);//BEV_OPT_UNLOCK_CALLBACKS|BEV_OPT_THREADSAFE
 	bufferevent_setcb(conn->bev, NULL, NULL, peer_connected_event_cb, conn);
 	node_copy(&conn->peer_listen_addr, dest);
 	conn->thread_id=thr->thread_id;
@@ -466,9 +464,10 @@ void peek_msg_hdr_cb(evutil_socket_t fd, short what, void * arg)
 	struct snet_thread *thr=net->threads+tid;
 	struct snet_conn *conn=NULL;
 	conn=snet_conn_new_by_fd(thr, fd, &ctx->peer);
-
-	log_debug(net->logger, MODULE_SWAMRKV_NET, "accept connection from %s (tid=%d).",
-							conn->connected_from.addr, hdr->caller_tid);
+	//Assign a connection to the thread, but for thread safety, do not add it to the table. 
+	//Instead, add it during the peer_conn_read_cb() function call.
+	log_debug(net->logger, MODULE_SWAMRKV_NET, "thread %d accept connection from %s (tid=%d).",
+							conn->thread_id, conn->connected_from.addr, hdr->caller_tid);
 failed:
 	event_del(ctx->ev);
 	event_free(ctx->ev);

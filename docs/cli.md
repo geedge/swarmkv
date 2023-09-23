@@ -13,7 +13,7 @@ In interactive mode, you can prefixing the command name by a number to run it N 
 (integer) 3
 ```
 
-Prefixing by two number are repeat times and interval (unit: second, default: 0 second, 0.1 represents 100 milliseconds).
+Prefixing by two number are repeat times and interval (unit: second, default: 0 second, decimal is allowed, i.e., 0.1 represents 100 milliseconds).
 
 ```
 127.0.0.1:7311@swarmkv-sync> 5 .1 incrby id001 1
@@ -23,8 +23,10 @@ Prefixing by two number are repeat times and interval (unit: second, default: 0 
 (integer) 7
 (integer) 8
 ```
-
+### Attach/Detach
 Low-level commands don't have auto-route ability. If you execute low-level command via `swarmkv-cli`, you should execute `ATTACH IP:port` first. The `DETACH` command exits attaching model.
 
-### Known Bugs
+Another use case is the ability to attach to a node and execute commands on it. For example, you can connect to a node and execute the DEBUG command to debug the node.
+
+### Known Issues
 If a swarmkv-cli instance attempts to connect to itself using an address other than 127.0.0.1:port, it will result in a crash.

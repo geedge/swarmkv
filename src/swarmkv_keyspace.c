@@ -739,7 +739,7 @@ void watch_slots_changes_on_success(void *result, void *arg)
 	struct key_slot *slot=NULL;
 	struct slot_runtime *slot_rt=NULL;
 	node_t *owner=NULL;
-	log_info(thr->ref_ks->logger, MODULE_SWARMKV_KEYSPACE, "key slots update started.");
+	log_info(thr->ref_ks->logger, MODULE_SWARMKV_KEYSPACE, "thread %d key slots update started.", thr->thread_id);
 	for(i=0; i<KEYSPACE_SLOT_NUM; i++)
 	{
 		if(!slot_is_my_thread(i, thr->thread_id, thr->ref_ks->opts->nr_worker_threads)) continue;

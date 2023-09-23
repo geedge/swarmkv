@@ -9,7 +9,7 @@ Following are terminologies used in Swarm KV.
 | --------- | ------------------------------------------------------------ |
 | KV        | Key-value pair                                               |
 | Node      | Instances in a Swarm KV cluster. A swarmkv node is identified with its IP, P2P port and UUID. |
-| Slot      | KVs are partitioned in different slots, and keys of one table are scattered in many slots.  Each slot is maintained by one node. |
+| Slot      | Keyspace are partitioned in 16384 slots.  Each slot is maintained by one node. |
 | Key Owner | A key ONLY has one owner.                                    |
 | Replica   | A CRDT object is replicated in many nodes, which are replicas. |
 | RPC       | Remote Procedure Call, used for sending command and receiving reply. |
@@ -232,18 +232,18 @@ All worker threads are responsible for:
 - Run periodic tasks. 
 - Send command message, which is from swarmkv API caller to destination peers.
 - Receive KV command message, and then process it based on command type:
-  - Key routing request (from the requester, object reader/writer): lookup the value owner, and then send key routing response.
-  - Object operation request (from the requester): lookup the value, perform the operation and then send value operation response.
-  - Key routing response (from the key owner): send the request to the decoded value owner.
+  - Key routing request (from the requester, object reader/writer): lookup the object owner, and then send key routing response.
+  - Object operation request (from the requester): lookup the object, perform the operation and then send object operation response.
+  - Key routing response (from the key owner): send the request to the object owner.
   - Object operation response (from object owner): update local cache, and invoke the user-specified callback.
 - For multi-thread scalability, each worker thread maintains connections to all active peers. It's possible that there are one or more connections between two nodes.
 
 The worker thread 0 has extra tasks including:
 
-- Accept TCP connections from new peers, and then load balance new peers to worker threads (by peer IP). 
-- Watch leadership changes, run for leader if allowed.
+- Accepting TCP connections from other peers. It begins by peeking at the message header to determine the caller thread ID, then it load balances the connection across worker threads using the caller_ID mod worker thread number. This mechanism eliminates unnecessary inter-thread communication for nodes with the same worker thread number.
+- Watch leadership changes, and run for leader if cluster loses its leader.
 - For leader node:
-  - Watch cluster health check, remove failed node from cluster by assigning its node to other nodes.
+  - Watch cluster health check, remove failed node from cluster by assigning its slots to other nodes.
 
 ## Source code layout
 

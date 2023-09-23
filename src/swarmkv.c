@@ -1373,8 +1373,9 @@ struct swarmkv *swarmkv_open(struct swarmkv_options *opts, const char *db_name, 
 	opts->total_threads=opts->nr_caller_threads+opts->nr_worker_threads;
 	db->threads=ALLOC(struct swarmkv_thread, opts->total_threads);
     /* adds locking, only required if accessed from separate threads */
+	//When accept a new connection, the worker thread 0 may create a bufferevent with evbase of other worker threads.
 	evthread_use_pthreads();
-
+	//evthread_enable_lock_debugging();
 	strncpy(db->module.name, "db", sizeof(db->module.name));
 	db->module.mod_ctx=db;
 
