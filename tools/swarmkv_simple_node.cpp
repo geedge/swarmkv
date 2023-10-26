@@ -38,7 +38,8 @@ static void help()
 		"  --exec [Command]  Execute comand and exit.\n"
 		"e.g.:./simple_node -n demo -h 127.0.0.1:5210 -t 2 -r 2\n"
 		"e.g.:./simple_node -n demo -h 127.0.0.1:5210 -t 1 -r 1 -k 10000 --dryrun 1 --exec batch set command\n"
-		"e.g.:./simple_node -n demo -h 127.0.0.1:5210 -t 2 -r 1 --exec batch xxcfg command\n");
+		"e.g.:./simple_node -n demo -h 127.0.0.1:5210 -t 2 -r 1 --exec batch xxcfg command\n"
+		"e.g.:./simple_node -n demo -h 127.0.0.1:5210 -t 2 --exec as node pod\n");
 	    exit(1);
 }
 
@@ -55,6 +56,7 @@ struct swarmkv_node_config
 	int cluster_node_number;
 	long long key_number;
 	int caller_thread_number;
+	int worker_thread_number;
 	int forever;
 	struct swarmkv *db;
 };
@@ -89,6 +91,7 @@ struct async_exec_ctx
 
 #define BATCH_SET_CMD    1
 #define BATCH_XXXCFG_CMD 2
+#define AS_NODE_POD		 3
 
 int batch_set_command(struct swarmkv *db, int cluster_node_id);
 
@@ -131,9 +134,87 @@ void wake_up_caller_thread(struct swarmkv *db)
 			break;
 		}
 		swarmkv_reply_free(reply);
-		//usleep(10);
+		usleep(100);
 	}
 	return;
+}
+
+#include "xxhash.h"
+#define KEYSPACE_SLOT_NUM 		16384
+#define	KEYSPACE_XXHASH_SEED	5210
+int key_hash_slot(const char *key, size_t keylen)
+{
+	int slot_id=-1;
+    int s=0, e=0; /* start-end indexes of { and } */
+
+    for (s = 0; s < (int)keylen; s++)
+        if (key[s] == '{') break;
+
+    /* No '{' ? Hash the whole key. This is the base case. */
+    if (s == (int)keylen)
+	{
+		slot_id=XXH32(key, keylen, KEYSPACE_XXHASH_SEED)%KEYSPACE_SLOT_NUM;
+		return slot_id;
+	}
+
+    /* '{' found? Check if we have the corresponding '}'. */
+    for (e = s+1; e < (int)keylen; e++)
+        if (key[e] == '}') break;
+
+    /* No '}' or nothing between {} ? Hash the whole key. */
+    if (e == (int)keylen || e == s+1)
+	{
+		slot_id=XXH32(key, keylen, KEYSPACE_XXHASH_SEED)%KEYSPACE_SLOT_NUM;
+		return slot_id;
+	}
+	return XXH32(key+s+1, e-s-1, KEYSPACE_XXHASH_SEED)%KEYSPACE_SLOT_NUM;
+}
+
+int key2tid(const char *key, int nr_worker_threads)
+{
+	return key_hash_slot(key, strlen(key))%nr_worker_threads;
+}
+
+int bath_hash_test(struct swarmkv *db, int cluster_node_id)
+{
+	int i=0;
+	int loops=0;
+	char key[256]={0};
+	int total[32]={0}, tid=0;
+	int key_number=100*1000, round=key_number;
+
+foreach:
+	for(i=0; i<round; i++)
+	{
+		snprintf(key, sizeof(key), "simple-node-key-%d-%d", g_node_config.cluster_node_id, i%key_number);
+		if(i%2 == 0)
+		{
+			tid = key2tid(key, g_node_config.worker_thread_number);
+			total[tid]++;
+		}
+		else
+		{
+			tid = key2tid(key, g_node_config.worker_thread_number);
+			total[tid]++;
+		}
+	}
+
+	if(g_node_config.forever)
+	{
+		for(i=0; i<32; i++)
+		{
+			if(total[i] > 0)
+			{
+				printf("Loops %d, tid %d  conut  %d\n", loops, i, total[i]);
+			}
+		}
+		printf("-----------------------------\n");
+		loops++;
+		memset(&total, 0, sizeof(total));
+		sleep(1);
+		goto foreach;
+	}
+	return 0;
 }
 
 void *start_batch_xxcfg_caller_thread(void *thread_arg)
@@ -160,7 +241,7 @@ void *start_batch_xxcfg_caller_thread(void *thread_arg)
 	reply=swarmkv_command_on(db, NULL, "TCFG tb-token 50000 50000");
 	swarmkv_reply_free(reply);
 	/*FTCFG*/
-	reply=swarmkv_command_on(db, NULL, "FTCFG ftb-token50000 50000 256");
+	reply=swarmkv_command_on(db, NULL, "FTCFG ftb-token 50000 50000 256");
 	swarmkv_reply_free(reply);
 	/*BTCFG*/
 	reply=swarmkv_command_on(db, NULL, "BTCFG btb-token 50000 50000 256");
@@ -209,13 +290,17 @@ void *start_batch_xxcfg_caller_thread(void *thread_arg)
 			}
 			last_loop_ts_ms=curent_ts_ms;
 		}
+		struct timeval to={0, 10};
 		if(swarmkv_caller_get_pending_commands(db)>g_node_config.pending_commands)
 		{
-			usleep(10);
+			swarmkv_caller_loop(db, SWARMKV_LOOP_NO_EXIT_ON_EMPTY, &to);
 		}
 	}
 	globals.cmd_inprogress=0;
-	swarmkv_caller_loop(db, SWARMKV_LOOP_NO_EXIT_ON_EMPTY, NULL);
+	if(globals.reply_cnt!=globals.expected_reply_cnt)
+	{
+		swarmkv_caller_loop(db, SWARMKV_LOOP_NO_EXIT_ON_EMPTY, NULL);
+	}
 	clock_gettime(CLOCK_REALTIME, &end);
 	double elapsed_ms=(end.tv_sec-start.tv_sec)*1000.0+(end.tv_nsec-start.tv_nsec)/1000000.0;
 	cmds_sec+=round*1000.0/elapsed_ms;
@@ -224,6 +309,101 @@ void *start_batch_xxcfg_caller_thread(void *thread_arg)
 		globals.total_exec_time_ms/round,
 		globals.timedout_reply_cnt);
 	printf("On fly exec %d, Loops %d, Wasted loop %d\n", globals.on_fly_reply_cnt, loops, empty_loop);
+
+	return NULL;
+}
+
+void *start_batch_del_caller_thread(void *thread_arg)
+{
+	struct swarmkv *db=g_node_config.db;
+	int i=0, forever_cnt=0;
+	int key_number=100*1000, round=key_number;
+	struct async_exec_globals globals;
+	memset(&globals, 0, sizeof(globals));
+	globals.expected_reply_cnt=round;
+	globals.reply_cnt=0;
+	globals.db=db;
+	globals.cmd_inprogress=1;
+	int tmp_cnt=0, empty_loop=0, loops=0;
+	long long last_loop_ts_ms=0, curent_ts_ms=0;
+	struct timespec start, end;
+	struct async_exec_ctx *ctx=NULL;
+	char key[256]={0};
+	swarmkv_register_thread(db);
+
+	for(i=0; i<g_node_config.cluster_node_number; i++)
+	{
+		batch_set_command(db, i);
+	}
+
+	wake_up_caller_thread(db);
+
+foreach:
+	clock_gettime(CLOCK_REALTIME, &start);
+	int set_cmd=0, del_cmd=0;
+
+	for(i=0; i<round; i++)
+	{
+		ctx=ALLOC(struct async_exec_ctx, 1);
+		ctx->globals=&globals;
+		ctx->seq=i;
+		ctx->db=db;
+		clock_gettime(CLOCK_REALTIME, &ctx->start);
+		//snprintf(key, sizeof(key), "async-key-%d", i%key_number);
+		snprintf(key, sizeof(key), "simple-node-key-%d-%d", g_node_config.cluster_node_id, i%key_number);
+		if(i%2 == 0)
+		{
+			set_cmd++;
+			swarmkv_set(db, key, strlen(key), "abc", 3, simple_node_async_on_reply_cb, ctx);
+		}
+		else
+		{
+			del_cmd++;
+			swarmkv_del(db, key, strlen(key), simple_node_async_on_reply_cb , ctx);
+		}
+		curent_ts_ms=ctx->start.tv_sec*1000+ctx->start.tv_nsec/1000000;
+		if(last_loop_ts_ms!=curent_ts_ms)
+		{
+			tmp_cnt=globals.reply_cnt;
+			swarmkv_caller_loop(db, SWARMKV_LOOP_NONBLOCK, NULL);//SWARMKV_LOOP_ONCE|SWARMKV_LOOP_NONBLOCK
+			loops++;
+			if(tmp_cnt==globals.reply_cnt)
+			{
+				empty_loop++;
+			}
+			last_loop_ts_ms=curent_ts_ms;
+		}
+		struct timeval to={0, 10};
+		if(swarmkv_caller_get_pending_commands(db)>g_node_config.pending_commands)
+		{
+			swarmkv_caller_loop(db, SWARMKV_LOOP_NO_EXIT_ON_EMPTY, &to);
+		}
+
+	}
+	globals.cmd_inprogress=0;
+	if(globals.reply_cnt!=globals.expected_reply_cnt)
+	{
+		swarmkv_caller_loop(db, SWARMKV_LOOP_NO_EXIT_ON_EMPTY, NULL);
+	}
+	clock_gettime(CLOCK_REALTIME, &end);
+	double elapsed_ms=(end.tv_sec-start.tv_sec)*1000.0+(end.tv_nsec-start.tv_nsec)/1000000.0;
+	cmds_sec+=round*1000.0/elapsed_ms;
+	printf("Async SET %d, del %d, elapsed %lf ms, %lf cmds/s\n", set_cmd, del_cmd, elapsed_ms, round*1000.0/elapsed_ms);
+	printf("Avg Exec Latency %lf ms, timed out %d\n",
+		globals.total_exec_time_ms/round,
+		globals.timedout_reply_cnt);
+	printf("forever %d, On fly exec %d, Loops %d, Wasted loop %d\n", forever_cnt, globals.on_fly_reply_cnt, loops, empty_loop);
+
+	if(g_node_config.forever)
+	{
+		i=0;
+		forever_cnt++;
+		memset(&globals, 0, sizeof(globals));
+		globals.expected_reply_cnt=round;
+		globals.db=db;
+		globals.cmd_inprogress=1;
+		goto foreach;
+	}
 
 	return NULL;
 }
@@ -265,7 +445,22 @@ foreach:
 		ctx->db=db;
 		clock_gettime(CLOCK_REALTIME, &ctx->start);
 		//snprintf(key, sizeof(key), "async-key-%d", i%key_number);
-		snprintf(key, sizeof(key), "simple-node-key-%d-%d", g_node_config.cluster_node_id, i%key_number);
+
+		int idx = random() % key_number;
+		snprintf(key, sizeof(key), "simple-node-key-%d-%d", g_node_config.cluster_node_id, idx);
+
+        if (random() % 2 == 0) {
+
+			get_cmd++;
+			swarmkv_get(db, key, strlen(key), simple_node_async_on_reply_cb, ctx);
+        }
+		else
+		{
+            set_cmd++;
+			swarmkv_set(db, key, strlen(key), "abc", 3, simple_node_async_on_reply_cb, ctx);
+        }
+
+#if 0
 		if(i%2 == 0)
 		{
 			set_cmd++;
@@ -276,6 +471,7 @@ foreach:
 			get_cmd++;
 			swarmkv_get(db, key, strlen(key), simple_node_async_on_reply_cb, ctx);
 		}
+#endif
 		curent_ts_ms=ctx->start.tv_sec*1000+ctx->start.tv_nsec/1000000;
 		if(last_loop_ts_ms!=curent_ts_ms)
 		{
@@ -288,14 +484,18 @@ foreach:
 			}
 			last_loop_ts_ms=curent_ts_ms;
 		}
+		struct timeval to={0, 10};
 		if(swarmkv_caller_get_pending_commands(db)>g_node_config.pending_commands)
 		{
-			usleep(10);
+			swarmkv_caller_loop(db, SWARMKV_LOOP_NO_EXIT_ON_EMPTY, &to);
 		}
 
 	}
 	globals.cmd_inprogress=0;
-	swarmkv_caller_loop(db, SWARMKV_LOOP_NO_EXIT_ON_EMPTY, NULL);
+	if(globals.reply_cnt!=globals.expected_reply_cnt)
+	{
+		swarmkv_caller_loop(db, SWARMKV_LOOP_NO_EXIT_ON_EMPTY, NULL);
+	}
 	clock_gettime(CLOCK_REALTIME, &end);
 	double elapsed_ms=(end.tv_sec-start.tv_sec)*1000.0+(end.tv_nsec-start.tv_nsec)/1000000.0;
 	cmds_sec+=round*1000.0/elapsed_ms;
@@ -308,13 +508,32 @@ foreach:
 	if(g_node_config.forever)
 	{
 		i=0;
+		memset(&globals, 0, sizeof(globals));
 		globals.expected_reply_cnt=round;
-		globals.reply_cnt=0;
 		globals.db=db;
+		globals.cmd_inprogress=1;
 		goto foreach;
 	}
 
 	return NULL;
+}
+
+int  batch_del_command(struct swarmkv *db, int cluster_node_id)
+{
+	int caller_thread_number = g_node_config.caller_thread_number;
+	pthread_t threads[caller_thread_number];
+	for(int i=0; i<caller_thread_number; i++)
+	{
+		pthread_create(&(threads[i]), NULL, start_batch_del_caller_thread, &g_node_config);
+	}
+
+	int thread_ret=0;
+	for(int i=0; i<caller_thread_number; i++)
+	{
+		pthread_join(threads[i], (void**)&thread_ret);
+	}
+
+	return BATCH_XXXCFG_CMD;
 }
 
 int  batch_xxcfg_command(struct swarmkv *db, int cluster_node_id)
@@ -368,9 +587,22 @@ int batch_set_command(struct swarmkv *db, int cluster_node_id)
 	return BATCH_SET_CMD;
 }
 
+int as_node_pod(struct swarmkv *db, int cluster_node_id)
+{
+	if(g_node_config.key_number > 0)
+	{
+		swarmkv_register_thread(db);
+		batch_set_command(db, cluster_node_id);
+	}
+	return AS_NODE_POD;
+}
+
 struct batch_cmd_spec batch_cmds[]={
 	{"batch set command", batch_set_command},
 	{"batch xxcfg command",  batch_xxcfg_command},
+	{"as node pod", as_node_pod},
+	{"batch hash test", bath_hash_test},
+	{"batch del command", batch_del_command},
 };
 
 int batch_command_argv(struct swarmkv *db, size_t argc, char **argv)
@@ -534,6 +766,7 @@ int main(int argc, char **argv)
 	}
 	g_node_config.db=db;
 	g_node_config.caller_thread_number=caller_thread_number;
+	g_node_config.worker_thread_number=worker_thread_number;
 
 	int thread_ret=0;
 	pthread_t threads[caller_thread_number];
@@ -542,11 +775,16 @@ int main(int argc, char **argv)
 		ret = batch_command_argv(db, exec_argc, exec_argv);
 		if(ret == BATCH_XXXCFG_CMD)
 		{
+			printf("Total %lf cmds/s\n", cmds_sec);
 			goto finish;
 		}
 		if(ret == BATCH_SET_CMD && dryrun)
 		{
 			goto finish;
+		}
+		if(ret == AS_NODE_POD)
+		{
+			FOREVER{ sleep(1); };
 		}
 	}
 
@@ -562,7 +800,7 @@ int main(int argc, char **argv)
 	printf("Total %lf cmds/s\n", cmds_sec);
 
 finish:
-	sleep(10);
+	sleep(1000);
 	swarmkv_close(db);
 	log_handle_destroy(logger);
 	return ret;

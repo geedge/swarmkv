@@ -489,7 +489,7 @@ TEST_F(SwarmkvCliNodes, DebugAssert)
 	for(size_t i=0; i<node_number; i++)
 	{
 		char *cmd_string=ALLOC(char, 128);
-		snprintf(cmd_string, 128, "../tools/simple_node -n %s -h 127.0.0.1:%zu -a 127.0.0.1:%zu  -t 1 -k %d", cluster_name, p2p_port_start+i, p2p_port_start+i, 100);
+		snprintf(cmd_string, 128, "../tools/simple_node -n %s -h 127.0.0.1:%zu -t 1 -k %d --exec as node pod", cluster_name, p2p_port_start+i, 100);
 		pthread_create(&pid, NULL, swarmkv_simple_node, cmd_string);
 	}
 	sleep(1);

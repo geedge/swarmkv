@@ -223,6 +223,8 @@ static void remote_caller_on_fail(enum e_future_error err, const char * what, vo
 		reply=swarmkv_reply_new_error(what);
 		remoter_caller_ctx_send_reply(ctx, reply);
 	}
+
+    swarmkv_reply_free(reply);
 	remote_calller_ctx_free(ctx);
 	return;
 }
@@ -929,7 +931,9 @@ void __exec_cmd(struct swarmkv *db, const node_t *target_node, const struct swar
 			ret=swarmkv_net_send(db->net, target_node, msg, &err_str);
 			if(ret<0)
 			{
-				reply=swarmkv_reply_new_error(error_network_error, node_addr2sds(target_node), err_str);
+				sds target_node_peer=node_addr2sds(target_node);
+				reply=swarmkv_reply_new_error(error_network_error, target_node_peer, err_str);
+                sdsfree(target_node_peer);
 			}
 			swarmkv_rpc_set_peer(rpc, target_node);
 		}
