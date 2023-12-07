@@ -81,7 +81,15 @@ void LWW_register_merge_blob(struct LWW_register *reg, const char *blob, size_t 
 	LWW_register_free(to_merge);
 	return;
 }
-size_t LWW_regeister_mem_size(const struct LWW_register *reg)
+struct LWW_register *LWW_register_replicate(uuid_t uuid, const char *blob, size_t blob_sz)
+{
+	struct LWW_register *src=LWW_register_deserialize(blob, blob_sz);
+	struct LWW_register *dst=LWW_register_new(uuid);
+	LWW_register_merge(dst, src);
+	LWW_register_free(src);
+	return dst;
+}
+size_t LWW_register_mem_size(const struct LWW_register *reg)
 {
 	return (sizeof(struct LWW_register)+reg->size);
 }

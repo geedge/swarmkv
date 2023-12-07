@@ -93,10 +93,22 @@ void OR_set_serialize(const struct OR_set *set, char **blob, size_t *blob_sz)
 	OR_map_serialize(set->map, blob, blob_sz);
 	return;
 }
+struct OR_set *OR_set_deserialize(const char *blob, size_t blob_sz)
+{
+	struct OR_set *set=ALLOC(struct OR_set, 1);
+	set->map=OR_map_deserialize(blob, blob_sz);
+	return set;
+}
 void OR_set_merge_blob(struct OR_set *set, const char *blob, size_t blob_sz)
 {
 	OR_map_merge_blob(set->map, blob, blob_sz);
 	return;
+}
+struct OR_set *OR_set_replicate(uuid_t uuid, const char *blob, size_t blob_sz)
+{
+	struct OR_set *dst=OR_set_new(uuid);
+	OR_set_merge_blob(dst, blob, blob_sz);
+	return dst;
 }
 size_t OR_set_mem_size(const struct OR_set *set)
 {

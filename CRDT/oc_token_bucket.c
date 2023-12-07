@@ -12,7 +12,7 @@ struct OC_configuration
 	long long CIR;	//Committed Information Rate
 	long long CBS;	//Committed Burst Size
 	long long refill_interval_ms;
-	struct timeval write_timestamp;
+	struct timeval last_cfg;
 };
 #define	timeval_to_ms(t)	((t).tv_sec*1000+(t).tv_usec/1000)
 struct OC_token_bucket
@@ -31,8 +31,7 @@ struct OC_token_bucket *OC_token_bucket_new(uuid_t my_id, struct timeval now, lo
 {
 	struct OC_token_bucket *bucket=ALLOC(struct OC_token_bucket, 1);
 	bucket->consumed=PN_counter_new(my_id);
-	gettimeofday(&bucket->cfg.write_timestamp, NULL);
-	memcpy(&bucket->cfg.write_timestamp, &now, sizeof(bucket->cfg.write_timestamp));
+	//memcpy(&bucket->cfg.last_cfg, &now, sizeof(bucket->cfg.last_cfg));
 	bucket->cfg.CIR=CIR;
 	bucket->cfg.CBS=CBS;
 	bucket->cfg.refill_interval_ms=OCTB_REFILL_INTERVAL_MS_DEFAULT;
@@ -50,7 +49,7 @@ void OC_token_bucket_free(struct OC_token_bucket *bucket)
 }
 void OC_token_bucket_configure(struct OC_token_bucket *bucket, struct timeval now, long long CIR, long long CBS)
 {
-	memcpy(&bucket->cfg.write_timestamp, &now, sizeof(bucket->cfg.write_timestamp));
+	memcpy(&bucket->cfg.last_cfg, &now, sizeof(bucket->cfg.last_cfg));
 	if(CIR>=0) bucket->cfg.CIR=CIR;
 	if(CBS>=0) bucket->cfg.CBS=CBS;
 }
@@ -156,7 +155,7 @@ struct OC_token_bucket *OC_token_bucket_deserialize(const char *blob, size_t blo
 }
 void OC_token_bucket_merge(struct OC_token_bucket *dst, const struct OC_token_bucket *src)
 {
-	if(timercmp(&(dst->cfg.write_timestamp), &(src->cfg.write_timestamp), <))//Last-Write-Wins
+	if(timercmp(&(dst->cfg.last_cfg), &(src->cfg.last_cfg), <))//Last-Write-Wins
 	{
 		memcpy(&dst->cfg, &src->cfg, sizeof(src->cfg));
 	}
@@ -177,6 +176,21 @@ void OC_token_bucket_merge_blob(struct OC_token_bucket *bucket, const char *blob
 	OC_token_bucket_merge(bucket, to_merge);
 	OC_token_bucket_free(to_merge);
 	return;
+}
+
+void OC_token_bucket_change_uuid(struct OC_token_bucket *bucket, uuid_t new_uuid)
+{
+	struct PN_counter *tmp=bucket->consumed;
+	bucket->consumed=PN_counter_new(new_uuid);
+	PN_counter_merge(bucket->consumed, tmp);
+	PN_counter_free(tmp);
+	return;
+}
+struct OC_token_bucket *OC_token_bucket_replicate(uuid_t uuid, const char *blob, size_t blob_sz)
+{
+	struct OC_token_bucket *bucket=OC_token_bucket_deserialize(blob, blob_sz);
+	OC_token_bucket_change_uuid(bucket, uuid);
+	return bucket;
 }
 size_t OC_token_bucket_mem_size(const struct OC_token_bucket *bucket)
 {

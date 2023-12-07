@@ -37,6 +37,7 @@ void fair_token_bucket_serialize(const struct fair_token_bucket *ftb, char **blo
 struct fair_token_bucket *fair_token_bucket_deserialize(const char *blob, size_t blob_sz);
 void fair_token_bucket_merge(struct fair_token_bucket *dst, const struct fair_token_bucket *src);
 void fair_token_bucket_merge_blob(struct fair_token_bucket *ftb, const char *blob, size_t blob_sz);
+struct fair_token_bucket *fair_token_bucket_replicate(uuid_t uuid, const char *blob, size_t blob_sz);
 size_t fair_token_bucket_mem_size(const struct fair_token_bucket *ftb);
 #ifdef __cplusplus
 }

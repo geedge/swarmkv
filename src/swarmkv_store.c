@@ -21,36 +21,12 @@ struct swarmkv_obj_specs
 {
 	enum sobj_type type;
 	const char *type_name;
-	void *(*obj_new) (uuid_t uuid);
 	void (*obj_free) (void *obj);
 	void (*obj_serialize) (const void *obj, char **blob, size_t *blob_sz);
 	void (*obj_merge_blob) (void *obj, const char *blob, size_t blob_sz);
+	void *(*obj_replicate) (uuid_t uuid,  const char *blob, size_t blob_sz);
 	size_t (*obj_size)(const void *obj);
 };
-static void *__wrap_OC_token_bucket_new(uuid_t uuid)
-{
-	struct OC_token_bucket *bucket=NULL;
-	struct timeval beginning_of_history;
-	memset(&beginning_of_history, 0, sizeof(beginning_of_history));
-	bucket=OC_token_bucket_new(uuid, beginning_of_history, 0, 0);
-	return bucket;
-}
-static void *__wrap_fair_token_bucket_new(uuid_t uuid)
-{
-	struct fair_token_bucket *bucket=NULL;
-	struct timeval beginning_of_history;
-	memset(&beginning_of_history, 0, sizeof(beginning_of_history));
-	bucket=fair_token_bucket_new(uuid, beginning_of_history, 0, 0, 0);
-	return bucket;
-}
-static void *__wrap_bulk_token_bucket_new(uuid_t uuid)
-{
-	struct bulk_token_bucket *bucket=NULL;
-	struct timeval beginning_of_history;
-	memset(&beginning_of_history, 0, sizeof(beginning_of_history));
-	bucket=bulk_token_bucket_new(uuid, beginning_of_history, 0, 0, 0);
-	return bucket;
-}
 size_t undefined_obj_mem_size(void *obj)
 {
 	return 0;
@@ -65,73 +41,73 @@ struct swarmkv_obj_specs sobj_specs[__SWARMKV_OBJ_TYPE_MAX] =
 	{
 		.type=OBJ_TYPE_STRING,
 		.type_name="string",
-		.obj_new=(void * (*)(unsigned char *))LWW_register_new,
 		.obj_free=(void (*)(void *))LWW_register_free,
 		.obj_serialize=(void (*)(const void *, char **, size_t *))LWW_register_serialize,
 		.obj_merge_blob=(void (*)(void *, const char *, size_t))LWW_register_merge_blob,
-		.obj_size=(size_t (*)(const void *))LWW_regeister_mem_size
+		.obj_replicate=(void * (*)(uuid_t, const char *, size_t))LWW_register_replicate,
+		.obj_size=(size_t (*)(const void *))LWW_register_mem_size
 	},
 	{
 		.type=OBJ_TYPE_INTEGER,
 		.type_name="integer",
-		.obj_new=(void * (*)(unsigned char *))PN_counter_new,
 		.obj_free=(void (*)(void *))PN_counter_free,
 		.obj_serialize=(void (*)(const void *, char **, size_t *))PN_counter_serialize,
 		.obj_merge_blob=(void (*)(void *, const char *, size_t))PN_counter_merge_blob,
+		.obj_replicate=(void * (*)(uuid_t, const char *, size_t))PN_counter_replicate,
 		.obj_size=(size_t (*)(const void *))PN_counter_mem_size
 	},
 	{
 		.type=OBJ_TYPE_SET,
 		.type_name="set",
-		.obj_new=(void * (*)(unsigned char *))OR_set_new,
 		.obj_free=(void (*)(void *))OR_set_free,
 		.obj_serialize=(void (*)(const void *, char **, size_t *))OR_set_serialize,
 		.obj_merge_blob=(void (*)(void *, const char *, size_t))OR_set_merge_blob,
+		.obj_replicate=(void * (*)(uuid_t, const char *, size_t))OR_set_replicate,
 		.obj_size=(size_t (*)(const void *))OR_set_mem_size
 	},
 	{
 		.type=OBJ_TYPE_HASH,
 		.type_name="hash",
-		.obj_new=(void * (*)(unsigned char *))OR_map_new,
 		.obj_free=(void (*)(void *))OR_map_free,
 		.obj_serialize=(void (*)(const void *, char **, size_t *))OR_map_serialize,
 		.obj_merge_blob=(void (*)(void *, const char *, size_t))OR_map_merge_blob,
+		.obj_replicate=(void * (*)(uuid_t, const char *, size_t))OR_map_replicate,
 		.obj_size=(size_t (*)(const void *))OR_map_mem_size
 	},
 	{
 		.type=OBJ_TYPE_TOKEN_BUCKET,
 		.type_name="token-bucket",
-		.obj_new=__wrap_OC_token_bucket_new,
 		.obj_free=(void (*)(void *))OC_token_bucket_free,
 		.obj_serialize=(void (*)(const void *, char **, size_t *))OC_token_bucket_serialize,
 		.obj_merge_blob=(void (*)(void *, const char *, size_t))OC_token_bucket_merge_blob,
+		.obj_replicate=(void * (*)(uuid_t, const char *, size_t))OC_token_bucket_replicate,
 		.obj_size=(size_t (*)(const void *))OC_token_bucket_mem_size,
 	},
 	{
 		.type=OBJ_TYPE_FAIR_TOKEN_BUCKET,
 		.type_name="fair-token-bucket",
-		.obj_new=__wrap_fair_token_bucket_new,
 		.obj_free=(void (*)(void *))fair_token_bucket_free,
 		.obj_serialize=(void (*)(const void *, char **, size_t *))fair_token_bucket_serialize,
 		.obj_merge_blob=(void (*)(void *, const char *, size_t))fair_token_bucket_merge_blob,
+		.obj_replicate=(void * (*)(uuid_t, const char *, size_t))fair_token_bucket_replicate,
 		.obj_size=(size_t (*)(const void *))fair_token_bucket_mem_size,
 	},
 	{
 		.type=OBJ_TYPE_BULK_TOKEN_BUCKET,
 		.type_name="bulk-token-bucket",
-		.obj_new=__wrap_bulk_token_bucket_new,
 		.obj_free=(void (*)(void *))bulk_token_bucket_free,
 		.obj_serialize=(void (*)(const void *, char **, size_t *))bulk_token_bucket_serialize,
 		.obj_merge_blob=(void (*)(void *, const char *, size_t))bulk_token_bucket_merge_blob,
+		.obj_replicate=(void * (*)(uuid_t, const char *, size_t))bulk_token_bucket_replicate,
 		.obj_size=(size_t (*)(const void *))bulk_token_bucket_mem_size
 	},
 	{
 		.type=OBJ_TYPE_UNDEFINED,
 		.type_name="undefined",
-		.obj_new=NULL,
 		.obj_free=undefined_obj_free,
 		.obj_serialize=NULL,
 		.obj_merge_blob=NULL,
+		.obj_replicate=NULL,
 		.obj_size=(size_t (*)(const void *))undefined_obj_mem_size
 	}
 };
@@ -440,9 +416,12 @@ void sobj_merge_blob(struct sobj *obj, const char *blob, size_t blob_sz, uuid_t 
 	const char *value_blob=blob+offset;
 	if(!obj->raw)
 	{
-		obj->raw=sobj_specs[obj->type].obj_new(uuid);
+		obj->raw=sobj_specs[obj->type].obj_replicate(uuid, value_blob, value_blob_sz);
 	}
-	sobj_specs[obj->type].obj_merge_blob(obj->raw, value_blob, value_blob_sz);
+	else
+	{
+		sobj_specs[obj->type].obj_merge_blob(obj->raw, value_blob, value_blob_sz);
+	}
 	return;
 
 }

@@ -1,7 +1,6 @@
 #include "fair_token_bucket.h"
 #include "oc_token_bucket.h"
 #include "st_hyperloglog.h"
-//#include "g_array.h"
 #include "crdt_utils.h"
 #include "xxhash.h"
 
@@ -17,7 +16,6 @@
 struct fair_token_bucket
 {
     /* Sync Variables*/
-    uuid_t uuid;
     long long divisor;
     struct timeval last_cfg;
     struct ST_hyperloglog *hll[FAIR_TB_WEIGHT_MAX]; //counting active keys
@@ -38,16 +36,13 @@ struct fair_token_bucket *fair_token_bucket_new(uuid_t uuid, struct timeval now,
 {
     struct fair_token_bucket *ftb=ALLOC(struct fair_token_bucket, 1);
 
-    uuid_copy(ftb->uuid, uuid);
     ftb->divisor=divisor;
     for(int i=0; i<FAIR_TB_WEIGHT_MAX; i++)
     {
         ftb->hll[i]=ST_hyperloglog_new(9, 5, now);
     }
-    //ftb->sfq=g_array_new(uuid, ftb->divisor);
     ftb->sfq=ALLOC(long long, divisor);
     ftb->bucket=OC_token_bucket_new(uuid, now, CIR, CBS);
-    //OC_token_bucket_set_no_reserve(ftb->bucket);
     ftb->per_weight_quantum=CIR;
     memcpy(&ftb->last_cfg, &now, sizeof(ftb->last_cfg));
     return ftb;
@@ -59,7 +54,6 @@ void fair_token_bucket_free(struct fair_token_bucket *ftb)
     {
         ST_hyperloglog_free(ftb->hll[i]);
     }
-    //g_array_free(ftb->sfq);
     free(ftb->sfq);
     OC_token_bucket_free(ftb->bucket);
     free(ftb);
@@ -71,6 +65,7 @@ static void ftb_quantum_estimation(struct fair_token_bucket *ftb, struct timeval
     long long total_weight=0, n_active_key=0, count=0;
     for(int i=0; i<FAIR_TB_WEIGHT_MAX; i++)
     {
+        ST_hyperloglog_step(ftb->hll[i], now);
         count = ST_hyperloglog_count(ftb->hll[i]);
         total_weight += (i+1)*count;
         n_active_key += count;
@@ -93,7 +88,6 @@ static void ftb_quantum_estimation(struct fair_token_bucket *ftb, struct timeval
 static void ftb_perturb(struct fair_token_bucket *ftb, struct timeval now)
 {
     ftb_quantum_estimation(ftb, now);
-    //g_array_reset(ftb->sfq);
     memset(ftb->sfq, 0, sizeof(long long)*ftb->divisor);
     ftb->perturb_seed++;
 }
@@ -115,7 +109,6 @@ long long fair_token_bucket_consume(struct fair_token_bucket *ftb, struct timeva
     sfq_idx=XXH3_64bits_withSeed(key, keylen, ftb->perturb_seed)%ftb->divisor;
     
     long long deficit_est=0;
-    //deficit_est=g_array_get(ftb->sfq, sfq_idx);
     deficit_est=ftb->sfq[sfq_idx];
     deficit_est/=MAX(1, ftb->n_active_key/ftb->divisor);
 
@@ -128,7 +121,6 @@ long long fair_token_bucket_consume(struct fair_token_bucket *ftb, struct timeva
     long long allocated_tokens=OC_token_bucket_consume(ftb->bucket, now, cmd, tokens);
     if(allocated_tokens)
     {
-        //g_array_incrby(ftb->sfq, sfq_idx, allocated_tokens);
         ftb->sfq[sfq_idx]+=allocated_tokens;
     }
     ftb->debug_last_allocated=allocated_tokens;
@@ -138,7 +130,6 @@ void fair_token_bucket_configure(struct fair_token_bucket *ftb, struct timeval n
 {
     ftb->divisor=divisor;
     ftb->sfq=(long long*)realloc(ftb->sfq, sizeof(long long)*ftb->divisor);
-    //g_array_resize(ftb->sfq, ftb->divisor);
     memcpy(&ftb->last_cfg, &now, sizeof(ftb->last_cfg));
     OC_token_bucket_configure(ftb->bucket, now, CIR, CBS);
     ftb_perturb(ftb, now);
@@ -148,6 +139,7 @@ void fair_token_bucket_info(const struct fair_token_bucket *ftb, struct timeval 
 {
     for(int i=0; i<FAIR_TB_WEIGHT_MAX; i++)
     {
+        ST_hyperloglog_step(ftb->hll[i], now);
         info->active_key_number += ST_hyperloglog_count(ftb->hll[i]);
     }
     info->divisor = ftb->divisor;
@@ -169,7 +161,6 @@ size_t fair_token_bucket_serialized_size(const struct fair_token_bucket *ftb)
     {
         sz += ST_hyperloglog_serialized_size(ftb->hll[i]);
     }
-//    sz += g_array_serialized_size(ftb->sfq);
     sz += OC_token_bucket_serialized_size(ftb->bucket);
     return sz;
 }
@@ -194,13 +185,6 @@ void fair_token_bucket_serialize(const struct fair_token_bucket *ftb, char **blo
         offset += ST_hyperloglog_serialized_size(ftb->hll[i]);
         free(tmp_buff);
     }
-    /*
-    g_array_serialize(ftb->sfq, &tmp_buff, &tmp_sz);
-    memcpy(buffer+offset, tmp_buff, tmp_sz);
-    assert(tmp_sz==g_array_serialized_size(ftb->sfq));
-    offset += g_array_serialized_size(ftb->sfq);
-    free(tmp_buff);
-    */
     OC_token_bucket_serialize(ftb->bucket, &tmp_buff, &tmp_sz);
     memcpy(buffer+offset, tmp_buff, tmp_sz);
     offset += OC_token_bucket_serialized_size(ftb->bucket);
@@ -226,10 +210,6 @@ struct fair_token_bucket *fair_token_bucket_deserialize(const char *blob, size_t
         ftb->hll[i]=ST_hyperloglog_deserialize(blob+offset, blob_sz-offset);
         offset += ST_hyperloglog_serialized_size(ftb->hll[i]);
     }
-    /*
-    ftb->sfq=g_array_deserialize(blob+offset, blob_sz-offset);
-    offset += g_array_serialized_size(ftb->sfq);
-    */
     ftb->bucket=OC_token_bucket_deserialize(blob+offset, blob_sz-offset);
     offset += OC_token_bucket_serialized_size(ftb->bucket);
     assert(offset==hdr.payload_sz);
@@ -247,7 +227,6 @@ void fair_token_bucket_merge(struct fair_token_bucket *dst, const struct fair_to
         dst->sfq=(long long*)realloc(dst->sfq, sizeof(long long)*dst->divisor);
         memcpy(&dst->last_cfg, &src->last_cfg, sizeof(dst->last_cfg));
     }
-    //g_array_merge(dst->sfq, src->sfq);
     OC_token_bucket_merge(dst->bucket, src->bucket);
     return;
 }
@@ -258,6 +237,14 @@ void fair_token_bucket_merge_blob(struct fair_token_bucket *ftb, const char *blo
     fair_token_bucket_free(src);
     return;
 }
+struct fair_token_bucket *fair_token_bucket_replicate(uuid_t uuid, const char *blob, size_t blob_sz)
+{
+    struct fair_token_bucket *ftb=fair_token_bucket_deserialize(blob, blob_sz);
+    OC_token_bucket_change_uuid(ftb->bucket, uuid);
+    ftb->sfq=ALLOC(long long, ftb->divisor);
+    return ftb;
+
+}
 size_t fair_token_bucket_mem_size(const struct fair_token_bucket *ftb)
 {
     size_t sz=0;
@@ -266,7 +253,6 @@ size_t fair_token_bucket_mem_size(const struct fair_token_bucket *ftb)
     {
         sz += ST_hyperloglog_mem_size(ftb->hll[i]);
     }
-    //sz+=g_array_mem_size(ftb->sfq);
     sz+=sizeof(long long)*ftb->divisor;
     sz+=OC_token_bucket_mem_size(ftb->bucket);
     return sz;

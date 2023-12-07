@@ -37,6 +37,7 @@ struct OR_set_member_list* OR_set_members(const struct OR_set *set);
 
 void OR_set_serialize(const struct OR_set *set, char **blob, size_t *blob_sz);
 void OR_set_merge_blob(struct OR_set *set, const char *blob, size_t blob_sz);
+struct OR_set *OR_set_replicate(uuid_t uuid, const char *blob, size_t blob_sz);
 size_t OR_set_mem_size(const struct OR_set *set);
 
 #ifdef __cplusplus

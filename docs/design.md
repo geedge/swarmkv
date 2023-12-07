@@ -1,7 +1,8 @@
 # Design
 
-I list design choices here.
+> Don't communicate by sharing memory; share memory by communicating. (Rob Pike)
 
+I list design choices here.
 
 Following are terminologies used in Swarm KV.
 

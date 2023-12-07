@@ -1725,6 +1725,136 @@ TEST(STHyperLogLog, Reconfigure)
 		ST_hyperloglog_free(h[i]);
 	}
 }
+TEST(STHyperLogLog, EventualConsistency)
+{
+	struct timeval start, step, now;
+	gettimeofday(&start, NULL);
+	memcpy(&now, &start, sizeof(now));
+	int n_replica=2;
+	struct ST_hyperloglog *h[n_replica];
+	int time_window_s=10;
+	unsigned char precision=6;
+	for(int i=0; i<n_replica; i++)
+	{
+		h[i]=ST_hyperloglog_new(precision, time_window_s, start);
+	}
+	int key=1319823, j=0;
+	int n_add=0;
+	int add_per_step=100;
+	step.tv_sec=0;
+	step.tv_usec=1000;
+	int item_per_second=add_per_step*1000*1000/step.tv_usec;
+	while(now.tv_sec-start.tv_sec<time_window_s*5)
+	{
+		timeradd(&now, &step, &now);
+		for(int i=0; i<add_per_step; i++)
+		{
+			j=1+random()%(n_replica-1);
+			key++;
+			ST_hyperloglog_add(h[j], (const char *)&key, sizeof(key), now);
+			n_add++;
+		}
+	}
+	for(int i=0; i<n_replica; i++)
+	{
+		for(int j=0; j<n_replica; j++)
+		{
+			if(i==j) continue;
+			ST_hyperloglog_merge(h[i], h[j]);
+		}
+	}
+	double hll_count=0, error=0;
+	hll_count=ST_hyperloglog_count(h[0]);
+	error=ST_hyperloglog_error_for_precision(precision);
+	EXPECT_NEAR(hll_count, item_per_second*time_window_s, error*item_per_second*time_window_s);
+
+	for(int i=0; i<n_replica; i++)
+	{
+		ST_hyperloglog_free(h[i]);
+	}
+}
+TEST(STHyperLogLog, Merge)
+{
+	struct timeval start, now;
+	gettimeofday(&start, NULL);
+	memcpy(&now, &start, sizeof(now));
+	int n_replica=2;
+	struct ST_hyperloglog *h[n_replica];
+	int time_window_s=10;
+	unsigned char precision=6;
+	for(int i=0; i<n_replica; i++)
+	{
+		h[i]=ST_hyperloglog_new(precision, time_window_s, start);
+		start.tv_sec+=time_window_s+1;
+	}
+	for(int i=0; i<n_replica; i++)
+	{
+		for(int j=0; j<n_replica; j++)
+		{
+			if(i==j) continue;
+			ST_hyperloglog_merge(h[i], h[j]);
+		}
+	}
+	for(int i=0; i<n_replica; i++)
+	{
+		ST_hyperloglog_free(h[i]);
+	}
+}
+TEST(STHyperLogLog, Step)
+{
+	struct timeval start, step, now;
+	gettimeofday(&start, NULL);
+	memcpy(&now, &start, sizeof(now));
+	step.tv_sec=0;
+	step.tv_usec=10000;
+	int time_window_s=32;
+	unsigned char precision=8;
+	struct ST_hyperloglog *h=ST_hyperloglog_new(precision, time_window_s, start);
+	int key=1;
+	int add_per_step=1;
+	int item_per_second=add_per_step*1000*1000/step.tv_usec;
+	while(now.tv_sec-start.tv_sec<time_window_s*10)
+	{
+		timeradd(&now, &step, &now);
+		for(int i=0; i<add_per_step; i++)
+		{
+			key++;
+			ST_hyperloglog_add(h, (const char *)&key, sizeof(key), now);
+		}
+	}
+	double hll_count=0;
+	double error=ST_hyperloglog_error_for_precision(precision);
+	hll_count=ST_hyperloglog_count(h);
+	printf("time_window: %d, count: %d, error: %.2f \n", time_window_s, item_per_second*time_window_s, error);
+	for(int i=0; i<time_window_s; i++)
+	{
+		ST_hyperloglog_step(h, now);
+		hll_count=ST_hyperloglog_count(h);
+		printf("t+%d, estimate: %.2f\n", i, hll_count);
+		now.tv_sec++;
+		//EXPECT_NEAR(hll_count, item_per_second*(time_window_s-i), error*item_per_second*(time_window_s-i));
+	}
+	ST_hyperloglog_free(h);
+	return;
+/*
+
+	hll_count=ST_hyperloglog_count(h);
+	EXPECT_NEAR(hll_count, item_per_second*time_window_s, error*item_per_second*time_window_s);
+	
+	now.tv_sec += time_window_s/12;
+	ST_hyperloglog_step(h, now);
+	hll_count=ST_hyperloglog_count(h);
+	EXPECT_NEAR(hll_count, item_per_second*time_window_s/4, error*item_per_second*time_window_s/2);
+
+
+	now.tv_sec += time_window_s/12;
+	ST_hyperloglog_step(h, now);
+	hll_count=ST_hyperloglog_count(h);
+	EXPECT_NEAR(hll_count, 0, error*item_per_second*time_window_s);
+
+	ST_hyperloglog_free(h);
+	*/
+}
 TEST(GArray, Basic)
 {
 	uuid_t uuid;

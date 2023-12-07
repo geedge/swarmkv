@@ -32,7 +32,7 @@ struct OC_token_bucket_info
 void OC_token_bucket_info(struct OC_token_bucket *bucket, struct timeval now, struct OC_token_bucket_info *info);
 void OC_token_bucket_free(struct OC_token_bucket *bucket);
 void OC_token_bucket_set_no_reserve(struct OC_token_bucket *bucket);
-
+void OC_token_bucket_change_uuid(struct OC_token_bucket *bucket, uuid_t new_uuid);
 long long OC_token_bucket_consume(struct OC_token_bucket *bucket, struct timeval now, enum tb_consume_type cmd, long long tokens);
 
 void OC_token_bucket_serialize(const struct OC_token_bucket *bucket, char **blob, size_t *blob_sz);
@@ -40,6 +40,7 @@ struct OC_token_bucket *OC_token_bucket_deserialize(const char *blob, size_t blo
 
 void OC_token_bucket_merge(struct OC_token_bucket *dst, const struct OC_token_bucket *src);
 void OC_token_bucket_merge_blob(struct OC_token_bucket *bucket,  const char *blob, size_t blob_sz);
+struct OC_token_bucket *OC_token_bucket_replicate(uuid_t uuid, const char *blob, size_t blob_sz);
 size_t OC_token_bucket_serialized_size(const struct OC_token_bucket *bucket);
 size_t OC_token_bucket_mem_size(const struct OC_token_bucket *bucket);
 #ifdef __cplusplus

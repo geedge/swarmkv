@@ -172,6 +172,14 @@ void PN_counter_merge_blob(struct PN_counter *pnc, const char *blob, size_t blob
 	PN_counter_free(to_merge);
 	return;
 }
+struct PN_counter *PN_counter_replicate(uuid_t uuid, const char *blob, size_t blob_sz)
+{
+	struct PN_counter *src=PN_counter_deserialize(blob, blob_sz);
+	struct PN_counter *pnc=PN_counter_new(uuid);
+	PN_counter_merge(pnc, src);
+	PN_counter_free(src);
+	return pnc;
+}
 size_t PN_counter_replica_num(const struct PN_counter *pnc)
 {
 	return MAX(HASH_COUNT(pnc->hash_item), 1);

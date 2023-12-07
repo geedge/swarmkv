@@ -157,7 +157,7 @@ size_t OR_record_size(const struct OR_record *record)
 			sz+=PN_counter_serialized_size(record->counter);				
 			break;
 		case TYPE_STRING:
-			sz+=LWW_regeister_mem_size(record->string);		
+			sz+=LWW_register_mem_size(record->string);		
 			break;
 		default:
 			break;
@@ -746,6 +746,14 @@ void OR_map_merge_blob(struct OR_map *map, const char *blob, size_t blob_sz)
 	OR_map_merge(map, to_merge);
 	OR_map_free(to_merge);
 	return;
+}
+struct OR_map *OR_map_replicate(uuid_t uuid, const char *blob, size_t blob_sz)
+{
+	struct OR_map *src=OR_map_deserialize(blob, blob_sz);
+	struct OR_map *dst=OR_map_new(uuid);
+	OR_map_merge(dst, src);
+	OR_map_free(src);
+	return dst;
 }
 size_t OR_map_mem_size(const struct OR_map *map)
 {

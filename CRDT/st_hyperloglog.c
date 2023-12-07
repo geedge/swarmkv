@@ -19,7 +19,7 @@
 #define NUM_REG(precision) ((1 << precision))
 #define INT_CEIL(num, denom) (((num) + (denom) - 1) / (denom))
 
-
+#define PRECISION_TO_WORD(precision) INT_CEIL(NUM_REG(precision), REG_PER_WORD)
 
 struct ST_HLL_configuration
 {
@@ -48,15 +48,12 @@ struct ST_hyperloglog *ST_hyperloglog_new(unsigned char precision, int time_wind
     // Store precision
     h->cfg.precision = precision;
     h->cfg.time_window_s=time_window_seconds;
-    memcpy(&h->cfg.timestamp, &now, sizeof(h->cfg.timestamp));
+    //memcpy(&h->cfg.timestamp, &now, sizeof(h->cfg.timestamp));
 
     memcpy(&h->reset_time, &now, sizeof(h->reset_time));
 
-    // Determine how many registers are needed
-    int num_reg = NUM_REG(precision);
 
-    // Get the full words required
-    int words = INT_CEIL(num_reg, REG_PER_WORD);
+    int words = PRECISION_TO_WORD(precision);
 
     // Allocate and zero out the registers
     h->registers = ALLOC(uint32_t, words);
@@ -68,15 +65,11 @@ void ST_hyperloglog_configure(struct ST_hyperloglog *h, unsigned char precision,
     if(h->cfg.precision != precision)
     {
         free(h->registers);
-        // Determine how many registers are needed
-        int reg = NUM_REG(precision);
 
-        // Get the full words required
-        int words = INT_CEIL(reg, REG_PER_WORD);
-
+         h->cfg.precision=precision;
         // Allocate and zero out the registers
-        h->registers = ALLOC(uint32_t, words);
-        h->cfg.precision=precision;
+        h->registers = ALLOC(uint32_t, PRECISION_TO_WORD(h->cfg.precision));
+       
     }
     memcpy(&h->cfg.timestamp, &now, sizeof(h->cfg.timestamp));
     return;
@@ -139,10 +132,11 @@ static void periodic_reset(struct ST_hyperloglog *h, const struct timeval now)
     int num_reg=NUM_REG(h->cfg.precision);
     int reset_time_slot_us=h->cfg.time_window_s*2*1000*1000/num_reg;
     long long delta_us=timeval_delta_us(h->reset_time, now);
+    
     struct timeval step;
-    //reset_time_slot_us+=1000;
     step.tv_sec=reset_time_slot_us/1000/1000;
     step.tv_usec=reset_time_slot_us%(1000*1000);
+    
     if(delta_us>reset_time_slot_us)
     {
         for(int i=0; i<delta_us/reset_time_slot_us; i++)
@@ -156,34 +150,65 @@ static void periodic_reset(struct ST_hyperloglog *h, const struct timeval now)
 int ST_hyperloglog_add(struct ST_hyperloglog *h, const char *key, size_t keylen, const struct timeval now)
 {
     periodic_reset(h, now);
-    // Compute the hash value of the key
-    uint64_t hash=0;
 
+    uint64_t hash=0;
     hash=XXH3_64bits_withSeed(key, keylen, 171);
-    // Add the hashed value
-   return hll_add_hash(h, hash);
+    return hll_add_hash(h, hash);
+}
+static struct ST_hyperloglog *ST_hyperloglog_copy(const struct ST_hyperloglog *src)
+{
+    struct ST_hyperloglog *dst=ST_hyperloglog_new(src->cfg.precision, src->cfg.time_window_s, src->reset_time);
+    size_t num_reg = NUM_REG(src->cfg.precision);
+    size_t words = INT_CEIL(num_reg, REG_PER_WORD);
+
+    memcpy(dst->registers, src->registers, words*sizeof(int32_t));
+    return dst;
+}
+void ST_hyperloglog_step(struct ST_hyperloglog *h, const struct timeval now)
+{
+    periodic_reset(h, now);
+    return;
 }
 void ST_hyperloglog_merge(struct ST_hyperloglog *dst, const struct ST_hyperloglog *src)
 {
+    
     if(timercmp(&(dst->cfg.timestamp), &(src->cfg.timestamp), <))//Last-Write-Wins
     {
         ST_hyperloglog_configure(dst, src->cfg.precision, src->cfg.time_window_s, src->cfg.timestamp);
     }
     if(dst->cfg.precision != src->cfg.precision) return;
-    int n_register=NUM_REG(dst->cfg.precision);
-    int s_reg=0, d_reg=0;
-    for(int i=0; i<n_register; i++)
+    if(dst->reset_time.tv_sec - src->reset_time.tv_sec > dst->cfg.time_window_s)//src is too old, no need to merge
     {
-        s_reg=get_register(src, i);
-        d_reg=get_register(dst, i);
-        set_register(dst, i, MAX(s_reg, d_reg));
+        return;
     }
-    if(timercmp(&(dst->reset_time), &(src->reset_time), <))//Last-Write-Wins
+    else if(src->reset_time.tv_sec - dst->reset_time.tv_sec > dst->cfg.time_window_s) //dst is too old, just copy the src register
     {
         dst->reset_idx=src->reset_idx;
         memcpy(&dst->reset_time, &src->reset_time, sizeof(src->reset_time));
+        memcpy(dst->registers, src->registers, PRECISION_TO_WORD(dst->cfg.precision)*sizeof(int32_t));
     }
-    
+    else
+    {
+        struct ST_hyperloglog *tmp=ST_hyperloglog_copy(src);//create a copy of src for periodic reset
+        if(timercmp(&(dst->reset_time), &(tmp->reset_time), <))//correct with latest timestamp  
+        {
+            periodic_reset(dst, tmp->reset_time);
+        }
+        else
+        {
+            periodic_reset(tmp, dst->reset_time);
+        }
+        int n_register=NUM_REG(dst->cfg.precision);
+        int s_reg=0, d_reg=0;
+        for(int i=0; i<n_register; i++)
+        {
+        
+            s_reg=get_register(tmp, i);
+            d_reg=get_register(dst, i);
+            set_register(dst, i, MAX(s_reg, d_reg));
+        }
+        ST_hyperloglog_free(tmp);
+    }
     return;
 }
 size_t ST_hyperloglog_serialized_size(const struct ST_hyperloglog *h)
@@ -235,7 +260,7 @@ void ST_hyperloglog_merge_blob(struct ST_hyperloglog *dst, const char *blob, siz
     ST_hyperloglog_free(src);
     return;
 }
-double g_switchThreshold[15] = {10, 20, 40, 80, 220, 400, 900, 1800, 3100, 6500,
+static double g_switchThreshold[15] = {10, 20, 40, 80, 220, 400, 900, 1800, 3100, 6500,
     11500, 20000, 50000, 120000, 350000};
 
 static double *g_rawEstimateData[] = {

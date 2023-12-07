@@ -19,7 +19,7 @@ struct btb_configuration
 	long long CBS;	//Committed Burst Size
 	long long refill_interval_ms;
     long long bucket_num;
-	struct timeval timestamp;
+	struct timeval last_cfg;
 };
 struct refill_mark
 {
@@ -29,7 +29,6 @@ struct refill_mark
 
 struct bulk_token_bucket
 {
-	uuid_t my_id;
     struct btb_configuration cfg;
     struct timeval start;
     long long perturb;
@@ -53,7 +52,8 @@ struct bulk_token_bucket *bulk_token_bucket_new(uuid_t my_id, struct timeval now
     btb->cfg.CBS=CBS;
     btb->cfg.bucket_num=bucket_num;
     btb->cfg.refill_interval_ms=10;
-	memcpy(&btb->cfg.timestamp, &now, sizeof(btb->cfg.timestamp));
+	memcpy(&btb->cfg.last_cfg, &now, sizeof(btb->cfg.last_cfg));
+
     btb->hll=ST_hyperloglog_new(9, 5, now);
     memcpy(&btb->start, &now, sizeof(btb->start));
     btb->consumed=g_array_new(my_id, bucket_num);
@@ -61,7 +61,6 @@ struct bulk_token_bucket *bulk_token_bucket_new(uuid_t my_id, struct timeval now
 	btb->perturb=1;
 	memcpy(&btb->perturb_timestamp, &now, sizeof(btb->perturb_timestamp));
 	memcpy(&btb->start, &now, sizeof(btb->start));
-    uuid_copy(btb->my_id, my_id);
     return btb;
 }
 void bulk_token_bucket_free(struct bulk_token_bucket *btb)
@@ -157,7 +156,7 @@ void bulk_token_bucket_configure(struct bulk_token_bucket *btb, struct timeval n
     btb->cfg.CIR=CIR;
     btb->cfg.CBS=CBS;
     btb->cfg.bucket_num=bucket_num;
-    memcpy(&btb->cfg.timestamp, &now, sizeof(btb->cfg.timestamp));
+    memcpy(&btb->cfg.last_cfg, &now, sizeof(btb->cfg.last_cfg));
  	g_array_resize(btb->consumed, bucket_num);
 	btb->refilled=realloc(btb->refilled, btb->cfg.bucket_num*sizeof(struct refill_mark));
 	memset(btb->refilled, 0, btb->cfg.bucket_num*sizeof(struct refill_mark));
@@ -169,6 +168,7 @@ void bulk_token_bucket_info(const struct bulk_token_bucket *btb, struct timeval 
 	info->CBS=btb->cfg.CBS;
 	info->bucket_number=btb->cfg.bucket_num;
 	info->replicas=g_array_replicas(btb->consumed);
+	ST_hyperloglog_step(btb->hll, now);
 	info->estimate_keys=ST_hyperloglog_count(btb->hll);
 	info->collision_rate=collision_probability(info->bucket_number, info->estimate_keys);
 	return;
@@ -241,9 +241,9 @@ struct bulk_token_bucket *bulk_token_bucket_deserialize(const char *blob, size_t
 }
 void bulk_token_bucket_merge(struct bulk_token_bucket *dst, const struct bulk_token_bucket *src)
 {
-    if(timercmp(&(dst->cfg.timestamp), &(src->cfg.timestamp), <))//Last-Write-Wins
+    if(timercmp(&(dst->cfg.last_cfg), &(src->cfg.last_cfg), <))//Last-Write-Wins
     {
-		bulk_token_bucket_configure(dst, src->cfg.timestamp, src->cfg.CIR, src->cfg.CBS, src->cfg.bucket_num);
+		bulk_token_bucket_configure(dst, src->cfg.last_cfg, src->cfg.CIR, src->cfg.CBS, src->cfg.bucket_num);
     }
     if(timercmp(&(dst->perturb_timestamp), &(src->perturb_timestamp), <))//Last-Write-Wins
 	{
@@ -270,6 +270,15 @@ void bulk_token_bucket_merge_blob(struct bulk_token_bucket *btb, const char * bl
 	bulk_token_bucket_merge(btb, src);
 	bulk_token_bucket_free(src);
 	return;
+}
+struct bulk_token_bucket *bulk_token_bucket_replicate(uuid_t uuid, const char *blob, size_t blob_sz)
+{
+	struct bulk_token_bucket *btb=bulk_token_bucket_deserialize(blob, blob_sz);
+	struct g_array *tmp=btb->consumed;
+	btb->consumed=g_array_new(uuid, btb->cfg.bucket_num);
+	g_array_merge(btb->consumed, tmp);
+	g_array_free(tmp);
+	return btb;
 }
 size_t bulk_token_bucket_mem_size(const struct bulk_token_bucket *btb)
 {

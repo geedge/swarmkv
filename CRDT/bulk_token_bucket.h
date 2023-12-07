@@ -32,6 +32,7 @@ void bulk_token_bucket_serialize(const struct bulk_token_bucket *btb, char **blo
 struct bulk_token_bucket *bulk_token_bucket_deserialize(const char *blob, size_t blob_sz);
 void bulk_token_bucket_merge(struct bulk_token_bucket *dst, const struct bulk_token_bucket *src);
 void bulk_token_bucket_merge_blob(struct bulk_token_bucket *btb, const char * blob, size_t blob_sz);
+struct bulk_token_bucket *bulk_token_bucket_replicate(uuid_t uuid, const char *blob, size_t blob_sz);
 size_t bulk_token_bucket_mem_size(const struct bulk_token_bucket *btb);
 #ifdef __cplusplus
 }

@@ -25,6 +25,7 @@ struct ST_hyperloglog *ST_hyperloglog_new(unsigned char precision, int time_wind
 void ST_hyperloglog_free(struct ST_hyperloglog *h);
 //Return 1 if at least 1 ST HyperLogLog internal register was altered. 0 otherwise.
 int ST_hyperloglog_add(struct ST_hyperloglog *h, const char *key, size_t keylen, const struct timeval now);
+void ST_hyperloglog_step(struct ST_hyperloglog *h, const struct timeval now);
 double ST_hyperloglog_count(const struct ST_hyperloglog *h);
 size_t ST_hyperloglog_serialized_size(const struct ST_hyperloglog *h);
 void ST_hyperloglog_serialize(const struct ST_hyperloglog *h, char **blob, size_t *blob_sz);

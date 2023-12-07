@@ -26,6 +26,7 @@ long long PN_counter_incrby(struct PN_counter *pnc, long long increment);
 
 void PN_counter_merge_blob(struct PN_counter *pnc, const char *blob, size_t blob_sz);
 void PN_counter_merge(struct PN_counter *dst, const struct PN_counter *src);
+struct PN_counter *PN_counter_replicate(uuid_t uuid, const char *blob, size_t blob_sz);
 void PN_counter_serialize(const struct PN_counter *pnc, char **blob, size_t *blob_sz);
 struct PN_counter *PN_counter_deserialize(const char *blob, size_t blob_sz);
 size_t PN_counter_serialized_size(const struct PN_counter *pnc);
