@@ -637,7 +637,7 @@ void exec_cmd_crdt_join(struct swarmkv *db, struct cluster_sanity_ctx *ctx, stru
     HASH_ITER(hh, keyspace_list->replica_node_hash, keyspace_addr, tmp)
     {
         ctx->reply_num++;
-        swarmkv_async_command_on(db, exec_cmd_generic_callback, ctx, keyspace_addr->node.addr, "CRDT JOIN %s %s", key, crdt_addr->node.addr);
+        swarmkv_async_command_on(db, exec_cmd_generic_callback, ctx, keyspace_addr->node.addr, "CRDT ADD %s %s", key, crdt_addr->node.addr);
 		swarmkv_caller_loop(db, SWARMKV_LOOP_ONCE, NULL);
     }
 }
@@ -799,7 +799,7 @@ struct swarmkv_reply *cluster_sanity_command(struct swarmkv *db, char *argv[], s
 		thread_reply=swarmkv_command_on(db, active_nodes[i].addr, "info threads");
 		for(int j=0; j<atoll(thread_reply->str); j++)
 		{
-			reply=swarmkv_command_on(db, active_nodes[i].addr, "crdt keys 0 *");
+			reply=swarmkv_command_on(db, active_nodes[i].addr, "crdt keys %d *", j);
         	build_crdt_replica_list(reply, ctx, active_nodes+i);
         	swarmkv_reply_free(reply);
         	reply=NULL;
