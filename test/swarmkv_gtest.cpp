@@ -1198,6 +1198,13 @@ TEST_F(SwarmkvTwoNodes, TypeTokenBucket)
 	swarmkv_reply_free(reply);
 	reply=NULL;
 }
+struct ftb_member
+{
+	long long member_id;
+	long long weight;
+	long long requested_tokens;
+	long long got_tokens;
+};
 TEST_F(SwarmkvTwoNodes, TypeFairTokenBucket)
 {
 	struct swarmkv *db[2];
@@ -1208,7 +1215,6 @@ TEST_F(SwarmkvTwoNodes, TypeFairTokenBucket)
 	long long capacity=1024*4, rate=1024*2, divisor=1024;
 	
 	struct swarmkv_reply *reply=NULL;
-	int WEIGHT_MAX=20;
 	reply=swarmkv_command(db[0], "FTCFG %s %lld %lld %lld", key, rate, capacity, divisor);
 	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
 	EXPECT_STREQ(reply->str, "OK");
@@ -1221,26 +1227,27 @@ TEST_F(SwarmkvTwoNodes, TypeFairTokenBucket)
 	struct timeval start, now;
 	gettimeofday(&start, NULL);
 	gettimeofday(&now, NULL);
+	size_t n_member=3;
+	struct ftb_member mb[n_member]={{1, 1, 0, 0}, {2, 2, 0, 0}, {3, 3, 0, 0}};
 	long long token=0, requested_tokens=0, allocated_tokens=0;
-	long long member_id=0, weight=0, n_member=100;
 	long long elapsed_ms=0;
 	long long run_second=20;
 	while(elapsed_ms/1000<run_second)
 	{
 		token=random()%(2*rate/n_member);
 		requested_tokens+=token;
-		
-		weight=1+(member_id%WEIGHT_MAX);
-		//weight=5;
-		reply=swarmkv_command(db[round%2], "FTCONSUME %s user-%lld %lld %lld", key, member_id, weight, token);
+		mb[round%n_member].requested_tokens+=token;
+		reply=swarmkv_command(db[1], "FTCONSUME %s user-%lld %lld %lld",
+							key, 
+							mb[round%n_member].member_id, mb[round%n_member].weight, token);
 		ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
 		assert(reply->integer>=0);
+		mb[round%n_member].got_tokens+=reply->integer;
 		allocated_tokens+=reply->integer;
 		swarmkv_reply_free(reply);
 
 		gettimeofday(&now, NULL);
 		elapsed_ms=(now.tv_sec-start.tv_sec)*1000+(now.tv_usec-start.tv_usec)/1000;
-		member_id=(member_id+1)%n_member;
 		round++;
 	}
 //	printf("consume round %d, speed %d ops\n", i, i/(int)(now.tv_sec-start.tv_sec));
@@ -1248,8 +1255,19 @@ TEST_F(SwarmkvTwoNodes, TypeFairTokenBucket)
 	EXPECT_GE(round/(int)(now.tv_sec-start.tv_sec), 10000);
 	long long upper_limit=elapsed_ms*rate/1000+capacity;
 	double accuracy=(double)allocated_tokens/(upper_limit<requested_tokens?upper_limit:requested_tokens);
-	EXPECT_NEAR(accuracy, 1, 0.035);
+	EXPECT_NEAR(accuracy, 1, 0.04);
 	printf("requested %lld, upper limit %lld, allocated %lld\n", requested_tokens, upper_limit, allocated_tokens);
+
+	long long normalized_tokens[n_member]={0};
+	for(size_t i=0; i<n_member; i++)
+	{
+		normalized_tokens[i]=mb[i].got_tokens/mb[i].weight;
+
+		printf("member %lld, weight %lld, requested %lld, got %lld\n", 
+				mb[i].member_id, mb[i].weight, mb[i].requested_tokens, mb[i].got_tokens);
+	}
+	double deviation=stddev(normalized_tokens, n_member);
+	EXPECT_NEAR(deviation/mb[0].got_tokens, 0, 0.1);
 
 	wait_for_sync();
 

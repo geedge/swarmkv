@@ -7,6 +7,7 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <math.h>
 
  __attribute__((__unused__)) static int exec_prog(const char **argv)
 {
@@ -293,3 +294,28 @@ int reply_compare(const struct swarmkv_reply *r1, const struct swarmkv_reply *r2
 }
 
 
+double stddev(long long arr[], size_t size)
+{
+    if (size <= 1) {
+        return 0.0;
+    }
+
+    double sum = 0.0;
+    double sumOfSquares = 0.0;
+    size_t i=0;
+
+    // Calculate sum of the array elements
+    for (i = 0; i < size; i++) {
+        sum += arr[i];
+    }
+
+    double mean = sum / size;
+
+    // Calculate sum of squares of differences from mean
+    for (i = 0; i < size; i++) {
+        sumOfSquares += pow(arr[i] - mean, 2);
+    }
+
+    // Calculate standard deviation
+    return sqrt(sumOfSquares / (size - 1));
+}

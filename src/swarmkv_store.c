@@ -160,7 +160,7 @@ struct scontainer
 {
 	struct sobj obj;
 	struct timeval op_timestamp;
-	char is_pending;	//waiting for reply 0f CRDT PULL.
+	char is_pending;	//waiting for reply 0f CRDT GET.
 	char is_in_table;
 	char is_in_sync_q;
 	int tid;
@@ -747,7 +747,7 @@ enum cmd_exec_result crdt_add_command(struct swarmkv_module *mod_store, const st
 	if(!ctr)
 	{
 		ctr=scontainer_new(OBJ_TYPE_UNDEFINED, key, tid);
-		if(n_replica_node>0)//need crdt pull from replicas
+		if(n_replica_node>0)//need crdt get from replicas
 		{
 			ctr->is_pending=1;
 		}

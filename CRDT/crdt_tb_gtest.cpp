@@ -313,6 +313,41 @@ TEST(OCTokenBucket, Merge)
 		OC_token_bucket_free(buckets[i]);
 	}
 }
+TEST(OCTokenBucket, Replicate)
+{
+	struct OC_token_bucket *buckets[2];
+	uuid_t uuid;
+	long long CIR=100;
+	long long CBS=200;
+	long long tokens=0;
+	struct timeval now;
+	gettimeofday(&now, NULL);
+	uuid_generate(uuid);
+	buckets[0]=OC_token_bucket_new(uuid, now, CIR, CBS);
+	tokens=OC_token_bucket_consume(buckets[0], now, TB_CONSUME_NORMAL, 130);
+	EXPECT_EQ(tokens, 130);
+
+	char *blob=NULL;
+	size_t blob_sz;
+	OC_token_bucket_serialize(buckets[0], &blob, &blob_sz);
+	
+	uuid_generate(uuid);
+	buckets[1]=OC_token_bucket_replicate(uuid, blob, blob_sz);
+	free(blob);
+	blob=NULL;
+	tokens=OC_token_bucket_consume(buckets[1], now, TB_CONSUME_NORMAL, 30);
+	OC_token_bucket_sync(buckets, 2);
+
+	struct OC_token_bucket_info info;
+	OC_token_bucket_info(buckets[1], now, &info);
+	EXPECT_EQ(info.consumed, 160);
+	EXPECT_EQ(info.number_of_replica, 2);
+	
+	for(int i=0; i<2; i++)
+	{
+		OC_token_bucket_free(buckets[i]);
+	}
+}
 double OC_token_bucket_test(size_t replica_num, long long mimic_duration_s, long long sync_interval_ms, int saturation_percent)
 {
 	struct OC_token_bucket *buckets[replica_num];
@@ -792,11 +827,10 @@ double test_fair_token_bucket(struct sftb_class *classes, size_t n_class, long l
 	{
 		timeradd(&now, &step, &now);
 		int k=random()%n_class;
-		int r=random()%n_replica;
+		int r=k%n_replica;//for class-replica coherence
 		for(size_t j=0; j<n_class; j++)
 		{
 			int idx=(j+k)%n_class;
-			//r=idx%n_replica;
 			long long this_demand=classes[idx].requested_CIR*step_us/(1000*1000);
 			got=fair_token_bucket_consume(ftb[r], now, 
 								(const char*) &(classes[idx].class_id),
@@ -883,6 +917,132 @@ TEST(FairTokenBucket, Basic)
 	EXPECT_NEAR(index, 1, expected_fairness_index);
 	
 }
+TEST(FairTokenBucket, Merge)
+{
+	uuid_t uuid;
+	
+	long long CIR=10*1024*1024, CBS=CIR;
+	
+	struct timeval start, step, now;
+	int step_us=1000;
+	gettimeofday(&start, NULL);
+	memcpy(&now, &start, sizeof(now));
+	step.tv_sec=0;
+	step.tv_usec=(suseconds_t)step_us;
+	int n_replica=2;
+	struct fair_token_bucket *ftb[n_replica];
+	for(int i=0; i<n_replica; i++)
+	{
+		uuid_generate(uuid);
+		ftb[i]=fair_token_bucket_new(uuid, now, CIR, CBS, 8192);
+	}
+
+	long long got=0;
+	int sync_interval_ms=50, duration_s=20;
+	for(int i=0; i<duration_s*(1000*1000/step_us); i++)
+	{
+		timeradd(&now, &step, &now);
+		for(int j=0; j<n_replica; j++)
+		{
+			timeradd(&now, &step, &now);
+			got+=fair_token_bucket_consume(ftb[1], now, 
+								(const char*) &(j),
+								sizeof(j),
+								i+1,
+								TB_CONSUME_NORMAL,
+								100);
+		}
+	}
+
+	ftb_sync(ftb, n_replica);
+	struct fair_token_bucket_info info[n_replica];
+	memset(info, 0, sizeof(info));
+	fair_token_bucket_info(ftb[0], now, &info[0]);
+	fair_token_bucket_info(ftb[1], now, &info[1]);
+	EXPECT_EQ(info[0].active_key_number, info[1].active_key_number);
+
+	for(int i=0; i<n_replica; i++)
+	{
+		fair_token_bucket_free(ftb[i]);
+	}
+}
+TEST(FairTokenBucket, Replicate)
+{
+	uuid_t uuid;
+	int n_replica=2;
+	long long CIR=10*1024*1024, CBS=CIR;
+	int duration_s=100;
+	size_t n_class=2;
+	struct sftb_class classes[n_class]={{1, 1, CIR*3/2, 0, 0, 0},
+									{2, 2, CIR*3/2, 0, 0, 0}};
+
+	struct timeval start, step, now;
+	int step_us=1000;
+	gettimeofday(&start, NULL);
+	memcpy(&now, &start, sizeof(now));
+	step.tv_sec=0;
+	step.tv_usec=(suseconds_t)step_us;
+
+	struct fair_token_bucket *ftb[n_replica];
+	uuid_generate(uuid);
+	ftb[0]=fair_token_bucket_new(uuid, now, CIR, CBS, 8192);
+	long long got=0;
+	got=fair_token_bucket_consume(ftb[0], now, 
+						(const char*) &(classes[0].class_id),
+						sizeof(classes[0].class_id),
+						classes[0].weight,
+						TB_CONSUME_NORMAL,
+						1);
+	classes[0].allocated_tokens+=got;
+	classes[0].demand_tokens+=1;
+
+
+	char *blob=NULL;
+	size_t blob_sz=0;
+	fair_token_bucket_serialize(ftb[0], &blob, &blob_sz);
+
+	uuid_generate(uuid);
+	ftb[1]=fair_token_bucket_replicate(uuid, blob, blob_sz);
+	free(blob);
+	blob=NULL;
+
+	int sync_interval_ms=50;
+	
+
+	for(int i=0; i<duration_s*(1000*1000/step_us); i++)
+	{
+		timeradd(&now, &step, &now);
+		int k=random()%n_class;
+		//int r=random()%n_replica;
+		for(size_t j=0; j<n_class; j++)
+		{
+			int idx=(j+k)%n_class;
+			long long this_demand=classes[idx].requested_CIR*step_us/(1000*1000);
+			got=fair_token_bucket_consume(ftb[1], now, 
+								(const char*) &(classes[idx].class_id),
+								sizeof(classes[idx].class_id),
+								classes[idx].weight,
+								TB_CONSUME_NORMAL,
+								this_demand);
+			classes[idx].allocated_tokens+=got;
+			classes[idx].demand_tokens+=this_demand;
+			
+		}
+		if(0==i%(sync_interval_ms*1000/step_us))
+		{
+			//ftb_sync(ftb, n_replica);
+		}
+	}
+	long long available_tokens=CIR*duration_s+CBS;
+	double index=max_min_fairness_index(available_tokens, classes, n_class);
+	EXPECT_NEAR(index, 1, expected_fairness_index);
+
+	for(int i=0; i<n_replica; i++)
+	{
+		fair_token_bucket_free(ftb[i]);
+	}
+}
+
 TEST(FairTokenBucket, Debug)
 {
 	double index=0;

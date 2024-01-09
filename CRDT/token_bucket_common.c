@@ -30,10 +30,15 @@ long long tb_available(long long CIR, long long CBS, long long consumed, long lo
 	}
 	return MAX(*new_refilled-consumed, 0);
 }
-long long tb_consume_reserve_based(long long CIR, long long available, size_t n_replica, enum tb_consume_type cmd, long long tokens)
+long long tb_local_available(long long CIR, long long available, size_t n_replica)
 {
 	long long reserved=CIR*(n_replica-1)/n_replica;
 	long long local_available=MAX(available-reserved, 0);
+	return local_available;
+}
+long long tb_consume_reserve_based(long long CIR, long long available, size_t n_replica, enum tb_consume_type cmd, long long tokens)
+{
+	long long local_available=tb_local_available(CIR, available, n_replica);
 	long long allocated=0;
 	switch(cmd)
 	{

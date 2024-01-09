@@ -72,14 +72,15 @@ static void ftb_quantum_estimation(struct fair_token_bucket *ftb, struct timeval
     }
     struct OC_token_bucket_info info;
     OC_token_bucket_info(ftb->bucket, now, &info);
-    long long available=info.available;
+	long long local_available=tb_local_available(info.CIR, info.available, info.number_of_replica);
+
     if(info.CIR==0)//Infinite Tokens
     {
         ftb->per_weight_quantum=0;
     }
     else
     {
-        ftb->per_weight_quantum=available/MAX(1, total_weight);
+        ftb->per_weight_quantum=local_available/MAX(1, total_weight);
     }
     ftb->total_weight=total_weight; 
    
@@ -94,7 +95,7 @@ static void ftb_perturb(struct fair_token_bucket *ftb, struct timeval now)
 long long fair_token_bucket_consume(struct fair_token_bucket *ftb, struct timeval now, const char *key, size_t keylen, long long weight, enum tb_consume_type cmd, long long tokens)
 {
     ftb->debug_consume_call++;
-    if(weight>FAIR_TB_WEIGHT_MAX || weight<0)
+    if(weight>FAIR_TB_WEIGHT_MAX || weight<=0)
         return -1;
     ST_hyperloglog_add(ftb->hll[weight-1], key, keylen, now);
 

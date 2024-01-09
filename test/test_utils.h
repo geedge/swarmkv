@@ -49,7 +49,7 @@ void cmd_exec_generic_callback(const struct swarmkv_reply* reply, void * cb_arg)
 
 int reply_compare(const struct swarmkv_reply *r1, const struct swarmkv_reply *r2);
 void wait_for_sync();
-
+double stddev(long long arr[], size_t size);
 #ifdef __cplusplus
 } /* end extern "C" */
 #endif
