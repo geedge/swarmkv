@@ -6,11 +6,12 @@
 
 #include <assert.h>
 #include <string.h>
-#define OCTB_REFILL_INTERVAL_MS_DEFAULT	10
+#define OCTB_REFILL_INTERVAL_MS_DEFAULT	1
 struct OC_configuration
 {
-	long long CIR;	//Committed Information Rate
-	long long CBS;	//Committed Burst Size
+	long long capacity;
+	long long rate;	//generated tokens per period
+	long long period;	//Seconds
 	long long refill_interval_ms;
 	struct timeval last_cfg;
 };
@@ -26,32 +27,33 @@ struct OC_token_bucket
 	/* Local variables */
 	int no_reserve;
 };
-const size_t OCTB_BLOB_HDR_SIZE= offsetof(struct OC_token_bucket, consumed);
-struct OC_token_bucket *OC_token_bucket_new(uuid_t my_id, struct timeval now, long long CIR, long long CBS)
+const size_t OCTB_BLOB_HDR_SIZE = offsetof(struct OC_token_bucket, consumed);
+struct OC_token_bucket *OC_token_bucket_new(uuid_t my_id, struct timeval now, long long rate, long long period, long long capacity)
 {
-	struct OC_token_bucket *bucket=ALLOC(struct OC_token_bucket, 1);
+	struct OC_token_bucket *bucket = ALLOC(struct OC_token_bucket, 1);
 	bucket->consumed=PN_counter_new(my_id);
 	//memcpy(&bucket->cfg.last_cfg, &now, sizeof(bucket->cfg.last_cfg));
-	bucket->cfg.CIR=CIR;
-	bucket->cfg.CBS=CBS;
-	bucket->cfg.refill_interval_ms=OCTB_REFILL_INTERVAL_MS_DEFAULT;
-	bucket->refill_time_ms=timeval_to_ms(now);
-	bucket->no_reserve=0;
-	bucket->refilled=bucket->cfg.CBS;
+	bucket->cfg.capacity = capacity;
+	bucket->cfg.rate = rate;
+	bucket->cfg.period = period;
+	bucket->cfg.refill_interval_ms = OCTB_REFILL_INTERVAL_MS_DEFAULT;
+	bucket->refill_time_ms = timeval_to_ms(now);
+	bucket->no_reserve = 0;
+	bucket->refilled = bucket->cfg.capacity;
 	return bucket;
 }
-
 
 void OC_token_bucket_free(struct OC_token_bucket *bucket)
 {
 	PN_counter_free(bucket->consumed);
 	free(bucket);
 }
-void OC_token_bucket_configure(struct OC_token_bucket *bucket, struct timeval now, long long CIR, long long CBS)
+void OC_token_bucket_configure(struct OC_token_bucket *bucket, struct timeval now, long long rate, long long period, long long capacity)
 {
-	memcpy(&bucket->cfg.last_cfg, &now, sizeof(bucket->cfg.last_cfg));
-	if(CIR>=0) bucket->cfg.CIR=CIR;
-	if(CBS>=0) bucket->cfg.CBS=CBS;
+	bucket->cfg.last_cfg = now;
+	if(rate >= 0) bucket->cfg.rate = rate;
+	if(capacity >= 0) bucket->cfg.capacity = capacity;
+	if(period >= 0) bucket->cfg.period = period;
 }
 void OC_token_bucket_set_no_reserve(struct OC_token_bucket *bucket)
 {
@@ -67,11 +69,11 @@ long long OC_token_bucket_consume(struct OC_token_bucket *bucket, struct timeval
 	assert(consumed>=0);
 	
 	long long new_refilled=0;
-	long long available=tb_available(bucket->cfg.CIR, bucket->cfg.CBS, consumed, 
+	long long available=tb_available(bucket->cfg.rate, bucket->cfg.period, bucket->cfg.capacity, consumed, 
 				refilled, delta_time_ms, bucket->cfg.refill_interval_ms, &new_refilled);
 	
 	int infinite_flag=0;
-    if(bucket->cfg.CBS==0 && bucket->cfg.CIR==0)
+    if(bucket->cfg.period==0)
     {
 		infinite_flag=1;
 		new_refilled += tokens;
@@ -92,7 +94,7 @@ long long OC_token_bucket_consume(struct OC_token_bucket *bucket, struct timeval
 	else
 	{
 		if(bucket->no_reserve) n_replica=1;
-		allocated=tb_consume_reserve_based(bucket->cfg.CIR, available, n_replica, cmd, tokens);
+		allocated=tb_consume_reserve_based(bucket->cfg.rate, bucket->cfg.period, available, bucket->cfg.capacity, n_replica, cmd, tokens);
 	}
 	if(allocated>0)
 	{
@@ -107,11 +109,12 @@ void OC_token_bucket_info(struct OC_token_bucket *bucket, struct timeval now, st
 {
 	long long delta_time_ms=timeval_to_ms(now)-bucket->refill_time_ms;
 
-	info->CIR=bucket->cfg.CIR;
-	info->CBS=bucket->cfg.CBS;
+	info->rate=bucket->cfg.rate;
+	info->period=bucket->cfg.period;
+	info->capacity=bucket->cfg.capacity;
 	info->refill_interval_ms=bucket->cfg.refill_interval_ms;
 	info->consumed=PN_counter_get(bucket->consumed);
-	info->available=tb_available(bucket->cfg.CIR, bucket->cfg.CBS, info->consumed, 
+	info->available=tb_available(bucket->cfg.rate, bucket->cfg.period, bucket->cfg.capacity, info->consumed, 
 				 bucket->refilled, delta_time_ms, bucket->cfg.refill_interval_ms, &info->refilled);
 	info->number_of_replica=PN_counter_replica_num(bucket->consumed);
 	return;

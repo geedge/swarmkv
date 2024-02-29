@@ -3,14 +3,14 @@
 
 #include <assert.h>
 
-long long tb_available(long long CIR, long long CBS, long long consumed, long long refilled, long long delta_ms, long long refill_interval_ms, long long *new_refilled)
+long long tb_available(long long rate, long long period, long long capacity, long long consumed, long long refilled, long long delta_ms, long long refill_interval_ms, long long *new_refilled)
 {
 
-	long long to_add = CIR*delta_ms/1000;
+	long long to_add = period?(rate*delta_ms/period/1000):0;
 	*new_refilled = refilled;
 	if(refilled==0 && consumed==0)
 	{
-		*new_refilled=CBS;
+		*new_refilled=capacity;
 		return *new_refilled;
 	}
 	if(delta_ms > refill_interval_ms && to_add>0)
@@ -19,26 +19,27 @@ long long tb_available(long long CIR, long long CBS, long long consumed, long lo
 		{
 			*new_refilled = consumed;
 		}
-		if(to_add + refilled - consumed < CBS)
+		if(to_add + refilled - consumed < capacity)
 		{
 			*new_refilled += to_add;
 		}
 		else
 		{
-			*new_refilled += CBS - (refilled - consumed);
+			*new_refilled += capacity - (refilled - consumed);
 		}
 	}
 	return MAX(*new_refilled-consumed, 0);
 }
-long long tb_local_available(long long CIR, long long available, size_t n_replica)
+long long tb_local_available(long long rate, long long period, long long available, long long capacity, size_t n_replica)
 {
-	long long reserved=CIR*(n_replica-1)/n_replica;
+	long long reserved=period?(rate*(n_replica-1)/n_replica/period):0;
+	reserved=MIN(reserved, capacity*(n_replica-1)/n_replica);
 	long long local_available=MAX(available-reserved, 0);
 	return local_available;
 }
-long long tb_consume_reserve_based(long long CIR, long long available, size_t n_replica, enum tb_consume_type cmd, long long tokens)
+long long tb_consume_reserve_based(long long rate, long long period, long long available, long long capacity, size_t n_replica, enum tb_consume_type cmd, long long tokens)
 {
-	long long local_available=tb_local_available(CIR, available, n_replica);
+	long long local_available=tb_local_available(rate, period, available, capacity, n_replica);
 	long long allocated=0;
 	switch(cmd)
 	{

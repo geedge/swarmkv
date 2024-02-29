@@ -12,6 +12,9 @@ extern "C"
 
 #define ALLOC(type, number) ((type *)calloc(sizeof(type), number))
 
+#define timeval_delta_ms(start, end) (((end).tv_sec-(start).tv_sec)*1000 + ((end).tv_usec-(start).tv_usec)/1000)
+#define timeval_delta_us(start, end) (((end).tv_sec-(start).tv_sec)*1000*1000 + ((end).tv_usec-(start).tv_usec))
+
 int swarmkv_cli_create_cluster(const char* cluster_name, const char *node_string);
 int swarmkv_cli_add_slot_owner(const char *cluster_name, const char *node_string);
 

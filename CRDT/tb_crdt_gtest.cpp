@@ -106,7 +106,7 @@ void traffic_distribution(traffic_type type)
 	for (i = 0; i < REPLICA_NUMBER; i++) 
 	{
 		uuid_generate(uuid);
-		buckets[i] = OC_token_bucket_new(uuid, start, CIR, CBS);
+		buckets[i] = OC_token_bucket_new(uuid, start, CIR, 1, CBS);
 	}
 	long long tokens = 0, flexible_tokens = 0;
 	long long consumed = 0, requested = 0, upper_limit = 0;
@@ -162,7 +162,7 @@ TEST(OCTokenBucket, Basic)
 	struct timeval now;
 	gettimeofday(&now, NULL);
 
-	bucket=OC_token_bucket_new(uuid, now, CIR, CBS);
+	bucket=OC_token_bucket_new(uuid, now, CIR, 1, CBS);
 	long long tokens=0;
 
 	tokens=OC_token_bucket_consume(bucket, now, TB_CONSUME_NORMAL, 140);
@@ -187,6 +187,32 @@ TEST(OCTokenBucket, Basic)
 	EXPECT_EQ(tokens, 10);
 	OC_token_bucket_free(bucket);
 }
+TEST(OCTokenBucket, Period)
+{
+	uuid_t uuid;
+	uuid_generate(uuid);
+
+	struct OC_token_bucket *bucket=NULL;
+	long long rate=100;
+	long long capacity=40;
+	long long period=300;
+	struct timeval now;
+	gettimeofday(&now, NULL);
+
+	bucket=OC_token_bucket_new(uuid, now, rate, period, capacity);
+	long long tokens=0;
+
+	tokens=OC_token_bucket_consume(bucket, now, TB_CONSUME_NORMAL, capacity);
+	EXPECT_EQ(tokens, capacity);
+
+	now.tv_sec+=period/10;
+	tokens=OC_token_bucket_consume(bucket, now, TB_CONSUME_NORMAL, 1+rate/10);
+	EXPECT_EQ(tokens, 0);
+
+	tokens=OC_token_bucket_consume(bucket, now, TB_CONSUME_NORMAL, rate/10);
+	EXPECT_EQ(tokens, rate/10);
+	OC_token_bucket_free(bucket);
+}
 TEST(OCTokenBucket, Serialize)
 {
 	uuid_t uuid;
@@ -199,7 +225,7 @@ TEST(OCTokenBucket, Serialize)
 	for(int i=0; i<n_replica; i++)
 	{
 		uuid_generate(uuid);
-		b[i]=OC_token_bucket_new(uuid, now, CIR, CBS);
+		b[i]=OC_token_bucket_new(uuid, now, CIR, 1, CBS);
 		OC_token_bucket_consume(b[i], now, TB_CONSUME_NORMAL, 10);
 	}
 	OC_token_bucket_sync(b, n_replica);
@@ -227,10 +253,10 @@ TEST(OCTokenBucket, Boundary)
 	struct timeval now;
 	gettimeofday(&now, NULL);
 	struct OC_token_bucket *bucket=NULL;
-	long long tokens=0, consumed=0;
+	long long tokens=0;
 
 	//Zero CIR
-	bucket=OC_token_bucket_new(uuid, now, 0, 1000);
+	bucket=OC_token_bucket_new(uuid, now, 0, 1, 1000);
 	tokens=OC_token_bucket_consume(bucket, now, TB_CONSUME_NORMAL, 1000);
 	EXPECT_EQ(tokens, 1000);
 
@@ -240,13 +266,15 @@ TEST(OCTokenBucket, Boundary)
 	OC_token_bucket_free(bucket);
 
 	//Zero CBS
-	bucket=OC_token_bucket_new(uuid, now, 1000, 0);
+	bucket=OC_token_bucket_new(uuid, now, 1000, 1, 0);
 	tokens=OC_token_bucket_consume(bucket, now, TB_CONSUME_NORMAL, 1);
 	EXPECT_EQ(tokens, 0);
 	OC_token_bucket_free(bucket);
 
 	//Infinite Tokens
-	bucket=OC_token_bucket_new(uuid, now, 0, 0);
+	long long consumed=0;
+	long long capacity=1;
+	bucket=OC_token_bucket_new(uuid, now, 1, 0, capacity);
 	tokens=OC_token_bucket_consume(bucket, now, TB_CONSUME_NORMAL, 140);
 	consumed+=tokens;
 	EXPECT_EQ(tokens, 140);
@@ -260,10 +288,11 @@ TEST(OCTokenBucket, Boundary)
 	
 	OC_token_bucket_info(bucket, now, &info);
 	EXPECT_EQ(info.consumed, consumed);
-	EXPECT_EQ(info.refilled, consumed);
+	EXPECT_EQ(info.refilled, consumed+capacity);
+	EXPECT_LE(info.refilled-info.consumed, info.capacity);
 	
 	now.tv_sec++;
-	OC_token_bucket_configure(bucket, now, 100, 500);
+	OC_token_bucket_configure(bucket, now, 100, 1, 500);
 	
 	now.tv_sec+=500/100;
 	tokens=OC_token_bucket_consume(bucket, now, TB_CONSUME_NORMAL, 500);
@@ -272,8 +301,7 @@ TEST(OCTokenBucket, Boundary)
 
 	OC_token_bucket_info(bucket, now, &info);
 	EXPECT_EQ(info.consumed, consumed);
-	EXPECT_EQ(info.refilled, consumed);
-
+	EXPECT_LE(info.refilled-info.consumed, info.capacity);
 	OC_token_bucket_free(bucket);
 }
 TEST(OCTokenBucket, Merge)
@@ -289,7 +317,7 @@ TEST(OCTokenBucket, Merge)
 	for(i=0; i<2; i++)
 	{
 		uuid_generate(uuid);
-		buckets[i]=OC_token_bucket_new(uuid, now, CIR, CBS);
+		buckets[i]=OC_token_bucket_new(uuid, now, CIR, 1, CBS);
 	}
 	long long tokens=0;
 	OC_token_bucket_sync(buckets, 2);
@@ -323,7 +351,7 @@ TEST(OCTokenBucket, Replicate)
 	struct timeval now;
 	gettimeofday(&now, NULL);
 	uuid_generate(uuid);
-	buckets[0]=OC_token_bucket_new(uuid, now, CIR, CBS);
+	buckets[0]=OC_token_bucket_new(uuid, now, CIR, 1, CBS);
 	tokens=OC_token_bucket_consume(buckets[0], now, TB_CONSUME_NORMAL, 130);
 	EXPECT_EQ(tokens, 130);
 
@@ -348,19 +376,23 @@ TEST(OCTokenBucket, Replicate)
 		OC_token_bucket_free(buckets[i]);
 	}
 }
-double OC_token_bucket_test(size_t replica_num, long long mimic_duration_s, long long sync_interval_ms, int saturation_percent)
+double test_oc_token_bucket(size_t replica_num, long long mimic_duration_s, long long sync_interval_ms, int saturation_percent)
 {
 	struct OC_token_bucket *buckets[replica_num];
 	size_t i=0, j=0;
-	long long CIR=512*1024;
-	long long CBS=2*1024*1024;
+	long long period=8;
+	long long rate=512*1024*period;
+	long long capacity=2*1024*1024;
+
+	long long CIR=rate/period;
+
 	uuid_t uuid;
 	struct timeval start;
 	gettimeofday(&start, NULL);
 	for(i=0; i<replica_num; i++)
 	{
 		uuid_generate(uuid);
-		buckets[i]=OC_token_bucket_new(uuid, start, CIR, CBS);
+		buckets[i]=OC_token_bucket_new(uuid, start, rate, period, capacity);
 	}
 	srandom(17);
 	long long tokens=0;
@@ -387,7 +419,7 @@ double OC_token_bucket_test(size_t replica_num, long long mimic_duration_s, long
 		{
 			OC_token_bucket_sync(buckets, replica_num);
 		}
-		upper_limit=CBS+CIR*(timeval_to_ms(now)-timeval_to_ms(start))/1000;
+		upper_limit=capacity+CIR*(timeval_to_ms(now)-timeval_to_ms(start))/1000;
 	}
 	
 
@@ -395,7 +427,7 @@ double OC_token_bucket_test(size_t replica_num, long long mimic_duration_s, long
 	OC_token_bucket_info(buckets[0], now, &info);
 	refilled=info.refilled;
 	
-	upper_limit=CBS+CIR*timeval_delta_ms(start, now)/1000;
+	upper_limit=capacity+CIR*timeval_delta_ms(start, now)/1000;
 	
 	printf("duration_s=%lld, replica_num=%zu, upper_limit=%lld, requested=%lld, allocated=%lld, wasted=%lld\n", 
 	mimic_duration_s, replica_num, upper_limit, requested, allocated, (requested>upper_limit?upper_limit-allocated:0));
@@ -419,7 +451,7 @@ TEST(OCTokenBucket, ShortPeriodHeavyConsumer)
 	for(int i=0; i<20; i++)
 	{
 		test_duration_s=10*(i+1);
-		accuracy=OC_token_bucket_test(replica_num, test_duration_s, sync_interval_ms, 200);
+		accuracy=test_oc_token_bucket(replica_num, test_duration_s, sync_interval_ms, 200);
 		EXPECT_NEAR(accuracy, 1, 0.05);
 	}
 }
@@ -435,7 +467,7 @@ TEST(OCTokenBucket, HeavyConsumer)
 		for(j=0; j<10; j++)
 		{
 			sync_interval_ms=100*(j+1);
-			accuracy=OC_token_bucket_test(replica_num, test_duration_s, sync_interval_ms, 200);
+			accuracy=test_oc_token_bucket(replica_num, test_duration_s, sync_interval_ms, 200);
 			printf("replica_num=%lld, sync_interval_ms=%lld, accuracy=%.4f\n", replica_num, sync_interval_ms, accuracy);
 			EXPECT_NEAR(accuracy, 1, 0.05);
 		}
@@ -454,7 +486,7 @@ TEST(OCTokenBucket, LightConsumer)
 		for(j=0; j<20; j++)
 		{
 			sync_interval_ms=10*(j+1);
-			accuracy=OC_token_bucket_test(replica_num, test_duration_s, sync_interval_ms, 90);
+			accuracy=test_oc_token_bucket(replica_num, test_duration_s, sync_interval_ms, 90);
 			EXPECT_NEAR(accuracy, 1, 0.03);
 		}
 	}
@@ -472,7 +504,7 @@ TEST(OCTokenBucket, ConcurrentHeavyConsumer)
 	for(i=0; i<REPLICA_NUMBER; i++)
 	{
 		uuid_generate(uuid);
-		buckets[i]=OC_token_bucket_new(uuid, start, CIR, CBS);
+		buckets[i]=OC_token_bucket_new(uuid, start, CIR, 1, CBS);
 	}
 	srandom(17);
 	long long tokens=0;
@@ -526,7 +558,7 @@ TEST(OCTokenBucket, MixTypeConsumer)
 	for(i=0; i<n_replica; i++)
 	{
 		uuid_generate(uuid);
-		buckets[i]=OC_token_bucket_new(uuid, start, CIR, CBS);
+		buckets[i]=OC_token_bucket_new(uuid, start, CIR, 1, CBS);
 	}
 	srandom(17);
 	long long tokens=0;
@@ -581,7 +613,7 @@ TEST(OCTokenBucket, Reconfigure)
 	for(i=0; i<REPLICA_NUMBER; i++)
 	{
 		uuid_generate(uuid);
-		buckets[i]=OC_token_bucket_new(uuid, start, CIR, CBS);
+		buckets[i]=OC_token_bucket_new(uuid, start, CIR, 1, CBS);
 	}
 	srandom(17);
 	long long tokens=0;
@@ -622,7 +654,7 @@ TEST(OCTokenBucket, Reconfigure)
 	CBS*=5;
 	requested=0;
 	consumed=0;
-	OC_token_bucket_configure(buckets[0], start, CIR, CBS);
+	OC_token_bucket_configure(buckets[0], start, CIR, 1, CBS);
 	for(i=0; (long long)i<mimic_duration_us/step_us; i++)
 	{
 		timeradd(&now, &step, &now);		
@@ -667,7 +699,7 @@ TEST(OCTokenBucket, PartitionTolerance)
 	for(i=0; i<REPLICA_NUMBER; i++)
 	{
 		uuid_generate(uuid);
-		buckets[i]=OC_token_bucket_new(uuid, start, CIR, CBS);
+		buckets[i]=OC_token_bucket_new(uuid, start, CIR, 1, CBS);
 	}
 	srandom(17);
 	long long tokens=0;
@@ -713,27 +745,28 @@ TEST(OCTokenBucket, PartitionTolerance)
 	{
 		OC_token_bucket_free(buckets[i]);
 	}
-
 }
-struct sftb_class
+
+struct ftb_class
 {
 	long long class_id;
 	long long weight;
-	long long requested_CIR;
-	long long demand_tokens;
+	long long rate;
+	double next_demand;
+	long long demanded_tokens;
 	long long allocated_tokens;
 	long long ideal_tokens;
 };
 
-int cmp_sftb_class(const void *a, const void *b)
+int cmp_ftb_member(const void *a, const void *b)
 {
-	struct sftb_class *ra=(struct sftb_class*)a;
-	struct sftb_class *rb=(struct sftb_class*)b;
-	return (int)(ra->demand_tokens-rb->demand_tokens);
+	struct ftb_class *ra=(struct ftb_class*)a;
+	struct ftb_class *rb=(struct ftb_class*)b;
+	return (int)(ra->demanded_tokens-rb->demanded_tokens);
 }
-double max_min_fairness_index(long long available_tokens, struct sftb_class * classes, size_t n_class)
+double max_min_fairness_index(long long available_tokens, struct ftb_class * classes, size_t n_class)
 {
-	qsort(classes, n_class, sizeof(struct sftb_class), cmp_sftb_class);
+	qsort(classes, n_class, sizeof(struct ftb_class), cmp_ftb_member);
 	long long total_weight=0;
 	for(size_t i=0; i<n_class; i++)
 	{
@@ -748,20 +781,20 @@ double max_min_fairness_index(long long available_tokens, struct sftb_class * cl
 		long long share=left_tokens/left_weight;
 		for(size_t i=0; i<n_class; i++)
 		{
-			long long my_share=classes[i].weight*share;
-			if(classes[i].demand_tokens == classes[i].ideal_tokens)
+			long long my_share = classes[i].weight*share;
+			if(classes[i].demanded_tokens == classes[i].ideal_tokens)
 			{
 				continue;
 			}
-			else if(classes[i].demand_tokens - classes[i].ideal_tokens <= my_share)
+			else if(classes[i].demanded_tokens - classes[i].ideal_tokens <= my_share)
 			{
-				left_tokens -= (classes[i].demand_tokens - classes[i].ideal_tokens);
-				classes[i].ideal_tokens=classes[i].demand_tokens;
+				left_tokens -= (classes[i].demanded_tokens - classes[i].ideal_tokens);
+				classes[i].ideal_tokens=classes[i].demanded_tokens;
 			}
 			else
 			{
 				left_tokens -= my_share;
-				classes[i].ideal_tokens+=my_share;
+				classes[i].ideal_tokens += my_share;
 				
 			}
 		}
@@ -769,7 +802,7 @@ double max_min_fairness_index(long long available_tokens, struct sftb_class * cl
 		n_satisfied=0;
 		for(size_t i=0; i<n_class; i++)
 		{
-			if(classes[i].demand_tokens == classes[i].ideal_tokens)
+			if(classes[i].demanded_tokens == classes[i].ideal_tokens)
 			{
 				n_satisfied++;
 				continue;
@@ -793,64 +826,110 @@ void ftb_sync(struct fair_token_bucket **ftb, size_t n_ftb)
 	size_t blob_sz=0;
 	for(size_t i=0; i<n_ftb; i++)
 	{
+		fair_token_bucket_serialize(ftb[i], &blob, &blob_sz);
 		for(size_t j=0; j<n_ftb; j++)
 		{
 			if(i==j) continue;
-			fair_token_bucket_serialize(ftb[j], &blob, &blob_sz);
-			fair_token_bucket_merge_blob(ftb[i], blob, blob_sz);
-			free(blob);
-			blob=NULL;
+			fair_token_bucket_merge_blob(ftb[j], blob, blob_sz);
 		}
+		free(blob);
+		blob=NULL;
 	}
 	return;
 }
+struct ftb_case
+{
+	long long rate;
+	long long period;
+	long long capacity;
+	long long perturb_interval_ms;
+	long long divisor;
+	long long sync_interval_ms;
+	int print;
+	int duration_s;
+	int n_replica;
+	int randomization;
+};
+
+void ftb_case_init(struct ftb_case *mycase)
+{
+	memset(mycase, 0, sizeof(struct ftb_case));
+	mycase->n_replica=1;
+	mycase->divisor=8192;
+	mycase->perturb_interval_ms=10;
+	mycase->period=1;
+	mycase->print=1;
+	mycase->sync_interval_ms=100;
+}
 double expected_fairness_index=0.04;
-double test_fair_token_bucket(struct sftb_class *classes, size_t n_class, long long CIR, long long CBS, int duration_s, int n_replica)
+double test_fair_token_bucket(struct ftb_class *classes, size_t n_class, struct ftb_case *mycase)
 {
 	uuid_t uuid;
-	
+	srand(171);
+	for(size_t i=0; i<n_class; i++)
+	{
+		classes[i].demanded_tokens=0;
+		classes[i].allocated_tokens=0;
+		classes[i].ideal_tokens=0;
+		classes[i].next_demand=0;
+	}
 	struct timeval start, step, now;
-	int step_us=1000;
+	int step_us=100;
 	gettimeofday(&start, NULL);
 	memcpy(&now, &start, sizeof(now));
 	step.tv_sec=0;
 	step.tv_usec=(suseconds_t)step_us;
+	int n_replica=mycase->n_replica;
 	struct fair_token_bucket *ftb[n_replica];
 	for(int i=0; i<n_replica; i++)
 	{
 		uuid_generate(uuid);
-		ftb[i]=fair_token_bucket_new(uuid, now, CIR, CBS, 8192);
+		ftb[i]=fair_token_bucket_new(uuid, now, mycase->rate, mycase->period, mycase->capacity, mycase->divisor);
+		fair_token_bucket_set_pertub_interval(ftb[i], mycase->perturb_interval_ms);
 	}
-	int sync_interval_ms=50;
+	int sync_interval_ms=mycase->sync_interval_ms;
 	long long got=0;
-	for(int i=0; i<duration_s*(1000*1000/step_us); i++)
+	int r=0;
+	struct timeval last_sync=now;
+	for(int i=0; i<mycase->duration_s*(1000*1000/step_us); i++)
 	{
 		timeradd(&now, &step, &now);
 		int k=random()%n_class;
-		int r=k%n_replica;//for class-replica coherence
 		for(size_t j=0; j<n_class; j++)
 		{
 			int idx=(j+k)%n_class;
-			long long this_demand=classes[idx].requested_CIR*step_us/(1000*1000);
+			if(mycase->randomization && idx==(int)(now.tv_sec%n_class))
+			{
+				continue;
+			}
+			r=idx%n_replica;// each class sticks to one replica.
+			classes[idx].next_demand += (double)classes[idx].rate*step_us/(1000*1000);
+			if(classes[idx].next_demand < 1)
+			{
+				continue;
+			}
+			long long this_demand = (long long)floor(classes[idx].next_demand);
+			classes[idx].next_demand -= this_demand;
+			assert(classes[idx].next_demand >= 0);
 			got=fair_token_bucket_consume(ftb[r], now, 
 								(const char*) &(classes[idx].class_id),
 								sizeof(classes[idx].class_id),
 								classes[idx].weight,
 								TB_CONSUME_NORMAL,
 								this_demand);
-			classes[idx].allocated_tokens+=got;
-			classes[idx].demand_tokens+=this_demand;
-			
+			classes[idx].allocated_tokens += got;
+			classes[idx].demanded_tokens += this_demand;
 		}
-		if(0==i%(sync_interval_ms*1000/step_us))
+		if(timeval_delta_ms(last_sync, now) > mycase->sync_interval_ms)
 		{
 			ftb_sync(ftb, n_replica);
+			last_sync=now;
+			//r=i%n_replica;
 		}
 	}
-	long long available_tokens=CIR*duration_s+CBS;
+	long long available_tokens = mycase->rate*mycase->duration_s/mycase->period + mycase->capacity;
 	double index=max_min_fairness_index(available_tokens, classes, n_class);
-	int print=1;
-	if(print)
+	if(mycase->print || index < 0.9)
 	{
 		printf("class\tweight\tdemand\tallocated\tideal\r\n");
 		for(size_t i=0; i<n_class; i++)
@@ -863,11 +942,11 @@ double test_fair_token_bucket(struct sftb_class *classes, size_t n_class, long l
 				//continue;
 			printf("%lld\t%lld\t%lld\t%lld\t%lld\r\n", classes[i].class_id,
 										classes[i].weight,
-										classes[i].demand_tokens/duration_s,
-										classes[i].allocated_tokens/duration_s,
-										classes[i].ideal_tokens/duration_s);
+										classes[i].demanded_tokens/mycase->duration_s,
+										classes[i].allocated_tokens/mycase->duration_s,
+										classes[i].ideal_tokens/mycase->duration_s);
 		}
-		printf("Replica %d,  sync interval %d ms, fairness index %f\r\n", n_replica, sync_interval_ms, index);
+		printf("Replica %d, Perturb %lld ms, sync interval %d ms, fairness index %f\r\n", n_replica, mycase->perturb_interval_ms, sync_interval_ms, index);
 	}
 	for(int i=0; i<n_replica; i++)
 	{
@@ -875,47 +954,71 @@ double test_fair_token_bucket(struct sftb_class *classes, size_t n_class, long l
 	}
 	return index;
 }
-
 TEST(FairTokenBucket, Basic)
 {
 	double index=0;
-	long long duration_s=20;
-	struct sftb_class one_heavy_classes[5]={{1, 1, 20000, 0, 0, 0}, 
-								{2, 1, 20000, 0, 0, 0},
-								{3, 1, 20000, 0, 0, 0},
-								{4, 1, 20000, 0, 0, 0},
-								{5, 1, 50000, 0, 0, 0}};
+	struct ftb_case mycase;
+	ftb_case_init(&mycase);
+	mycase.rate=100000;
+	mycase.capacity=10000;
+	mycase.duration_s=40;
+	mycase.perturb_interval_ms=10;
+
+	struct ftb_class two_classes[2]={
+								{.class_id=1, .weight=1, .rate=110000}, 
+								{.class_id=2, .weight=4, .rate=100},};
 	
-	index=test_fair_token_bucket(one_heavy_classes, 5, 120000, 200000, duration_s, 1);
+	index=test_fair_token_bucket(two_classes, 2, &mycase);
 	EXPECT_NEAR(index, 1, expected_fairness_index);
 
-	struct sftb_class all_light_classes[5]={{1, 1, 20000, 0, 0, 0}, 
-								{2, 1, 20000, 0, 0, 0},
-								{3, 1, 20000, 0, 0, 0},
-								{4, 1, 20000, 0, 0, 0},
-								{5, 1, 20000, 0, 0, 0}};
+	struct ftb_class heavy_2_of_2_classes[2]={
+								{.class_id=1, .weight=1, .rate=120000}, 
+								{.class_id=2, .weight=4, .rate=10000},};
 	
-	index=test_fair_token_bucket(all_light_classes, 5, 100000, 200000, duration_s, 1);
+	index=test_fair_token_bucket(heavy_2_of_2_classes, 2, &mycase);
 	EXPECT_NEAR(index, 1, expected_fairness_index);
 
-	struct sftb_class two_heavy_classes[5]={{1, 1, 20000, 0, 0, 0}, 
-								{2, 1, 20000, 0, 0, 0},
-								{3, 1, 50000, 0, 0, 0},
-								{400, 1, 50000, 0, 0, 0},
-								{5, 1, 20003, 0, 0, 0}};
+	struct ftb_class heavy_1_of_5_classes[5]={
+								{.class_id=1, .weight=1, .rate=20000}, 
+								{.class_id=2, .weight=1, .rate=20000},
+								{.class_id=3, .weight=1, .rate=20000},
+								{.class_id=4, .weight=1, .rate=20000},
+								{.class_id=5, .weight=1, .rate=50000}};
 	
-	index=test_fair_token_bucket(two_heavy_classes, 5, 100000, 200000, duration_s, 1);
+	index=test_fair_token_bucket(heavy_1_of_5_classes, 5, &mycase);
 	EXPECT_NEAR(index, 1, expected_fairness_index);
 
-	struct sftb_class all_heavy_classes[5]={{1, 1, 40000, 0, 0, 0}, 
-								{2, 1, 40000, 0, 0, 0},
-								{3, 1, 50000, 0, 0, 0},
-								{4, 1, 60000, 0, 0, 0},
-								{5, 1, 40000, 0, 0, 0}};
+	struct ftb_class all_light_classes[5]={
+								{.class_id=1, .weight=1, .rate=20000}, 
+								{.class_id=2, .weight=1, .rate=20000},
+								{.class_id=3, .weight=1, .rate=20000},
+								{.class_id=4, .weight=1, .rate=20000},
+								{.class_id=5, .weight=1, .rate=20000}};
 	
-	index=test_fair_token_bucket(all_heavy_classes, 5, 100000, 200000, duration_s, 1);
+	index=test_fair_token_bucket(all_light_classes, 5, &mycase);
 	EXPECT_NEAR(index, 1, expected_fairness_index);
+
+	struct ftb_class heavy_2_of_5_classes[5]={
+								{.class_id=1, .weight=1, .rate=20000}, 
+								{.class_id=2, .weight=1, .rate=20000},
+								{.class_id=3, .weight=1, .rate=50000},
+								{.class_id=4, .weight=1, .rate=50000},
+								{.class_id=5, .weight=1, .rate=20003}};
+
 	
+	index=test_fair_token_bucket(heavy_2_of_5_classes, 5, &mycase);
+	EXPECT_NEAR(index, 1, expected_fairness_index);
+
+	struct ftb_class all_heavy_classes[5]={
+								{.class_id=1, .weight=1, .rate=40000}, 
+								{.class_id=2, .weight=1, .rate=40000},
+								{.class_id=3, .weight=1, .rate=50000},
+								{.class_id=4, .weight=1, .rate=60000},
+								{.class_id=5, .weight=1, .rate=40000}};
+	
+	index=test_fair_token_bucket(all_heavy_classes, 5, &mycase);
+	EXPECT_NEAR(index, 1, expected_fairness_index);
+
 }
 TEST(FairTokenBucket, Merge)
 {
@@ -934,11 +1037,11 @@ TEST(FairTokenBucket, Merge)
 	for(int i=0; i<n_replica; i++)
 	{
 		uuid_generate(uuid);
-		ftb[i]=fair_token_bucket_new(uuid, now, CIR, CBS, 8192);
+		ftb[i]=fair_token_bucket_new(uuid, now, CIR, CBS, 1, 8192);
 	}
 
 	long long got=0;
-	int sync_interval_ms=50, duration_s=20;
+	int duration_s=20;
 	for(int i=0; i<duration_s*(1000*1000/step_us); i++)
 	{
 		timeradd(&now, &step, &now);
@@ -966,224 +1069,306 @@ TEST(FairTokenBucket, Merge)
 		fair_token_bucket_free(ftb[i]);
 	}
 }
-TEST(FairTokenBucket, Replicate)
-{
-	uuid_t uuid;
-	int n_replica=2;
-	long long CIR=10*1024*1024, CBS=CIR;
-	int duration_s=100;
-	size_t n_class=2;
-	struct sftb_class classes[n_class]={{1, 1, CIR*3/2, 0, 0, 0},
-									{2, 2, CIR*3/2, 0, 0, 0}};
-
-	struct timeval start, step, now;
-	int step_us=1000;
-	gettimeofday(&start, NULL);
-	memcpy(&now, &start, sizeof(now));
-	step.tv_sec=0;
-	step.tv_usec=(suseconds_t)step_us;
-
-	struct fair_token_bucket *ftb[n_replica];
-	uuid_generate(uuid);
-	ftb[0]=fair_token_bucket_new(uuid, now, CIR, CBS, 8192);
-	long long got=0;
-	got=fair_token_bucket_consume(ftb[0], now, 
-						(const char*) &(classes[0].class_id),
-						sizeof(classes[0].class_id),
-						classes[0].weight,
-						TB_CONSUME_NORMAL,
-						1);
-	classes[0].allocated_tokens+=got;
-	classes[0].demand_tokens+=1;
-
-
-	char *blob=NULL;
-	size_t blob_sz=0;
-	fair_token_bucket_serialize(ftb[0], &blob, &blob_sz);
-
-	uuid_generate(uuid);
-	ftb[1]=fair_token_bucket_replicate(uuid, blob, blob_sz);
-	free(blob);
-	blob=NULL;
-
-	int sync_interval_ms=50;
-	
-
-	for(int i=0; i<duration_s*(1000*1000/step_us); i++)
-	{
-		timeradd(&now, &step, &now);
-		int k=random()%n_class;
-		//int r=random()%n_replica;
-		for(size_t j=0; j<n_class; j++)
-		{
-			int idx=(j+k)%n_class;
-			long long this_demand=classes[idx].requested_CIR*step_us/(1000*1000);
-			got=fair_token_bucket_consume(ftb[1], now, 
-								(const char*) &(classes[idx].class_id),
-								sizeof(classes[idx].class_id),
-								classes[idx].weight,
-								TB_CONSUME_NORMAL,
-								this_demand);
-			classes[idx].allocated_tokens+=got;
-			classes[idx].demand_tokens+=this_demand;
-			
-		}
-		if(0==i%(sync_interval_ms*1000/step_us))
-		{
-			//ftb_sync(ftb, n_replica);
-		}
-	}
-	long long available_tokens=CIR*duration_s+CBS;
-	double index=max_min_fairness_index(available_tokens, classes, n_class);
-	EXPECT_NEAR(index, 1, expected_fairness_index);
-
-	for(int i=0; i<n_replica; i++)
-	{
-		fair_token_bucket_free(ftb[i]);
-	}
-}
-
 TEST(FairTokenBucket, Debug)
 {
 	double index=0;
-	long long duration_s=20;
-	struct sftb_class two_heavy_classes[5]={{1, 1, 20000, 0, 0, 0}, 
-							{2, 1, 20000, 0, 0, 0},
-							{3, 1, 50000, 0, 0, 0},
-							{400, 1, 50000, 0, 0, 0},
-							{5, 1, 20003, 0, 0, 0}};
-	for(int i=1; i<6; i++)
-	{
-		index=test_fair_token_bucket(two_heavy_classes, 5, 100000, 200000, duration_s, i);
-	}
+	struct ftb_case mycase;
+	ftb_case_init(&mycase);
+	mycase.rate=100000;
+	mycase.capacity=10000;
+	mycase.duration_s=40;
+	mycase.perturb_interval_ms=10;
+
+	struct ftb_class heavy_1_of_5_classes[5]={
+								{.class_id=1, .weight=1, .rate=20000}, 
+								{.class_id=2, .weight=1, .rate=20000},
+								{.class_id=3, .weight=1, .rate=20000},
+								{.class_id=4, .weight=1, .rate=20000},
+								{.class_id=5, .weight=1, .rate=50000}};
+	
+	index=test_fair_token_bucket(heavy_1_of_5_classes, 5, &mycase);
 	EXPECT_NEAR(index, 1, expected_fairness_index);
 }
 TEST(FairTokenBucket, Replicas)
 {
 	double index=0;
-	long long duration_s=350;
-	int n_replica=2;
-	struct sftb_class one_heavy_classes[5]={{1, 1, 20000, 0, 0, 0}, 
-								{2, 1, 20000, 0, 0, 0},
-								{3, 1, 20000, 0, 0, 0},
-								{4, 1, 20000, 0, 0, 0},
-								{5, 1, 50000, 0, 0, 0}};
+	struct ftb_case mycase;
+	ftb_case_init(&mycase);
+	mycase.rate=120000;
+	mycase.capacity=200000;
+	mycase.duration_s=350;
+	mycase.n_replica=2;
+	mycase.perturb_interval_ms=10;
+	mycase.sync_interval_ms=10;
+	struct ftb_class one_heavy_classes[5]={
+								{.class_id=1, .weight=1, .rate=20000}, 
+								{.class_id=2, .weight=1, .rate=20000},
+								{.class_id=3, .weight=1, .rate=20000},
+								{.class_id=4, .weight=1, .rate=20000},
+								{.class_id=5, .weight=1, .rate=50000}};
+
 	
-	index=test_fair_token_bucket(one_heavy_classes, 1, 120000, 200000, duration_s, n_replica);
+	index=test_fair_token_bucket(one_heavy_classes, 5, &mycase);
 	EXPECT_NEAR(index, 1, expected_fairness_index);
 
-	struct sftb_class two_heavy_classes[5]={{1, 1, 20000, 0, 0, 0}, 
-								{2, 1, 20000, 0, 0, 0},
-								{3, 1, 50000, 0, 0, 0},
-								{400, 1, 50000, 0, 0, 0},
-								{5, 1, 20003, 0, 0, 0}};
+	struct ftb_class two_heavy_classes[5]={
+								{.class_id=1, .weight=1, .rate=20000}, 
+								{.class_id=2, .weight=1, .rate=20000},
+								{.class_id=3, .weight=1, .rate=50000},
+								{.class_id=4, .weight=1, .rate=50000},
+								{.class_id=500, .weight=1, .rate=20003}};
 	
-	index=test_fair_token_bucket(two_heavy_classes, 5, 100000, 200000, duration_s, n_replica);
+	index=test_fair_token_bucket(two_heavy_classes, 5, &mycase);
+	EXPECT_NEAR(index, 1, expected_fairness_index);
+
+	long long CIR=10*1024*1024;
+	mycase.rate=CIR;
+	mycase.capacity=CIR;
+	mycase.duration_s=100;
+	mycase.n_replica=1;
+
+	struct ftb_class class2[2]={
+								{.class_id=1, .weight=1, .rate=CIR*3/2,},
+								{.class_id=2, .weight=2, .rate=CIR*3/2},};
+	index=test_fair_token_bucket(class2, 2, &mycase);
 	EXPECT_NEAR(index, 1, expected_fairness_index);
 
 }
 TEST(FairTokenBucket, Weight)
 {
 	double index=0;
-	long long duration_s=500;
-	int n_replica=1;
-	struct sftb_class one_heavy_classes[5]={{1, 1, 20000, 0, 0, 0}, 
-								{2, 2, 20000, 0, 0, 0},
-								{3, 3, 20000, 0, 0, 0},
-								{4, 4, 30000, 0, 0, 0},
-								{5, 5, 50000, 0, 0, 0}};
+	struct ftb_case mycase;
+	ftb_case_init(&mycase);
+	mycase.rate=120000;
+	mycase.capacity=200000;
+	mycase.duration_s=500;
+	mycase.n_replica=1;
+	struct ftb_class one_heavy_classes[5]={
+								{.class_id=1, .weight=1, .rate=20000}, 
+								{.class_id=2,  .weight=1, .rate=20000},
+								{.class_id=3, .weight=1, .rate=20000},
+								{.class_id=4, .weight=1, .rate=30000},
+								{.class_id=5, .weight=1, .rate=50000}};
+
 	
-	double one_heavy_index=test_fair_token_bucket(one_heavy_classes, 5, 120000, 200000, duration_s, n_replica);
+	double one_heavy_index=test_fair_token_bucket(one_heavy_classes, 5, &mycase);
 	EXPECT_NEAR(one_heavy_index, 1, expected_fairness_index);
 
-	struct sftb_class t1_heavy_classes[5]={{1, 1, 40000, 0, 0, 0}, 
-								{2, 2, 20000, 0, 0, 0},
-								{3, 3, 20000, 0, 0, 0},
-								{4, 4, 30000, 0, 0, 0},
-								{5, 5, 50000, 0, 0, 0}};
+	struct ftb_class t1_heavy_classes[5]={
+								{.class_id=1, .weight=1, .rate=40000}, 
+								{.class_id=2, .weight=2, .rate=20000},
+								{.class_id=3, .weight=3, .rate=20000},
+								{.class_id=4, .weight=4, .rate=30000},
+								{.class_id=5, .weight=5, .rate=50000}};
+
 	
-	double t1_heavy_index=test_fair_token_bucket(t1_heavy_classes, 5, 120000, 200000, duration_s, n_replica);
+	double t1_heavy_index=test_fair_token_bucket(t1_heavy_classes, 5, &mycase);
 	EXPECT_NEAR(t1_heavy_index, 1, expected_fairness_index);
 
-	struct sftb_class t2_heavy_classes[5]={{1, 1, 40000, 0, 0, 0}, 
-								{2, 2, 20000, 0, 0, 0},
-								{3, 3, 20000, 0, 0, 0},
-								{4, 4, 30000, 0, 0, 0},
-								{5, 10, 50000, 0, 0, 0}};
+	struct ftb_class t2_heavy_classes[5]={
+								{.class_id=1, .weight=1, .rate=40000}, 
+								{.class_id=2, .weight=2, .rate=20000},
+								{.class_id=3, .weight=3, .rate=20000},
+								{.class_id=4, .weight=4, .rate=30000},
+								{.class_id=5, .weight=10, .rate=50000}};
 	
-	double t2_heavy_index=test_fair_token_bucket(t2_heavy_classes, 5, 120000, 200000, duration_s, n_replica);
+	double t2_heavy_index=test_fair_token_bucket(t2_heavy_classes, 5, &mycase);
 	EXPECT_NEAR(t2_heavy_index, 1, expected_fairness_index);
 
-	struct sftb_class t3_heavy_classes[5]={{1, 1, 40000, 0, 0, 0}, 
-								{2, 2, 20000, 0, 0, 0},
-								{3, 3, 22000, 0, 0, 0},
-								{4, 4, 20000, 0, 0, 0},
-								{5, 10, 10000, 0, 0, 0}};
+	struct ftb_class t3_heavy_classes[5]={
+								{.class_id=1, .weight=1, .rate=40000}, 
+								{.class_id=2, .weight=2, .rate=20000},
+								{.class_id=3, .weight=3, .rate=22000},
+								{.class_id=4, .weight=4, .rate=20000},
+								{.class_id=5, .weight=10, .rate=10000}};
 	
-	double t3_heavy_index=test_fair_token_bucket(t3_heavy_classes, 5, 100000, 200000, duration_s, n_replica);
+	double t3_heavy_index=test_fair_token_bucket(t3_heavy_classes, 5, &mycase);
 	EXPECT_NEAR(t3_heavy_index, 1, expected_fairness_index);
 
-	struct sftb_class all_light_classes[5]={{1, 1, 20000, 0, 0, 0}, 
-								{2, 2, 20000, 0, 0, 0},
-								{3, 3, 22000, 0, 0, 0},
-								{4, 4, 20000, 0, 0, 0},
-								{5, 10, 23000, 0, 0, 0}};
+	struct ftb_class all_light_classes[5]={
+								{.class_id=1, .weight=1, .rate=20000}, 
+								{.class_id=2, .weight=2, .rate=20000},
+								{.class_id=3, .weight=3, .rate=22000},
+								{.class_id=4, .weight=4, .rate=20000},
+								{.class_id=5, .weight=10, .rate=23000}};
 	
-	index=test_fair_token_bucket(all_light_classes, 5, 100000, 200000, duration_s, n_replica);
+	
+	index=test_fair_token_bucket(all_light_classes, 5, &mycase);
 	EXPECT_NEAR(index, 1, expected_fairness_index);
 
-	struct sftb_class light_with_big_player[5]={{1, 1, 10000, 0, 0, 0}, 
-								{2, 2, 10000, 0, 0, 0},
-								{3, 3, 10000, 0, 0, 0},
-								{4, 4, 10000, 0, 0, 0},
-								{5, 10, 60000, 0, 0, 0}};
+	struct ftb_class light_with_big_player[5]={
+								{.class_id=1, .weight=1, .rate=10000}, 
+								{.class_id=2, .weight=2, .rate=10000},
+								{.class_id=3, .weight=3, .rate=10000},
+								{.class_id=4, .weight=4, .rate=10000},
+								{.class_id=5, .weight=10, .rate=60000}};
 	
-	double all_light_index=test_fair_token_bucket(light_with_big_player, 5, 100000, 200000, duration_s, n_replica);
+	double all_light_index=test_fair_token_bucket(light_with_big_player, 5, &mycase);
 	EXPECT_NEAR(all_light_index, 1, expected_fairness_index);
 
-	struct sftb_class sd_al[10]={{1, 5, 30000, 0, 0, 0}, 
-								{2, 5, 30000, 0, 0, 0},
-								{3, 3, 12000, 0, 0, 0},
-								{4, 3, 12000, 0, 0, 0},
-								{5, 3, 11000, 0, 0, 0},
-								{6, 2, 14000, 0, 0, 0},
-								{7, 2, 5000, 0, 0, 0},
-								{8, 2, 8000, 0, 0, 0},
-								{9, 2, 9000, 0, 0, 0},
-								{10, 2, 20000, 0, 0, 0}};
+	struct ftb_class sd_al[10]={
+								{.class_id=1, .weight=5, .rate=30000}, 
+								{.class_id=2, .weight=5, .rate=30000},
+								{.class_id=3, .weight=3, .rate=12000},
+								{.class_id=4, .weight=3, .rate=12000},
+								{.class_id=5, .weight=3, .rate=11000},
+								{.class_id=6, .weight=2, .rate=14000},
+								{.class_id=7, .weight=2, .rate=5000},
+								{.class_id=8, .weight=2, .rate=8000},
+								{.class_id=9, .weight=2, .rate=9000},
+								{.class_id=10, .weight=2, .rate=20000}};
 	
-	double sd_al_index=test_fair_token_bucket(sd_al, 10, 100000, 200000, duration_s, n_replica);
+	double sd_al_index=test_fair_token_bucket(sd_al, 10, &mycase);
 	EXPECT_NEAR(sd_al_index, 1, expected_fairness_index);
 }
 TEST(FairTokenBucket, Weight5000)
 {
 	size_t n_class=5000;
 	long long per_class_CIR=1000000;
-	long long CIR=n_class*per_class_CIR;
-	long long CBS=CIR;
-	struct sftb_class very_heavy_classes[n_class];
+
+	struct ftb_case mycase;
+	ftb_case_init(&mycase);
+	mycase.rate=n_class*per_class_CIR;
+	mycase.capacity=mycase.rate;
+	mycase.duration_s=40;
+	mycase.n_replica=1;
+	mycase.perturb_interval_ms=10;
+
+	struct ftb_class very_heavy_classes[n_class];
 	memset(very_heavy_classes, 0, sizeof(very_heavy_classes));
 	for(size_t i=0; i<n_class; i++)
 	{
 		very_heavy_classes[i].class_id=i;
-		very_heavy_classes[i].requested_CIR=per_class_CIR+(random()%20)*per_class_CIR;
+		very_heavy_classes[i].rate=per_class_CIR+(random()%20)*per_class_CIR;
 		very_heavy_classes[i].weight=i%20+1;
 	}
-	double index=test_fair_token_bucket(very_heavy_classes, n_class, CIR, CBS, 40, 1);
+	double index=test_fair_token_bucket(very_heavy_classes, n_class, &mycase);
 	EXPECT_NEAR(index, 1, expected_fairness_index);
 
-	struct sftb_class slight_heavy_classes[n_class];
+	struct ftb_class slight_heavy_classes[n_class];
 	memset(slight_heavy_classes, 0, sizeof(slight_heavy_classes));
 	for(size_t i=0; i<n_class; i++)
 	{
 		slight_heavy_classes[i].class_id=i;
-		slight_heavy_classes[i].requested_CIR=per_class_CIR+i*per_class_CIR/n_class;
+		slight_heavy_classes[i].rate=per_class_CIR+i*per_class_CIR/n_class;
 		slight_heavy_classes[i].weight=i%20+1;
 	}
-	index=test_fair_token_bucket(slight_heavy_classes, n_class, CIR, CBS, 40, 1);
+	index=test_fair_token_bucket(slight_heavy_classes, n_class, &mycase);
 	EXPECT_NEAR(index, 1, expected_fairness_index);
 }
+TEST(FairTokenBucket, VariousPerturb1)
+{
+	double index=0;
+	struct ftb_case mycase;
+	ftb_case_init(&mycase);
+	mycase.rate=50000;
+	mycase.capacity=50000;
+	mycase.duration_s=20;
+	mycase.print=0;
+	struct ftb_class one_heavy_classes[2]={
+								{.class_id=1, .weight=1, .rate=50000}, 
+								{.class_id=2, .weight=4, .rate=100},};
+	
+	int max_replicas=8;
+	long long perturb_array[6]={200, 150, 100, 50, 20, 10};
+	printf("replica\tperturb\tindex\r\n");
+	for(int i=0; i<max_replicas; i++)
+	{
+		for(size_t j=0; j<sizeof(perturb_array)/sizeof(long long); j++)
+		{
+			mycase.n_replica=i+1;
+			mycase.perturb_interval_ms=perturb_array[j];
+			index=test_fair_token_bucket(one_heavy_classes, 2, &mycase);
+			//EXPECT_NEAR(index, 1, expected_fairness_index);
+			printf("%d\t%lld\t%.2f\r\n", i+1, perturb_array[j], index);
+		}
+	}
+}
+TEST(FairTokenBucket, VariousPerturb2)
+{
+	double index=0;
+	struct ftb_case mycase;
+	ftb_case_init(&mycase);
+	mycase.rate=50000;
+	mycase.capacity=50000;
+	mycase.duration_s=20;
+	mycase.print=0;
+	int max_replicas=3;
+	long long perturb_array[7]={250, 200, 100, 50, 20, 10, 5};
 
+	struct ftb_class two_heavy_classes[6]={
+								{.class_id=1, .weight=1, .rate=20000}, 
+								{.class_id=2,  .weight=1, .rate=20000},
+								{.class_id=3, .weight=1, .rate=50000},
+								{.class_id=400, .weight=1, .rate=50000},
+								{.class_id=5, .weight=1, .rate=20003},
+								{.class_id=6, .weight=1, .rate=100}};
+	printf("replica\tperturb\tindex\r\n");
+	for(int i=0; i<max_replicas; i++)
+	{
+		for(size_t j=0; j<sizeof(perturb_array)/sizeof(long long); j++)
+		{
+			mycase.n_replica=i+1;
+			mycase.perturb_interval_ms=perturb_array[j];
+			index=test_fair_token_bucket(two_heavy_classes, sizeof(two_heavy_classes)/sizeof(struct ftb_class), &mycase);
+			//EXPECT_NEAR(index, 1, expected_fairness_index);
+			printf("%d\t%lld\t%.2f\r\n", i+1, perturb_array[j], index);
+		}
+	}
+}
+TEST(FairTokenBucket, Key100)
+{
+	double index=0;
+	struct ftb_case mycase;
+	ftb_case_init(&mycase);
+	mycase.rate=50000;
+	mycase.capacity=50000;
+	mycase.duration_s=40;
+	mycase.perturb_interval_ms=100;
+	mycase.print=1;
+	int n_key=100;
+	struct ftb_class myclasses[n_key];
+	for(int i=0; i<n_key; i++)
+	{
+		myclasses[i].class_id=i;
+		myclasses[i].weight=1;
+		myclasses[i].rate=100*(i+1);
+	}
+	index=test_fair_token_bucket(myclasses, n_key, &mycase);
+	EXPECT_NEAR(index, 1, expected_fairness_index);
+}
+TEST(FairTokenBucket, DynamicMembers)
+{
+	double index=0;
+	struct ftb_case mycase;
+	ftb_case_init(&mycase);
+	mycase.rate=100000;
+	mycase.capacity=10000;
+	mycase.duration_s=40;
+	mycase.perturb_interval_ms=10;
+	mycase.randomization=1;
+	struct ftb_class all_heavy_class[5]={
+								{.class_id=1, .weight=1, .rate=40000}, 
+								{.class_id=2, .weight=1, .rate=40000},
+								{.class_id=3, .weight=1, .rate=50000},
+								{.class_id=4, .weight=1, .rate=50000},
+								{.class_id=5, .weight=1, .rate=40003}};
+
+	
+	index=test_fair_token_bucket(all_heavy_class, 5, &mycase);
+	EXPECT_NEAR(index, 1, expected_fairness_index);
+
+	struct ftb_class heavy_1_of_5_class[5]={
+								{.class_id=1, .weight=1, .rate=20000}, 
+								{.class_id=2, .weight=1, .rate=20000},
+								{.class_id=3, .weight=1, .rate=20000},
+								{.class_id=4, .weight=1, .rate=30000},
+								{.class_id=5, .weight=1, .rate=90003}};
+
+	
+	index=test_fair_token_bucket(heavy_1_of_5_class, 5, &mycase);
+	EXPECT_NEAR(index, 1, expected_fairness_index);
+}
 struct btb_key
 {
 	long long key;
@@ -1195,29 +1380,32 @@ void btb_sync(struct bulk_token_bucket **btb, size_t n_btb)
 {
 	char *blob=NULL;
 	size_t blob_sz=0;
+	if(n_btb==1) return;
 	for(size_t i=0; i<n_btb; i++)
 	{
+		bulk_token_bucket_serialize(btb[i], &blob, &blob_sz);
 		for(size_t j=0; j<n_btb; j++)
 		{
 			if(i==j) continue;
-			bulk_token_bucket_serialize(btb[j], &blob, &blob_sz);
-			bulk_token_bucket_merge_blob(btb[i], blob, blob_sz);
-			free(blob);
-			blob=NULL;
+			
+			bulk_token_bucket_merge_blob(btb[j], blob, blob_sz);
 		}
+		free(blob);
+		blob=NULL;
 	}
 	return;
 }
 struct btb_case
 {
-	long long CIR;
-	long long CBS;
+	long long refill;
+	long long capacity;
+	long long period;
 	int n_replica;
 	int bucket_num;
 	int key_num;
 	int duration_s;
 	
-	long long estimate_keys;
+	long long approximate_keys;
 	long long more;
 	long long less;
 	double collision_rate;
@@ -1229,7 +1417,7 @@ void bulk_token_bucket_test_print_result(const struct btb_case *results, size_t 
 	for(size_t i=0; i<n_result; i++)
 	{
 		printf("%d\t%d\t%d\t%lld\t%lld\t%lld\t%.4f\t%.4f\n", results[i].bucket_num, results[i].n_replica,
-						results[i].key_num, results[i].estimate_keys, results[i].more, results[i].less,
+						results[i].key_num, results[i].approximate_keys, results[i].more, results[i].less,
 						results[i].collision_rate, results[i].index);
 	} 
 }
@@ -1242,23 +1430,23 @@ void bulk_token_bucket_test(struct btb_case *mycase)
 	memcpy(&now, &start, sizeof(now));
 	step.tv_sec=0;
 	step.tv_usec=(suseconds_t)step_us;
-	long long max_tokens=mycase->duration_s*mycase->CIR+mycase->CBS;
+	long long max_tokens=mycase->duration_s*mycase->refill+mycase->capacity;
 	struct bulk_token_bucket *btb[mycase->n_replica];
 	int n_replica=mycase->n_replica;
 	int key_num=mycase->key_num;
 	for(int i=0; i<n_replica; i++)
 	{
 		uuid_generate(uuid);
-		btb[i]=bulk_token_bucket_new(uuid, now, mycase->CIR, mycase->CBS, mycase->bucket_num);
+		btb[i]=bulk_token_bucket_new(uuid, now, mycase->refill, mycase->period, mycase->capacity, mycase->bucket_num);
 	}
 	
 	struct btb_key bk[key_num];
 	for(int i=0; i<key_num; i++)
 	{
 		bk[i].key=random();
-		bk[i].request_CIR=mycase->CIR/2+(i*mycase->CIR)/key_num;
+		bk[i].request_CIR=mycase->refill/mycase->period/2+(i*mycase->refill)/key_num;
 		bk[i].allocated_tokens=0;
-		if(bk[i].request_CIR<mycase->CIR)
+		if(bk[i].request_CIR<mycase->refill)
 		{
 			bk[i].ideal_tokens=bk[i].request_CIR*mycase->duration_s;
 		}
@@ -1268,9 +1456,10 @@ void bulk_token_bucket_test(struct btb_case *mycase)
 		}
 	}
 	int sync_interval_ms=200;
+	struct timeval last_sync=now;
 	for(int i=0; i<mycase->duration_s*(1000*1000/step_us); i++)
 	{
-		timeradd(&now, &step, &now);
+		
 		for(int j=0; j<key_num; j++)
 		{
 			int r=random()%mycase->n_replica;
@@ -1278,10 +1467,12 @@ void bulk_token_bucket_test(struct btb_case *mycase)
 					TB_CONSUME_FLEXIBLE,
 					bk[j].request_CIR*step_us/(1000*1000));
 		}
-		if(0==i%(sync_interval_ms*1000/step_us))
+		if(timeval_delta_ms(last_sync, now) > sync_interval_ms)
 		{
 			btb_sync(btb, mycase->n_replica);
+			last_sync=now;
 		}
+		timeradd(&now, &step, &now);
 	}
 	double index=0, ratio=0;
 	long long more=0, less=0;
@@ -1298,13 +1489,14 @@ void bulk_token_bucket_test(struct btb_case *mycase)
 	}
 	index=1-sqrt(index/key_num);
 	struct bulk_token_bucket_info info;
+	EXPECT_NEAR(info.approximate_keys, key_num, key_num/5);
 	bulk_token_bucket_info(btb[0], now, &info);
 	mycase->index=index;
-	mycase->estimate_keys=info.estimate_keys;
+	mycase->approximate_keys=info.approximate_keys;
 	mycase->more=more;
 	mycase->less=less;
 	mycase->collision_rate=info.collision_rate;
-
+	
 	for(int i=0; i<n_replica; i++)
 	{
 		bulk_token_bucket_free(btb[i]);
@@ -1323,7 +1515,7 @@ TEST(BulkTokenBucket, Basic)
 	step.tv_usec=(suseconds_t)step_us;
 	long long CIR=10000, CBS=10000;
 	long long request_CIR=10000;
-	struct bulk_token_bucket *btb=bulk_token_bucket_new(uuid, now, CIR, CBS, 4);
+	struct bulk_token_bucket *btb=bulk_token_bucket_new(uuid, now, CIR, 1, CBS, 4);
 	
 
 	long long allocated=0, max_tokens=duration_s*CIR+CBS, available=0;
@@ -1344,6 +1536,44 @@ TEST(BulkTokenBucket, Basic)
 	bulk_token_bucket_free(btb);
 	EXPECT_LE(allocated, max_tokens);
 }
+TEST(BulkTokenBucket, Period)
+{
+	uuid_t uuid;
+	uuid_generate(uuid);
+
+	long long refill=10, capacity=10, period=30;
+	long long step_us=1000*1000, duration_s=period*100;
+	long long request_CIR=1;
+
+	struct timeval start, step, now;
+	gettimeofday(&start, NULL);
+	memcpy(&now, &start, sizeof(now));
+	step.tv_sec=0;
+	step.tv_usec=(suseconds_t)step_us;
+	
+	struct bulk_token_bucket *btb=bulk_token_bucket_new(uuid, now, refill, period, capacity, 4);
+
+	long long allocated=0, max_tokens=duration_s/period*refill+capacity, available=0;
+	const char *key="192.168.0.1";
+	available=bulk_token_bucket_read_available(btb, now, key, strlen(key));
+	EXPECT_EQ(available, capacity);
+	allocated+=bulk_token_bucket_consume(btb, now, key, strlen(key), TB_CONSUME_FLEXIBLE, capacity);
+	EXPECT_EQ(allocated, capacity);
+	available=bulk_token_bucket_read_available(btb, now, key, strlen(key));
+	EXPECT_EQ(available, 0);
+
+	int i=0;
+	for(i=0; i<duration_s*(1000*1000/step_us); i++)
+	{
+		timeradd(&now, &step, &now);
+		allocated+=bulk_token_bucket_consume(btb, now, key, strlen(key), TB_CONSUME_FLEXIBLE, request_CIR*step_us/(1000*1000));
+	}
+	EXPECT_EQ(allocated, max_tokens);
+	now.tv_sec+=period/2;
+	available=bulk_token_bucket_read_available(btb, now, key, strlen(key));
+	EXPECT_EQ(available, capacity/2);
+	bulk_token_bucket_free(btb);
+}
 TEST(BulkTokenBucket, Merge)
 {
 	int n_replica=5;
@@ -1362,7 +1592,7 @@ TEST(BulkTokenBucket, Merge)
 	{
 		uuid_generate(uuid);
 		timeradd(&now, &step, &now);
-		btb[i]=bulk_token_bucket_new(uuid, now, CIR, CBS, 128*i);
+		btb[i]=bulk_token_bucket_new(uuid, now, CIR, 1, CBS, 128*i);
 		allocated[i]=0;
 	}
 	int r=0;
@@ -1380,7 +1610,7 @@ TEST(BulkTokenBucket, Merge)
 	}
 	struct bulk_token_bucket_info info;
 	bulk_token_bucket_info(btb[0], now, &info);
-	EXPECT_NEAR(info.estimate_keys, n_replica, n_replica/5);
+	EXPECT_NEAR(info.approximate_keys, n_replica, n_replica/5);
 	long long upper_limit=CIR*duration_s+CBS;
 	int success=0;
 	for(int i=0; i<n_replica; i++)
@@ -1396,8 +1626,9 @@ TEST(BulkTokenBucket, RareCollision)
 	struct btb_case test[n_case];
 	for(int i=0; i<n_case; i++)
 	{
-		test[i].CIR=1000*1000;
-		test[i].CBS=1000*1000;
+		test[i].refill=1000*1000;
+		test[i].capacity=1000*1000;
+		test[i].period=1;
 		test[i].bucket_num=512;
 		test[i].n_replica=2;
 		test[i].key_num=(1<<i);
@@ -1413,8 +1644,9 @@ TEST(BulkTokenBucket, HighCollision)
 	struct btb_case test[n_case];
 	for(int i=0; i<n_case; i++)
 	{
-		test[i].CIR=1000*1000;
-		test[i].CBS=1000*1000;
+		test[i].refill=1000*1000;
+		test[i].capacity=1000*1000;
+		test[i].period=1;
 		test[i].bucket_num=512;
 		test[i].n_replica=1;
 		test[i].key_num=128*(i+1);
@@ -1429,8 +1661,9 @@ TEST(BulkTokenBucket, VariousCIR)
 	struct btb_case test[n_case];
 	for(int i=0; i<n_case; i++)
 	{
-		test[i].CIR=400*1000*(i+1);
-		test[i].CBS=1000*1000;
+		test[i].refill=400*1000*(i+1);
+		test[i].capacity=1000*1000;
+		test[i].period=1;
 		test[i].bucket_num=512;
 		test[i].n_replica=1;
 		test[i].key_num=32;
@@ -1445,8 +1678,9 @@ TEST(BulkTokenBucket, Bucket1M)
 	struct btb_case test[n_case];
 	for(int i=0; i<n_case; i++)
 	{
-		test[i].CIR=1000*1000;
-		test[i].CBS=1000*1000;
+		test[i].refill=1000*1000;
+		test[i].capacity=1000*1000;
+		test[i].period=1;
 		test[i].bucket_num=1024*1024;
 		test[i].n_replica=1;
 		test[i].key_num=1024*(i+1);
@@ -1461,8 +1695,9 @@ TEST(BulkTokenBucket, Replicas)
 	struct btb_case test[n_case];
 	for(int i=0; i<n_case; i++)
 	{
-		test[i].CIR=1000*1000;
-		test[i].CBS=2*1000*1000;
+		test[i].refill=1000*1000;
+		test[i].capacity=2*1000*1000;
+		test[i].period=1;
 		test[i].bucket_num=512;
 		test[i].n_replica=2;
 		test[i].key_num=1<<i;
@@ -1478,8 +1713,27 @@ TEST(BulkTokenBucket, Replica4)
 	struct btb_case test[n_case];
 	for(int i=0; i<n_case; i++)
 	{
-		test[i].CIR=1000*1000;
-		test[i].CBS=2*1000*1000;
+		test[i].refill=1000*1000;
+		test[i].capacity=2*1000*1000;
+		test[i].period=1;
+		test[i].bucket_num=512;
+		test[i].n_replica=4;
+		test[i].key_num=1<<i;
+		//test[i].key_num=16*(i+1);
+		test[i].duration_s=100;
+		bulk_token_bucket_test(test+i);
+	}
+	bulk_token_bucket_test_print_result(test, n_case);
+}
+TEST(BulkTokenBucket, VariousPeriod)
+{
+	int n_case=8;
+	struct btb_case test[n_case];
+	for(int i=0; i<n_case; i++)
+	{
+		test[i].refill=256;
+		test[i].capacity=256;
+		test[i].period=1<<i;
 		test[i].bucket_num=512;
 		test[i].n_replica=4;
 		test[i].key_num=1<<i;

@@ -454,6 +454,9 @@ struct swarmkv_reply *swarmkv_reply_dup(const struct swarmkv_reply *origin)
 		case SWARMKV_REPLY_INTEGER:
 			copy->integer=origin->integer;
 			break;
+		case SWARMKV_REPLY_DOUBLE:
+			copy->dval=origin->dval;
+			break;
 		case SWARMKV_REPLY_STRING:
 		case SWARMKV_REPLY_STATUS:
 		case SWARMKV_REPLY_ERROR:
@@ -798,4 +801,49 @@ char *str_replace(char *orig, char *rep, char *with)
     }
     strcpy(tmp, orig);
     return result;
+}
+int swarmkv_cmd_parse_integer(const struct swarmkv_cmd *cmd, const char *name, long long *integer)
+{
+	if(cmd->argc<2)
+	{
+		return -1;
+	}
+	for(int i=0; i<cmd->argc; i++)
+	{
+		if(0==strcasecmp(cmd->argv[i], name))
+		{
+			if(i+1<cmd->argc)
+			{
+				return str2integer(cmd->argv[i+1], integer);
+			}
+			else
+			{
+				return -1;
+			}
+		}
+	}
+	return -1;
+}
+int swarmkv_cmd_parse_double(const struct swarmkv_cmd *cmd, const char *name, double *dval)
+{
+	if(cmd->argc<2)
+	{
+		return -1;
+	}
+	for(int i=0; i<cmd->argc; i++)
+	{
+		if(0==strcasecmp(cmd->argv[i], name))
+		{
+			if(i+1<cmd->argc)
+			{
+				*dval=strtod(cmd->argv[i+1], NULL);
+				return 0;
+			}
+			else
+			{
+				return -1;
+			}
+		}
+	}
+	return -1;
 }

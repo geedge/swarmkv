@@ -13,6 +13,7 @@
 #include "oc_token_bucket.h"
 #include "fair_token_bucket.h"
 #include "bulk_token_bucket.h"
+#include "ap_bloom.h"
 
 enum sobj_type
 {
@@ -23,6 +24,7 @@ enum sobj_type
 	OBJ_TYPE_TOKEN_BUCKET,
 	OBJ_TYPE_FAIR_TOKEN_BUCKET,
 	OBJ_TYPE_BULK_TOKEN_BUCKET,
+	OBJ_TYPE_BLOOM_FILTER,
 	OBJ_TYPE_UNDEFINED,
 	__SWARMKV_OBJ_TYPE_MAX
 };
@@ -40,6 +42,7 @@ struct sobj
 		struct OC_token_bucket *bucket;
 		struct fair_token_bucket *ftb;
 		struct bulk_token_bucket *btb;
+		struct AP_bloom *bloom;
 		void *raw;
 	};
 };

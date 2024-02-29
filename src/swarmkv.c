@@ -21,9 +21,9 @@
 //header of data types
 #include "t_string.h"
 #include "t_set.h"
-#include "t_token_bucket.h"
 #include "t_hash.h"
-
+#include "t_token_bucket.h"
+#include "t_bloom_filter.h"
 
 
 #include "uthash.h"
@@ -1053,8 +1053,8 @@ void command_spec_init(struct swarmkv *db)
 	command_register(&(db->command_table), "DECR", "key",
 					1, 1, CMD_KEY_OW, REPLY_ERROR, AUTO_ROUTE,
 					decr_command, db->mod_store);
+
 	/* Generic commands*/
-					
 	command_register(&(db->command_table), "DEL", "key",
 					1, 1, CMD_KEY_RM, REPLY_INT_0, AUTO_ROUTE,
 					del_command, db->mod_keyspace);
@@ -1118,7 +1118,7 @@ void command_spec_init(struct swarmkv *db)
 					hincrby_command, db->mod_store);
 
 	/* Token bucket commands */
-	command_register(&(db->command_table), "TCFG", "key rate capacity",
+	command_register(&(db->command_table), "TCFG", "key rate capacity [PD seconds]",
 					3, 1, CMD_KEY_OW, REPLY_ERROR, AUTO_ROUTE, 
 					tcfg_command, db->mod_store);
 	command_register(&(db->command_table), "TCONSUME", "key tokens [NORMAL|FORCE|FLEXIBLE]",
@@ -1127,7 +1127,7 @@ void command_spec_init(struct swarmkv *db)
 	command_register(&(db->command_table), "TINFO", "key",
 					1, 1, CMD_KEY_RO, REPLY_EMPTY_ARRAY, AUTO_ROUTE,
 					tinfo_command, db->mod_store);
-	command_register(&(db->command_table), "FTCFG", "key rate capacity divisor",
+	command_register(&(db->command_table), "FTCFG", "key rate capacity divisor [PD seconds]",
 					4, 1, CMD_KEY_OW, REPLY_ERROR, AUTO_ROUTE, 
 					ftcfg_command, db->mod_store);
 	command_register(&(db->command_table), "FTCONSUME", "key member weight tokens",
@@ -1136,7 +1136,7 @@ void command_spec_init(struct swarmkv *db)
 	command_register(&(db->command_table), "FTINFO", "key",
 					1, 1, CMD_KEY_RO, REPLY_EMPTY_ARRAY, AUTO_ROUTE,
 					ftinfo_command, db->mod_store);
-	command_register(&(db->command_table), "BTCFG", "key rate capacity number-of-buckets",
+	command_register(&(db->command_table), "BTCFG", "key rate capacity number-of-buckets [PD seconds]",
 					4, 1, CMD_KEY_OW, REPLY_ERROR, AUTO_ROUTE, 
 					btcfg_command, db->mod_store);
 	command_register(&(db->command_table), "BTCONSUME", "key member tokens [NORMAL|FORCE|FLEXIBLE]",
@@ -1145,6 +1145,26 @@ void command_spec_init(struct swarmkv *db)
 	command_register(&(db->command_table), "BTINFO", "key [member]",
 					1, 1, CMD_KEY_RO, REPLY_EMPTY_ARRAY, AUTO_ROUTE,
 					btinfo_command, db->mod_store);
+
+	/*Bloom filter commands*/
+	command_register(&(db->command_table), "BFRESERVE", "key error_rate capacity [TIME window-milliseconds slice-number]",
+					3, 1, CMD_KEY_OW, REPLY_EMPTY_ARRAY, AUTO_ROUTE,
+					bfreserve_command, db->mod_store);
+	command_register(&(db->command_table), "BFADD", "key item [item ...]",
+					2, 1, CMD_KEY_RW, REPLY_EMPTY_ARRAY, AUTO_ROUTE,
+					bfadd_command, db->mod_store);
+	command_register(&(db->command_table), "BFEXISTS", "key item",
+					2, 1, CMD_KEY_RO, REPLY_INT_0, AUTO_ROUTE,
+					bfexists_command, db->mod_store);
+	command_register(&(db->command_table), "BFMEXISTS", "key item [item ...]",
+					2, 1, CMD_KEY_RO, REPLY_EMPTY_ARRAY, AUTO_ROUTE,
+					bfmexists_command, db->mod_store);
+	command_register(&(db->command_table), "BFCARD", "key",
+					1, 1, CMD_KEY_RO, REPLY_INT_0, AUTO_ROUTE,
+					bfcard_command, db->mod_store);
+	command_register(&(db->command_table), "BFINFO", "key",
+					1, 1, CMD_KEY_RO, REPLY_EMPTY_ARRAY, AUTO_ROUTE,
+					bfinfo_command, db->mod_store);
 
 	/* Debug Commands */
 	command_register(&(db->command_table), "INFO", "[section]",
@@ -1159,7 +1179,6 @@ void command_spec_init(struct swarmkv *db)
 	command_register(&(db->command_table), "COMMAND LIST", "",
 					0, KEY_OFFSET_NONE, CMD_KEY_NA, REPLY_NA, AUTO_ROUTE,
 					command_list_command, &db->module);	
-
 	command_register(&(db->command_table), "LATENCY", "<subcommand>",
 					1, KEY_OFFSET_NONE, CMD_KEY_NA, REPLY_NA, NOT_AUTO_ROUTE,
 					latency_command, db->mod_monitor);
@@ -1197,17 +1216,17 @@ void command_spec_init(struct swarmkv *db)
 	command_register(&(db->command_table), "KEYSPACE RLIST", "key",
 					1, 2, CMD_KEY_RO, REPLY_NA, AUTO_ROUTE,
 					keyspace_rlist_command, db->mod_keyspace);
-	command_register(&(db->command_table), "KEYSPACE RADD", "key IP:port",
+	command_register(&(db->command_table), "KEYSPACE RADD", "key [IP:port]",
 					1, 2, CMD_KEY_OW, REPLY_NA, AUTO_ROUTE,
 					keyspace_radd_command, db->mod_keyspace);
 	command_register(&(db->command_table), "KEYSPACE XRADD", "key IP:port",
-					1, 2, CMD_KEY_OW, REPLY_NA, AUTO_ROUTE,
+					2, 2, CMD_KEY_OW, REPLY_NA, AUTO_ROUTE,
 					keyspace_xradd_command, db->mod_keyspace);
 	command_register(&(db->command_table), "KEYSPACE KEYS", "tid pattern",//worker-thread-id
-					1, KEY_OFFSET_TID, CMD_KEY_RO, REPLY_NA, NOT_AUTO_ROUTE,
+					2, KEY_OFFSET_TID, CMD_KEY_RO, REPLY_NA, NOT_AUTO_ROUTE,
 					keyspace_keys_command, db->mod_keyspace);
     command_register(&(db->command_table), "KEYSPACE RDEL", "key IP:port",
-					1, 2, CMD_KEY_RW, REPLY_NA, AUTO_ROUTE,
+					2, 2, CMD_KEY_RW, REPLY_NA, AUTO_ROUTE,
 					keyspace_rdel_command, db->mod_keyspace); 
     command_register(&(db->command_table), "KEYSPACE EXISTS", "key",
 					1, 2, CMD_KEY_RO, REPLY_NA, AUTO_ROUTE,
@@ -1215,7 +1234,7 @@ void command_spec_init(struct swarmkv *db)
 
 	/* low-level keyspace reorgnization commands */
 	command_register(&(db->command_table), "KEYSPACE SETSLOT", "slot IMPORTING|MIGRATING|NODE|STABLE IP:port",
-					2, KEY_OFFSET_SLOTID, CMD_KEY_NA, REPLY_NA, NOT_AUTO_ROUTE,
+					3, KEY_OFFSET_SLOTID, CMD_KEY_NA, REPLY_NA, NOT_AUTO_ROUTE,
 					keyspace_setslot_command, db->mod_keyspace);
 	command_register(&(db->command_table), "KEYSPACE GETKEYSINSLOT", "slot",
 					1, KEY_OFFSET_SLOTID, CMD_KEY_RO, REPLY_NA, NOT_AUTO_ROUTE,

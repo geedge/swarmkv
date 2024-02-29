@@ -11,7 +11,7 @@
 #pragma once
 #include <stddef.h>
 #include <sys/time.h>
-#include <uuid/uuid.h>
+#include <stdint.h>
 #ifdef __cplusplus
 extern "C"
 {
@@ -21,12 +21,30 @@ extern "C"
 #define HLL_MAX_PRECISION 18     // 262,144 registers
 
 struct ST_hyperloglog;
-struct ST_hyperloglog *ST_hyperloglog_new(unsigned char precision, int time_window_seconds, const struct timeval now);
+/** ***************************************************************************
+ * Create a Staggered HyperLogLog (STHLL) that can estimate cardinality of a sliding twindow.
+ * 
+ * Parameters:
+ * -----------
+ *     precision - The precision of the HyperLogLog. The number of registers is 2^precision. The value should be between 4 to 18.
+ *     time_window_ms - The duration of the time window in milliseconds.
+ *     now - The current time.
+*
+ * Return:
+ * -------
+ *     Pointer to the created STHLL - on success
+ *     NULL - on failure
+ *
+ */
+struct ST_hyperloglog *ST_hyperloglog_new(unsigned char precision, long long time_window_ms, const struct timeval now);
 void ST_hyperloglog_free(struct ST_hyperloglog *h);
+struct ST_hyperloglog *ST_hyperloglog_duplicate(const struct ST_hyperloglog *origin);
+
 //Return 1 if at least 1 ST HyperLogLog internal register was altered. 0 otherwise.
 int ST_hyperloglog_add(struct ST_hyperloglog *h, const char *key, size_t keylen, const struct timeval now);
+int ST_hyperloglog_add_hash(struct ST_hyperloglog *h, uint64_t hash, const struct timeval now);
 void ST_hyperloglog_step(struct ST_hyperloglog *h, const struct timeval now);
-double ST_hyperloglog_count(const struct ST_hyperloglog *h);
+double ST_hyperloglog_count(const struct ST_hyperloglog *h, struct timeval now);
 size_t ST_hyperloglog_serialized_size(const struct ST_hyperloglog *h);
 void ST_hyperloglog_serialize(const struct ST_hyperloglog *h, char **blob, size_t *blob_sz);
 struct ST_hyperloglog *ST_hyperloglog_deserialize(const char *blob, size_t blob_sz);

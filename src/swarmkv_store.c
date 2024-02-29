@@ -102,6 +102,15 @@ struct swarmkv_obj_specs sobj_specs[__SWARMKV_OBJ_TYPE_MAX] =
 		.obj_size=(size_t (*)(const void *))bulk_token_bucket_mem_size
 	},
 	{
+		.type=OBJ_TYPE_BLOOM_FILTER,
+		.type_name="bloom-filter",
+		.obj_free=(void (*)(void *))AP_bloom_free,
+		.obj_serialize=(void (*)(const void *, char **, size_t *))AP_bloom_serialize,
+		.obj_merge_blob=(void (*)(void *, const char *, size_t))AP_bloom_merge_blob,
+		.obj_replicate=(void * (*)(uuid_t, const char *, size_t))AP_bloom_replicate,
+		.obj_size=(size_t (*)(const void *))AP_bloom_mem_size
+	},
+	{
 		.type=OBJ_TYPE_UNDEFINED,
 		.type_name="undefined",
 		.obj_free=undefined_obj_free,

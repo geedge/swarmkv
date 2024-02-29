@@ -14,7 +14,7 @@
 #include <event2/buffer.h>
 #include <event2/thread.h>
 #include <event2/http.h>
-#define	SWARMKV_VERSION	"4.0.5"
+#define	SWARMKV_VERSION	"4.1.0"
 enum cmd_exec_result
 {
 	NEED_KEY_ROUTE,
@@ -93,6 +93,8 @@ struct swarmkv_cmd
 struct swarmkv_cmd *swarmkv_cmd_new(size_t argc);
 void swarmkv_cmd_free(struct swarmkv_cmd *p);
 struct swarmkv_cmd *swarmkv_cmd_dup(const struct swarmkv_cmd *origin);
+int swarmkv_cmd_parse_integer(const struct swarmkv_cmd *cmd, const char *name, long long *ival);
+int swarmkv_cmd_parse_double(const struct swarmkv_cmd *cmd, const char *name, double *dval);
 
 struct swarmkv_reply *swarmkv_reply_new_string(const char *str, size_t sz);
 struct swarmkv_reply *swarmkv_reply_new_string_fmt(const char *format, ...);

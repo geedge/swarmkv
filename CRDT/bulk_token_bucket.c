@@ -11,12 +11,14 @@
 #include <assert.h>
 
 #define PERTURB_INTERVAL_MAX_MS  8000
-
+#define BTB_ST_HLL_PRECISION 7
+#define BTB_ST_HLL_WINDOW_MIN_MS 1000
 
 struct btb_configuration
 {
-	long long CIR;	//Committed Information Rate
-	long long CBS;	//Committed Burst Size
+	long long rate;
+	long long period;
+	long long capacity;
 	long long refill_interval_ms;
     long long bucket_num;
 	struct timeval last_cfg;
@@ -32,7 +34,7 @@ struct bulk_token_bucket
     struct btb_configuration cfg;
     struct timeval start;
     long long perturb;
-	struct timeval perturb_timestamp;
+	struct timeval last_perturb;
 
     struct ST_hyperloglog *hll; //counting active bucket id with a sliding window style
 	struct g_array *consumed;
@@ -40,27 +42,29 @@ struct bulk_token_bucket
 };
 static double collision_probability(long long bucket_num, long long n_key)
 {
+	if(n_key==0) return 0;
     //https://en.wikipedia.org/wiki/Birthday_problem#Number_of_people_with_a_shared_birthday
   	double p_non_collsion=1-pow((double)(bucket_num-1)/bucket_num, n_key-1);
     return p_non_collsion;
 }
 
-struct bulk_token_bucket *bulk_token_bucket_new(uuid_t my_id, struct timeval now, long long CIR, long long CBS, long long bucket_num)
+struct bulk_token_bucket *bulk_token_bucket_new(uuid_t my_id, struct timeval now, long long rate, long long period, long long capacity, long long bucket_num)
 {
     struct bulk_token_bucket *btb=ALLOC(struct bulk_token_bucket, 1);
-    btb->cfg.CIR=CIR;
-    btb->cfg.CBS=CBS;
-    btb->cfg.bucket_num=bucket_num;
-    btb->cfg.refill_interval_ms=10;
-	memcpy(&btb->cfg.last_cfg, &now, sizeof(btb->cfg.last_cfg));
-
-    btb->hll=ST_hyperloglog_new(9, 5, now);
-    memcpy(&btb->start, &now, sizeof(btb->start));
+	if(rate<0 || period<0 || capacity<0 || bucket_num<0) return NULL;
+    btb->cfg.rate = rate;
+    btb->cfg.period = period;
+	btb->cfg.capacity = capacity;
+    btb->cfg.bucket_num = bucket_num;
+    btb->cfg.refill_interval_ms = 10;
+	btb->cfg.last_cfg = now;
+	long long sthll_time_window_ms=MAX(BTB_ST_HLL_WINDOW_MIN_MS, period*1000);
+    btb->hll=ST_hyperloglog_new(BTB_ST_HLL_PRECISION, sthll_time_window_ms, now);
+    btb->start = now;
     btb->consumed=g_array_new(my_id, bucket_num);
     btb->refilled=ALLOC(struct refill_mark, bucket_num);
 	btb->perturb=1;
-	memcpy(&btb->perturb_timestamp, &now, sizeof(btb->perturb_timestamp));
-	memcpy(&btb->start, &now, sizeof(btb->start));
+	btb->last_perturb = now;
     return btb;
 }
 void bulk_token_bucket_free(struct bulk_token_bucket *btb)
@@ -75,14 +79,15 @@ long long bulk_token_bucket_consume(struct bulk_token_bucket *btb, struct timeva
 {
 	long long delta_time_ms=0, bucket_idx=0, consumed=0, refilled=0;
 	long long now_ms=timeval_delta_ms(btb->start, now);
-	delta_time_ms=timeval_delta_ms(btb->perturb_timestamp, now);
+	delta_time_ms=timeval_delta_ms(btb->last_perturb, now);
 	ST_hyperloglog_add(btb->hll, key, keylen, now);
 	//Perturb every CBS/CIR seconds, so that buckets not used after last perturb have been refilled to CBS. 
 	if(!btb->cfg.bucket_num) return 0;
-	if(btb->cfg.CIR && delta_time_ms > MIN(1000*btb->cfg.CBS/btb->cfg.CIR, PERTURB_INTERVAL_MAX_MS))
+	long long perturb_threshold_ms=btb->cfg.period*1000*btb->cfg.capacity/MAX(btb->cfg.rate, 1);
+	if(btb->cfg.rate && delta_time_ms > MIN(perturb_threshold_ms, PERTURB_INTERVAL_MAX_MS))
 	{
 		btb->perturb++;
-		memcpy(&btb->perturb_timestamp, &now, sizeof(btb->perturb_timestamp));
+		memcpy(&btb->last_perturb, &now, sizeof(btb->last_perturb));
 	}
 	
 	bucket_idx=XXH3_64bits_withSeed(key, keylen, btb->perturb)%btb->cfg.bucket_num;
@@ -91,7 +96,7 @@ long long bulk_token_bucket_consume(struct bulk_token_bucket *btb, struct timeva
 	assert(refilled>=0);
 	assert(consumed>=0);
 
-	long long perturb_ms=timeval_delta_ms(btb->start, btb->perturb_timestamp);
+	long long perturb_ms=timeval_delta_ms(btb->start, btb->last_perturb);
 
 	//If current bucket hasn't been refilled since latest perturb.
 	//find the previous bucket that the key used.
@@ -107,7 +112,7 @@ long long bulk_token_bucket_consume(struct bulk_token_bucket *btb, struct timeva
 			pre_consumed=g_array_get(btb->consumed, pre_bucket_idx);
 			pre_refilled=btb->refilled[pre_bucket_idx].refilled;
 			long long pre_available=0, pre_new_refilled=0;
-			pre_available=tb_available(btb->cfg.CIR, btb->cfg.CBS, 
+			pre_available=tb_available(btb->cfg.rate, btb->cfg.period, btb->cfg.capacity, 
 										pre_consumed, pre_refilled, 
 										now_ms - btb->refilled[pre_bucket_idx].refill_ms, btb->cfg.refill_interval_ms, 
 										&pre_new_refilled);
@@ -120,15 +125,15 @@ long long bulk_token_bucket_consume(struct bulk_token_bucket *btb, struct timeva
 
 	long long new_refilled=0, global_available=0;
 	int infinite_flag=0;
-    if(btb->cfg.CBS==0 && btb->cfg.CIR==0)
+    if(btb->cfg.period==0)
     {
 		infinite_flag=1;
 		new_refilled += tokens;
     }
 	else
 	{
-		long long delta_ms= now_ms - btb->refilled[bucket_idx].refill_ms;
-		global_available=tb_available(btb->cfg.CIR, btb->cfg.CBS, consumed, refilled, delta_ms, btb->cfg.refill_interval_ms, &new_refilled);
+		long long delta_ms = now_ms - btb->refilled[bucket_idx].refill_ms;
+		global_available = tb_available(btb->cfg.rate, btb->cfg.period, btb->cfg.capacity, consumed, refilled, delta_ms, btb->cfg.refill_interval_ms, &new_refilled);
 	}
 
 	size_t n_replica=MAX(1, g_array_replicas(btb->consumed));
@@ -139,7 +144,7 @@ long long bulk_token_bucket_consume(struct bulk_token_bucket *btb, struct timeva
 	}
 	else
 	{
-		assigned=tb_consume_reserve_based(btb->cfg.CIR, global_available, n_replica, cmd, tokens);
+		assigned=tb_consume_reserve_based(btb->cfg.rate, btb->cfg.period, global_available, btb->cfg.capacity, n_replica, cmd, tokens);
 	}
 
 	if(new_refilled!=refilled)
@@ -151,12 +156,15 @@ long long bulk_token_bucket_consume(struct bulk_token_bucket *btb, struct timeva
 	if(assigned) g_array_incrby(btb->consumed, bucket_idx, assigned);
 	return assigned;
 }
-void bulk_token_bucket_configure(struct bulk_token_bucket *btb, struct timeval now, long long CIR, long long CBS, long long bucket_num)
+void bulk_token_bucket_configure(struct bulk_token_bucket *btb, struct timeval now, long long rate, long long period, long long capacity, long long bucket_num)
 {
-    btb->cfg.CIR=CIR;
-    btb->cfg.CBS=CBS;
+    btb->cfg.rate = rate;
+	btb->cfg.period = period;
+    btb->cfg.capacity = capacity;
     btb->cfg.bucket_num=bucket_num;
-    memcpy(&btb->cfg.last_cfg, &now, sizeof(btb->cfg.last_cfg));
+    btb->cfg.last_cfg = now;
+	long long sthll_time_window_ms=MAX(BTB_ST_HLL_WINDOW_MIN_MS, period*1000);
+	ST_hyperloglog_configure(btb->hll, BTB_ST_HLL_PRECISION, sthll_time_window_ms, now);
  	g_array_resize(btb->consumed, bucket_num);
 	btb->refilled=realloc(btb->refilled, btb->cfg.bucket_num*sizeof(struct refill_mark));
 	memset(btb->refilled, 0, btb->cfg.bucket_num*sizeof(struct refill_mark));
@@ -164,26 +172,26 @@ void bulk_token_bucket_configure(struct bulk_token_bucket *btb, struct timeval n
 }
 void bulk_token_bucket_info(const struct bulk_token_bucket *btb, struct timeval now, struct bulk_token_bucket_info *info)
 {
-	info->CIR=btb->cfg.CIR;
-	info->CBS=btb->cfg.CBS;
-	info->bucket_number=btb->cfg.bucket_num;
-	info->replicas=g_array_replicas(btb->consumed);
-	ST_hyperloglog_step(btb->hll, now);
-	info->estimate_keys=ST_hyperloglog_count(btb->hll);
-	info->collision_rate=collision_probability(info->bucket_number, info->estimate_keys);
+	info->rate = btb->cfg.rate;
+	info->period = btb->cfg.period;
+	info->capacity = btb->cfg.capacity;
+	info->bucket_number = btb->cfg.bucket_num;
+	info->replicas = g_array_replicas(btb->consumed);
+	info->approximate_keys=ST_hyperloglog_count(btb->hll, now);
+	info->collision_rate=collision_probability(info->bucket_number, info->approximate_keys);
 	return;
 }
 long long bulk_token_bucket_read_available(const struct bulk_token_bucket *btb, struct timeval now, const char *key, size_t keylen)
 {
 	long long consumed=0, refilled=0, available=0, new_refilled=0;
 	int bucket_idx=0;
-	bucket_idx=XXH3_64bits_withSeed(key, keylen, btb->perturb)%btb->cfg.bucket_num;
-	consumed=g_array_get(btb->consumed, bucket_idx);
-	refilled=btb->refilled[bucket_idx].refilled;
-	long long now_ms=timeval_delta_ms(btb->start, now);
-	long long delta_ms= now_ms - btb->refilled[bucket_idx].refill_ms;
-	available=tb_available(btb->cfg.CIR, btb->cfg.CBS, consumed, refilled, delta_ms, btb->cfg.refill_interval_ms, &new_refilled);
-	if(btb->cfg.CBS==0 && btb->cfg.CIR==0) available=INT64_MAX;
+	bucket_idx = XXH3_64bits_withSeed(key, keylen, btb->perturb)%btb->cfg.bucket_num;
+	consumed = g_array_get(btb->consumed, bucket_idx);
+	refilled = btb->refilled[bucket_idx].refilled;
+	long long now_ms = timeval_delta_ms(btb->start, now);
+	long long delta_ms = now_ms - btb->refilled[bucket_idx].refill_ms;
+	available=tb_available(btb->cfg.rate, btb->cfg.period, btb->cfg.capacity, consumed, refilled, delta_ms, btb->cfg.refill_interval_ms, &new_refilled);
+	if(btb->cfg.rate==0 && btb->cfg.capacity==0) available=INT64_MAX;
 	return available;
 }
 const size_t  BULK_TOKEN_BUCKET_HEADER_SIZE=offsetof(struct bulk_token_bucket, hll);
@@ -194,7 +202,7 @@ void bulk_token_bucket_serialize(const struct bulk_token_bucket *btb, char **blo
 	sz += ST_hyperloglog_serialized_size(btb->hll);
 	sz += g_array_serialized_size(btb->consumed);
 	sz += btb->cfg.bucket_num*sizeof(struct refill_mark);
-	
+
 	char *buffer = ALLOC(char, sz);
 	memcpy(buffer+offset, btb, BULK_TOKEN_BUCKET_HEADER_SIZE);
 	offset+=BULK_TOKEN_BUCKET_HEADER_SIZE;
@@ -229,6 +237,7 @@ struct bulk_token_bucket *bulk_token_bucket_deserialize(const char *blob, size_t
 	memcpy(btb, blob+offset, BULK_TOKEN_BUCKET_HEADER_SIZE);
 	offset+=BULK_TOKEN_BUCKET_HEADER_SIZE;
 	btb->hll=ST_hyperloglog_deserialize(blob+offset, blob_sz-offset);
+
 	offset+=ST_hyperloglog_serialized_size(btb->hll);
 	btb->consumed=g_array_deserialize(blob+offset, blob_sz-offset);
 	offset+=g_array_serialized_size(btb->consumed);
@@ -243,15 +252,17 @@ void bulk_token_bucket_merge(struct bulk_token_bucket *dst, const struct bulk_to
 {
     if(timercmp(&(dst->cfg.last_cfg), &(src->cfg.last_cfg), <))//Last-Write-Wins
     {
-		bulk_token_bucket_configure(dst, src->cfg.last_cfg, src->cfg.CIR, src->cfg.CBS, src->cfg.bucket_num);
+		bulk_token_bucket_configure(dst, src->cfg.last_cfg, src->cfg.rate, src->cfg.period, src->cfg.capacity, src->cfg.bucket_num);
     }
-    if(timercmp(&(dst->perturb_timestamp), &(src->perturb_timestamp), <))//Last-Write-Wins
+    if(timercmp(&(dst->last_perturb), &(src->last_perturb), <))//Last-Write-Wins
 	{
 		dst->perturb=src->perturb;
-		memcpy(&dst->perturb_timestamp, &src->perturb_timestamp, sizeof(dst->perturb_timestamp));
+		memcpy(&dst->last_perturb, &src->last_perturb, sizeof(dst->last_perturb));
 	}
+
 	//Stop to proceed when src is older than dst, and has a different bucket_num.
 	if(dst->cfg.bucket_num != src->cfg.bucket_num) return;
+
 	ST_hyperloglog_merge(dst->hll, src->hll);
 	g_array_merge(dst->consumed, src->consumed);
 	for(long long i=0; i<dst->cfg.bucket_num; i++)

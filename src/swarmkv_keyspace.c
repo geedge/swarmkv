@@ -1658,7 +1658,10 @@ enum cmd_exec_result keyspace_keys_command(struct swarmkv_module *mod_keyspace, 
 		{
 			continue;
 		}
-		if(!slot_is_my_thread(i, thread_id, ks->opts->nr_worker_threads)) continue;
+		if(!slot_is_my_thread(i, thread_id, ks->opts->nr_worker_threads))
+		{
+			continue;
+		}
 		HASH_ITER(hh, slot_rt->keyroute_table, key_entry, tmp)
 		{
 			is_matched=stringmatchlen(pattern, sdslen(pattern), key_entry->key, sdslen(key_entry->key), 0);

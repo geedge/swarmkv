@@ -4,7 +4,7 @@
 </h1>
 
 
-**SwarmKV is a embedded and distributed key-CRDT store with peer-to-peer networking .** 
+**SwarmKV is an embedded and distributed key-CRDT store with peer-to-peer networking for sharing memory by communicating.**
 
 Main Features
 
@@ -146,7 +146,7 @@ int main(int argc, char **argv)
 # Further documentation
 
 Here are some specific details about the SwarmKV.
-* [Commands](./docs/commands.md)
+* [Commands](./docs/command_toc.md)
 * [Design](./docs/design.md)
 * [Command-line interface (CLI)](./docs/cli.md)
 * [Conflict-free Replicated Data Type (CRDT)](./docs/crdt.md)

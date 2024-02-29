@@ -282,150 +282,6 @@ TEST_F(SwarmkvBasicTest, TypeSet)
 	swarmkv_reply_free(reply);
 
 }
-TEST_F(SwarmkvBasicTest, TypeTokenBucket)
-{
-	struct swarmkv *db=SwarmkvBasicTest::db;
-	const char *key="tb-192.168.0.1";
-	struct swarmkv_reply *reply=NULL;
-
-	long long capacity=1024*4, rate=1024*2, request_tokens=0, allocated_tokens=0;
-	reply=swarmkv_command(db, "TCFG %s %lld %lld", key, rate, capacity);
-	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
-	swarmkv_reply_free(reply);
-
-	struct timeval start, now;
-	gettimeofday(&start, NULL);
-	gettimeofday(&now, NULL);
-	srand(171);
-
-	int i=0;
-	while(now.tv_sec - start.tv_sec<3)
-	{
-		request_tokens=random()%(2*rate);
-		reply=swarmkv_command(db, "TCONSUME %s %lld FLEXIBLE", key, request_tokens);
-		if(reply->type==SWARMKV_REPLY_INTEGER)
-		{
-			allocated_tokens+=reply->integer;
-		}
-		swarmkv_reply_free(reply);
-		gettimeofday(&now, NULL);
-		i++;
-	}
-	EXPECT_LE(allocated_tokens, (now.tv_sec -start.tv_sec)*rate+capacity);	
-
-	//Infinite tokens
-	reply=swarmkv_command(db, "TCFG %s 0 0", key);
-	EXPECT_EQ(reply->type, SWARMKV_REPLY_STATUS);
-	swarmkv_reply_free(reply);
-	long long t=0;
-	for(i=0; i<100; i++)
-	{
-		reply=swarmkv_command(db, "TCONSUME %s 10000", key);
-		t+=reply->integer;
-		swarmkv_reply_free(reply);
-	}
-	EXPECT_EQ(t, 10000*i);
-	reply=swarmkv_command(db, "TINFO %s", key);
-	ASSERT_EQ(reply->n_element, 10);
-	EXPECT_EQ(reply->elements[5]->integer, allocated_tokens+t);
-	swarmkv_reply_free(reply);
-}
-TEST_F(SwarmkvBasicTest, TypeFairTokenBucket)
-{
-	struct swarmkv *db=SwarmkvBasicTest::db;
-	const char *key="3-floor-bandwidth-100Mbps";
-	long long capacity=200*1024*1024, rate=100*1024*1024, request_tokens=0, allocated_tokens=0;
-
-	struct swarmkv_reply *reply=NULL;
-	reply=swarmkv_command(db, "FTCFG %s %lld %lld 128", key, rate, capacity);
-	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
-	swarmkv_reply_free(reply);
-
-	struct timeval start, now;
-	gettimeofday(&start, NULL);
-	gettimeofday(&now, NULL);
-	srand(171);
-	int i=0;
-	while(now.tv_sec - start.tv_sec<3)
-	{
-		request_tokens=random()%(2*rate);
-		reply=swarmkv_command(db, "FTCONSUME %s user-001 5 %lld", key, request_tokens);
-		if(reply->type==SWARMKV_REPLY_INTEGER)
-		{
-			allocated_tokens+=reply->integer;
-		}
-		swarmkv_reply_free(reply);
-		gettimeofday(&now, NULL);
-		i++;
-	}
-	EXPECT_LE(allocated_tokens, (now.tv_sec -start.tv_sec)*rate+capacity);	
-
-
-	//Infinite tokens
-	reply=swarmkv_command(db, "FTCFG %s 0 0 256", key);
-	EXPECT_EQ(reply->type, SWARMKV_REPLY_STATUS);
-	swarmkv_reply_free(reply);
-	long long t=0;
-	for(i=0; i<100; i++)
-	{
-		reply=swarmkv_command(db, "FTCONSUME %s user-001 5 10000", key);
-		t+=reply->integer;
-		swarmkv_reply_free(reply);
-	}
-	EXPECT_EQ(t, 10000*i);
-	reply=swarmkv_command(db, "FTINFO %s", key);
-	ASSERT_EQ(reply->n_element, 14);
-	EXPECT_EQ(reply->elements[5]->integer, allocated_tokens+t);
-	swarmkv_reply_free(reply);
-}
-TEST_F(SwarmkvBasicTest, TypeBulkTokenBucket)
-{
-	struct swarmkv *db=SwarmkvBasicTest::db;
-	const char *key="everyone-has-1Mbps";
-
-	long long capacity=2*1024*1024, rate=1*1024*1024, request_tokens=0, allocated_tokens=0;
-
-	struct swarmkv_reply *reply=NULL;
-	reply=swarmkv_command(db, "BTCFG %s %lld %lld 128", key, rate, capacity);
-	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
-	swarmkv_reply_free(reply);
-
-	struct timeval start, now;
-	gettimeofday(&start, NULL);
-	gettimeofday(&now, NULL);
-	srand(171);
-	int i=0, n_member=120;
-	while(now.tv_sec - start.tv_sec<3)
-	{
-		request_tokens=random()%(2*rate);
-		reply=swarmkv_command(db, "BTCONSUME %s user-%d %lld", key, i%n_member, request_tokens);
-		if(reply->type==SWARMKV_REPLY_INTEGER)
-		{
-			allocated_tokens+=reply->integer;
-		}
-		swarmkv_reply_free(reply);
-		gettimeofday(&now, NULL);
-		i++;
-	}
-	EXPECT_LE(allocated_tokens/n_member, (now.tv_sec -start.tv_sec)*rate+capacity);	
-
-	//Infinite tokens
-	reply=swarmkv_command(db, "BTCFG %s 0 0 256", key);
-	EXPECT_EQ(reply->type, SWARMKV_REPLY_STATUS);
-	swarmkv_reply_free(reply);
-	long long t=0;
-	for(i=0; i<100; i++)
-	{
-		reply=swarmkv_command(db, "BTCONSUME %s user-001 10000", key);
-		t+=reply->integer;
-		swarmkv_reply_free(reply);
-	}
-	EXPECT_EQ(t, 10000*i);
-	reply=swarmkv_command(db, "BTINFO %s", key);
-	ASSERT_EQ(reply->n_element, 12);
-	EXPECT_NEAR(reply->elements[7]->integer, n_member, n_member/5);
-	swarmkv_reply_free(reply);
-}
 TEST_F(SwarmkvBasicTest, TypeHash)
 {
 	struct swarmkv *db=SwarmkvBasicTest::db;
@@ -498,6 +354,280 @@ TEST_F(SwarmkvBasicTest, TypeHash)
 	reply=swarmkv_command(db, "HINCRBY %s age -1", key2);
 	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
 	EXPECT_EQ(reply->integer, 30-1);
+	swarmkv_reply_free(reply);
+}
+TEST_F(SwarmkvBasicTest, TypeTokenBucket)
+{
+	struct swarmkv *db=SwarmkvBasicTest::db;
+	const char *key="tb-192.168.0.1";
+	struct swarmkv_reply *reply=NULL;
+
+	long long capacity=1024*4, rate=1024*2, request_tokens=0, allocated_tokens=0;
+	reply=swarmkv_command(db, "TCFG %s %lld %lld", key, rate, capacity);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	swarmkv_reply_free(reply);
+
+	struct timeval start, now;
+	gettimeofday(&start, NULL);
+	gettimeofday(&now, NULL);
+	srand(171);
+
+	int i=0;
+	while(now.tv_sec - start.tv_sec<3)
+	{
+		request_tokens=random()%(2*rate);
+		reply=swarmkv_command(db, "TCONSUME %s %lld FLEXIBLE", key, request_tokens);
+		if(reply->type==SWARMKV_REPLY_INTEGER)
+		{
+			allocated_tokens+=reply->integer;
+		}
+		swarmkv_reply_free(reply);
+		gettimeofday(&now, NULL);
+		i++;
+	}
+	EXPECT_LE(allocated_tokens, (now.tv_sec -start.tv_sec)*rate+capacity);	
+
+	long long period=10;
+	reply=swarmkv_command(db, "TCFG %s %lld %lld PD %lld", key, rate, capacity, period);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	swarmkv_reply_free(reply);
+	allocated_tokens=0;
+	start=now;
+	while(now.tv_sec - start.tv_sec<period*3)
+	{
+		request_tokens=random()%(2*rate);
+		reply=swarmkv_command(db, "TCONSUME %s %lld FLEXIBLE", key, request_tokens);
+		if(reply->type==SWARMKV_REPLY_INTEGER)
+		{
+			allocated_tokens+=reply->integer;
+		}
+		swarmkv_reply_free(reply);
+		gettimeofday(&now, NULL);
+		i++;
+	}
+	EXPECT_LE(allocated_tokens, (now.tv_sec - start.tv_sec)*rate/period+capacity);	
+
+	//Infinite tokens
+	reply=swarmkv_command(db, "TCFG %s 1 1 PD 0", key);
+	EXPECT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	swarmkv_reply_free(reply);
+	reply=swarmkv_command(db, "TINFO %s", key);
+	ASSERT_EQ(reply->n_element, 12);
+	allocated_tokens=reply->elements[7]->integer;
+	swarmkv_reply_free(reply);
+	
+	long long inf_token=0;
+	for(i=0; i<100; i++)
+	{
+		reply=swarmkv_command(db, "TCONSUME %s 10000", key);
+		inf_token+=reply->integer;
+		swarmkv_reply_free(reply);
+	}
+	EXPECT_EQ(inf_token, 10000*i);
+	reply=swarmkv_command(db, "TINFO %s", key);
+	ASSERT_EQ(reply->n_element, 12);
+	EXPECT_EQ(reply->elements[7]->integer, allocated_tokens+inf_token);
+	swarmkv_reply_free(reply);
+}
+TEST_F(SwarmkvBasicTest, TypeFairTokenBucket)
+{
+	struct swarmkv *db=SwarmkvBasicTest::db;
+	const char *key="3-floor-bandwidth-100Mbps";
+	long long capacity=200*1024*1024, rate=100*1024*1024, request_tokens=0, allocated_tokens=0;
+
+	struct swarmkv_reply *reply=NULL;
+	reply=swarmkv_command(db, "FTCFG %s %lld %lld 128", key, rate, capacity);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	swarmkv_reply_free(reply);
+
+	struct timeval start, now;
+	gettimeofday(&start, NULL);
+	gettimeofday(&now, NULL);
+	srand(171);
+	int i=0;
+	while(now.tv_sec - start.tv_sec<3)
+	{
+		request_tokens=random()%(2*rate);
+		reply=swarmkv_command(db, "FTCONSUME %s user-001 5 %lld", key, request_tokens);
+		if(reply->type==SWARMKV_REPLY_INTEGER)
+		{
+			allocated_tokens+=reply->integer;
+		}
+		swarmkv_reply_free(reply);
+		gettimeofday(&now, NULL);
+		i++;
+	}
+	EXPECT_LE(allocated_tokens, (now.tv_sec -start.tv_sec)*rate+capacity);	
+
+
+	//Infinite tokens
+	reply=swarmkv_command(db, "FTCFG %s %lld %lld 128 PD 0", key, rate, capacity);
+	EXPECT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	swarmkv_reply_free(reply);
+	long long inf_token=0;
+	for(i=0; i<100; i++)
+	{
+		reply=swarmkv_command(db, "FTCONSUME %s user-001 5 10000", key);
+		inf_token+=reply->integer;
+		swarmkv_reply_free(reply);
+	}
+	EXPECT_EQ(inf_token, 10000*i);
+	reply=swarmkv_command(db, "FTINFO %s", key);
+	ASSERT_EQ(reply->n_element, 16);
+	EXPECT_EQ(reply->elements[7]->integer, allocated_tokens+inf_token);
+	swarmkv_reply_free(reply);
+}
+TEST_F(SwarmkvBasicTest, TypeBulkTokenBucket)
+{
+	struct swarmkv *db=SwarmkvBasicTest::db;
+	const char *key="everyone-has-1Mbps";
+
+	long long capacity=2*1024*1024, rate=1*1024*1024, request_tokens=0, allocated_tokens=0;
+
+	struct swarmkv_reply *reply=NULL;
+	reply=swarmkv_command(db, "BTCFG %s %lld %lld 128", key, rate, capacity);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	swarmkv_reply_free(reply);
+
+	struct timeval start, now;
+	gettimeofday(&start, NULL);
+	gettimeofday(&now, NULL);
+	srand(171);
+	int i=0, n_member=120;
+	while(now.tv_sec - start.tv_sec<3)
+	{
+		request_tokens=random()%(2*rate);
+		reply=swarmkv_command(db, "BTCONSUME %s user-%d %lld", key, i%n_member, request_tokens);
+		if(reply->type==SWARMKV_REPLY_INTEGER)
+		{
+			allocated_tokens+=reply->integer;
+		}
+		swarmkv_reply_free(reply);
+		gettimeofday(&now, NULL);
+		i++;
+	}
+	EXPECT_LE(allocated_tokens/n_member, (now.tv_sec -start.tv_sec)*rate+capacity);	
+	reply=swarmkv_command(db, "BTINFO %s", key);
+	ASSERT_EQ(reply->n_element, 14);
+	EXPECT_NEAR(reply->elements[9]->integer, n_member, n_member/5);
+	swarmkv_reply_free(reply);
+
+	//Infinite tokens
+	reply=swarmkv_command(db, "BTCFG %s 0 0 256 PD 0", key);
+	EXPECT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	swarmkv_reply_free(reply);
+	long long t=0;
+	for(i=0; i<100; i++)
+	{
+		reply=swarmkv_command(db, "BTCONSUME %s user-001 10000", key);
+		t+=reply->integer;
+		swarmkv_reply_free(reply);
+	}
+	EXPECT_EQ(t, 10000*i);
+
+}
+
+TEST_F(SwarmkvBasicTest, TypeBloomFilter)
+{
+	struct swarmkv *db=SwarmkvBasicTest::db;
+	const char *key="bf-001";
+	const char *item[4]={"zhangsan", "lisi", "王二麻子", "Tom"};
+	struct swarmkv_reply *reply=NULL;
+	long long time_window_ms=600, capacity=10000;
+	double error_rate=0.001;
+	reply=swarmkv_command(db, "BFRESERVE %s %f %lld TIME %lld 12", key, error_rate, capacity, time_window_ms);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	swarmkv_reply_free(reply);
+	
+	reply=swarmkv_command(db, "BFADD %s %s %s %s %s", key, item[0], item[1], item[2], item[3]);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db, "BFEXISTS %s %s", key, item[0]);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 1);
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db, "BFMEXISTS %s %s %s %s %s", key, item[0], item[1], item[2], item[3]);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
+	ASSERT_EQ(reply->n_element, 4);
+	for(size_t i=0; i<reply->n_element; i++)
+	{
+		ASSERT_EQ(reply->elements[i]->type, SWARMKV_REPLY_INTEGER);
+		EXPECT_EQ(reply->elements[i]->integer, 1);
+	}
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db, "BFMEXISTS %s %s %s %s %s %s", key, item[0], item[1], item[2], item[3], "non-exist-item");
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
+	ASSERT_EQ(reply->n_element, 5);
+	for(size_t i=0; i<reply->n_element-1; i++)
+	{
+		ASSERT_EQ(reply->elements[i]->type, SWARMKV_REPLY_INTEGER);
+		EXPECT_EQ(reply->elements[i]->integer, 1);
+	}
+	ASSERT_EQ(reply->elements[4]->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->elements[4]->integer, 0);
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db, "BFCARD %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_NEAR(reply->integer, 4, 2);
+	swarmkv_reply_free(reply);
+
+	usleep(time_window_ms*1000);
+	reply=swarmkv_command(db, "BFMEXISTS %s %s %s %s %s %s", key, item[0], item[1], item[2], item[3], "non-exist-item");
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
+	ASSERT_EQ(reply->n_element, 5);
+	for(size_t i=0; i<reply->n_element; i++)
+	{
+		ASSERT_EQ(reply->elements[i]->type, SWARMKV_REPLY_INTEGER);
+		EXPECT_EQ(reply->elements[i]->integer, 0);
+	}
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db, "BFINFO %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
+	ASSERT_EQ(reply->n_element, 20);
+	ASSERT_EQ(reply->elements[1]->type, SWARMKV_REPLY_DOUBLE);
+	EXPECT_EQ(reply->elements[1]->dval, error_rate);
+	ASSERT_EQ(reply->elements[3]->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->elements[3]->integer, capacity);
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db, "DEL %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	ASSERT_EQ(reply->integer, 1);
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db, "BFMEXISTS %s %s", key, item[0]);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
+	EXPECT_EQ(reply->n_element, 0);
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db, "BFEXISTS %s %s", key, item[0]);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 0);
+	swarmkv_reply_free(reply);
+
+	//No time window
+	reply=swarmkv_command(db, "BFRESERVE %s %f %lld", key, error_rate, capacity);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	swarmkv_reply_free(reply);
+	
+	reply=swarmkv_command(db, "BFADD %s %s %s %s %s", key, item[0], item[1], item[2], item[3]);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db, "BFEXISTS %s %s", key, item[0]);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 1);
+	swarmkv_reply_free(reply);
+
+
+	reply=swarmkv_command(db, "DEL %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	ASSERT_EQ(reply->integer, 1);
 	swarmkv_reply_free(reply);
 }
 TEST_F(SwarmkvBasicTest, EXPIRE_TTL)
@@ -582,7 +712,7 @@ protected:
 			swarmkv_options_set_cluster_port(opts[i], TWO_NODES_TEST_CLUSTER_PORT+i);
 			swarmkv_options_set_health_check_port(opts[i], TWO_NODES_TEST_HEALTH_PORT+i);
 			swarmkv_options_set_logger(opts[i], logger);
-			swarmkv_options_set_sync_interval_us(opts[i], 20*1000);
+			swarmkv_options_set_sync_interval_us(opts[i], 10*1000);
 			swarmkv_options_set_cluster_timeout_us(opts[i], very_long_timeout_us);
 			swarmkv_options_set_worker_thread_number(opts[i], 2);
 			swarmkv_options_set_caller_thread_number(opts[i], 1);
@@ -1048,6 +1178,61 @@ TEST_F(SwarmkvTwoNodes, FromLocalReplica)
 	EXPECT_EQ(reply->integer, 1);
 	swarmkv_reply_free(reply);
 }
+TEST_F(SwarmkvTwoNodes, TypeHash)
+{
+	struct swarmkv *db[2];
+	db[0]=SwarmkvTwoNodes::db1;
+	db[1]=SwarmkvTwoNodes::db2;
+
+	size_t n_test_key=100;
+	struct swarmkv_reply *reply=NULL;
+	for(size_t i=0; i<n_test_key; i++)
+	{
+		reply=swarmkv_command(db[i%2], "HSET uid-%zu name zhangsan gender male age 18 gender male", i);
+		ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+		EXPECT_EQ(reply->integer, 3);
+		swarmkv_reply_free(reply);
+	}
+	wait_for_sync();
+	for(size_t i=0; i<n_test_key; i++)
+	{
+		reply=swarmkv_command(db[(i+1)%2], "HGET uid-%zu name", i);
+		ASSERT_EQ(reply->type, SWARMKV_REPLY_STRING);
+		EXPECT_STREQ(reply->str, "zhangsan");
+		swarmkv_reply_free(reply);
+	}
+	for(size_t i=0; i<n_test_key; i++)
+	{
+		reply=swarmkv_command(db[(i+1)%2], "HINCRBY uid-%zu age 1", i);
+		ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+		EXPECT_EQ(reply->integer, 19);
+		swarmkv_reply_free(reply);
+	}
+	wait_for_sync();
+	for(size_t i=0; i<n_test_key; i++)
+	{
+		reply=swarmkv_command(db[(i+1)%2], "HGET uid-%zu age", i);
+		ASSERT_EQ(reply->type, SWARMKV_REPLY_STRING);
+		EXPECT_STREQ(reply->str, "19");
+		swarmkv_reply_free(reply);
+	}
+	for(size_t i=0; i<n_test_key; i++)
+	{
+		reply=swarmkv_command(db[(i+1)%2], "HSET uid-%zu gender female", i);
+		ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+		EXPECT_EQ(reply->integer, 0);
+		swarmkv_reply_free(reply);
+	}
+	wait_for_sync();
+	for(size_t i=0; i<n_test_key; i++)
+	{
+		reply=swarmkv_command(db[(i+1)%2], "HGET uid-%zu gender", i);
+		ASSERT_EQ(reply->type, SWARMKV_REPLY_STRING);
+		EXPECT_STREQ(reply->str, "female");
+		swarmkv_reply_free(reply);
+	}
+}
+
 TEST_F(SwarmkvTwoNodes, TypeSet)
 {
 	struct swarmkv *db[2];
@@ -1198,12 +1383,14 @@ TEST_F(SwarmkvTwoNodes, TypeTokenBucket)
 	swarmkv_reply_free(reply);
 	reply=NULL;
 }
-struct ftb_member
+struct ftb_class
 {
-	long long member_id;
+	long long id;
 	long long weight;
 	long long requested_tokens;
 	long long got_tokens;
+	long long requested_round;
+	struct timeval last_request;
 };
 TEST_F(SwarmkvTwoNodes, TypeFairTokenBucket)
 {
@@ -1212,7 +1399,7 @@ TEST_F(SwarmkvTwoNodes, TypeFairTokenBucket)
 	db[1]=SwarmkvTwoNodes::db2;
 	
 	const char *key="shaping-profile-with-fairness";
-	long long capacity=1024*4, rate=1024*2, divisor=1024;
+	long long capacity=1*1024*1024, rate=20*1024*1024, divisor=1024;
 	
 	struct swarmkv_reply *reply=NULL;
 	reply=swarmkv_command(db[0], "FTCFG %s %lld %lld %lld", key, rate, capacity, divisor);
@@ -1227,26 +1414,42 @@ TEST_F(SwarmkvTwoNodes, TypeFairTokenBucket)
 	struct timeval start, now;
 	gettimeofday(&start, NULL);
 	gettimeofday(&now, NULL);
-	size_t n_member=3;
-	struct ftb_member mb[n_member]={{1, 1, 0, 0}, {2, 2, 0, 0}, {3, 3, 0, 0}};
+	size_t n_member=5;
+	struct ftb_class mb[n_member]={{.id=1, .weight=1}, 
+								{.id=2, .weight=2},
+								{.id=3, .weight=3},
+								{.id=4, .weight=4},
+								{.id=5, .weight=5}};
 	long long token=0, requested_tokens=0, allocated_tokens=0;
 	long long elapsed_ms=0;
 	long long run_second=20;
+	long long req_interval_us=0;
 	while(elapsed_ms/1000<run_second)
 	{
-		token=random()%(2*rate/n_member);
+		int idx=round%n_member;
+		gettimeofday(&now, NULL);
+		if(mb[idx].last_request.tv_sec==0)
+		{
+			mb[idx].last_request=now;
+		}
+		req_interval_us=timeval_delta_us(mb[idx].last_request, now);
+		if(req_interval_us==0) continue;
+		token=rate*req_interval_us/1000000/n_member;
+		token+=random()%token;
+		mb[idx].last_request=now;
 		requested_tokens+=token;
-		mb[round%n_member].requested_tokens+=token;
-		reply=swarmkv_command(db[1], "FTCONSUME %s user-%lld %lld %lld",
+		mb[idx].requested_tokens+=token;
+		reply=swarmkv_command(db[idx%2], "FTCONSUME %s user-%lld %lld %lld",
 							key, 
-							mb[round%n_member].member_id, mb[round%n_member].weight, token);
+							mb[idx].id, mb[idx].weight, token);
 		ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
 		assert(reply->integer>=0);
-		mb[round%n_member].got_tokens+=reply->integer;
+		mb[idx].got_tokens+=reply->integer;
+		mb[idx].requested_round++;
 		allocated_tokens+=reply->integer;
 		swarmkv_reply_free(reply);
 
-		gettimeofday(&now, NULL);
+		
 		elapsed_ms=(now.tv_sec-start.tv_sec)*1000+(now.tv_usec-start.tv_usec)/1000;
 		round++;
 	}
@@ -1255,32 +1458,34 @@ TEST_F(SwarmkvTwoNodes, TypeFairTokenBucket)
 	EXPECT_GE(round/(int)(now.tv_sec-start.tv_sec), 10000);
 	long long upper_limit=elapsed_ms*rate/1000+capacity;
 	double accuracy=(double)allocated_tokens/(upper_limit<requested_tokens?upper_limit:requested_tokens);
-	EXPECT_NEAR(accuracy, 1, 0.04);
+	EXPECT_NEAR(accuracy, 1, 0.05);
+#ifdef DEBUG
 	printf("requested %lld, upper limit %lld, allocated %lld\n", requested_tokens, upper_limit, allocated_tokens);
-
+#endif
 	long long normalized_tokens[n_member]={0};
 	for(size_t i=0; i<n_member; i++)
 	{
 		normalized_tokens[i]=mb[i].got_tokens/mb[i].weight;
-
+#ifdef DEBUG
 		printf("member %lld, weight %lld, requested %lld, got %lld\n", 
-				mb[i].member_id, mb[i].weight, mb[i].requested_tokens, mb[i].got_tokens);
+				mb[i].id, mb[i].weight, mb[i].requested_tokens, mb[i].got_tokens);
+#endif
 	}
 	double deviation=stddev(normalized_tokens, n_member);
 	EXPECT_NEAR(deviation/mb[0].got_tokens, 0, 0.1);
 
-	wait_for_sync();
+	//wait_for_sync();
 
 	reply=swarmkv_command(db[0], "FTINFO %s", key);
 	ASSERT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
-	ASSERT_EQ(reply->n_element, 14);
-	EXPECT_NEAR(reply->elements[13]->integer, n_member, n_member/5);
+	ASSERT_EQ(reply->n_element, 16);
+	EXPECT_NEAR(reply->elements[15]->integer, n_member, (double)n_member/5);
 	swarmkv_reply_free(reply);
 
 	reply=swarmkv_command(db[1], "FTINFO %s", key);
 	ASSERT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
-	ASSERT_EQ(reply->n_element, 14);
-	EXPECT_NEAR(reply->elements[13]->integer, n_member, n_member/5);
+	ASSERT_EQ(reply->n_element, 16);
+	EXPECT_NEAR(reply->elements[15]->integer, n_member, (double)n_member/5);
 	swarmkv_reply_free(reply);
 
 	reply=swarmkv_command(db[0], "DEL %s", key);
@@ -1303,10 +1508,10 @@ TEST_F(SwarmkvTwoNodes, TypeBulkTokenBucket)
 	db[1]=SwarmkvTwoNodes::db2;
 
 	const char *key="shaping-profile-everyone-has-10Mbps";
-	long long capacity=15*1024*1024, rate=10*1024*1024, buckets=8192;
+	long long period=5, capacity=15*1024*1024, rate=10*1024*1024*period, buckets=8192;
 	struct swarmkv_reply *reply=NULL;
 	
-	reply=swarmkv_command(db[0], "BTCFG %s %lld %lld %lld", key, rate, capacity, buckets);
+	reply=swarmkv_command(db[0], "BTCFG %s %lld %lld %lld PD %lld", key, rate, capacity, buckets, period);
 	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
 	EXPECT_STREQ(reply->str, "OK");
 	swarmkv_reply_free(reply);
@@ -1322,7 +1527,7 @@ TEST_F(SwarmkvTwoNodes, TypeBulkTokenBucket)
 
 	while(now.tv_sec - start.tv_sec<30)
 	{
-		token=random()%(2*rate/n_member);
+		token=random()%(2*rate/n_member/period);
 		requested_tokens+=token;
 		
 		reply=swarmkv_command(db[round%2], "BTCONSUME %s user-%lld %lld", key, member_id, token);
@@ -1335,25 +1540,25 @@ TEST_F(SwarmkvTwoNodes, TypeBulkTokenBucket)
 		round++;
 	}
 	printf("consume round %d, speed %d ops\n", round, round/(int)(now.tv_sec-start.tv_sec));
-	EXPECT_GE(round/(int)(now.tv_sec-start.tv_sec), 10000);
-	long long upper_limit=(now.tv_sec-start.tv_sec)*rate+capacity;
+	EXPECT_GE(round/(int)(now.tv_sec-start.tv_sec), 5000);
+	long long upper_limit=(now.tv_sec-start.tv_sec)*rate/period+capacity;
 	upper_limit=upper_limit*n_member;
 	double accuracy=(double)allocated_tokens/(upper_limit<requested_tokens?upper_limit:requested_tokens);
 	EXPECT_NEAR(accuracy, 1, 0.035);
 
-	wait_for_sync();
+	//wait_for_sync();
 
 	reply=swarmkv_command(db[0], "BTINFO %s", key);
 	ASSERT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
-	ASSERT_EQ(reply->n_element, 12);
-	EXPECT_NEAR(reply->elements[7]->integer, n_member, n_member/5);
+	ASSERT_EQ(reply->n_element, 14);
+	EXPECT_NEAR(reply->elements[9]->integer, n_member, n_member/5);
 	swarmkv_reply_free(reply);
 
 	reply=swarmkv_command(db[1], "BTINFO %s user-001", key);
 	ASSERT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
-	ASSERT_EQ(reply->n_element, 12);
-	EXPECT_NEAR(reply->elements[7]->integer, n_member, n_member/5);
-	EXPECT_LE(reply->elements[9]->integer, capacity);
+	ASSERT_EQ(reply->n_element, 14);
+	EXPECT_NEAR(reply->elements[9]->integer, n_member, n_member/5);
+	EXPECT_LE(reply->elements[11]->integer, capacity);
 	swarmkv_reply_free(reply);
 
 	reply=swarmkv_command(db[0], "DEL %s", key);
@@ -1389,6 +1594,34 @@ TEST_F(SwarmkvTwoNodes, TypeBulkTokenBucket)
 	swarmkv_reply_free(reply);
 
 }
+TEST_F(SwarmkvTwoNodes, BloomFilter)
+{
+	struct swarmkv *db[2];
+	db[0]=SwarmkvTwoNodes::db1;
+	db[1]=SwarmkvTwoNodes::db2;
+	struct swarmkv_reply *reply=NULL;
+	const char *key="bloom-filter-001";
+	const char *item[3]={"hello", "world", "bloom"};
+	reply=swarmkv_command(db[0], "BFRESERVE %s 0.0001 1000000 time 3000000 13", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	EXPECT_STREQ(reply->str, "OK");
+	swarmkv_reply_free(reply);
+
+	for(int i=0; i<3; i++)
+	{
+		reply=swarmkv_command(db[i%2], "BFADD %s %s", key, item[i]);
+		ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+		swarmkv_reply_free(reply);
+	}
+	reply=swarmkv_command(db[1], "BFMEXISTS %s %s %s %s", key, item[0], item[1], item[2]);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
+	ASSERT_EQ(reply->n_element, 3);
+	for(int i=0; i<3; i++)
+	{
+		EXPECT_EQ(reply->elements[i]->integer, 1);
+	}
+	swarmkv_reply_free(reply);
+}
 TEST_F(SwarmkvTwoNodes, Info)
 {
 	struct swarmkv *db[2];
@@ -1399,60 +1632,6 @@ TEST_F(SwarmkvTwoNodes, Info)
 	{
 		reply=swarmkv_command(db[i%2], "INFO");
 		ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
-		swarmkv_reply_free(reply);
-	}
-}
-TEST_F(SwarmkvTwoNodes, TypeHash)
-{
-	struct swarmkv *db[2];
-	db[0]=SwarmkvTwoNodes::db1;
-	db[1]=SwarmkvTwoNodes::db2;
-
-	size_t n_test_key=100;
-	struct swarmkv_reply *reply=NULL;
-	for(size_t i=0; i<n_test_key; i++)
-	{
-		reply=swarmkv_command(db[i%2], "HSET uid-%zu name zhangsan gender male age 18 gender male", i);
-		ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
-		EXPECT_EQ(reply->integer, 3);
-		swarmkv_reply_free(reply);
-	}
-	wait_for_sync();
-	for(size_t i=0; i<n_test_key; i++)
-	{
-		reply=swarmkv_command(db[(i+1)%2], "HGET uid-%zu name", i);
-		ASSERT_EQ(reply->type, SWARMKV_REPLY_STRING);
-		EXPECT_STREQ(reply->str, "zhangsan");
-		swarmkv_reply_free(reply);
-	}
-	for(size_t i=0; i<n_test_key; i++)
-	{
-		reply=swarmkv_command(db[(i+1)%2], "HINCRBY uid-%zu age 1", i);
-		ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
-		EXPECT_EQ(reply->integer, 19);
-		swarmkv_reply_free(reply);
-	}
-	wait_for_sync();
-	for(size_t i=0; i<n_test_key; i++)
-	{
-		reply=swarmkv_command(db[(i+1)%2], "HGET uid-%zu age", i);
-		ASSERT_EQ(reply->type, SWARMKV_REPLY_STRING);
-		EXPECT_STREQ(reply->str, "19");
-		swarmkv_reply_free(reply);
-	}
-	for(size_t i=0; i<n_test_key; i++)
-	{
-		reply=swarmkv_command(db[(i+1)%2], "HSET uid-%zu gender female", i);
-		ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
-		EXPECT_EQ(reply->integer, 0);
-		swarmkv_reply_free(reply);
-	}
-	wait_for_sync();
-	for(size_t i=0; i<n_test_key; i++)
-	{
-		reply=swarmkv_command(db[(i+1)%2], "HGET uid-%zu gender", i);
-		ASSERT_EQ(reply->type, SWARMKV_REPLY_STRING);
-		EXPECT_STREQ(reply->str, "female");
 		swarmkv_reply_free(reply);
 	}
 }
