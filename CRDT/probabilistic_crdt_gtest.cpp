@@ -440,7 +440,7 @@ TEST(STHyperLogLog, VariousWindow70k)
 	success=st_hll_case_print(st_case, n_case);
 	EXPECT_EQ(success, n_case);
 }
-TEST(STHyperLogLog, Debug)
+TEST(STHyperLogLog, LinearCounting)
 {
 	struct st_hll_case st_case[64];
 	int i=0;
@@ -487,6 +487,20 @@ TEST(STHyperLogLog, Debug)
 
 	int success=st_hll_case_print(st_case, i);
 	EXPECT_EQ(success+1, i);
+}
+TEST(STHyperLogLog, Debug)
+{
+	struct st_hll_case st_case[64];
+	int i=0;
+	st_hll_case_init(st_case+i);
+	st_case[i].precision=14;
+	st_case[i].time_window_ms=300;
+	st_case[i].ideal_count=40000;
+	st_case[i].n_replica=1;
+	st_case[i].est_count=st_hll_test(st_case+i);
+	i++;
+	int success=st_hll_case_print(st_case, i);
+	EXPECT_EQ(success, i);
 }
 TEST(STHyperLogLog, Replicas)
 {
@@ -686,7 +700,35 @@ TEST(STHyperLogLog, Step)
 	ST_hyperloglog_free(h);
 	return;
 }
-
+TEST(STHyperLogLog, Microscope)
+{
+	const char *key[2]={"192.168.41.12", "192.168.41.11"};
+	struct timeval start, step, now;
+	start.tv_sec=1000;
+	start.tv_usec=0;
+	memcpy(&now, &start, sizeof(now));
+	step.tv_sec=0;
+	step.tv_usec=10*1000;
+	struct ST_hyperloglog *h=ST_hyperloglog_new(7, 1000, start);
+	double estimated=0;
+	int passed=0, counted=0;
+	while(now.tv_sec-start.tv_sec<10)
+	{
+		timeradd(&now, &step, &now);
+		for(int i=0; i<2; i++)
+		{
+			ST_hyperloglog_add(h, key[i], strlen(key[i]), now);
+		}
+		estimated=ST_hyperloglog_count(h, now);
+		if(abs(estimated-2)<0.1)
+		{
+			passed++;
+		}
+		counted++;
+	}
+	EXPECT_EQ(passed, counted);
+	ST_hyperloglog_free(h);
+}
 void ap_bloom_sync(struct AP_bloom *list[], size_t n)
 {
 	char *blob=NULL;

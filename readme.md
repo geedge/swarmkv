@@ -28,7 +28,11 @@ SwarmKV Data Types
 - Integer
 - Set
 - Hash Table
-- Token Bucket, Fair Token Bucket and Bulk Token Bucket
+- Token Buckets
+    - Generic Token Buckets
+    - Fair Token Bucket: Implements stochastic fairness allocation to ensure equitable resource distribution.
+    - Bulk Token Bucket: Optimized for scenarios requiring a large number of token buckets with identical configurations.
+- Bloom Filter with the ability to expire.
 - Count-min Sketch [Todo]
 - HyperLogLog [Todo]
 

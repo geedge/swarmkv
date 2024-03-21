@@ -256,7 +256,7 @@ void a(void)
 */
 
 // Computes the raw cardinality estimate 
-static double raw_estimate(const struct ST_hyperloglog *h, int *num_zero, int *effective_reg)
+static double raw_estimate(const struct ST_hyperloglog *h, int *num_zero)
 {
     unsigned char precision = h->cfg.precision;
     int m = NUM_REG(precision);
@@ -265,31 +265,29 @@ static double raw_estimate(const struct ST_hyperloglog *h, int *num_zero, int *e
     double lambda=0;
     double harmonic_mean=0;
     *num_zero=0;
-    *effective_reg=0;
+    int effective_reg=0;
     for (int i=0; i < m; i++) 
     {
-        Wi=(i>=h->reset_idx)?(m+h->reset_idx-i):(h->reset_idx-i)+1;
-        //neglect the 1/8 of the lowest registers to reduce the variance in the final evaluation.
-        if( Wi < m/8 && h->cfg.time_window_ms)
-        {
-            continue;
-        }
-        (*effective_reg)++;
+        Wi=(i>=h->reset_idx)?(m+h->reset_idx-i):(h->reset_idx-i)+1;  
         Mi = get_register(h->registers, i);
         if(!Mi)
             *num_zero += 1;
+        //STHLL++ neglects the 1/8 of the lowest registers to reduce the variance in the final evaluation.
+        if(Wi < m/8 && h->cfg.time_window_ms)
+        {
+            continue;
+        }
+        effective_reg++;
         lambda=pow(2.0, Mi-1)*m*m/Wi;
         harmonic_mean += 1/lambda;        
     }
-    harmonic_mean= (*effective_reg)/harmonic_mean;
+    harmonic_mean = effective_reg/harmonic_mean;
     return harmonic_mean;
 }
-
 static double st_hll_count(const struct ST_hyperloglog *h)
 {
-    
-    int num_zero=0, effective_reg=0;
-    double raw_est=raw_estimate(h, &num_zero, &effective_reg);
+    int num_zero=0;
+    double raw_est=raw_estimate(h, &num_zero);
     raw_est*=alpha(h->cfg.precision);
     double est=0;
     double num_reg=NUM_REG(h->cfg.precision);
@@ -300,11 +298,10 @@ static double st_hll_count(const struct ST_hyperloglog *h)
     {
         if(num_zero)
         {
-            est=linear_count(effective_reg, num_zero);
+            est=linear_count(num_reg, num_zero);
             assert(est>=0);
             return est;
         }
-            
     }
     if(raw_est>INT32_MAX/30)
     {
@@ -524,7 +521,6 @@ double ST_hyperloglog_count(const struct ST_hyperloglog *h, struct timeval now)
         est=st_hll_count(h);
         assert(est>=0);
     }
-    assert(est>=0);
     return est;
 }
 

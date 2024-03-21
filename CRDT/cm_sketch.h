@@ -4,6 +4,7 @@
 * Author: contact@zhengchao.io
 * Count-Min Sketch is a probabilistic data-structure that takes sub linear space to store the probable count, 
 * or frequency, of occurrences of elements added into the data-structure.
+* Most of the code is from https://github.com/barrust/count-min-sketch.
 */
 
 #pragma once

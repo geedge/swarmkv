@@ -1489,8 +1489,8 @@ void bulk_token_bucket_test(struct btb_case *mycase)
 	}
 	index=1-sqrt(index/key_num);
 	struct bulk_token_bucket_info info;
-	EXPECT_NEAR(info.approximate_keys, key_num, key_num/5);
 	bulk_token_bucket_info(btb[0], now, &info);
+	EXPECT_NEAR(info.approximate_keys, key_num, key_num/5);
 	mycase->index=index;
 	mycase->approximate_keys=info.approximate_keys;
 	mycase->more=more;
