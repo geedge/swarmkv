@@ -140,7 +140,7 @@ long long fair_token_bucket_consume(struct fair_token_bucket *ftb, struct timeva
 
     ftb->debug_last_defict=deficit_est;
     if(cmd == TB_CONSUME_FLEXIBLE) tokens=MIN(tokens, ftb->per_weight_quantum*weight-deficit_est);
-    if(tokens + deficit_est > ftb->per_weight_quantum*weight)// && ftb->per_weight_quantum>0)
+    if(tokens + deficit_est > ftb->per_weight_quantum*weight && cmd!=TB_CONSUME_FORCE)// && ftb->per_weight_quantum>0)
     {
         ftb->debug_last_allocated=-1;
         return 0;

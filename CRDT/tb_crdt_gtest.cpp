@@ -1134,6 +1134,23 @@ TEST(FairTokenBucket, Replicas)
 	EXPECT_NEAR(index, 1, expected_fairness_index);
 
 }
+TEST(FairTokenBucket, TwoWeightedClass)
+{
+	double index=0;
+	struct ftb_case mycase;
+	ftb_case_init(&mycase);
+	mycase.rate=8*1024*1024;
+	mycase.capacity=mycase.rate;
+	mycase.duration_s=500;
+	mycase.n_replica=1;
+	struct ftb_class test_class[2]={
+								{.class_id=1, .weight=1, .rate=mycase.rate}, 
+								{.class_id=2, .weight=3, .rate=mycase.rate}};
+
+	
+	index=test_fair_token_bucket(test_class, 2, &mycase);
+	EXPECT_NEAR(index, 1, expected_fairness_index);
+}
 TEST(FairTokenBucket, Weight)
 {
 	double index=0;
@@ -1145,7 +1162,7 @@ TEST(FairTokenBucket, Weight)
 	mycase.n_replica=1;
 	struct ftb_class one_heavy_classes[5]={
 								{.class_id=1, .weight=1, .rate=20000}, 
-								{.class_id=2,  .weight=1, .rate=20000},
+								{.class_id=2, .weight=1, .rate=20000},
 								{.class_id=3, .weight=1, .rate=20000},
 								{.class_id=4, .weight=1, .rate=30000},
 								{.class_id=5, .weight=1, .rate=50000}};

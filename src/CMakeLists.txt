@@ -5,6 +5,22 @@ set(SWARMKV_VERSION ${SWARMKV_MAJOR_VERSION}.${SWARMKV_MINOR_VERSION}.${SWARMKV_
 
 message(STATUS "SwarmKV, Version: ${SWARMKV_VERSION}")
 
+# Attempt to find Git and if available, get the current Git hash
+find_package(Git)
+if(GIT_FOUND)
+  execute_process(
+    COMMAND ${GIT_EXECUTABLE} describe --tags --dirty --always
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    OUTPUT_VARIABLE GIT_VERSION
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+  )
+else()
+  set(GIT_VERSION "unknown")
+endif()
+
+# Add a definition to the compiler flags
+add_definitions(-DGIT_VERSION=\"${GIT_VERSION}\")
+
 add_definitions(-D_GNU_SOURCE) 
 add_definitions(-fPIC)
 set(SWARMKV_SRC swarmkv.c swarmkv_api.c

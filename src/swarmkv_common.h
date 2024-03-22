@@ -14,7 +14,6 @@
 #include <event2/buffer.h>
 #include <event2/thread.h>
 #include <event2/http.h>
-#define	SWARMKV_VERSION	"4.1.0"
 enum cmd_exec_result
 {
 	NEED_KEY_ROUTE,

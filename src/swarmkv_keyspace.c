@@ -277,7 +277,7 @@ void health_check_cb(struct evhttp_request *request, void *arg)
 	struct evkeyvalq *output_headers = evhttp_request_get_output_headers(request);
 
 	 //HTTP header
-	evhttp_add_header(output_headers, "Server", SWARMKV_VERSION);
+	evhttp_add_header(output_headers, "Server", GIT_VERSION);
 	evhttp_add_header(output_headers, "Content-Type", "text/plain; charset=UTF-8");//utf8
 	evhttp_add_header(output_headers, "Connection", "close");
 	

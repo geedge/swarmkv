@@ -265,7 +265,7 @@ enum cmd_exec_result ftcfg_command(struct swarmkv_module *mod_store, const struc
 }
 enum cmd_exec_result ftconsume_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
 {
-/*FTCONSUME key member weight tokens*/
+/*FTCONSUME key member weight tokens [NORMAL|FORCE|FLEXIBLE]*/
 	struct sobj *obj=NULL;
 	const sds key=cmd->argv[1];
 	const sds member=cmd->argv[2];
@@ -299,9 +299,18 @@ enum cmd_exec_result ftconsume_command(struct swarmkv_module *mod_store, const s
 		*reply=swarmkv_reply_new_error(error_wrong_type);		
 		return FINISHED;
 	}
+	enum tb_consume_type consume_type=TB_CONSUME_NORMAL;
+	if(cmd->argc>5)
+	{
+		if(0>get_consume_type(cmd->argv[5], &consume_type))
+		{
+			*reply=swarmkv_reply_new_error(error_arg_string_should_be, cmd->argv[4], "NORMAL|FORCE|FLEXIBLE");
+			return FINISHED;
+		}
+	}
 	struct timeval now;
 	gettimeofday(&now, NULL);
-	allocated=fair_token_bucket_consume(obj->ftb, now, member, sdslen(member), weight, TB_CONSUME_NORMAL, request);
+	allocated=fair_token_bucket_consume(obj->ftb, now, member, sdslen(member), weight, consume_type, request);
 
 	*reply=swarmkv_reply_new_integer(allocated);
 	sobj_need_sync(mod_store, obj);

@@ -295,7 +295,7 @@ enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct sw
 											"up_time_in_seconds: %ld\r\n"
 											"up_time_in_days: %ld\r\n"
 											,
-											SWARMKV_VERSION,
+											GIT_VERSION,
 											db->self.addr,
 											uuid_str,
 											db->opts->nr_worker_threads,
@@ -1130,7 +1130,7 @@ void command_spec_init(struct swarmkv *db)
 	command_register(&(db->command_table), "FTCFG", "key rate capacity divisor [PD seconds]",
 					4, 1, CMD_KEY_OW, REPLY_ERROR, AUTO_ROUTE, 
 					ftcfg_command, db->mod_store);
-	command_register(&(db->command_table), "FTCONSUME", "key member weight tokens",
+	command_register(&(db->command_table), "FTCONSUME", "key member weight tokens [NORMAL|FORCE|FLEXIBLE]",
 					4, 1, CMD_KEY_RW, REPLY_INT_MINORS1, AUTO_ROUTE,
 					ftconsume_command, db->mod_store);
 	command_register(&(db->command_table), "FTINFO", "key",
