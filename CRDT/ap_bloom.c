@@ -1,6 +1,5 @@
 #include "ap_bloom.h"
 #include "crdt_utils.h"
-#include "xxhash.h"
 #include "utlist.h"
 #include "utarray.h"
 
@@ -19,22 +18,6 @@
 #define SLICE_EXPANSION 2
 #define FILL_RATIO_THRESHOLD 0.1
 #define MIN_CAPACITY    1000
-// Use double hashing for fast hashing, 
-// reference: Kirsch, Adam, and Michael Mitzenmacher. "Less hashing, same performance: Building a better bloom filter." 
-// Algorithms–ESA 2006: 14th Annual European Symposium, Zurich, Switzerland, September 11-13, 2006. Proceedings 14. Springer Berlin Heidelberg, 2006.
-// https://www.eecs.harvard.edu/~michaelm/postscripts/rsa2008.pdf 
-struct bloom_hashval
-{
-    uint64_t a;
-    uint64_t b;
-};
-struct bloom_hashval bloom_calc_hash(const void *buffer, int len)
-{
-    struct bloom_hashval rv;
-    rv.a=XXH3_64bits_withSeed(buffer, len, 0x9747b28c);
-    rv.b=XXH3_64bits_withSeed(buffer, len, rv.a);
-    return rv;
-}
 
 
 //The test_bit_set_bit() code snap is from RedisBloom (BSD License).
@@ -130,9 +113,9 @@ static struct ap_slice * ap_slice_duplicate(const struct ap_slice *slice)
     return new_slice;
 }
 #define HASH_TO_OFFSET(hash, slice) ((hash.a + slice->hash_index * hash.b) % (slice->slice_size<<3))
-void ap_slice_add_hash(struct ap_slice *slice, struct bloom_hashval hash, struct timeval now)
+void ap_slice_add_hash(struct ap_slice *slice, struct double_hash hash, struct timeval now)
 {
-    int index = HASH_TO_OFFSET(hash, slice);
+    int index=double_hash_generate(&hash, slice->hash_index, slice->slice_size<<3);
     int added = !test_bit_set_bit(slice->data, index, MODE_WRITE);
 
     slice->last_insert = now;
@@ -143,10 +126,9 @@ void ap_slice_add_hash(struct ap_slice *slice, struct bloom_hashval hash, struct
     slice->popcount += added;
     return;
 }
-int ap_slice_check_hash(const struct ap_slice *slice, struct bloom_hashval hash)
+int ap_slice_check_hash(const struct ap_slice *slice, struct double_hash hash)
 {
-    //int index = (hash.a + slice->hash_index * hash.b) % (slice->slice_size<<3);
-    int index = HASH_TO_OFFSET(hash, slice);
+    int index=double_hash_generate(&hash, slice->hash_index, slice->slice_size<<3);
     return test_bit_set_bit(slice->data, index, MODE_READ);
 }
 struct ap_slice_event
@@ -218,7 +200,7 @@ int ap_state_is_match(struct ap_state *state)
     }
     return 0;
 }
-static void ap_slice_chain_check_hash(const struct ap_slice *head, struct bloom_hashval hash, struct ap_state *state)
+static void ap_slice_chain_check_hash(const struct ap_slice *head, struct double_hash hash, struct ap_state *state)
 {
     //In a stackable (scalable) Bloom filter, checking for membership now involves inspecting each layer for presence. 
     const struct ap_slice *slice=NULL;
@@ -258,7 +240,7 @@ static void ap_slice_chain_check_hash(const struct ap_slice *head, struct bloom_
  *     0 - element was not present and was added
  *     1 - element (or a collision) had already been added previously
  */
-static void ap_slice_chain_add_hash(struct ap_slice **head, struct bloom_hashval hash, struct timeval now)
+static void ap_slice_chain_add_hash(struct ap_slice **head, struct double_hash hash, struct timeval now)
 {
     //add new slice if the current slice is full
     if( (double) (*head)->popcount / ((*head)->slice_size<<3) > FILL_RATIO_THRESHOLD)
@@ -550,7 +532,8 @@ static void slide_time(struct AP_bloom *bloom, struct timeval now)
 
 void AP_bloom_add(struct AP_bloom *bloom, struct timeval now, const char *buffer, int len)
 {
-    struct bloom_hashval hash = bloom_calc_hash(buffer, len);
+    struct double_hash hash;
+    double_hash_init(&hash, buffer, len);
     if(bloom->cfg.time_window_ms)
     {
         slide_time(bloom, now);
@@ -569,7 +552,8 @@ int AP_bloom_check(const struct AP_bloom *bloom, struct timeval now, const char 
     {
         return 0;
     }
-    struct bloom_hashval hash = bloom_calc_hash(buffer, len);
+    struct double_hash hash;
+    double_hash_init(&hash, buffer, len);
     int chain_num = bloom->chain_num;
 
     struct ap_state state;

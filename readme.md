@@ -33,7 +33,7 @@ SwarmKV Data Types
     - Fair Token Bucket: Implements stochastic fairness allocation to ensure equitable resource distribution.
     - Bulk Token Bucket: Optimized for scenarios requiring a large number of token buckets with identical configurations.
 - Bloom Filter with the ability to expire.
-- Count-min Sketch [Todo]
+- Count-min Sketch
 - HyperLogLog [Todo]
 
 

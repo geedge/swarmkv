@@ -1,15 +1,15 @@
 ## Bloom Filter
 
-### BFRESERVE
+### BFINIT
 
 Syntax
 
 ```
-BFRESERVE key error_rate capacity [TIME window-milliseconds slice-number]
+BFINIT key error capacity [TIME window-milliseconds slice-number]
 ```
 
- Create an empty bloom filter that can keep elements within a sliding time window with following arguments:
- - error_rate -- Probability of collision (as long as the capacity is not exceeded). Should be between 0.000001 to 0.1.
+ Initialize an empty bloom filter that can keep elements within a sliding time window with following arguments:
+ - error -- Probability of collision (as long as the capacity is not exceeded). Should be between 0.000001 to 0.1.
  - capacity -- The expected number of element which will be inserted. At least 1000. If the actual number of elements exceeds the capacity, the bloom filter will expand.
  - TIME -- Create a time-limited bloom filter. The following arguments are required:
    - window-milliseconds -- The duration of the time window in milliseconds. Items in time range (now - window-milliseconds, now] are kept.
@@ -86,10 +86,10 @@ Syntax
 BFINFO key
 ```
 Returns information about a Bloom filter.
-- ErrorRate -- error_rate arguments specified in BFRESERVE.
-- Capacity -- capacity arguments specified in BFRESERVE.
-- TimeWindowMs -- window-milliseconds arguments specified in BFRESERVE.
-- TimeSlices -- slice-number arguments specified in BFRESERVE.
+- Error -- error_rate arguments specified in `BFINIT`.
+- Capacity -- capacity arguments specified in `BFINIT`.
+- TimeWindowMs -- window-milliseconds arguments specified in `BFINIT`.
+- TimeSlices -- slice-number arguments specified in `BFINIT`.
 - HashNum -- Hash function number caculated by the error_rate, which is log2(1/error_rate).
 - TotalSlices -- The actual slice number after expansion.
 - MaxExpansionTimes -- The maximum expansion times of every time slice.

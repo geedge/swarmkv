@@ -7,9 +7,9 @@
 #include <stdlib.h>
 #include <assert.h>
 
-enum cmd_exec_result bfreserve_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
+enum cmd_exec_result bfinit_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
 {
-/* BFRESERVE key error_rate capacity [TIME window-milliseconds slice-number] */
+/* BFINIT key error_rate capacity [TIME window-milliseconds slice-number] */
 	struct sobj *obj=NULL;
 	const sds key=cmd->argv[1];
 
@@ -97,6 +97,7 @@ enum cmd_exec_result bfadd_command(struct swarmkv_module *mod_store, const struc
 	{
 		AP_bloom_add(obj->bloom, now, cmd->argv[i+2], sdslen(cmd->argv[i+2]));
 	}
+	store_mark_object_as_modified(mod_store, obj);
 	*reply=swarmkv_reply_new_status("OK");
 	return FINISHED;
 }
@@ -202,7 +203,7 @@ enum cmd_exec_result bfinfo_command(struct swarmkv_module *mod_store, const stru
 	AP_bloom_info(obj->bloom, &info);
 	int i=0;
 	*reply=swarmkv_reply_new_array(20);
-	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("ErrorRate");
+	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("Error");
 	(*reply)->elements[i++]=swarmkv_reply_new_double(info.error);
 	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("Capacity");
 	(*reply)->elements[i++]=swarmkv_reply_new_integer(info.capacity);

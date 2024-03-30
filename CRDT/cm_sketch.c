@@ -9,206 +9,103 @@
 #include <assert.h>
 #include <math.h> //pow
 
-#define CMS_MAX_DEPTH   16
-
 struct cms_opt
 {
     int width;
     int depth;
 };
-static const struct cms_opt cms_default_opt = {
-    .width=1024*16,
-    .depth=6
-};
-static uint64_t __fnv_1a(const char *key, size_t len, int seed)
-{
-    // FNV-1a hash (http://www.isthe.com/chongo/tech/comp/fnv/)
-    size_t i;
-    uint64_t h = 14695981039346656037ULL + (31 * seed); // FNV_OFFSET 64 bit with magic number seed
-    for (i = 0; i < len; ++i){
-            h = h ^ (unsigned char) key[i];
-            h = h * 1099511628211ULL; // FNV_PRIME 64 bit
-    }
-    return h;
-}
-static int32_t __safe_add(int32_t a, int32_t b)
-{
-    if (a == INT32_MAX || a == INT32_MIN) {
-        return a;
-    }
-    int32_t c=0;
-    c = ((int64_t) a + b > INT32_MAX) ? INT32_MAX : (a + b);
-    return c;
-}
-static int32_t __safe_sub(int32_t a, int32_t b)
-{
-    if (a == INT32_MAX || a == INT32_MIN) {
-        return a;
-    }
-    int32_t c = 0;
-    c = ((int64_t) b - a < INT32_MIN) ? INT32_MAX : (a - b);
-    return c;
-}
-
-struct cms_bin
+struct cms_node
 {
     uuid_t uuid;
     unsigned long long sequence;
     uint64_t elements_added;
     int width;
     int depth;
+    int *array;
     UT_hash_handle hh;
-    int32_t *bins;
 };
-struct cms_bin *cms_bin_new(uuid_t uuid, int width, int depth)
+struct cms_node *cms_node_new(uuid_t uuid, int width, int depth)
 {
-    struct cms_bin *bin=NULL;
-    bin=ALLOC(struct cms_bin, 1);
-    uuid_copy(bin->uuid, uuid);
-    bin->width=width;
-    bin->depth=depth;
-    bin->bins=ALLOC(int32_t, width*depth);
-    return bin;
+    struct cms_node *node=ALLOC(struct cms_node, 1);
+    uuid_copy(node->uuid, uuid);
+    node->width=width;
+    node->depth=depth;
+    node->array=ALLOC(int, width*depth);
+    return node;
 }
-static int32_t cms_bin_query(const struct cms_bin *bin, const uint64_t *hashes, size_t n_hash)
+void cms_node_free(struct cms_node *node)
 {
-    if(n_hash!=bin->depth) return 0;
-
-    int32_t added=INT32_MAX;
-    for(int i=0; i<bin->depth; i++)
-    {
-        uint64_t idx=(hashes[i] % bin->width) + (i * bin->width);
-        added=MIN(added, bin->bins[idx]);
-    }
-    return added;
-}
-#define CMLS16_BASE 1.00025
-double point_value(int32_t c)
-{
-    if(c==0) return 0;
-    return pow(CMLS16_BASE, c-1); 
-}
-static int32_t cms_bin_log_query(const struct cms_bin *bin, const uint64_t *hashes, size_t n_hash)
-{
-    if(n_hash!=bin->depth) return 0;
-    int32_t c=INT32_MAX;
-    for(int i=0; i<bin->depth; i++)
-    {
-        int32_t idx=(hashes[i] % bin->width) + (i * bin->width);
-        c=MIN(c, bin->bins[idx]);
-    }
-    if(c<=1)
-    {
-        return point_value(c);
-    }
-    else
-    {
-        double v=point_value(c+1);
-        v=(1-v)/(1-CMLS16_BASE);
-        return (int32_t)v;
-    }
-}
-int increase_decision(int32_t c)
-{
-    long pr=(long)pow(CMLS16_BASE, c);
-    long r=random()%pr;
-    if(r==0) return 1;
-    else return 0;
-}
-static void cms_bin_log_add(struct cms_bin *bin, const uint64_t *hashes, size_t n_hash, int32_t times)
-{
-    if(n_hash!=bin->depth) return;
-    int32_t c=INT32_MAX;
-    for(int i=0; i<bin->depth; i++)
-    {
-        int32_t idx=(hashes[i] % bin->width) + (i * bin->width);
-        c=MIN(c, bin->bins[idx]);
-    }
-   
-    long pr=(long)pow(CMLS16_BASE, c);
-    long r=random()%pr;
-    for(int t=0; t<times; t++)
-    {
-        int increase=increase_decision(c);
-        if(!increase)
-            continue;
-        for(int i=0; i<bin->depth; i++)
-        {
-            int32_t idx=(hashes[i] % bin->width) + (i * bin->width);
-            if(bin->bins[idx] == c)
-            {
-                bin->bins[idx]++;
-            }
-        }
-        c++;
-    }
-    //bin->bins[cu_idx]+=times;
-    bin->elements_added += times;
-    bin->sequence++;
+    free(node->array);
+    free(node);
     return;
 }
-static int32_t cms_bin_add(struct cms_bin *bin, const uint64_t *hashes, size_t n_hash, int32_t times)
+
+static void cms_node_incrby(struct cms_node *node, int *hash, int n_hash, int increment)
 {
-    if(n_hash!=bin->depth) return 0;
-    int32_t cu_idx=-1;//conservative update idx
-    for(int i=0; i<bin->depth; i++)
+    assert(n_hash==node->depth);
+    for(int i=0; i<node->depth; i++)
     {
-        int32_t idx=(hashes[i] % bin->width) + (i * bin->width);
-        if(cu_idx<0) cu_idx=idx;
-        if(bin->bins[cu_idx] < bin->bins[idx])
+        assert(hash[i]>=0 && hash[i]<node->width);
+        int offset = hash[i] + i*node->width;
+        __builtin_add_overflow(node->array[offset], increment, &node->array[offset]);
+        //node->array[offset] += increment;
+    }
+    node->elements_added += increment;
+    node->sequence ++;
+    return;
+}
+static int cms_node_query(const struct cms_node *node, const int *hash, int n_hash)
+{
+    assert(n_hash==node->depth);
+    int min_val=INT32_MAX;
+    for(int i=0; i<node->depth; i++)
+    {
+        assert(hash[i]>=0 && hash[i]<node->width);
+        int offset = hash[i] + i*node->width;
+        if(min_val>node->array[offset])
         {
-            cu_idx=idx;
-        }
-        if(times>0)
-        {
-            bin->bins[idx] = __safe_add(bin->bins[idx], times);
-        }
-        else
-        {
-            bin->bins[idx] = __safe_sub(bin->bins[idx], 0-times);
+            min_val=node->array[offset];
         }
     }
-    //bin->bins[cu_idx]+=times;
-    bin->elements_added += times;
-    bin->sequence++;
-    return  bin->bins[cu_idx];
+    return min_val;
 }
-static void cms_bin_free(struct cms_bin *bin)
+static void cms_node_reset(struct cms_node *node)
 {
-    free(bin->bins);
-    free(bin);
+    memset(node->array, 0, sizeof(int)*node->width*node->depth);
+    node->elements_added=0;
+    node->sequence++;
+    return;
 }
-static size_t cms_bin_blob_size(const struct cms_bin *bin)
+static size_t cms_node_blob_size(const struct cms_node *node)
 {
-    return offsetof(struct cms_bin, hh) + sizeof(int32_t)*bin->depth*bin->width;
+    return offsetof(struct cms_node, hh) + sizeof(int32_t)*node->depth*node->width;
 }
-static size_t cms_bin_size(const struct cms_bin *bin)
+static size_t cms_node_size(const struct cms_node *node)
 {
-   return sizeof(struct cms_bin)+sizeof(int32_t)*bin->depth*bin->width;
+   return sizeof(struct cms_node)+sizeof(int32_t)*node->depth*node->width;
 }
-static size_t cms_bin_serialize(const struct cms_bin *bin, char *buff, size_t buff_sz)
+static size_t cms_node_serialize(const struct cms_node *node, char *buff, size_t buff_sz)
 {
     size_t offset=0;
-    assert(buff_sz>=cms_bin_blob_size(bin));
-    memcpy(buff, bin, offsetof(struct cms_bin, hh));
-    offset += offsetof(struct cms_bin, hh);
-    memcpy(buff+offset, bin->bins, sizeof(int32_t)*bin->depth*bin->width);
-    offset += sizeof(int32_t)*bin->depth*bin->width;
-    assert(offset==cms_bin_blob_size(bin));
+    assert(buff_sz>=cms_node_blob_size(node));
+    memcpy(buff, node, offsetof(struct cms_node, hh));
+    offset += offsetof(struct cms_node, hh);
+    memcpy(buff+offset, node->array, sizeof(int)*node->depth*node->width);
+    offset += sizeof(int)*node->depth*node->width;
+    assert(offset==cms_node_blob_size(node));
     return offset;
 }
-static struct cms_bin *cms_bin_deserialize(const char *blob, size_t blob_sz)
+static struct cms_node *cms_node_deserialize(const char *blob, size_t blob_sz)
 {
-    struct cms_bin *bin=ALLOC(struct cms_bin, 1);
+    struct cms_node *node=ALLOC(struct cms_node, 1);
     size_t offset=0;
-    memcpy(bin, blob, offsetof(struct cms_bin, hh));
-    offset +=  offsetof(struct cms_bin, hh);
-    bin->bins=ALLOC(int32_t, bin->depth*bin->width);
-    assert(sizeof(int32_t)*bin->depth*bin->width==blob_sz-offset);
-    memcpy(bin->bins, blob+offset, sizeof(int32_t)*bin->depth*bin->width);
-    return bin;
+    memcpy(node, blob, offsetof(struct cms_node, hh));
+    offset +=  offsetof(struct cms_node, hh);
+    node->array = ALLOC(int, node->depth*node->width);
+    memcpy(node->array, blob+offset, sizeof(int)*node->depth*node->width);
+    return node;
 }
-static void cms_bin_merge(struct cms_bin *dst, const struct cms_bin *src)
+static void cms_node_merge(struct cms_node *dst, const struct cms_node *src)
 {
     assert(dst->depth==src->depth);
     assert(dst->width==src->width);
@@ -216,97 +113,72 @@ static void cms_bin_merge(struct cms_bin *dst, const struct cms_bin *src)
     {
         dst->elements_added=src->elements_added;
         dst->sequence=src->sequence;
-        memcpy(dst->bins, src->bins, sizeof(int32_t)*dst->width*dst->depth);
+        memcpy(dst->array, src->array, sizeof(int)*dst->width*dst->depth);
     }
     return;
 }
 struct CM_sketch
 {
-    struct cms_opt opt;
     uuid_t my_uuid;
-    struct cms_bin *hash_bins;
-    uint64_t hashes_max[CMS_MAX_DEPTH], hashes_min[CMS_MAX_DEPTH];
-    int is_virgin;
+    struct cms_opt opt;
+    struct cms_node *hash_nodes;
 };
-
-
-struct CM_sketch *CM_sketch_new(uuid_t my_id)
+struct CM_sketch *CM_sketch_new(uuid_t my_id, int width, int depth)
 {
     struct CM_sketch *cms=ALLOC(struct CM_sketch, 1);
     uuid_copy(cms->my_uuid, my_id);
-    memcpy(&cms->opt, &cms_default_opt, sizeof(cms_default_opt));
-    cms->is_virgin=1;
+    cms->opt.width=width;
+    cms->opt.depth=depth;
     return cms;
 }
-static int cms_query(const struct CM_sketch *cms, const uint64_t *hashes, size_t n_hash)
+static int CM_sketch_query_hash(const struct CM_sketch *cms, const int *hashes, size_t n_hash)
 {
     int added_global=0;
-    struct cms_bin *bin=NULL, *tmp=NULL;
-    HASH_ITER(hh, cms->hash_bins, bin, tmp)
+    struct cms_node *node=NULL, *tmp=NULL;
+    HASH_ITER(hh, cms->hash_nodes, node, tmp)
     {
-        added_global+=cms_bin_query(bin, hashes, n_hash);
+        added_global += cms_node_query(node, hashes, n_hash);
     }
     return added_global;
 }
-int CM_sketch_query(const struct CM_sketch *cms, const char *key, size_t len)
+int CM_sketch_query(const struct CM_sketch *cms, const char *item, size_t len)
 {
-    uint64_t hashes[CMS_MAX_DEPTH]={0};
-    int added_global=0;
-    assert(cms->opt.depth <= CMS_MAX_DEPTH);
+    struct double_hash dhash;
+    double_hash_init(&dhash, item, len);
+    int hash[cms->opt.depth];
     for(int i=0; i<cms->opt.depth; i++)
     {
-        hashes[i]=XXH3_64bits_withSeed(key, len, i);
-        //hashes[i]=__fnv_1a(key, len, i);
+        hash[i]=double_hash_generate(&dhash, i, cms->opt.width);
     }
-
-    added_global=cms_query(cms, hashes, cms->opt.depth);
-    return added_global;
+    return CM_sketch_query_hash(cms, hash, cms->opt.depth);
 }
-int CM_sketch_add_n(struct CM_sketch *cms, const char *key, size_t len, int times)
+int CM_sketch_incrby(struct CM_sketch *cms, const char *item, size_t len, int increment)
 {
-    struct cms_bin *bin=NULL;
-    HASH_FIND(hh, cms->hash_bins, cms->my_uuid, sizeof(cms->my_uuid), bin);
-    if(!bin)
+    struct double_hash dhash;
+    double_hash_init(&dhash, item, len);
+    int hash[cms->opt.depth];
+    for(int i=0; i<cms->opt.depth; i++)
     {
-        bin=cms_bin_new(cms->my_uuid, cms->opt.width, cms->opt.depth);
-        HASH_ADD_KEYPTR(hh, cms->hash_bins, bin->uuid, sizeof(bin->uuid), bin);
+        hash[i]=double_hash_generate(&dhash, i, cms->opt.width);
     }
-
-    uint64_t hashes[CMS_MAX_DEPTH]={0};
-    for(int i=0; i<cms->opt.depth && i<CMS_MAX_DEPTH; i++)
-	{
-        hashes[i]=XXH3_64bits_withSeed(key, len, i);
-        //hashes[i]=__fnv_1a(key, len, i);
-    }
-    
-    cms_bin_add(bin, hashes, cms->opt.depth, times);
-    long long added=cms_query(cms, hashes, cms->opt.depth);
-    long long max, min;
-    max=cms_query(cms, cms->hashes_max, cms->opt.depth);
-    if(added>max || cms->is_virgin)
+    struct cms_node *node=NULL;
+    HASH_FIND(hh, cms->hash_nodes, cms->my_uuid, sizeof(cms->my_uuid), node);
+    if(!node)
     {
-        memcpy(cms->hashes_max, hashes, sizeof(cms->hashes_max));
+        node=cms_node_new(cms->my_uuid, cms->opt.width, cms->opt.depth);
+        HASH_ADD_KEYPTR(hh, cms->hash_nodes, node->uuid, sizeof(node->uuid), node);
     }
-    min=cms_query(cms, cms->hashes_min, cms->opt.depth);
-    if(added<min || cms->is_virgin)
-    {
-        memcpy(cms->hashes_min, hashes, sizeof(cms->hashes_min));
-    }
-    cms->is_virgin=0;
-    return added;
-}
-int CM_sketch_remove_n(struct CM_sketch *CM_sketch, const char *key, size_t len, int times)
-{
-    return CM_sketch_add_n(CM_sketch, key, len, 0-times);
+    cms_node_incrby(node, hash, cms->opt.depth, increment);
+    return CM_sketch_query_hash(cms, hash, cms->opt.depth);
 }
 
 void CM_sketch_free(struct CM_sketch *cms)
 {
-    struct cms_bin *bin=NULL, *tmp=NULL;
-    HASH_ITER(hh, cms->hash_bins, bin, tmp)
+    struct cms_node *node=NULL, *tmp=NULL;
+    HASH_ITER(hh, cms->hash_nodes, node, tmp)
     {
-        HASH_DELETE(hh, cms->hash_bins, bin);
-        cms_bin_free(bin);
+        HASH_DELETE(hh, cms->hash_nodes, node);
+        cms_node_free(node);
     }
     free(cms);
     return;
@@ -315,27 +187,42 @@ void CM_sketch_free(struct CM_sketch *cms)
 size_t CM_sketch_size(const struct CM_sketch *cms)
 {
 	size_t sz=0;
-    struct cms_bin *bin=NULL, *tmp=NULL;
-    HASH_ITER(hh, cms->hash_bins, bin, tmp)
+    struct cms_node *node=NULL, *tmp=NULL;
+    HASH_ITER(hh, cms->hash_nodes, node, tmp)
     {
-        sz+=cms_bin_size(bin);
+        sz += cms_node_size(node);
     }
-	sz+=sizeof(struct CM_sketch);
+	sz += sizeof(struct CM_sketch);
 	return sz;
+}
+size_t CM_sketch_blob_size(const struct CM_sketch *cms)
+{
+    size_t sz=0;
+    struct cms_node *node=NULL, *tmp=NULL;
+    sz += offsetof(struct CM_sketch, hash_nodes);
+    sz += sizeof(size_t);
+    HASH_ITER(hh, cms->hash_nodes, node, tmp)
+    {
+        sz += sizeof(size_t);
+        sz += cms_node_blob_size(node);
+    }
+    return sz;
 }
 void CM_sketch_serialize(const struct CM_sketch *cms, char **blob, size_t *blob_sz)
 {
-    size_t mpack_buff_sz=CM_sketch_size(cms)+HASH_COUNT(cms->hash_bins)*sizeof(size_t);
+    size_t mpack_buff_sz=CM_sketch_blob_size(cms);
     char *mpack_buff=ALLOC(char, mpack_buff_sz);
-    struct cms_bin *bin=NULL, *tmp=NULL;
+    struct cms_node *node=NULL, *tmp=NULL;
     size_t offset=0;
-    *((size_t*)(mpack_buff+offset))=HASH_COUNT(cms->hash_bins);
-    offset+=sizeof(size_t);
-    HASH_ITER(hh, cms->hash_bins, bin, tmp)
+    memcpy(mpack_buff+offset, cms, offsetof(struct CM_sketch, hash_nodes));
+    offset += offsetof(struct CM_sketch, hash_nodes);
+    *((size_t*)(mpack_buff+offset))=HASH_COUNT(cms->hash_nodes);
+    offset += sizeof(size_t);
+    HASH_ITER(hh, cms->hash_nodes, node, tmp)
     {
-        *((size_t*)(mpack_buff+offset))=cms_bin_blob_size(bin);
+        *((size_t*)(mpack_buff+offset))=cms_node_blob_size(node);
         offset += sizeof(size_t);
-        offset += cms_bin_serialize(bin, mpack_buff+offset, mpack_buff_sz-offset);
+        offset += cms_node_serialize(node, mpack_buff+offset, mpack_buff_sz-offset);
     }
     *blob=mpack_buff;
     *blob_sz=offset;
@@ -344,53 +231,41 @@ void CM_sketch_serialize(const struct CM_sketch *cms, char **blob, size_t *blob_
 struct CM_sketch *CM_sketch_deserialize(const char *blob, size_t blob_sz)
 {
     struct CM_sketch *cms=ALLOC(struct CM_sketch, 1);
-    size_t offset=0, bin_blob_sz=0;
+    size_t offset=0, node_blob_sz=0;
+    memcpy(cms, blob+offset, offsetof(struct CM_sketch, hash_nodes));
+    offset += offsetof(struct CM_sketch, hash_nodes);
     size_t n_replica = *((size_t*)(blob+offset));
     offset += sizeof(size_t);
-    struct cms_bin *bin=NULL;
+    struct cms_node *node=NULL;
     for(int i=0; i<n_replica; i++)
     {
-        bin_blob_sz=*((size_t*)(blob+offset));
+        node_blob_sz= *((size_t*)(blob+offset));
         offset += sizeof(size_t);
-        bin=cms_bin_deserialize(blob+offset, bin_blob_sz);
-        offset+=bin_blob_sz;
-        assert(bin_blob_sz==cms_bin_blob_size(bin));
-        HASH_ADD_KEYPTR(hh, cms->hash_bins, bin->uuid, sizeof(bin->uuid), bin);
+        node=cms_node_deserialize(blob+offset, node_blob_sz);
+        offset += node_blob_sz;
+        assert(node_blob_sz==cms_node_blob_size(node));
+        assert(cms->opt.depth==node->depth);
+        assert(cms->opt.width==node->width);
+        HASH_ADD_KEYPTR(hh, cms->hash_nodes, node->uuid, sizeof(node->uuid), node);
     }
     return cms;
 }
-int CM_sketch_elements(const struct CM_sketch *cms)
-{
-    int total_count=0;
-    struct cms_bin *bin=NULL, *tmp=NULL;
-    HASH_ITER(hh, cms->hash_bins, bin, tmp)
-    {
-        total_count+=bin->elements_added;
-    }
-    return total_count;
-}
-int CM_sketch_max(const struct CM_sketch *cms)
-{
-    int max=cms_query(cms, cms->hashes_max, cms->opt.depth);
-    return max;
-}
-int CM_sketch_min(const struct CM_sketch *cms)
-{
-    int min=cms_query(cms, cms->hashes_min, cms->opt.depth);
-    return min;
-}
 void CM_sketch_merge(struct CM_sketch *dst, const struct CM_sketch *src)
 {
-    struct cms_bin *src_bin=NULL, *dst_bin=NULL, *tmp=NULL;
-	HASH_ITER(hh, src->hash_bins, src_bin, tmp)
+    struct cms_node *src_node=NULL, *dst_node=NULL, *tmp=NULL;
+    assert(dst->opt.width==src->opt.width);
+    assert(dst->opt.depth==src->opt.depth);
+	HASH_ITER(hh, src->hash_nodes, src_node, tmp)
 	{
-		HASH_FIND(hh, dst->hash_bins, src_bin->uuid, sizeof(src_bin->uuid), dst_bin);
-		if(!dst_bin)
+        assert(src_node->width==src->opt.width);
+        assert(src_node->depth==src->opt.depth);
+		HASH_FIND(hh, dst->hash_nodes, src_node->uuid, sizeof(src_node->uuid), dst_node);
+		if(!dst_node)
 		{
-			dst_bin=cms_bin_new(src_bin->uuid, dst->opt.width, dst->opt.depth);
-			HASH_ADD_KEYPTR(hh, dst->hash_bins, dst_bin->uuid, sizeof(dst_bin->uuid), dst_bin);
+			dst_node=cms_node_new(src_node->uuid, src_node->width, src_node->depth);
+			HASH_ADD_KEYPTR(hh, dst->hash_nodes, dst_node->uuid, sizeof(dst_node->uuid), dst_node);
 		}
-        cms_bin_merge(dst_bin, src_bin);
+        cms_node_merge(dst_node, src_node);
 	}
 }
 void CM_sketch_merge_blob(struct CM_sketch *dst, const char *blob, size_t blob_sz)
@@ -410,9 +285,52 @@ void CM_sketch_info(const struct CM_sketch *cms, struct CM_sketch_info *info)
     //https://cs.stackexchange.com/questions/44803/what-is-the-correct-way-to-determine-the-width-and-depth-of-a-count-min-sketch
     info->width=cms->opt.width;
     info->depth=cms->opt.depth;
-    info->confidence = 1 - (1 / pow(2, info->depth));
-    info->error_rate=2 / (double) info->width;
-    info->n_replica=HASH_COUNT(cms->hash_bins);
-    info->n_element=CM_sketch_elements(cms);
+    info->probability = 1 / pow(2, info->depth);
+    info->error=2 / (double) info->width;
+    info->n_replica=HASH_COUNT(cms->hash_nodes);
+    info->count=0;
+    struct cms_node *node=NULL, *tmp=NULL;
+    HASH_ITER(hh, cms->hash_nodes, node, tmp)
+    {
+        info->count += node->elements_added;
+    }
     return;
+}
+void CM_sketch_list_replica(const struct CM_sketch *cms, uuid_t *replica, size_t *n_replica)
+{
+    struct cms_node *node=NULL, *tmp=NULL;
+    size_t i=0;
+    HASH_ITER(hh, cms->hash_nodes, node, tmp)
+    {
+        uuid_copy(replica[i], node->uuid);
+        i++;
+    }
+    *n_replica=i;
+    return;
+}
+int CM_sketch_clear_replica(struct CM_sketch *cms, uuid_t replica)
+{
+    struct cms_node *node=NULL;
+    // 'sizeof' on array function parameter 'replica' will return size of 'unsigned char *', so we use sizeof(uuid_t) instead.
+    HASH_FIND(hh, cms->hash_nodes, replica, sizeof(uuid_t), node);
+    if(!node)
+    {
+        return -1;
+    }
+    cms_node_reset(node);
+    return 0;
+}
+void CM_sketch_tool_dimension_by_prob(double error, double probability, int *width, int *depth)
+{
+    assert(error > 0 && error < 1);
+    assert(probability > 0 && probability < 1);
+
+    *width = ceil(2 / error);
+    *depth = ceil(log10f(probability) / log10f(0.5));
+}
+struct CM_sketch *CM_sketch_replicate(uuid_t uuid, const char *blob, size_t blob_sz)
+{
+    struct CM_sketch *cms=CM_sketch_deserialize(blob, blob_sz);
+    uuid_copy(cms->my_uuid, uuid);
+    return cms;
 }

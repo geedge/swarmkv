@@ -1672,7 +1672,7 @@ TEST(BulkTokenBucket, HighCollision)
 	}
 	bulk_token_bucket_test_print_result(test, n_case);
 }
-TEST(BulkTokenBucket, VariousCIR)
+TEST(BulkTokenBucket, VariousRate)
 {
 	int n_case=5;
 	struct btb_case test[n_case];

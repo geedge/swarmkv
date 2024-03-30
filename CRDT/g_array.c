@@ -208,7 +208,10 @@ void g_array_merge(struct g_array *dst, const struct g_array *src)
 			if(src_item->sequence > dst_item->sequence)
 			{
 				memcpy(dst_item, src_item, G_ARRAY_ITEM_HEADER_SIZE);
-				dst_item->array=realloc(dst_item->array, sizeof(struct counter_item)*dst_item->array_sz);
+				if(dst_item->array_sz < src_item->array_sz)
+				{
+					dst_item->array=realloc(dst_item->array, sizeof(struct counter_item)*dst_item->array_sz);
+				}
 				memcpy(dst_item->array, src_item->array, sizeof(struct counter_item)*dst_item->array_sz);
 			}
 		}

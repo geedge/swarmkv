@@ -72,7 +72,7 @@ enum cmd_exec_result set_command(struct swarmkv_module *mod_store, const struct 
 	{
 		LWW_register_set(obj->string, value, sdslen(value));
 		*reply=swarmkv_reply_new_status("OK");
-		sobj_need_sync(mod_store, obj);
+		store_mark_object_as_modified(mod_store, obj);
 	}
 	else if(obj->type==OBJ_TYPE_INTEGER)
 	{
@@ -80,7 +80,7 @@ enum cmd_exec_result set_command(struct swarmkv_module *mod_store, const struct 
 		{
 			PN_counter_set(obj->counter, int_value);		
 			*reply=swarmkv_reply_new_status("OK");
-			sobj_need_sync(mod_store, obj);		
+			store_mark_object_as_modified(mod_store, obj);		
 		}
 		else
 		{
@@ -113,7 +113,7 @@ enum cmd_exec_result integer_generic(struct swarmkv_module *mod_store, const sds
 		}
 		value=PN_counter_incrby(obj->counter, increment);
 		*reply=swarmkv_reply_new_integer(value);		
-		sobj_need_sync(mod_store, obj);
+		store_mark_object_as_modified(mod_store, obj);
 	}
 	else
 	{

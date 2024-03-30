@@ -24,7 +24,7 @@
 #include "t_hash.h"
 #include "t_token_bucket.h"
 #include "t_bloom_filter.h"
-
+#include "t_cms.h"
 
 #include "uthash.h"
 #include "sds.h"
@@ -62,7 +62,6 @@ struct swarmkv
 {
 	struct swarmkv_module module;
 	char db_name[SWARMKV_SYMBOL_MAX];
-	uuid_t bin_uuid;
 	struct swarmkv_options *opts;
 
 	int thread_counter;
@@ -879,6 +878,20 @@ void __on_msg_callback(struct swarmkv_msg *msg, void *arg)
 		}
 	}
 }
+static const char *exec_ret2string(enum cmd_exec_result ret)
+{
+	switch(ret)
+	{
+		case NEED_KEY_ROUTE:
+			return "NEED_KEY_ROUTE";
+		case REDIRECT:
+			return "REDIRECT";
+		case FINISHED:
+			return "FINISHED";
+		default:
+			assert(0);
+	}
+}
 #define	INTER_THREAD_RPC_TIMEOUT_AHEAD	1000
 void __exec_cmd(struct swarmkv *db, const node_t *target_node, const struct swarmkv_cmd *cmd, struct future *future_of_caller)
 {
@@ -970,7 +983,18 @@ void __exec_cmd(struct swarmkv *db, const node_t *target_node, const struct swar
 	clock_gettime(CLOCK_MONOTONIC_COARSE, &end);
 	swarmkv_monitor_record_command(db->mod_monitor, spec->name, timespec_diff_usec(&start, &end));
 	
-	
+	//if(strcasestr(spec->name, "CRDT"))
+	if(0){
+		struct timeval now;
+		gettimeofday(&now, NULL);
+		printf("%ld.%.6ld %s %d %s %s %s\n",
+									now.tv_sec, now.tv_usec,
+									db->self.addr,
+									db->threads[cur_tid].recusion_depth, 
+									spec->name,
+									spec->key_offset<0?"NULL":cmd->argv[spec->key_offset],
+									exec_ret2string(exec_ret));
+	}
 	switch(exec_ret)
 	{
 		case FINISHED:
@@ -1117,7 +1141,7 @@ void command_spec_init(struct swarmkv *db)
 					3, 1, CMD_KEY_OW, REPLY_ERROR, AUTO_ROUTE,
 					hincrby_command, db->mod_store);
 
-	/* Token bucket commands */
+	/* Token Buckets commands */
 	command_register(&(db->command_table), "TCFG", "key rate capacity [PD seconds]",
 					3, 1, CMD_KEY_OW, REPLY_ERROR, AUTO_ROUTE, 
 					tcfg_command, db->mod_store);
@@ -1146,10 +1170,10 @@ void command_spec_init(struct swarmkv *db)
 					1, 1, CMD_KEY_RO, REPLY_EMPTY_ARRAY, AUTO_ROUTE,
 					btinfo_command, db->mod_store);
 
-	/*Bloom filter commands*/
-	command_register(&(db->command_table), "BFRESERVE", "key error_rate capacity [TIME window-milliseconds slice-number]",
+	/*Bloom Filter commands*/
+	command_register(&(db->command_table), "BFINIT", "key error capacity [TIME window-milliseconds slice-number]",
 					3, 1, CMD_KEY_OW, REPLY_EMPTY_ARRAY, AUTO_ROUTE,
-					bfreserve_command, db->mod_store);
+					bfinit_command, db->mod_store);
 	command_register(&(db->command_table), "BFADD", "key item [item ...]",
 					2, 1, CMD_KEY_RW, REPLY_EMPTY_ARRAY, AUTO_ROUTE,
 					bfadd_command, db->mod_store);
@@ -1165,6 +1189,32 @@ void command_spec_init(struct swarmkv *db)
 	command_register(&(db->command_table), "BFINFO", "key",
 					1, 1, CMD_KEY_RO, REPLY_EMPTY_ARRAY, AUTO_ROUTE,
 					bfinfo_command, db->mod_store);
+
+	/*Count-min Sketch Commands*/
+	command_register(&(db->command_table), "CMSINITBYDIM", "key width depth",
+					3, 1, CMD_KEY_OW, REPLY_EMPTY_ARRAY, AUTO_ROUTE,
+					cmsinitbydim_command, db->mod_store);
+	command_register(&(db->command_table), "CMSINITBYPROB", "key error probability",
+					3, 1, CMD_KEY_OW, REPLY_EMPTY_ARRAY, AUTO_ROUTE,
+					cmsinitbyprob_command, db->mod_store);
+	command_register(&(db->command_table), "CMSINCRBY", "key item increment [item increment ...]",
+					3, 1, CMD_KEY_RW, REPLY_EMPTY_ARRAY, AUTO_ROUTE,
+					cmsincrby_command, db->mod_store);
+	command_register(&(db->command_table), "CMSQUERY", "key item",
+					2, 1, CMD_KEY_RO, REPLY_INT_0, AUTO_ROUTE,
+					cmsquery_command, db->mod_store);
+	command_register(&(db->command_table), "CMSMQUERY", "key item [item ...]",
+					2, 1, CMD_KEY_RO, REPLY_EMPTY_ARRAY, AUTO_ROUTE,
+					cmsmquery_command, db->mod_store);
+	command_register(&(db->command_table), "CMSINFO", "key",
+					1, 1, CMD_KEY_RO, REPLY_EMPTY_ARRAY, AUTO_ROUTE,
+					cmsinfo_command, db->mod_store);
+	command_register(&(db->command_table), "CMSRLIST", "key",
+					1, 1, CMD_KEY_RO, REPLY_EMPTY_ARRAY, AUTO_ROUTE,
+					cmsrlist_command, db->mod_store);
+	command_register(&(db->command_table), "CMSRCLEAR", "key uuid",
+					2, 1, CMD_KEY_RW, REPLY_ERROR, AUTO_ROUTE,
+					cmsrclear_command, db->mod_store);
 
 	/* Debug Commands */
 	command_register(&(db->command_table), "INFO", "[section]",
@@ -1420,9 +1470,6 @@ struct swarmkv *swarmkv_open(struct swarmkv_options *opts, const char *db_name, 
         }
         db->logger=log_handle_create(log_path, opts->loglevel);
 	}
-
-
-	uuid_copy(db->bin_uuid, opts->bin_uuid);
 	if(opts->dryrun)
 	{
 	}
@@ -1575,4 +1622,9 @@ void swarmkv_close(struct swarmkv * db)
 const char *swarmkv_self_address(const struct swarmkv *db)
 {
 	return db->self.addr;
+}
+void swarmkv_self_uuid(const struct swarmkv *db, char buff[37])
+{
+	uuid_unparse(db->opts->bin_uuid, buff);
+	return;
 }

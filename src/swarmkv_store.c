@@ -111,11 +111,20 @@ struct swarmkv_obj_specs sobj_specs[__SWARMKV_OBJ_TYPE_MAX] =
 		.obj_size=(size_t (*)(const void *))AP_bloom_mem_size
 	},
 	{
+		.type=OBJ_TYPE_CMS,
+		.type_name="count-min-sketch",
+		.obj_free=(void (*)(void *))CM_sketch_free,
+		.obj_serialize=(void (*)(const void *, char **, size_t *))CM_sketch_serialize,
+		.obj_merge_blob=(void (*)(void *, const char *, size_t))CM_sketch_merge_blob,
+		.obj_replicate=(void * (*)(uuid_t, const char *, size_t))CM_sketch_replicate,
+		.obj_size=(size_t (*)(const void *))CM_sketch_size
+	},
+	{
 		.type=OBJ_TYPE_UNDEFINED,
 		.type_name="undefined",
 		.obj_free=undefined_obj_free,
 		.obj_serialize=NULL,
-		.obj_merge_blob=NULL,
+		.obj_merge_blob=NULL, 
 		.obj_replicate=NULL,
 		.obj_size=(size_t (*)(const void *))undefined_obj_mem_size
 	}
@@ -331,7 +340,7 @@ void store_get_node_addr(struct swarmkv_module* mod_store, node_t *node)
 	node_copy(node, &store->self);
 	return;
 }
-void sobj_need_sync(struct swarmkv_module *mod_store, struct sobj *obj)
+void store_mark_object_as_modified(struct swarmkv_module *mod_store, struct sobj *obj)
 {
 	struct swarmkv_store *store=module2store(mod_store);
 	struct scontainer *ctr=container_of(obj, struct scontainer, obj);
@@ -423,7 +432,7 @@ void sobj_merge_blob(struct sobj *obj, const char *blob, size_t blob_sz, uuid_t 
 	offset+=sizeof(size_t);
 	assert(offset+value_blob_sz==blob_sz);
 	const char *value_blob=blob+offset;
-	if(!obj->raw)
+	if(obj->raw == NULL)
 	{
 		obj->raw=sobj_specs[obj->type].obj_replicate(uuid, value_blob, value_blob_sz);
 	}
@@ -1008,17 +1017,17 @@ enum cmd_exec_result crdt_info_command(struct swarmkv_module *mod_store, const s
 	size_t sz=0;
 	sz+=sobj_specs[ctr->obj.type].obj_size(ctr->obj.raw);
 	sz+=sizeof(struct scontainer)+sdslen(ctr->obj.key);
-	size_t n_replica=0;
-	n_replica=ctr->replica_node_list?utarray_len(ctr->replica_node_list):0;
-	sz+=n_replica*sizeof(node_t);
+	size_t n_peer=0;
+	n_peer=ctr->replica_node_list?utarray_len(ctr->replica_node_list):0;
+	sz+=n_peer*sizeof(node_t);
 	int i=0;
 	*reply=swarmkv_reply_new_array(8);
 	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("Type");
 	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt(sobj_specs[ctr->obj.type].type_name);
 	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("Size");
 	(*reply)->elements[i++]=swarmkv_reply_new_integer(sz);
-	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("Replicas");
-	(*reply)->elements[i++]=swarmkv_reply_new_integer(n_replica);
+	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("Peers");
+	(*reply)->elements[i++]=swarmkv_reply_new_integer(n_peer);
 	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("LastModified");
 	(*reply)->elements[i++]=swarmkv_reply_new_integer(ctr->op_timestamp.tv_sec);
 	return FINISHED;

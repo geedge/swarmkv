@@ -70,7 +70,7 @@ enum cmd_exec_result hset_command(struct swarmkv_module *mod_store, const struct
 			if(ret>0) n_added++;
 		}
 		*reply=swarmkv_reply_new_integer(n_added);
-		sobj_need_sync(mod_store, obj);
+		store_mark_object_as_modified(mod_store, obj);
 	}
 	else
 	{
@@ -110,7 +110,7 @@ enum cmd_exec_result hdel_command(struct swarmkv_module *mod_store, const struct
 		if(ret>0) n_deleted++;
 	}
 	*reply=swarmkv_reply_new_integer(n_deleted);
-	sobj_need_sync(mod_store, obj);
+	store_mark_object_as_modified(mod_store, obj);
 
     return FINISHED;
 }
@@ -246,7 +246,7 @@ enum cmd_exec_result hincrby_command(struct swarmkv_module *mod_store, const str
 		else
 		{
 		    *reply=swarmkv_reply_new_integer(result);
-            sobj_need_sync(mod_store, obj);
+            store_mark_object_as_modified(mod_store, obj);
         }
 	}
 	else

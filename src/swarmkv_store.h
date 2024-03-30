@@ -14,6 +14,7 @@
 #include "fair_token_bucket.h"
 #include "bulk_token_bucket.h"
 #include "ap_bloom.h"
+#include "cm_sketch.h"
 
 enum sobj_type
 {
@@ -25,6 +26,7 @@ enum sobj_type
 	OBJ_TYPE_FAIR_TOKEN_BUCKET,
 	OBJ_TYPE_BULK_TOKEN_BUCKET,
 	OBJ_TYPE_BLOOM_FILTER,
+	OBJ_TYPE_CMS,
 	OBJ_TYPE_UNDEFINED,
 	__SWARMKV_OBJ_TYPE_MAX
 };
@@ -43,6 +45,7 @@ struct sobj
 		struct fair_token_bucket *ftb;
 		struct bulk_token_bucket *btb;
 		struct AP_bloom *bloom;
+		struct CM_sketch *cms;
 		void *raw;
 	};
 };
@@ -62,7 +65,7 @@ struct store_info
 };
 void swarmkv_store_info(struct swarmkv_module *module, struct store_info *info);
 
-void sobj_need_sync(struct swarmkv_module *mod_store, struct sobj *obj);
+void store_mark_object_as_modified(struct swarmkv_module *mod_store, struct sobj *obj);
 int sobj_get_random_replica(struct sobj *obj, node_t *out);
 enum cmd_exec_result handle_undefined_object(struct sobj *obj, struct swarmkv_reply **reply);
 

@@ -85,7 +85,7 @@ enum cmd_exec_result tcfg_command(struct swarmkv_module *mod_store, const struct
 	else if(obj->type==OBJ_TYPE_TOKEN_BUCKET)
 	{
 		OC_token_bucket_configure(obj->bucket, now, rate, period, capacity);
-		sobj_need_sync(mod_store, obj);
+		store_mark_object_as_modified(mod_store, obj);
 		*reply=swarmkv_reply_new_status("OK");
 	}
 	else
@@ -182,7 +182,7 @@ enum cmd_exec_result tconsume_command(struct swarmkv_module *mod_store, const st
 	gettimeofday(&now, NULL);
 	allocated=OC_token_bucket_consume(obj->bucket, now, consume_type, request);
 	*reply=swarmkv_reply_new_integer(allocated);
-	sobj_need_sync(mod_store, obj);
+	store_mark_object_as_modified(mod_store, obj);
 	return FINISHED;
 }
 bool is_power_of_2(long long num) 
@@ -254,7 +254,7 @@ enum cmd_exec_result ftcfg_command(struct swarmkv_module *mod_store, const struc
 	else if(obj->type==OBJ_TYPE_FAIR_TOKEN_BUCKET)
 	{
 		fair_token_bucket_configure(obj->ftb, now, rate, period, capacity, divisor);
-		sobj_need_sync(mod_store, obj);
+		store_mark_object_as_modified(mod_store, obj);
 		*reply=swarmkv_reply_new_status("OK");
 	}
 	else
@@ -313,7 +313,7 @@ enum cmd_exec_result ftconsume_command(struct swarmkv_module *mod_store, const s
 	allocated=fair_token_bucket_consume(obj->ftb, now, member, sdslen(member), weight, consume_type, request);
 
 	*reply=swarmkv_reply_new_integer(allocated);
-	sobj_need_sync(mod_store, obj);
+	store_mark_object_as_modified(mod_store, obj);
 	return FINISHED;
 }
 enum cmd_exec_result ftinfo_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
@@ -426,7 +426,7 @@ enum cmd_exec_result btcfg_command(struct swarmkv_module *mod_store, const struc
 	else if(obj->type==OBJ_TYPE_BULK_TOKEN_BUCKET)
 	{
 		bulk_token_bucket_configure(obj->btb, now, rate, period, capacity, buckets);
-		sobj_need_sync(mod_store, obj);
+		store_mark_object_as_modified(mod_store, obj);
 		*reply=swarmkv_reply_new_status("OK");
 	}
 	else
@@ -480,7 +480,7 @@ enum cmd_exec_result btconsume_command(struct swarmkv_module *mod_store, const s
 	allocated=bulk_token_bucket_consume(obj->btb, now, member, sdslen(member), consume_type, request);
 
 	*reply=swarmkv_reply_new_integer(allocated);
-	sobj_need_sync(mod_store, obj);
+	store_mark_object_as_modified(mod_store, obj);
 	return FINISHED;
 }
 enum cmd_exec_result btinfo_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
@@ -515,8 +515,8 @@ enum cmd_exec_result btinfo_command(struct swarmkv_module *mod_store, const stru
 		available=bulk_token_bucket_read_available(obj->btb, now, cmd->argv[2], sdslen(cmd->argv[2]));
 	}
 	int i=0;
-	*reply=swarmkv_reply_new_array(14);
-	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("Refill");
+	*reply=swarmkv_reply_new_array(16);
+	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("Rate");
 	(*reply)->elements[i++]=swarmkv_reply_new_integer(btb_info.rate);
 	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("Period");
 	(*reply)->elements[i++]=swarmkv_reply_new_integer(btb_info.period);
@@ -528,8 +528,10 @@ enum cmd_exec_result btinfo_command(struct swarmkv_module *mod_store, const stru
 	(*reply)->elements[i++]=swarmkv_reply_new_integer(btb_info.approximate_keys);
 	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("Collisions");
 	(*reply)->elements[i++]=swarmkv_reply_new_double(btb_info.collision_rate);
+	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("Replicas");
+	(*reply)->elements[i++]=swarmkv_reply_new_integer(btb_info.replicas);
 	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("Query");
 	(*reply)->elements[i++]=swarmkv_reply_new_integer(available);
-	assert(i==14);
+	assert(i==16);
 	return FINISHED;
 }

@@ -7,15 +7,17 @@
 #include <unistd.h> //usleep
 #include <uuid/uuid.h>
 #include <math.h>
+#define	CMS_TEST_WIDTH		(1024*16)
+#define	CMS_TEST_DEPTH		6
 TEST(CMSketch, Basic)
 {
 	uuid_t uuid;
 	uuid_generate(uuid);
-	struct CM_sketch *cms=CM_sketch_new(uuid);
+	struct CM_sketch *cms=CM_sketch_new(uuid, CMS_TEST_WIDTH, CMS_TEST_DEPTH);
 	int ret=0, n_added=0;
 	for(int i=0; i<10; i++)
 	{
-		ret=CM_sketch_add_n(cms, (char *)&i, sizeof(i), i+1);
+		ret=CM_sketch_incrby(cms, (char *)&i, sizeof(i), i+1);
 		n_added += i+1;
 	}
 	for(int i=0; i<10; i++)
@@ -25,7 +27,7 @@ TEST(CMSketch, Basic)
 	}
 	for(int i=0; i<10; i++)
 	{
-		ret=CM_sketch_remove_n(cms, (char *)&i, sizeof(i), i);
+		ret=CM_sketch_incrby(cms, (char *)&i, sizeof(i), (0-i));
 		n_added -= i;
 	}
 	for(int i=0; i<10; i++)
@@ -35,20 +37,34 @@ TEST(CMSketch, Basic)
 	}
 	struct CM_sketch_info info;
 	CM_sketch_info(cms, &info);
-	EXPECT_EQ(info.n_element, n_added);
-	printf("error_rate: %f confidence: %f\n", info.error_rate, info.confidence);
+	EXPECT_EQ(info.count, n_added);
+	printf("error_rate: %f probability: %f\n", info.error, info.probability);
+	CM_sketch_free(cms);
+}
+TEST(CMSketch, DimByProb)
+{
+	uuid_t uuid;
+	uuid_generate(uuid);
+	int width=0, depth=0;
+	double error = 0.002, prob=0.001;
+	CM_sketch_tool_dimension_by_prob(error, prob, &width, &depth);
+	struct CM_sketch *cms=CM_sketch_new(uuid, width, depth);
+	struct CM_sketch_info info;
+	CM_sketch_info(cms, &info);
+	EXPECT_NEAR(info.error, error, error/2);
+	EXPECT_NEAR(info.probability, prob, prob/2);
 	CM_sketch_free(cms);
 }
 TEST(CMSketch, I5K)
 {
 	uuid_t uuid;
 	uuid_generate(uuid);
-	struct CM_sketch *cms=CM_sketch_new(uuid);
+	struct CM_sketch *cms=CM_sketch_new(uuid, CMS_TEST_WIDTH, CMS_TEST_DEPTH);
 	long long n_item=5000, ret=0;
 	long long base=10000, total_add=0;
 	for(long long i=0; i<n_item; i++)
 	{
-		ret=CM_sketch_add_n(cms, (char *)&i, sizeof(i), base+i);
+		ret=CM_sketch_incrby(cms, (char *)&i, sizeof(i), base+i);
 		total_add+=(base+i);
 	}
 	struct CM_sketch_info info;
@@ -58,12 +74,12 @@ TEST(CMSketch, I5K)
 	{
 		ret=CM_sketch_query(cms, (char *)&i, sizeof(i));
 		//The formal expectation is total_add*info.error_rate
-		if(abs(ret-(i+base))< (i+base)*info.error_rate)
+		if(abs(ret-(i+base))< (i+base)*info.error)
 		{
 			pass++;
 		}
 	}
-	EXPECT_NEAR(pass, n_item, n_item*(1-info.confidence));
+	EXPECT_NEAR(pass, n_item, n_item*(1-info.probability));
 	CM_sketch_free(cms);
 }
 static void CMS_sync(struct CM_sketch *list[], size_t n)
@@ -86,27 +102,47 @@ static void CMS_sync(struct CM_sketch *list[], size_t n)
 }
 TEST(CMSketch, Merge)
 {
-	size_t replica_number=2, round=10;
-	long long key=1234;
+	int replica_number=3, round=10;
+	int n_item=4;
+	const char *items[n_item]={"hello", "world", "good", "morning"};
+	int count[n_item]={400, 300, 200, 100001};
 	struct CM_sketch *cms[replica_number];
 	uuid_t uuid;
-	for(size_t i=0; i<replica_number; i++)
+	uuid_generate(uuid);
+	cms[0]=CM_sketch_new(uuid, CMS_TEST_WIDTH, CMS_TEST_DEPTH);
+	char *blob=NULL;
+	size_t blob_sz=0;
+	CM_sketch_serialize(cms[0], &blob, &blob_sz);
+	for(int i=1; i<replica_number; i++)
 	{
 		uuid_generate(uuid);
-		cms[i]=CM_sketch_new(uuid);
+		cms[i]=CM_sketch_replicate(uuid, blob, blob_sz);
 	}
-	for(size_t i=0; i<round; i++)
+	free(blob);
+	blob=NULL;
+	for(int i=0; i<n_item; i++)
 	{
-		CM_sketch_add_n(cms[i%replica_number], (char*) &key, sizeof(key), 1);
+		CM_sketch_incrby(cms[i%replica_number], items[i], strlen(items[i]), count[i]);
 	}
 	CMS_sync(cms, replica_number);
 	int ret=0;
-	for(size_t i=0; i<replica_number; i++)
+	for(int i=0; i<round; i++)
 	{
-		ret=CM_sketch_query(cms[i], (char *)&key, sizeof(key));
-		EXPECT_EQ(ret, round);
+		int id=i%n_item;
+		ret=CM_sketch_query(cms[i%replica_number], items[id], strlen(items[id]));
+		EXPECT_EQ(ret, count[id]);
 	}
-	for(size_t i=0; i<replica_number; i++)
+	for(int i=0; i<n_item; i++)
+	{
+		CM_sketch_incrby(cms[(i+1)%replica_number], items[i], strlen(items[i]), 0-count[i]);
+	}
+	CMS_sync(cms, replica_number);
+	for(int i=0; i<n_item; i++)
+	{
+		ret=CM_sketch_query(cms[i%replica_number], items[i], strlen(items[i]));
+		EXPECT_EQ(ret, 0);
+	}
+	for(int i=0; i<replica_number; i++)
 	{
 		CM_sketch_free(cms[i]);
 	}	
@@ -120,12 +156,12 @@ TEST(CMSketch, Idempotent)
 	for(i=0; i<replica_number; i++)
 	{
 		uuid_generate(uuid);
-		cms[i]=CM_sketch_new(uuid);
+		cms[i]=CM_sketch_new(uuid, CMS_TEST_WIDTH, CMS_TEST_DEPTH);
 	}
 	int n_added=0;
 	for(i=0; i<round; i++)
 	{
-		CM_sketch_add_n(cms[i%replica_number], (char*) &i, sizeof(i), i);
+		CM_sketch_incrby(cms[i%replica_number], (char*) &i, sizeof(i), i);
 		n_added+=i;
 	}
 	CMS_sync(cms, replica_number);
@@ -138,16 +174,158 @@ TEST(CMSketch, Idempotent)
 	for(i=0; i<round; i++)
 	{
 		ret=CM_sketch_query(cms[(i+1)%replica_number], (char*) &i, sizeof(i));
-		if((double)ret<((double)i+info.error_rate*n_added))
+		if((double)ret<((double)i+info.error*n_added))
 		{
 			success++;
 		}
 	}
-	EXPECT_GE((double)success/round, info.confidence);
+	EXPECT_GE((double)success/round, info.probability);
 	for(i=0; i<replica_number; i++)
 	{
 		CM_sketch_free(cms[i]);
 	}	
+}
+TEST(CMSketch, Decrement)
+{
+	size_t replica_number=8, round=10000, i=0;
+	struct CM_sketch *cms[replica_number];
+	uuid_t uuid;
+	
+	for(i=0; i<replica_number; i++)
+	{
+		uuid_generate(uuid);
+		cms[i]=CM_sketch_new(uuid, CMS_TEST_WIDTH, CMS_TEST_DEPTH);
+	}
+	int n_added=0;
+	for(i=0; i<round; i++)
+	{
+		CM_sketch_incrby(cms[i%replica_number], (char*) &i, sizeof(i), i*2);
+		n_added+=i*2;
+	}
+	CMS_sync(cms, replica_number);
+	int ret=0;
+	size_t success=0;
+	struct CM_sketch_info info;
+	CM_sketch_info(cms[0], &info);
+	EXPECT_EQ(info.count, n_added);
+	for(i=0; i<round; i++)
+	{
+		CM_sketch_incrby(cms[(i+1)%replica_number], (char*) &i, sizeof(i), 0-i);
+		n_added -= i;
+	}
+	CMS_sync(cms, replica_number);
+	CM_sketch_info(cms[0], &info);
+	EXPECT_EQ(info.count, n_added);
+	for(i=0; i<round; i++)
+	{
+		ret=CM_sketch_query(cms[(i+1)%replica_number], (char*) &i, sizeof(i));
+		if((double)ret<((double)i+info.error*n_added))
+		{
+			success++;
+		}
+	}
+	EXPECT_GE((double)success/round, 1-info.probability);
+	for(i=0; i<replica_number; i++)
+	{
+		CM_sketch_free(cms[i]);
+	}
+
+}
+TEST(CMSketch, Accuracy)
+{
+	size_t replica_number=8, round=10000, i=0;
+	struct CM_sketch *cms[replica_number];
+	uuid_t uuid;
+	
+	for(i=0; i<replica_number; i++)
+	{
+		uuid_generate(uuid);
+		cms[i]=CM_sketch_new(uuid, CMS_TEST_WIDTH, CMS_TEST_DEPTH);
+	}
+	int n_added=0;
+	for(i=0; i<round; i++)
+	{
+		CM_sketch_incrby(cms[i%replica_number], (char*) &i, sizeof(i), i);
+		n_added+=i;
+	}
+	CMS_sync(cms, replica_number);
+	int ret=0;
+	size_t success=0;
+	struct CM_sketch_info info;
+	CM_sketch_info(cms[0], &info);
+	EXPECT_EQ(info.count, n_added);
+	for(i=0; i<round; i++)
+	{
+		ret=CM_sketch_query(cms[(i+1)%replica_number], (char*) &i, sizeof(i));
+		if((double)ret<((double)i+info.error*n_added))
+		{
+			success++;
+		}
+	}
+	EXPECT_GE((double)success/round, 1-info.probability);
+	for(i=0; i<replica_number; i++)
+	{
+		CM_sketch_free(cms[i]);
+	}
+}
+TEST(CMSketch, ResetReplica)
+{
+	size_t replica_number=2, round=10000, i=0;
+	struct CM_sketch *cms[replica_number];
+	int added[replica_number]={0};
+	uuid_t uuid[replica_number];
+	
+	for(i=0; i<replica_number; i++)
+	{
+		uuid_generate(uuid[i]);
+		cms[i]=CM_sketch_new(uuid[i], CMS_TEST_WIDTH, CMS_TEST_DEPTH);
+	}
+
+	int n_added=0;
+	for(i=0; i<round; i++)
+	{
+		CM_sketch_incrby(cms[i%replica_number], (char*) &i, sizeof(i), i);
+		added[i%replica_number]+=i;
+		n_added+=i;
+	}
+	CMS_sync(cms, replica_number);
+	struct CM_sketch_info info;
+	CM_sketch_info(cms[0], &info);
+	EXPECT_EQ(info.count, n_added);
+	EXPECT_EQ(info.n_replica, replica_number);
+
+	uuid_t replica_uuid[replica_number];
+	size_t n_replica=replica_number;
+	CM_sketch_list_replica(cms[0], replica_uuid, &n_replica);
+	EXPECT_EQ(n_replica, replica_number);
+	int match=0;
+	for(i=0; i<replica_number; i++)
+	{
+		for(int j=0; j<(int)replica_number; j++)
+		{
+			if(0==uuid_compare(replica_uuid[i], uuid[j]))
+			{
+				match++;
+				continue;
+			}
+		}
+	}
+	EXPECT_EQ(match, replica_number);
+
+	int ret=0;
+	srand(171);
+	i=rand()%round;
+	ret=CM_sketch_query(cms[0], (char*) &i, sizeof(i));
+	EXPECT_NEAR(ret, i, info.error*n_added);
+	CM_sketch_clear_replica(cms[0], uuid[i%replica_number]);
+	ret=CM_sketch_query(cms[0], (char*) &i, sizeof(i));
+	EXPECT_EQ(ret, 0);
+
+	for(i=0; i<replica_number; i++)
+	{
+		CM_sketch_free(cms[i]);
+	}
+
 }
 void st_hll_sync(struct ST_hyperloglog *list[], size_t n)
 {

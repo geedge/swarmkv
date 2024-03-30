@@ -62,7 +62,7 @@ int swarmkv_cli_add_slot_owner(const char *cluster_name, const char *node_string
 }
 void wait_for_sync()
 {
-	usleep(1000*1000);
+	usleep(50*1000);
 }
 
 struct cmd_exec_arg* cmd_exec_arg_new(void)

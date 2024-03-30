@@ -12,7 +12,7 @@
 
 #define PERTURB_INTERVAL_MAX_MS  8000
 #define BTB_ST_HLL_PRECISION 7
-#define BTB_ST_HLL_WINDOW_MIN_MS 1000
+#define BTB_ST_HLL_WINDOW_MIN_MS 10000
 
 struct btb_configuration
 {

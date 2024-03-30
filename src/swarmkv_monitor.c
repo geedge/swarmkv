@@ -10,12 +10,12 @@
 #include <hdr/hdr_interval_recorder.h>
 
 #include <pthread.h>
-#define METRIC_KEY_MAX  64
+#define KEY_LEN_MAX  64
 #define SIGNIFICANT_FIGURES 2
 #define LOWEST_TRACKABLE_VALUE  1
 struct recorder
 {
-    char key[METRIC_KEY_MAX];
+    char key[KEY_LEN_MAX];
     struct hdr_interval_recorder hdr_interval;
     struct hdr_histogram *hdr_previous;
     struct hdr_histogram *hdr_all_time;
@@ -45,7 +45,7 @@ void recorder_free(struct recorder *recorder)
 }
 struct recorder_metric
 {
-    char key[METRIC_KEY_MAX];
+    char key[KEY_LEN_MAX];
     long long total_count;
     long long max;
     long long min;
@@ -83,11 +83,11 @@ void hdr_to_metric(const struct hdr_histogram *hdr, const char *key, struct reco
     strncpy(metric->key, key, sizeof(metric->key));
     metric->total_count=hdr->total_count;
     if(metric->total_count==0) return;
-    metric->p50=hdr_value_at_percentile(hdr, 0.5);
-    metric->p80=hdr_value_at_percentile(hdr, 0.8);
-    metric->p90=hdr_value_at_percentile(hdr, 0.9);
-    metric->p95=hdr_value_at_percentile(hdr, 0.95);
-    metric->p99=hdr_value_at_percentile(hdr, 0.99);
+    metric->p50=hdr_value_at_percentile(hdr, 50);
+    metric->p80=hdr_value_at_percentile(hdr, 80);
+    metric->p90=hdr_value_at_percentile(hdr, 90);
+    metric->p95=hdr_value_at_percentile(hdr, 95);
+    metric->p99=hdr_value_at_percentile(hdr, 99);
     metric->total_count=hdr->total_count;
     metric->max=hdr_max(hdr);
     metric->mean=hdr_mean(hdr);
@@ -108,18 +108,7 @@ void recorder_sample(struct recorder *recorder, struct recorder_metric *metric)
     hdr_to_metric(recorder->hdr_all_time, recorder->key, metric);
     return;
 }
-void recorder_sample_n(struct recorder **recorder, size_t n_recorder, long long max_latency_usec, struct recorder_metric *metric)
-{
-    struct hdr_histogram *hdr_merged;
-    hdr_init(1, max_latency_usec, 2, &hdr_merged);
-    for(size_t i=0; i<n_recorder; i++)
-    {
-        recorder_commit(recorder[i]);
-        hdr_add(hdr_merged, recorder[i]->hdr_all_time);
-    }
-    hdr_to_metric(hdr_merged, recorder[0]->key, metric);
-    hdr_close(hdr_merged);
-}
+
 void recorder_reset(struct recorder *recorder)
 {
     recorder->hdr_previous=hdr_interval_recorder_sample_and_recycle(&recorder->hdr_interval, recorder->hdr_previous);
@@ -419,6 +408,15 @@ enum cmd_exec_result latency_command(struct swarmkv_module *mod_monitor, const s
     {
         *reply=swarmkv_reply_new_error(erorr_subcommand_syntax, cmd->argv[1], cmd->argv[0]);
     }
+    pthread_mutex_unlock(&monitor->mutex);
+    return FINISHED;
+}
+enum cmd_exec_result lastcmds_command(struct swarmkv_module *mod_monitor, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
+{
+/*LASTCMDS [offset]*/
+    struct swarmkv_monitor *monitor=module2monitor(mod_monitor);
+    pthread_mutex_lock(&monitor->mutex);
+
     pthread_mutex_unlock(&monitor->mutex);
     return FINISHED;
 }

@@ -170,6 +170,7 @@ char *swarmkv_get_command_hint(struct swarmkv *db, const char* cmd_name);
 
 
 const char *swarmkv_self_address(const struct swarmkv *db);
+void swarmkv_self_uuid(const struct swarmkv *db, char buff[37]);
 #ifdef __cplusplus
 } /* end extern "C" */
 #endif
