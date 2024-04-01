@@ -14,8 +14,6 @@
 #include "linenoise/linenoise.h"
 #include "swarmkv/swarmkv.h"
 
-struct swarmkv_reply *swarmkv_command_on_argv(struct swarmkv *db, const char *target, int argc, sds *argv);
-
 struct cluster_manager_command
 {
 	char* cluster_name;
@@ -373,7 +371,7 @@ struct swarmkv_reply *cluster_addslotowner_command(struct swarmkv *db, char *arg
 	
 	
 	struct swarmkv_reply *setslot_reply=NULL, *getkeysinslot_reply=NULL, *addkeystoslot_reply=NULL;
-	sds *migrate_argv=NULL;
+
 	printf("%zu slots to be migrated\n", actual_rebalanced_slot_num);
 	long long migrated_keys=0;
 	node_t *new_node=NULL, *old_node=NULL;
@@ -427,24 +425,24 @@ struct swarmkv_reply *cluster_addslotowner_command(struct swarmkv *db, char *arg
 
 		/*STEP 2.4 Add those keys to NEW node's slot*/
 		
-		migrate_argv=ALLOC(sds, 4);
-		migrate_argv[0]=sdsnew("keyspace");
-		migrate_argv[1]=sdsnew("addkeystoslot");
-		migrate_argv[2]=sdsfromlonglong(slot_id);
-		migrate_argv[3]=sdsnewlen(getkeysinslot_reply->str, getkeysinslot_reply->len);	
+		const char *migrate_argv[4];
+		size_t migrate_argv_len[4];
+		migrate_argv[0]="keyspace";
+		migrate_argv_len[0]=strlen(migrate_argv[0]);
+		migrate_argv[1]="addkeystoslot";
+		migrate_argv_len[1]=strlen(migrate_argv[1]);
+		char buf[32];
+		snprintf(buf, sizeof(buf), "%d", slot_id);
+		migrate_argv[2]=buf;
+		migrate_argv_len[2]=strlen(migrate_argv[2]);
+		migrate_argv[3]=getkeysinslot_reply->str;
+		migrate_argv_len[3]=getkeysinslot_reply->len;
+
+		addkeystoslot_reply=swarmkv_command_on_argv(db, new_node->addr, 4, migrate_argv, migrate_argv_len);
 		swarmkv_reply_free(getkeysinslot_reply);
 		getkeysinslot_reply=NULL;
 
-		addkeystoslot_reply=swarmkv_command_on_argv(db, new_node->addr, 4, migrate_argv);
 
-		for(j=0; j<4; j++)
-		{
-			sdsfree(migrate_argv[j]);
-			migrate_argv[j]=NULL;
-		}
-		free(migrate_argv);
-		migrate_argv=NULL;
-		
 		if(addkeystoslot_reply->type!=SWARMKV_REPLY_INTEGER)
 		{
 			reply=addkeystoslot_reply;
@@ -565,6 +563,27 @@ struct swarmkv_reply *cluster_info_command(struct swarmkv *db, char *argv[], siz
 	if(!reply)
 	{
 		reply=swarmkv_reply_new_nil();
+	}
+	return reply;
+}
+struct swarmkv_reply *monitor_command(struct swarmkv *db, char *argv[], size_t argc)
+{
+	struct swarmkv_reply *reply=NULL;
+	const char *target=get_attach_target();
+	if(!target)
+	{
+		reply = swarmkv_reply_new_error("ERR `MONITOR` command requires attaching to a node.");
+	}
+	else
+	{
+		if(argc>1)
+		{
+			reply=swarmkv_command_on(db, target, "monreg %s %s", swarmkv_self_address(db), argv[1]);
+		}
+		else
+		{
+			reply=swarmkv_command_on(db, target, "monreg %s", swarmkv_self_address(db));
+		}
 	}
 	return reply;
 }
@@ -741,7 +760,7 @@ struct swarmkv_reply *cluster_sanity_command(struct swarmkv *db, char *argv[], s
 	size_t n_active_node=nodes_reply->n_element;
 	for(size_t i=0; i<nodes_reply->n_element; i++)
 	{
-		node_init_from_string(active_nodes+i, nodes_reply->elements[i]->str);
+		node_init_from_cstr(active_nodes+i, nodes_reply->elements[i]->str);
 	}
     if(0==strcasecmp(argv[2], "heal"))
 	{
@@ -975,7 +994,8 @@ struct cluster_cmd_spec cluster_cmds[]={
 	{"CLUSTER CREATE", "cluster-name IP:port [IP:port ...]", cluster_create_command},
     {"CLUSTER SANITY", "check | heal", cluster_sanity_command},
     {"ATTACH", "IP:port", attach_command},
-    {"DETACH", "", detach_command}
+    {"DETACH", "", detach_command},
+	{"MONITOR", "[pattern]", monitor_command}
 };
 
 int is_cluster_command(int argc, char *argv[])
@@ -1232,7 +1252,7 @@ int main(int argc, char * argv[])
 			exec_argv=ALLOC(sds, argc);
 			while (++i < argc && argv[i][0] != '-') 
 			{
-				exec_argv[exec_argc]=sdsnew(argv[i]);				
+				exec_argv[exec_argc]=sdsnew(argv[i]);
 				exec_argc++;
 			}
 		}
@@ -1286,12 +1306,17 @@ int main(int argc, char * argv[])
 		}
 		else
 		{
-			reply=swarmkv_command_on_argv(g_config.db, get_attach_target(), exec_argc, exec_argv);
+			size_t exec_argv_len[exec_argc];
+			for(int i=0; i<exec_argc; i++)
+			{
+				exec_argv_len[i]=sdslen(exec_argv[i]);
+			}
+			reply=swarmkv_command_on_argv(g_config.db, get_attach_target(), exec_argc, (const char**)exec_argv, exec_argv_len);
 		}
-		swarmkv_reply_print(reply, stdout);
-		swarmkv_reply_free(reply);
 		for(i=0; i<exec_argc; i++) sdsfree(exec_argv[i]);
 		free(exec_argv);
+		swarmkv_reply_print(reply, stdout);
+		swarmkv_reply_free(reply);
 		goto clean;
 	}
 	
@@ -1350,7 +1375,12 @@ int main(int argc, char * argv[])
 			}
 			else
 			{
-				reply=swarmkv_command_on_argv(g_config.db, get_attach_target(), exec_argc-offset, exec_argv+offset);
+				size_t exec_argv_len[exec_argc-offset];
+				for(int i=0; i<exec_argc-offset; i++)
+				{
+					exec_argv_len[i]=sdslen(exec_argv[i+offset]);
+				}
+				reply=swarmkv_command_on_argv(g_config.db, get_attach_target(), exec_argc-offset, (const char**)exec_argv+offset, exec_argv_len);
 			}
 			swarmkv_reply_print(reply, stdout);
 			if(run_interval_sec && reply->type != SWARMKV_REPLY_ERROR)

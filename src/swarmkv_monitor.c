@@ -2,6 +2,7 @@
 #include "sds.h"
 #include "log.h"
 #include "uthash.h"
+#include "utlist.h"
 #include "swarmkv_monitor.h"
 #include "swarmkv_common.h"
 #include "swarmkv_utils.h"
@@ -220,6 +221,31 @@ struct swarmkv_reply *recorder_metric_to_reply(const struct recorder_metric *met
     reply->elements[1]=swarmkv_reply_new_string_fmt(metric_buff);
     return reply;
 }
+struct monitor_client
+{
+    node_t node;
+    sds pattern;
+    struct monitor_client *next;
+};
+struct monitor_client *monitor_client_new(const node_t *node, sds pattern)
+{
+    struct monitor_client *client=ALLOC(struct monitor_client, 1);
+    node_copy(&client->node, node);
+    client->pattern = pattern? sdsdup(pattern):NULL;
+    return client;
+}
+void monitor_client_free(struct monitor_client *client)
+{
+    sdsfree(client->pattern);
+    free(client);
+    return;
+}
+struct swarmkv_monitor_thread
+{
+    int n_client;
+    struct monitor_client *clients;
+    pthread_mutex_t mutex;
+};
 struct swarmkv_monitor
 {
     struct swarmkv_module module;
@@ -229,7 +255,9 @@ struct swarmkv_monitor
     long long max_latency_usec;
     int significant_figures;
     int nr_worker_threads;
-    pthread_mutex_t mutex;//only one latency command can be executed at a time
+    struct swarmkv_monitor_thread *threads;
+    pthread_mutex_t latency_execute_mutex; //only one latency command can be executed at a time
+    struct swarmkv *ref_db;
 };
 
 struct swarmkv_monitor *module2monitor(struct swarmkv_module *module)
@@ -239,7 +267,7 @@ struct swarmkv_monitor *module2monitor(struct swarmkv_module *module)
 	assert(monitor==module->mod_ctx);
 	return monitor;
 }
-struct swarmkv_module *swarmkv_monitor_new(const struct swarmkv_options *opts)
+struct swarmkv_module *swarmkv_monitor_new(const struct swarmkv_options *opts, struct swarmkv *db)
 {
     struct swarmkv_monitor *monitor=ALLOC(struct swarmkv_monitor, 1);
     monitor->max_latency_usec=opts->cluster_timeout_us;
@@ -247,7 +275,14 @@ struct swarmkv_module *swarmkv_monitor_new(const struct swarmkv_options *opts)
     monitor->peers=ALLOC(struct recorder *, monitor->nr_worker_threads);
     strncpy(monitor->module.name, "monitor", sizeof(monitor->module.name));
     monitor->module.mod_ctx=monitor;
-    pthread_mutex_init(&monitor->mutex, NULL);
+    pthread_mutex_init(&monitor->latency_execute_mutex, NULL);
+    monitor->threads=ALLOC(struct swarmkv_monitor_thread, monitor->nr_worker_threads);
+    for(size_t i=0; i<monitor->nr_worker_threads; i++)
+    {
+        pthread_mutex_init(&monitor->threads[i].mutex, PTHREAD_PROCESS_PRIVATE);
+        monitor->threads[i].clients=NULL;
+    }
+    monitor->ref_db=db;
     return &monitor->module;
 }
 void swarmkv_monitor_register_command(struct swarmkv_module *mod_monitor, const char *command)
@@ -274,15 +309,142 @@ void swarmkv_monitor_free(struct swarmkv_module *mod_monitor)
     for(size_t i=0; i<monitor->nr_worker_threads; i++)
     {
         recorder_table_free(monitor->peers+i);
+        struct monitor_client *client=NULL, *tmp=NULL;
+        LL_FOREACH_SAFE(monitor->threads[i].clients, client, tmp)
+        {
+            LL_DELETE(monitor->threads[i].clients, client);
+            monitor_client_free(client);
+        }
     }
+    free(monitor->threads);
     free(monitor->peers);
     monitor->peers=NULL;
     free(monitor);
 }
-void swarmkv_monitor_record_command(struct swarmkv_module *mod_monitor, const char *cmd_name, long long latency_usec)
+struct print_ctx
+{
+    node_t node;
+    int tid;
+    struct swarmkv_monitor *monitor;
+};
+static void print_on_reply(const struct swarmkv_reply *reply, void *user)
+{
+    struct print_ctx *ctx=(struct print_ctx *)user;
+    int tid=swarmkv_gettid(ctx->monitor->ref_db);
+    assert(tid==ctx->tid);
+    if(reply->type != SWARMKV_REPLY_STATUS)
+    {
+        struct monitor_client *client=NULL, *tmp=NULL;
+        pthread_mutex_lock(&ctx->monitor->threads[ctx->tid].mutex);
+        LL_FOREACH_SAFE(ctx->monitor->threads[ctx->tid].clients, client, tmp)
+        {
+            if(0==node_compare(&client->node, &ctx->node))
+            {
+                ctx->monitor->threads[ctx->tid].n_client--;
+                LL_DELETE(ctx->monitor->threads[ctx->tid].clients, client);
+                monitor_client_free(client);
+            }
+        }
+        pthread_mutex_unlock(&ctx->monitor->threads[ctx->tid].mutex);
+    }
+    free(ctx);
+}
+static const char *exec_ret2string(enum cmd_exec_result ret)
+{
+	switch(ret)
+	{
+		case NEED_KEY_ROUTE:
+			return "KRT";
+		case REDIRECT:
+			return "RDR";
+		case FINISHED:
+			return "FIN";
+		default:
+			assert(0);
+	}
+}
+void swarmkv_monitor_record_command(struct swarmkv_module *mod_monitor, const struct swarmkv_cmd_spec *spec, const struct swarmkv_cmd *cmd, long long latency_usec, enum cmd_exec_result result)
 {
     struct swarmkv_monitor *monitor=module2monitor(mod_monitor);
-    recorder_table_record_latency(&monitor->commands, cmd_name, strlen(cmd_name), latency_usec, monitor->max_latency_usec, 0);
+    recorder_table_record_latency(&monitor->commands, spec->name, strlen(spec->name), latency_usec, monitor->max_latency_usec, 0);
+    int tid=swarmkv_gettid(monitor->ref_db);
+    assert(tid<monitor->nr_worker_threads);
+    if(0==strncasecmp(spec->name, "PRINT", strlen("PRINT")))
+    {
+        //Do not log print command to avoid infinit recursion.
+        return;
+    }
+    if(monitor->threads[tid].n_client == 0)
+    {
+        //No monitor client registered.
+        return;
+    }
+
+    struct monitor_client *client=NULL;
+    int matched_client=0;
+    node_t matched_client_nodes[monitor->threads[tid].n_client];
+    pthread_mutex_lock(&monitor->threads[tid].mutex);
+    LL_FOREACH(monitor->threads[tid].clients, client)
+    {
+        if(client->pattern)
+        {
+            int is_matched=0;
+            for(int i=0; i<cmd->argc; i++)
+            {
+                is_matched=stringmatchlen(client->pattern, sdslen(client->pattern), cmd->argv[i], sdslen(cmd->argv[i]), 0);
+                if(is_matched)
+                {
+                    break;
+                }
+            }
+            if(!is_matched)
+            {
+                continue;
+            }
+        }
+        node_copy(matched_client_nodes+matched_client, &client->node);
+        matched_client++;
+    }
+    //To avoid dead lock, we should not hold the lock when executing command.
+    pthread_mutex_unlock(&monitor->threads[tid].mutex);
+    assert(matched_client <= monitor->threads[tid].n_client);
+    if(matched_client==0)
+    {
+        return;
+    }
+    
+    sds cmdrepr = sdsempty();
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    cmdrepr = sdscatprintf(cmdrepr,"%ld.%06ld ",(long)tv.tv_sec, (long)tv.tv_usec);
+    cmdrepr = sdscatprintf(cmdrepr,"[%d %c %s %s] ", tid,
+                0==node_compare(&cmd->caller, swarmkv_self_node(monitor->ref_db))?'L':'R',
+                node_addr2cstr(&cmd->caller),
+                exec_ret2string(result));
+    for(int i=0; i<cmd->argc; i++)
+    {
+        cmdrepr = sdscatrepr(cmdrepr, (char*)cmd->argv[i], sdslen(cmd->argv[i]));
+        if (i != cmd->argc-1)
+            cmdrepr = sdscatlen(cmdrepr," ",1);
+    }
+    cmdrepr = sdscatprintf(cmdrepr, "\r\n");
+    
+    const char *print_cmd_argv[2];
+    size_t print_cmd_argv_len[2];
+    print_cmd_argv[0]="PRINT";
+    print_cmd_argv_len[0]=strlen(print_cmd_argv[0]);
+    print_cmd_argv[1]=cmdrepr;
+    print_cmd_argv_len[1]=sdslen(cmdrepr);
+
+    for(int i=0; i<matched_client; i++)
+    {
+        struct print_ctx *print_ctx=ALLOC(struct print_ctx, 1);
+        node_copy(&print_ctx->node, &matched_client_nodes[i]);
+        print_ctx->tid=tid;
+        print_ctx->monitor=monitor;
+        swarmkv_async_command_on_argv(monitor->ref_db, print_on_reply, print_ctx, print_ctx->node.addr, 2, print_cmd_argv, print_cmd_argv_len);
+    }
+    sdsfree(cmdrepr);
     return;
 }
 void swarmkv_monitor_record_peer(struct swarmkv_module *mod_monitor, node_t *peer, long long latency_usec, int thread_id)
@@ -333,7 +495,7 @@ struct swarmkv_reply *latency_generic(struct recorder **table, const char *key)
 enum cmd_exec_result latency_command(struct swarmkv_module *mod_monitor, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
 {
     struct swarmkv_monitor *monitor=module2monitor(mod_monitor);
-    pthread_mutex_lock(&monitor->mutex);
+    pthread_mutex_lock(&monitor->latency_execute_mutex);
 	if(cmd->argc==2 && !strcasecmp(cmd->argv[1], "help") )
 	{
 		const char *help = {
@@ -408,15 +570,43 @@ enum cmd_exec_result latency_command(struct swarmkv_module *mod_monitor, const s
     {
         *reply=swarmkv_reply_new_error(erorr_subcommand_syntax, cmd->argv[1], cmd->argv[0]);
     }
-    pthread_mutex_unlock(&monitor->mutex);
+    pthread_mutex_unlock(&monitor->latency_execute_mutex);
     return FINISHED;
 }
-enum cmd_exec_result lastcmds_command(struct swarmkv_module *mod_monitor, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
+enum cmd_exec_result monreg_command(struct swarmkv_module *mod_monitor, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
 {
-/*LASTCMDS [offset]*/
+/* MONREG IP:port [pattern]*/
     struct swarmkv_monitor *monitor=module2monitor(mod_monitor);
-    pthread_mutex_lock(&monitor->mutex);
-
-    pthread_mutex_unlock(&monitor->mutex);
+    node_t node;
+    int ret=0;
+    ret=node_init_from_sds(&node, cmd->argv[1]);
+    if(ret<0)
+    {
+        *reply=swarmkv_reply_new_error(error_arg_not_valid_node);
+        return FINISHED;
+    }
+    for(int i=0; i<monitor->nr_worker_threads; i++)
+    {
+        struct monitor_client *client=NULL;
+        int found=0;
+        pthread_mutex_lock(&monitor->threads[i].mutex);
+        LL_FOREACH(monitor->threads[i].clients, client)
+        {
+            if(0==node_compare(&client->node, &node))
+            {
+                sdsfree(client->pattern);
+                client->pattern=cmd->argc>2?sdsdup(cmd->argv[2]):NULL;            
+                found=1;
+            }
+        }
+        if(!found)
+        {
+            client=monitor_client_new(&node, cmd->argc>2?cmd->argv[2]:NULL);
+            LL_APPEND(monitor->threads[i].clients, client);
+            monitor->threads[i].n_client++;
+        }
+        pthread_mutex_unlock(&monitor->threads[i].mutex);
+    }
+    *reply=swarmkv_reply_new_status("OK");
     return FINISHED;
 }

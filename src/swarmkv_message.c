@@ -75,19 +75,24 @@ static struct swarmkv_cmd *swarmkv_cmd_deserialize(const char *blob, size_t size
 	mpack_tree_init_data(&tree, blob, size);
 	mpack_tree_parse(&tree);
 	
-	mpack_node_t item;
+	mpack_node_t item, array_node;
 	mpack_node_t root=mpack_tree_root(&tree);
 	struct swarmkv_cmd *cmd=NULL;
 	const char *arg=NULL;
-	size_t arg_sz=0;
-
-	cmd=swarmkv_cmd_new(mpack_node_array_length(root));
+	size_t sz=0;
+	node_t caller;
+	item=mpack_node_map_cstr(root, "caller");
+	node_init_from_string(&caller, mpack_node_str(item), mpack_node_strlen(item));
+	assert(node_sanity(&caller));
+	//assert(sz==sizeof(node_t));
+	array_node=mpack_node_map_cstr(root, "argv");
+	cmd=swarmkv_cmd_new(mpack_node_array_length(array_node), &caller);
 	for(size_t i=0; i<cmd->argc; i++)
 	{
-		item=mpack_node_array_at(root, i);
+		item=mpack_node_array_at(array_node, i);
 		arg=mpack_node_str(item);
-		arg_sz=mpack_node_strlen(item);
-		cmd->argv[i]=sdsnewlen(arg, arg_sz);
+		sz=mpack_node_strlen(item);
+		cmd->argv[i]=sdsnewlen(arg, sz);
 	}
 	if (mpack_tree_destroy(&tree) != mpack_ok) {
 		fprintf(stderr, "An error occurred decoding a cmd blob!\n");
@@ -164,15 +169,20 @@ static void swarmkv_cmd_serialize(const struct swarmkv_cmd *cmd, char **blob, si
 	char *root_mpack_buff=NULL;
 	size_t root_mpack_sz=0;
 
-	mpack_writer_t writer;	
+	mpack_writer_t writer;
 	size_t i=0;
 	mpack_writer_init_growable(&writer, &root_mpack_buff, &root_mpack_sz);
+	mpack_build_map(&writer);
+	mpack_write_cstr(&writer, "caller");
+	mpack_write_cstr(&writer, node_addr2cstr(&cmd->caller));
+	mpack_write_cstr(&writer, "argv");
 	mpack_build_array(&writer);
 	for(i=0; i<cmd->argc; i++)
 	{
 		mpack_write_str(&writer, cmd->argv[i], (uint32_t)sdslen(cmd->argv[i]));
 	}
 	mpack_complete_array(&writer);
+	mpack_complete_map(&writer);
 
 	if (mpack_writer_destroy(&writer) != mpack_ok) {
 		fprintf(stderr, "An error occurred encoding the cmd!\n");

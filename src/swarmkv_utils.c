@@ -56,7 +56,6 @@ char* replace_char(char* str, char find, char replace){
     return str;
 }
 
-/* Glob-style pattern matching. */
 //source https://github.com/redis/redis/blob/7.0/src/util.c
 int stringmatchlen(const char *pattern, int patternLen,
         const char *string, int stringLen, int nocase)

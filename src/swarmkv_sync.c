@@ -81,36 +81,58 @@ void sync_master_add_obj(struct sync_master *master, const sds key, char *blob, 
 	return;
 }
 
-int sync_master_get_cmd(struct sync_master *master, node_t *peer, struct swarmkv_cmd **cmd)
+struct sync_task *sync_master_get_task(struct sync_master *master)
 {
 	struct sync_task *task=NULL, *tmp=NULL;
-	struct sync_data **p=NULL, *data=NULL;
-	struct swarmkv_cmd *c=NULL;
-	size_t n_data=0;
-	*cmd=NULL;
+
+	//We are not iterating the whole table, just get the first one
 	HASH_ITER(hh, master->task_table, task, tmp)
 	{
-		n_data=utarray_len(task->sync_data_list);
-		c=swarmkv_cmd_new(2+n_data*2);
-		c->argv[0]=sdsnew("crdt");
-		c->argv[1]=sdsnew("merge");
-		for(size_t i=0; i<n_data; i++)
-		{
-			p=utarray_eltptr(task->sync_data_list, i);
-			data=*p;
-			c->argv[2+i*2]=sdsdup(data->key);
-			c->argv[2+i*2+1]=sdsnewlen(data->blob, data->blob_sz);
-			sync_data_free(data);
-			master->synced++;
-		}
-		node_copy(peer, &task->peer);
 		HASH_DEL(master->task_table, task);
-		utarray_free(task->sync_data_list);
-		free(task);
+		master->synced += utarray_len(task->sync_data_list);
 		break;
 	}
-	*cmd=c;
-	return (c==NULL?0:1);
+	return task;
+}
+void sync_task_free(struct sync_task *task)
+{
+	struct sync_data **p=NULL, *data=NULL;
+	size_t n_data=utarray_len(task->sync_data_list);
+	for(size_t i=0; i<n_data; i++)
+	{
+		p=utarray_eltptr(task->sync_data_list, i);
+		data=*p;
+		sync_data_free(data);
+	}
+	utarray_free(task->sync_data_list);
+	free(task);
+	return;
+}
+const node_t *sync_task_peer(struct sync_task *task)
+{
+	return &task->peer;
+}
+size_t sync_task_key_count(struct sync_task *task)
+{
+	return utarray_len(task->sync_data_list);
+}
+void sync_task_read_key_blob(struct sync_task *task, const char *argv[], size_t *argv_len, int argc)
+{
+	struct sync_data **p=NULL, *data=NULL;
+	int n_data=utarray_len(task->sync_data_list);
+	assert(argc == 2*n_data);
+	for(int i=0, j=0; i<n_data && j<argc; i++, j+=2)
+	{
+		p=utarray_eltptr(task->sync_data_list, i);
+		data=*p;
+		assert(data->key);
+		assert(data->blob);
+		argv[j]=data->key;
+		argv_len[j]=sdslen(data->key);
+		argv[j+1]=data->blob;
+		argv_len[j+1]=data->blob_sz;
+	}
+	return;
 }
 void sync_master_free(struct sync_master *master)
 {

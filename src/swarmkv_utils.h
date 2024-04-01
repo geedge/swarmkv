@@ -40,6 +40,8 @@ const char *module_name_str(const char *name);
 const char *swarmkv_util_pthread_cond_timedwait_error_to_string(const int timed_wait_rv);
 char *toLower(char* s);
 char *toUpper(char* s);
+// Glob-style pattern matching.
+// Return 1 if matched, 0 if not matched
 int stringmatchlen(const char *pattern, int patternLen, const char *string, int stringLen, int nocase);
 long long ustime(void);
 int is_number(const char *string, size_t sz, long long *number);

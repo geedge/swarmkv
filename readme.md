@@ -144,7 +144,7 @@ int main(int argc, char **argv)
     return 0;
 }
 ```
-
+It's recommended to use [jemalloc](https://github.com/jemalloc/jemalloc) for better performance.
 
 
 # Further documentation

@@ -9,7 +9,7 @@ The supported command are category as follows:
 * [Hash Type](./commands/hash.md)
 * [Token Bucket Types](./commands/token_bucket.md)
 * [Bloom Filter Type](./commands/bloom_filter.md)
-
+* [Count-Min Sketch Type](./commands/count_min_sketch.md)
 ## COMMAND LIST
 
 Syntax

@@ -90,12 +90,13 @@ Subcommands are:
 * RESET [command|event|peer]
     - Reset data of a specified catalog or all the data if no catalog provided.
 
+
 ### DEBUG
 
 Syntax
 
 ```
-DEBUG <subcommand> [<arg> [value] [opt] ...].
+DEBUG <subcommand> [<arg> [value] [opt] ...]
 ```
 
 Subcommands are:

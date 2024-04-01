@@ -287,6 +287,10 @@ sds node_addr2sds(const node_t *node)
 {
 	return sdsnew(node->addr);
 }
+const char *node_addr2cstr(const node_t *node)
+{
+	return node->addr;
+}
 int node_init_from_sds(node_t *node, const char *addr_str)
 {
 	memset(node, 0, sizeof(node_t));
@@ -348,12 +352,19 @@ void node_init(node_t *node, const char *ipv4, unsigned int port)
 	snprintf(node->addr, sizeof(node->addr), "%s:%u", ipv4, port);
 	return;
 }
-void node_init_from_string(node_t *node, const char *addr_str)
+void node_init_from_cstr(node_t *node, const char *addr_str)
 {
 	memset(node, 0, sizeof(node_t));
 	assert(strlen(addr_str)<sizeof(node_t));
 	assert(strchr(addr_str, ':'));
 	strncpy(node->addr, addr_str, sizeof(node->addr));
+	return;
+}
+void node_init_from_string(node_t *node, const char *addr_str, size_t sz_addr)
+{
+	memset(node, 0, sizeof(node_t));
+	assert(sz_addr<=sizeof(node->addr));
+	strncpy(node->addr, addr_str, sz_addr);
 	return;
 }
 int node_init_from_reply(node_t *node, const struct swarmkv_reply *reply)
@@ -368,7 +379,7 @@ int node_init_from_reply(node_t *node, const struct swarmkv_reply *reply)
 	{
 		p+=5;
 	}
-	node_init_from_string(node, p);
+	node_init_from_cstr(node, p);
 	return 0;
 }
 int node_list_new_from_reply(node_t **node_list, size_t *n_node, const struct swarmkv_reply *reply)
@@ -559,10 +570,11 @@ void swarmkv_reply_free(struct swarmkv_reply *reply)
 	}
 	free(reply);
 }
-struct swarmkv_cmd *swarmkv_cmd_new(size_t argc)
+struct swarmkv_cmd *swarmkv_cmd_new(size_t argc, const node_t *caller)
 {
 	size_t size=sizeof(struct swarmkv_cmd)+argc*sizeof(sds);
 	struct swarmkv_cmd *cmd=(struct swarmkv_cmd*)malloc(size);
+	node_copy(&cmd->caller, caller);
 	cmd->argc=argc;
 	cmd->argv=(sds*)((char*)cmd+sizeof(struct swarmkv_cmd));
 	return cmd;
@@ -580,7 +592,7 @@ void swarmkv_cmd_free(struct swarmkv_cmd *p)
 }
 struct swarmkv_cmd* swarmkv_cmd_dup(const struct swarmkv_cmd *origin)
 {
-	struct swarmkv_cmd* copy=swarmkv_cmd_new(origin->argc);
+	struct swarmkv_cmd* copy=swarmkv_cmd_new(origin->argc, &origin->caller);
 	size_t i=0;
 	for(i=0; i<origin->argc; i++)
 	{
@@ -657,7 +669,7 @@ void json2keyslots(sds json_buffer, void *slot_container_base, size_t sz_slot_co
 		{
 			iterator=(struct key_slot*)(slot_container_base+sz_slot_container*j+offset_slot);
 			iterator->slot_id=j;
-			node_init_from_string(&iterator->owner, owner->valuestring);
+			node_init_from_cstr(&iterator->owner, owner->valuestring);
 			k++;
 		}
 	}
@@ -714,7 +726,7 @@ void leader_response2leader_node(const char *resp_body, node_t *leader)
 	cJSON *item=NULL;
 	root=cJSON_Parse(resp_body);
 	item=cJSON_GetObjectItem(root, "node");
-	node_init_from_string(leader, item->valuestring);;
+	node_init_from_cstr(leader, item->valuestring);;
 	cJSON_Delete(root);
 }
 /* This is an modified version of keyHashSlot of Redis source code.

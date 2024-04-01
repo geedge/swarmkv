@@ -85,11 +85,12 @@ struct swarmkv_options
 
 struct swarmkv_cmd
 {
+	node_t caller;
 	size_t argc;
 	sds *argv;
 };
 
-struct swarmkv_cmd *swarmkv_cmd_new(size_t argc);
+struct swarmkv_cmd *swarmkv_cmd_new(size_t argc, const node_t *originator);
 void swarmkv_cmd_free(struct swarmkv_cmd *p);
 struct swarmkv_cmd *swarmkv_cmd_dup(const struct swarmkv_cmd *origin);
 int swarmkv_cmd_parse_integer(const struct swarmkv_cmd *cmd, const char *name, long long *ival);
@@ -117,21 +118,22 @@ int node_list_remove(node_t *list, size_t n_list, const node_t *node);
 
 sds node_print_json(const node_t *self, uuid_t uuid);
 sds node_addr2sds(const node_t *node);
+const char *node_addr2cstr(const node_t *node);
 int node_init_from_sds(node_t *node, const char *addr_str);
 int node_init_from_reply(node_t *node, const struct swarmkv_reply *reply);
+void node_init(node_t *node, const char *ipv4, unsigned int port);
+void node_init_from_cstr(node_t *node, const char *addr_str);
+void node_init_from_string(node_t *node, const char *addr_str, size_t sz_addr);
+
 /* Return 0 if node1 == node 2 */
 int node_compare(const node_t *node1, const node_t *node2);
 void node_copy(node_t *dst, const node_t *src);
+int node_sanity(const node_t *node);
 int node_is_empty(const node_t *node);
-void node_init(node_t *node, const char *ipv4, unsigned int port);
-void node_init_from_string(node_t *node, const char *addr_str);
+
 int node_parse(const node_t *node, unsigned int *port, char *addr_str, size_t sz_addr);
 void node_init_from_sockaddr(node_t *node, const struct sockaddr * sa);
 void node_to_sockaddr(const node_t *node, struct sockaddr *sockaddr);
 int http_blocking_request(enum evhttp_cmd_type type, const char* host, unsigned int port, const char* url, sds req_body, sds *resp_body);
 
-//typedef void exec_cmd_func(struct swarmkv *db, const node_t *target_node, const struct swarmkv_cmd *cmd, struct future *future_of_caller);
-struct swarmkv_reply *swarmkv_command_on_argv(struct swarmkv *db, const char *target, int argc, sds *argv);
-void swarmkv_async_command_on_argv(struct swarmkv *db, swarmkv_on_reply_callback_t * cb, void *cb_arg, const char *target, int argc, sds *argv);
-
-int __gettid(struct swarmkv *db);
+const node_t *swarmkv_self_node(const struct swarmkv *db);

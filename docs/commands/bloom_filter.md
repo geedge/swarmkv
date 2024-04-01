@@ -86,10 +86,10 @@ Syntax
 BFINFO key
 ```
 Returns information about a Bloom filter.
-- Error -- error_rate arguments specified in `BFINIT`.
-- Capacity -- capacity arguments specified in `BFINIT`.
-- TimeWindowMs -- window-milliseconds arguments specified in `BFINIT`.
-- TimeSlices -- slice-number arguments specified in `BFINIT`.
+- Error -- error_rate argument specified in `BFINIT`.
+- Capacity -- capacity argument specified in `BFINIT`.
+- TimeWindowMs -- window-milliseconds argument specified in `BFINIT`.
+- TimeSlices -- slice-number argument specified in `BFINIT`.
 - HashNum -- Hash function number caculated by the error_rate, which is log2(1/error_rate).
 - TotalSlices -- The actual slice number after expansion.
 - MaxExpansionTimes -- The maximum expansion times of every time slice.
@@ -101,3 +101,28 @@ Return
 
 - Array reply with argument name (Simple string reply) and value (Integer reply or Double reply) pairs
 - Empty array reply if key does not exist.
+
+Examples
+```
+swarmkv-2-nodes> bfinfo bf-key
+ 1) "Error"
+ 2) (double) 0.000100
+ 3) "Capacity"
+ 4) (integer) 1000000
+ 5) "TimeWindowMs"
+ 6) (integer) 300000
+ 7) "TimeSlices"
+ 8) (integer) 24
+ 9) "HashNum"
+10) (integer) 14
+11) "TotalSlices"
+12) (integer) 38
+13) "MaxExpansionTimes"
+14) (integer) 1
+15) "ApproximateItemNum"
+16) (integer) 0
+17) "FillRatio"
+18) (double) 0.000000
+19) "OldestItemTime"
+20) "0.000"
+```

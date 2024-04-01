@@ -44,7 +44,7 @@ int swarmkv_mesh_send(struct swarmkv_mesh *mesh, int current_thread_id, int dest
 	assert(current_thread_id != dest_thread_id);
 	struct swarmkv_mesh_thread *curr_thr=mesh->threads+current_thread_id;
 	struct swarmkv_mesh_thread *dest_thr=mesh->threads+dest_thread_id;
-	int tid=__gettid((struct swarmkv *)(mesh->on_msg_cb_arg));
+	int tid=swarmkv_gettid((struct swarmkv *)(mesh->on_msg_cb_arg));
 	assert(tid==current_thread_id);
 	ringbuf_t *dest_ring=dest_thr->ring;
 	assert(msg->magic == SWARMKV_MSG_MAGIC);
@@ -88,7 +88,7 @@ static void mesh_on_eventfd_read_cb(evutil_socket_t fd, short what, void * arg)
 	ringbuf_t *ring=thr->ring;
 	uint64_t n_msg=0;
 
-	int tid=__gettid((struct swarmkv *)(mesh->on_msg_cb_arg));
+	int tid=swarmkv_gettid((struct swarmkv *)(mesh->on_msg_cb_arg));
 	assert(tid==thr->thread_id);
 
 	ssize_t s = read(thr->efd, &n_msg, sizeof(uint64_t));

@@ -19,19 +19,6 @@
 
 #define	CMD_EXEC_TIMEOUT_MS	1000*2
 
-void generic_callback(const struct swarmkv_reply *reply, void * cb_arg)
-{
-	struct cmd_exec_arg *arg=(struct cmd_exec_arg*)cb_arg;
-	if(0==reply_compare(reply, &(arg->expected_reply)))
-	{
-		cmd_exec_arg_success(arg);
-	}
-	else
-	{
-		cmd_exec_arg_failed(arg);
-	}
-	return;
-}
 static int g_current_thread_id=0;
 void copy_reply_callback(const struct swarmkv_reply *reply, void * cb_arg)
 {
@@ -67,6 +54,7 @@ protected:
 			free(err);
 		}
 		swarmkv_register_thread(db);
+		//swarmkv_command(db, "monreg %s", swarmkv_self_address(db));
 	}
 	static void TearDownTestCase()
 	{
@@ -92,11 +80,30 @@ TEST_F(SwarmkvBasicTest, TypeString)
 	EXPECT_STREQ(reply->str, "OK");
 	swarmkv_reply_free(reply);
 
-	reply=swarmkv_command(db, "GET %s", key);
+	reply=swarmkv_command(db, "type %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STRING);
+	EXPECT_STREQ(reply->str, "string");
+	swarmkv_reply_free(reply);
+
+	const char *string_key="string-key";
+	reply=swarmkv_command(db, "SET %s abc", string_key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	EXPECT_STREQ(reply->str, "OK");
+	swarmkv_reply_free(reply);
+
+
+	key="name2";
+	val="lisi";
+	swarmkv_set(db, key, strlen(key), val, strlen(val), copy_reply_callback, &reply);
+	swarmkv_caller_loop(db, SWARMKV_LOOP_ONCE, NULL);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	swarmkv_reply_free(reply);
+
+	swarmkv_get(db, key, strlen(key), copy_reply_callback, &reply);
+	swarmkv_caller_loop(db, SWARMKV_LOOP_ONCE, NULL);
 	ASSERT_EQ(reply->type, SWARMKV_REPLY_STRING);
 	EXPECT_STREQ(reply->str, val);
 	swarmkv_reply_free(reply);
-
 }
 TEST_F(SwarmkvBasicTest, TypeInteger)
 {
@@ -132,6 +139,18 @@ TEST_F(SwarmkvBasicTest, TypeInteger)
 		swarmkv_reply_free(reply);
 	}
 	EXPECT_EQ(value, 100);
+
+	reply=swarmkv_command(db, "type %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STRING);
+	EXPECT_STREQ(reply->str, "integer");
+	swarmkv_reply_free(reply);
+
+	key="int2";
+	swarmkv_incrby(db, key, strlen(key), 100, copy_reply_callback, &reply);
+	swarmkv_caller_loop(db, SWARMKV_LOOP_ONCE, NULL);
+	EXPECT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 100);
+	swarmkv_reply_free(reply);
 }
 TEST_F(SwarmkvBasicTest, GenericDEL)
 {
@@ -150,72 +169,86 @@ TEST_F(SwarmkvBasicTest, GenericDEL)
 	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
 	EXPECT_EQ(reply->integer, 1);
 	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db, "SET %s %s", key, val);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	EXPECT_STREQ(reply->str, "OK");
+	swarmkv_reply_free(reply);
+
+	swarmkv_del(db, key, strlen(key), copy_reply_callback, &reply);
+	swarmkv_caller_loop(db, SWARMKV_LOOP_ONCE, NULL);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 1);
+	swarmkv_reply_free(reply);	
+}
+TEST_F(SwarmkvBasicTest, GenericTTL)
+{
+	struct swarmkv *db=SwarmkvBasicTest::db;
+	const char *key="quarantine";
+	const char *val="wuhan-江夏-如家";
+	int seconds=3;
+	struct swarmkv_reply *reply=NULL;
+
+	reply=swarmkv_command(db, "SET %s %s", key, val);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	EXPECT_STREQ(reply->str, "OK");
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db, "EXPIRE %s %d", key, seconds);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 1);
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db, "TTL %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, seconds);
+	swarmkv_reply_free(reply);
+
+	sleep(seconds+1);
+
+	reply=swarmkv_command(db, "GET %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_NIL);
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db, "EXPIRE %s %d", key, seconds);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 0);
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db, "TTL %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, -2);
+	swarmkv_reply_free(reply);
+
+	//API test
+	reply=swarmkv_command(db, "SET %s %s", key, val);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	EXPECT_STREQ(reply->str, "OK");
+	swarmkv_reply_free(reply);
+
+	swarmkv_expire(db, key, strlen(key), seconds, copy_reply_callback, &reply);
+	swarmkv_caller_loop(db, SWARMKV_LOOP_ONCE, NULL);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 1);
+	swarmkv_reply_free(reply);
+
+	swarmkv_ttl(db, key, strlen(key), copy_reply_callback, &reply);
+	swarmkv_caller_loop(db, SWARMKV_LOOP_ONCE, NULL);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, seconds);
+	swarmkv_reply_free(reply);
+
+	swarmkv_persist(db, key, strlen(key), copy_reply_callback, &reply);
+	swarmkv_caller_loop(db, SWARMKV_LOOP_ONCE, NULL);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 1);
+	swarmkv_reply_free(reply);
 }
 TEST_F(SwarmkvBasicTest, GenericTYPE)
 {
 	struct swarmkv *db=SwarmkvBasicTest::db;
 	struct swarmkv_reply *reply=NULL;
-
-	//TYPE string
-	const char *string_key="string-key";
-	reply=swarmkv_command(db, "SET %s abc", string_key);
-	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
-	EXPECT_STREQ(reply->str, "OK");
-	swarmkv_reply_free(reply);
-
-	reply=swarmkv_command(db, "type %s", string_key);
-	ASSERT_EQ(reply->type, SWARMKV_REPLY_STRING);
-	EXPECT_STREQ(reply->str, "string");
-	swarmkv_reply_free(reply);
-
-	//type integer
-	const char *integer_key="integer-key";
-	reply=swarmkv_command(db, "SET %s 123", integer_key);
-	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
-	EXPECT_STREQ(reply->str, "OK");
-	swarmkv_reply_free(reply);
-
-	reply=swarmkv_command(db, "type %s", integer_key);
-	ASSERT_EQ(reply->type, SWARMKV_REPLY_STRING);
-	EXPECT_STREQ(reply->str, "integer");
-	swarmkv_reply_free(reply);
-
-	//type set
-	const char *set_key="set-key";
-	reply=swarmkv_command(db, "SADD %s a b c d", set_key);
-	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
-	EXPECT_EQ(reply->integer, 4);
-	swarmkv_reply_free(reply);
-
-	reply=swarmkv_command(db, "type %s", set_key);
-	ASSERT_EQ(reply->type, SWARMKV_REPLY_STRING);
-	EXPECT_STREQ(reply->str, "set");
-	swarmkv_reply_free(reply);
-
-	//type token-bucket
-	const char *tb_key="tb-key";
-	reply=swarmkv_command(db, "TCFG %s 4000 2000", tb_key);
-	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
-	EXPECT_STREQ(reply->str, "OK");
-	swarmkv_reply_free(reply);
-
-	reply=swarmkv_command(db, "type %s", tb_key);
-	ASSERT_EQ(reply->type, SWARMKV_REPLY_STRING);
-	EXPECT_STREQ(reply->str, "token-bucket");
-	swarmkv_reply_free(reply);
-
-	//type hash
-	const char *hash_key="hash-key";
-	reply=swarmkv_command(db, "HSET %s name zhangsan gender male age 18 gender male", hash_key);
-	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
-	EXPECT_EQ(reply->integer, 3);
-	swarmkv_reply_free(reply);
-
-	reply=swarmkv_command(db, "type %s", hash_key);
-	ASSERT_EQ(reply->type, SWARMKV_REPLY_STRING);
-	EXPECT_STREQ(reply->str, "hash");
-	swarmkv_reply_free(reply);
-
+	
 	//type non-exist key
 	const char *nonexist_key="non-exist-key";
 	reply=swarmkv_command(db, "type %s", nonexist_key);
@@ -266,6 +299,11 @@ TEST_F(SwarmkvBasicTest, TypeSet)
 	EXPECT_EQ(reply->integer, 3);
 	swarmkv_reply_free(reply);
 
+	reply=swarmkv_command(db, "type %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STRING);
+	EXPECT_STREQ(reply->str, "set");
+	swarmkv_reply_free(reply);
+
 	reply=swarmkv_command(db, "DEL %s", key);
 	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
 	EXPECT_EQ(reply->integer, 1);
@@ -279,6 +317,48 @@ TEST_F(SwarmkvBasicTest, TypeSet)
 	reply=swarmkv_command(db, "SCARD %s", key);
 	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
 	EXPECT_EQ(reply->integer, 0);
+	swarmkv_reply_free(reply);
+
+	//API test
+	size_t member_len[4]={strlen(member[0]), strlen(member[1]), strlen(member[2]), strlen(member[3])};
+	swarmkv_sadd(db, key, strlen(key), member, member_len, 4, copy_reply_callback, &reply);
+	swarmkv_caller_loop(db, SWARMKV_LOOP_ONCE, NULL);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 4);
+	swarmkv_reply_free(reply);
+	
+	swarmkv_srem(db, key, strlen(key), member, member_len, 2, copy_reply_callback, &reply);
+	swarmkv_caller_loop(db, SWARMKV_LOOP_ONCE, NULL);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 2);
+	swarmkv_reply_free(reply);
+
+	swarmkv_sismember(db, key, strlen(key), member[0], strlen(member[0]), copy_reply_callback, &reply);
+	swarmkv_caller_loop(db, SWARMKV_LOOP_ONCE, NULL);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 0);
+	swarmkv_reply_free(reply);
+
+	swarmkv_sismember(db, key, strlen(key), member[2], strlen(member[2]), copy_reply_callback, &reply);
+	swarmkv_caller_loop(db, SWARMKV_LOOP_ONCE, NULL);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 1);
+	swarmkv_reply_free(reply);
+
+	swarmkv_smembers(db, key, strlen(key), copy_reply_callback, &reply);
+	swarmkv_caller_loop(db, SWARMKV_LOOP_ONCE, NULL);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
+	EXPECT_EQ(reply->n_element, 2);
+	for(i=0; i<reply->n_element; i++)
+	{
+		EXPECT_EQ(reply->elements[i]->type, SWARMKV_REPLY_STRING);
+	}
+	swarmkv_reply_free(reply);
+
+	swarmkv_scard(db, key, strlen(key), copy_reply_callback, &reply);
+	swarmkv_caller_loop(db, SWARMKV_LOOP_ONCE, NULL);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 2);
 	swarmkv_reply_free(reply);
 
 }
@@ -355,6 +435,11 @@ TEST_F(SwarmkvBasicTest, TypeHash)
 	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
 	EXPECT_EQ(reply->integer, 30-1);
 	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db, "type %s", key2);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STRING);
+	EXPECT_STREQ(reply->str, "hash");
+	swarmkv_reply_free(reply);
 }
 TEST_F(SwarmkvBasicTest, TypeTokenBucket)
 {
@@ -428,6 +513,17 @@ TEST_F(SwarmkvBasicTest, TypeTokenBucket)
 	ASSERT_EQ(reply->n_element, 12);
 	EXPECT_EQ(reply->elements[7]->integer, allocated_tokens+inf_token);
 	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db, "type %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STRING);
+	EXPECT_STREQ(reply->str, "token-bucket");
+	swarmkv_reply_free(reply);
+
+	swarmkv_tconsume(db, key, strlen(key), 100, copy_reply_callback, &reply);
+	swarmkv_caller_loop(db, SWARMKV_LOOP_ONCE, NULL);
+	EXPECT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 100);
+	swarmkv_reply_free(reply);
 }
 TEST_F(SwarmkvBasicTest, TypeFairTokenBucket)
 {
@@ -476,6 +572,12 @@ TEST_F(SwarmkvBasicTest, TypeFairTokenBucket)
 	ASSERT_EQ(reply->n_element, 16);
 	EXPECT_EQ(reply->elements[7]->integer, allocated_tokens+inf_token);
 	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db, "type %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STRING);
+	EXPECT_STREQ(reply->str, "fair-token-bucket");
+	swarmkv_reply_free(reply);
+
 }
 TEST_F(SwarmkvBasicTest, TypeBulkTokenBucket)
 {
@@ -527,6 +629,10 @@ TEST_F(SwarmkvBasicTest, TypeBulkTokenBucket)
 	}
 	EXPECT_EQ(t, 10000*i);
 
+	reply=swarmkv_command(db, "type %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STRING);
+	EXPECT_STREQ(reply->str, "bulk-token-bucket");
+	swarmkv_reply_free(reply);
 }
 
 TEST_F(SwarmkvBasicTest, TypeBloomFilter)
@@ -626,11 +732,37 @@ TEST_F(SwarmkvBasicTest, TypeBloomFilter)
 	EXPECT_EQ(reply->integer, 1);
 	swarmkv_reply_free(reply);
 
+	reply=swarmkv_command(db, "type %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STRING);
+	EXPECT_STREQ(reply->str, "bloom-filter");
+	swarmkv_reply_free(reply);
 
 	reply=swarmkv_command(db, "DEL %s", key);
 	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
 	ASSERT_EQ(reply->integer, 1);
 	swarmkv_reply_free(reply);
+
+	//API test
+	key="bf-api";
+	reply=swarmkv_command(db, "BFINIT %s %f %lld TIME %lld 12", key, error_rate, capacity, time_window_ms);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	swarmkv_reply_free(reply);
+
+	size_t item_len[4]={strlen(item[0]), strlen(item[1]), strlen(item[2]), strlen(item[3])};
+	swarmkv_bfadd(db, key, strlen(key), item, item_len, 4, copy_reply_callback, &reply);
+	swarmkv_caller_loop(db, SWARMKV_LOOP_ONCE, NULL);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	swarmkv_reply_free(reply);
+
+	swarmkv_bfmexists(db, key, strlen(key), item, item_len, 4, copy_reply_callback, &reply);
+	swarmkv_caller_loop(db, SWARMKV_LOOP_ONCE, NULL);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
+	ASSERT_EQ(reply->n_element, 4);
+	for(size_t i=0; i<reply->n_element; i++)
+	{
+		ASSERT_EQ(reply->elements[i]->type, SWARMKV_REPLY_INTEGER);
+		EXPECT_EQ(reply->elements[i]->integer, 1);
+	}
 }
 TEST_F(SwarmkvBasicTest, TypeCMS)
 {
@@ -677,46 +809,48 @@ TEST_F(SwarmkvBasicTest, TypeCMS)
 	ASSERT_EQ(reply->elements[3]->type, SWARMKV_REPLY_INTEGER);
 	EXPECT_EQ(reply->elements[3]->integer, depth);
 	swarmkv_reply_free(reply);
-}
-TEST_F(SwarmkvBasicTest, EXPIRE_TTL)
-{
-	struct swarmkv *db=SwarmkvBasicTest::db;
-	const char *key="quarantine";
-	const char *val="wuhan-江夏-如家";
-	int seconds=3;
-	struct swarmkv_reply *reply=NULL;
 
-	reply=swarmkv_command(db, "SET %s %s", key, val);
-	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
-	EXPECT_STREQ(reply->str, "OK");
+	reply=swarmkv_command(db, "type %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STRING);
+	EXPECT_STREQ(reply->str, "count-min-sketch");
 	swarmkv_reply_free(reply);
 
-	reply=swarmkv_command(db, "EXPIRE %s %d", key, seconds);
+	reply=swarmkv_command(db, "DEL %s", key);
 	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
 	EXPECT_EQ(reply->integer, 1);
 	swarmkv_reply_free(reply);
 
-	reply=swarmkv_command(db, "TTL %s", key);
-	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
-	EXPECT_EQ(reply->integer, seconds);
+	//API test
+	key="cms-api";
+	size_t item_len[5]={strlen(item[0]), strlen(item[1]), strlen(item[2]), strlen(item[3]), strlen(item[4])};
+	long long count[5]={1, 2, 3, 4, 5};
+	reply=swarmkv_command(db, "CMSINITBYDIM %s %lld %lld", key, width, depth);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
 	swarmkv_reply_free(reply);
 
-	sleep(seconds+1);
-
-	reply=swarmkv_command(db, "GET %s", key);
-	ASSERT_EQ(reply->type, SWARMKV_REPLY_NIL);
+	swarmkv_cmsincrby(db, key, strlen(key), item, item_len, count, 5, copy_reply_callback, &reply);
+	swarmkv_caller_loop(db, SWARMKV_LOOP_ONCE, NULL);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
+	ASSERT_EQ(reply->n_element, 5);
+	for(size_t i=0; i<reply->n_element; i++)
+	{
+		ASSERT_EQ(reply->elements[i]->type, SWARMKV_REPLY_INTEGER);
+		EXPECT_EQ(reply->elements[i]->integer, count[i]);
+	}
 	swarmkv_reply_free(reply);
 
-	reply=swarmkv_command(db, "EXPIRE %s %d", key, seconds);
-	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
-	EXPECT_EQ(reply->integer, 0);
-	swarmkv_reply_free(reply);
-
-	reply=swarmkv_command(db, "TTL %s", key);
-	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
-	EXPECT_EQ(reply->integer, -2);
+	swarmkv_cmsmquery(db, key, strlen(key), item, item_len, 5, copy_reply_callback, &reply);
+	swarmkv_caller_loop(db, SWARMKV_LOOP_ONCE, NULL);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
+	ASSERT_EQ(reply->n_element, 5);
+	for(size_t i=0; i<reply->n_element; i++)
+	{
+		ASSERT_EQ(reply->elements[i]->type, SWARMKV_REPLY_INTEGER);
+		EXPECT_EQ(reply->elements[i]->integer, count[i]);
+	}
 	swarmkv_reply_free(reply);
 }
+
 TEST_F(SwarmkvBasicTest, HashTags)
 {
 	struct swarmkv *db=SwarmkvBasicTest::db;
@@ -1593,9 +1727,7 @@ TEST_F(SwarmkvTwoNodes, TypeBulkTokenBucket)
 	upper_limit=upper_limit*n_member;
 	double accuracy=(double)allocated_tokens/(upper_limit<requested_tokens?upper_limit:requested_tokens);
 	EXPECT_NEAR(accuracy, 1, 0.035);
-
-	//wait_for_sync();
-	sleep(100);
+	wait_for_sync();
 	reply=swarmkv_command(db[0], "BTINFO %s", key);
 	ASSERT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
 	ASSERT_EQ(reply->n_element, 16);
@@ -1751,7 +1883,6 @@ TEST_F(SwarmkvTwoNodes, TypeCMS)
 	reply=swarmkv_command(db[0], "CMSRCLEAR %s %s", key, uuid);
 	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
 	swarmkv_reply_free(reply);
-
 }
 TEST_F(SwarmkvTwoNodes, Info)
 {
@@ -1766,11 +1897,23 @@ TEST_F(SwarmkvTwoNodes, Info)
 		swarmkv_reply_free(reply);
 	}
 }
-
+TEST_F(SwarmkvTwoNodes, Monitor)
+{
+	struct swarmkv *db[2];
+	db[0]=SwarmkvTwoNodes::db1;
+	db[1]=SwarmkvTwoNodes::db2;
+	struct swarmkv_reply *reply=NULL;
+	for(size_t i=0; i<2; i++)
+	{
+		reply=swarmkv_command(db[i%2], "MONREG %s g?t", swarmkv_self_address(db[i%2]));
+		ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+		swarmkv_reply_free(reply);
+	}
+}
 TEST_F(SwarmkvTwoNodes, Wait)
 {
 	//return;
-	//sleep(3600*2);
+	sleep(3600*2);
 }
 TEST(CloudNative, AnnounceIPPort)
 {

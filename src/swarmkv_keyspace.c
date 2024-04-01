@@ -156,19 +156,23 @@ void crdt_op_on_reply(const struct swarmkv_reply *reply, void * arg)
 void key_entry_deletion_notification(struct key_route_entry *key_entry, struct swarmkv *exec_cmd_handle)
 {
 	struct replica_node *replica=NULL, *tmp=NULL;
-	struct swarmkv_cmd *crdt_del_cmd=swarmkv_cmd_new(3);
-	crdt_del_cmd->argv[0]=sdsnew("crdt");
-	crdt_del_cmd->argv[1]=sdsnew("del");
-	crdt_del_cmd->argv[2]=sdsdup(key_entry->key);
+	const char *argv[3];
+	size_t argv_len[3];
+	argv[0]="crdt";
+	argv_len[0]=strlen(argv[0]);
+	argv[1]="del";
+	argv_len[1]=strlen(argv[1]);
+	argv[2]=key_entry->key;
+	argv_len[2]=sdslen(key_entry->key);
+
 	HASH_ITER(hh, key_entry->hash_replica, replica, tmp)
 	{
 		struct crdt_op_ctx *ctx=ALLOC(struct crdt_op_ctx, 1);
 		node_copy(&ctx->peer, &replica->node);
 		ctx->key=sdsdup(key_entry->key);
 		ctx->is_del=1;
-		swarmkv_async_command_on_argv(exec_cmd_handle, crdt_op_on_reply, ctx, replica->node.addr, crdt_del_cmd->argc, crdt_del_cmd->argv);
+		swarmkv_async_command_on_argv(exec_cmd_handle, crdt_op_on_reply, ctx, replica->node.addr, 3, argv, argv_len);
 	}
-	swarmkv_cmd_free(crdt_del_cmd);
 	return;
 }
 
@@ -176,14 +180,18 @@ void key_entry_meet_replica(struct key_route_entry *key_entry, struct swarmkv *e
 {
 	struct replica_node *replica=NULL, *tmp=NULL;
 	int n_replica=HASH_COUNT(key_entry->hash_replica), i=0;
-	struct swarmkv_cmd *crdt_meet_cmd=swarmkv_cmd_new(3+n_replica);
-	crdt_meet_cmd->argv[0]=sdsnew("crdt");
-	crdt_meet_cmd->argv[1]=sdsnew("meet");
-	crdt_meet_cmd->argv[2]=sdsdup(key_entry->key);
-	
+	const char *argv[3+n_replica];
+	size_t argv_len[3+n_replica];
+	argv[0]="crdt";
+	argv_len[0]=strlen(argv[0]);
+	argv[1]="meet";
+	argv_len[1]=strlen(argv[1]);
+	argv[2]=key_entry->key;
+	argv_len[2]=sdslen(key_entry->key);
 	HASH_ITER(hh, key_entry->hash_replica, replica, tmp)
 	{
-		crdt_meet_cmd->argv[3+i]=node_addr2sds(&replica->node);
+		argv[3+i]=node_addr2cstr(&replica->node);
+		argv_len[3+i]=strlen(argv[3+i]);
 		i++;
 	}
 	assert(i==n_replica);
@@ -192,9 +200,8 @@ void key_entry_meet_replica(struct key_route_entry *key_entry, struct swarmkv *e
 		struct crdt_op_ctx *ctx=ALLOC(struct crdt_op_ctx, 1);
 		node_copy(&ctx->peer, &replica->node);
 		ctx->key=sdsdup(key_entry->key);
-		swarmkv_async_command_on_argv(exec_cmd_handle, crdt_op_on_reply, ctx, replica->node.addr, crdt_meet_cmd->argc, crdt_meet_cmd->argv);
+		swarmkv_async_command_on_argv(exec_cmd_handle, crdt_op_on_reply, ctx, replica->node.addr, 3+n_replica, argv, argv_len);
 	}
-	swarmkv_cmd_free(crdt_meet_cmd);
 	return;
 }
 
@@ -1443,7 +1450,7 @@ enum cmd_exec_result keyspace_getkeysinslot_command(struct swarmkv_module *mod_k
 static int ks_get_tid(struct swarmkv_keyspace *ks, int slot_id)
 {
 	int tid=swarmkv_keyspace_slot2tid(&ks->module, slot_id);
-	int real_tid=__gettid(ks->exec_cmd_handle);
+	int real_tid=swarmkv_gettid(ks->exec_cmd_handle);
 	assert(tid==real_tid);
 	return tid;
 }
@@ -1646,7 +1653,7 @@ enum cmd_exec_result keyspace_keys_command(struct swarmkv_module *mod_keyspace, 
 	int is_matched=0;
 	UT_array *matched_replies=NULL;
 	struct swarmkv_reply *r=NULL;
-	int real_tid=__gettid(ks->exec_cmd_handle);
+	int real_tid=swarmkv_gettid(ks->exec_cmd_handle);
 	int thread_id=atoll(cmd->argv[2]);
 	assert(real_tid==thread_id);
 	const sds pattern=cmd->argv[3];
@@ -1903,7 +1910,7 @@ int swarmkv_keyspace_slot2tid(struct swarmkv_module *mod_keyspace, int slot_id)
 void swarmkv_keyspace_periodic(struct swarmkv_module *mod_keyspace, int thread_id)
 {
 	struct swarmkv_keyspace *ks = module2keyspace(mod_keyspace);
-	int real_tid=__gettid(ks->exec_cmd_handle);
+	int real_tid=swarmkv_gettid(ks->exec_cmd_handle);
 	assert(real_tid==thread_id);
 	struct ks_thread *thr=ks->threads+thread_id;
 

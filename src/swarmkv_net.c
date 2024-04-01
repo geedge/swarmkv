@@ -618,7 +618,7 @@ void swarmkv_net_set_on_msg_callback(struct swarmkv_net *net, on_msg_callback_t 
 #define	MAX_OUTPUT_BUFFER_SIZE	1024*1024*64
 int swarmkv_net_send(struct swarmkv_net *net, const node_t *dest, struct swarmkv_msg *msg, const char **err_str)
 {
-	int tid=__gettid((struct swarmkv *)(net->on_msg_cb_arg));
+	int tid=swarmkv_gettid((struct swarmkv *)(net->on_msg_cb_arg));
 	assert(tid<net->nr_threads);
 	struct snet_thread *thr=net->threads+tid;
 	struct snet_conn *conn=NULL;
