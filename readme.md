@@ -158,6 +158,7 @@ Here are some specific details about the SwarmKV.
     * [Token Bucket Types](./commands/token_bucket.md)
     * [Bloom Filter Type](./commands/bloom_filter.md)
     * [Count-Min Sketch Type](./commands/count_min_sketch.md)
+    * [HyperLogLog Type](./commands/hyperloglog.md)
     * [Cluster Management](./commands/cluster.md)
     * [Trouble Shooting](./commands/trouble_shooting.md)
 * [Design](./docs/design.md)

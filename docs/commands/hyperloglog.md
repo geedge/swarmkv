@@ -15,11 +15,11 @@ PFINIT key precison [TIME window-milliseconds]
  - precision -- The data of the HyperLogLog is stored in an array of m registers. m is 2^precision, e.g. precision=4, m=16. The precision should be between 4 to 16.
  - TIME -- Optional. Creates a time-limited HyperLogLog. 'window-milliseconds' specifies the duration of the time window in milliseconds. This mode allows HyperLogLog to estimate the cardinality of items within the range (now - window-milliseconds, now].
 
-The HyperLogLog use 6 bits per register, so for precision=14, the data structure  is ~12KB (2^14*6/8 bytes). The relative error of HLL is 1.04/sqrt(m). 
+The HLL has a relative error of 1.04/sqrt(m), where m is the number of registers. The SwarmKV HLL implementation uses 6 bits per register, so for a key with precision=14, the memory size is ~12KB (2^14*6/8 bytes), and with a standard error of 0.81%.
 
 Return
 
-- Simple String Reply: OK if the bloom filter created successfully.
+- Simple String Reply: OK if the HyperLogLog created successfully.
 - Empty Array if key already exists.
 
 Examples
