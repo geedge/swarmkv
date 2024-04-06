@@ -16,6 +16,7 @@ void swarmkv_net_set_monitor_handle(struct swarmkv_net *net, struct swarmkv_modu
 
 struct snet_info
 {
+	long long output_buf_max;
 	long long connections;
 
 	long long input_bytes;

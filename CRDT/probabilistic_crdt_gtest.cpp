@@ -378,9 +378,36 @@ TEST(STHyperLogLog, Basic)
 	est_count=st_hll_test(precision, count);
 	error=ST_hyperloglog_error_for_precision(precision);
 	EXPECT_NEAR(est_count, count, error*count);
-
 }
-TEST(STHyperLogLog, Duplicate)
+TEST(STHyperLogLog, ExplicitExpire)
+{
+	struct timeval start, step, now;
+	gettimeofday(&start, NULL);
+
+	int time_window_ms=2000;
+	printf("Precision Count\n");
+	for(char precision=HLL_MIN_PRECISION; precision<HLL_MAX_PRECISION; precision++)
+	{
+		step.tv_sec=0;
+		step.tv_usec=10000;
+		memcpy(&now, &start, sizeof(now));
+		struct ST_hyperloglog *h=ST_hyperloglog_new(precision, time_window_ms, start);
+		for(int i=0; i<10000; i++)
+		{
+			timeradd(&now, &step, &now);
+			ST_hyperloglog_add(h, (const char *)&i, sizeof(i), now);
+		}
+		step.tv_sec=time_window_ms/1000;
+		step.tv_usec=time_window_ms%1000;
+		timeradd(&now, &step, &now);
+		int count=ST_hyperloglog_count(h, now);
+		printf("%d %d\n", precision, count);
+		ST_hyperloglog_free(h);
+	}
+
+	return;
+}
+TEST(STHyperLogLog, Replicate)
 {
 	struct ST_hyperloglog *h1=NULL, *h2=NULL;
 	struct timeval start, now, step;
@@ -399,10 +426,13 @@ TEST(STHyperLogLog, Duplicate)
 	}
 	double est1, est2;
 	est1=ST_hyperloglog_count(h1, now);
-	
-	h2=ST_hyperloglog_duplicate(h1);
+	char *blob=NULL;
+	size_t blob_sz=0;
+	ST_hyperloglog_serialize(h1, &blob, &blob_sz);
+	h2=ST_hyperloglog_replicate(NULL, blob, blob_sz);
 	est2=ST_hyperloglog_count(h2, now);
 	EXPECT_EQ(est1, est2);
+	free(blob);
 
 	ST_hyperloglog_merge(h2, h1);
 	est2=ST_hyperloglog_count(h2, now);
@@ -907,6 +937,7 @@ TEST(STHyperLogLog, Microscope)
 	EXPECT_EQ(passed, counted);
 	ST_hyperloglog_free(h);
 }
+
 void ap_bloom_sync(struct AP_bloom *list[], size_t n)
 {
 	char *blob=NULL;
@@ -1071,15 +1102,41 @@ TEST(APBloom, Basic)
 	ret=AP_bloom_check(bloom, now, (char *)&key, sizeof(key));
 	EXPECT_EQ(ret, 1);
 
-
-
 	//boudary test with invalid time.
 	now.tv_sec = 0;
 	ret=AP_bloom_check(bloom, now, (char *)&key, sizeof(key));
 	EXPECT_EQ(ret, 0);
 
-
 	AP_bloom_free(bloom);
+}
+TEST(APBloom, ExplicitExpire)
+{
+	struct timeval start, now;
+	gettimeofday(&start, NULL);
+	long long time_window_ms=2000;
+	struct timeval window={.tv_sec=2, .tv_usec=0};
+	struct timeval step={.tv_sec=0, .tv_usec=1000};
+	for(int slice_num=1; slice_num<=64; slice_num*=2)
+	{
+		struct AP_bloom *bloom=AP_bloom_new(start, 0.001, 1000, time_window_ms, slice_num);
+		int key=11;
+		now=start;
+		for(int i=0; i<1000; i++)
+		{
+			AP_bloom_add(bloom, start, (char *)&key, sizeof(key));
+			key++;
+			timeradd(&now, &step, &now);
+		}
+		key=11;
+		timeradd(&now, &window, &now);
+		int found=0;
+		for(int i=0; i<1000; i++)
+		{
+			found += AP_bloom_check(bloom, now, (char *)&key, sizeof(key));
+		}
+		EXPECT_EQ(found, 0);
+		AP_bloom_free(bloom);
+	}
 }
 TEST(APBloom, NoSliding)
 {

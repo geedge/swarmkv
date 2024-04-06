@@ -330,8 +330,7 @@ struct print_ctx
 static void print_on_reply(const struct swarmkv_reply *reply, void *user)
 {
     struct print_ctx *ctx=(struct print_ctx *)user;
-    int tid=swarmkv_gettid(ctx->monitor->ref_db);
-    assert(tid==ctx->tid);
+    
     if(reply->type != SWARMKV_REPLY_STATUS)
     {
         struct monitor_client *client=NULL, *tmp=NULL;
@@ -346,6 +345,11 @@ static void print_on_reply(const struct swarmkv_reply *reply, void *user)
             }
         }
         pthread_mutex_unlock(&ctx->monitor->threads[ctx->tid].mutex);
+    }
+    else
+    {
+        int tid=swarmkv_gettid(ctx->monitor->ref_db);
+        assert(tid==ctx->tid);
     }
     free(ctx);
 }

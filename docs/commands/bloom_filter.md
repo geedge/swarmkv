@@ -29,7 +29,7 @@ Syntax
 BFADD key item [item ...]
 ```
 
-Add every `item` to the bloom filter stored at `key`. 
+Add each `item` to the bloom filter stored at `key`. 
 
 
 Return

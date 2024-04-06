@@ -9,7 +9,7 @@
 
 enum cmd_exec_result bfinit_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
 {
-/* BFINIT key error_rate capacity [TIME window-milliseconds slice-number] */
+/* BFINIT key error capacity [TIME window-milliseconds slice-number] */
 	struct sobj *obj=NULL;
 	const sds key=cmd->argv[1];
 

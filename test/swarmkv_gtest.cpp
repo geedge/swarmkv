@@ -244,7 +244,7 @@ TEST_F(SwarmkvBasicTest, GenericTTL)
 	EXPECT_EQ(reply->integer, 1);
 	swarmkv_reply_free(reply);
 }
-TEST_F(SwarmkvBasicTest, GenericTYPE)
+TEST_F(SwarmkvBasicTest, TypeGeneric)
 {
 	struct swarmkv *db=SwarmkvBasicTest::db;
 	struct swarmkv_reply *reply=NULL;
@@ -850,7 +850,93 @@ TEST_F(SwarmkvBasicTest, TypeCMS)
 	}
 	swarmkv_reply_free(reply);
 }
+TEST_F(SwarmkvBasicTest, TypeHyperloglog)
+{
+	struct swarmkv *db=SwarmkvBasicTest::db;
+	const char *key="hll-001";
+	int n_item=1000;
+	struct swarmkv_reply *reply=NULL;
+	char precision=9;
+	reply=swarmkv_command(db, "PFINIT %s %d", key, precision);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	swarmkv_reply_free(reply);
+	
+	reply=swarmkv_command(db, "PFADD %s item-%d", key, 0);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 1);
+	swarmkv_reply_free(reply);
 
+
+	for(int i=0; i<n_item; i++)
+	{
+		reply=swarmkv_command(db, "PFADD %s %d", key, i);
+		swarmkv_reply_free(reply);
+	}
+	reply=swarmkv_command(db, "PFCOUNT %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_NEAR(reply->integer, n_item+1, n_item/10);
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db, "PFINFO %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
+	ASSERT_EQ(reply->n_element, 6);
+	ASSERT_EQ(reply->elements[3]->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->elements[3]->integer, precision);
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db, "type %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STRING);
+	EXPECT_STREQ(reply->str, "hyperloglog");
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db, "DEL %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 1);
+	swarmkv_reply_free(reply);
+
+	//Time Hyperloglog
+	long long time_window_ms=1000;
+	reply=swarmkv_command(db, "PFINIT %s %d TIME %lld", key, precision, time_window_ms);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	swarmkv_reply_free(reply);
+
+	struct timeval pfadd_ts[n_item];
+	for(int i=0; i<n_item; i++)
+	{
+		gettimeofday(pfadd_ts+i, NULL);
+		reply=swarmkv_command(db, "PFADD %s %d", key, i);
+		swarmkv_reply_free(reply);
+	}
+	struct timeval now;
+	gettimeofday(&now, NULL);
+	reply=swarmkv_command(db, "PFCOUNT %s", key);
+	long long in_window_count=0;
+	for(int i=0; i<n_item; i++)
+	{
+		if(timeval_delta_ms(pfadd_ts[i], now)<=time_window_ms)
+		{
+			in_window_count++;
+		}
+		
+	}
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_NEAR(reply->integer, in_window_count, in_window_count/10);
+	swarmkv_reply_free(reply);
+
+	//The STHLL reset counter every 2W/m interval, so it takes 2W time to reset all counters.
+	usleep(time_window_ms*1000*2);
+	reply=swarmkv_command(db, "PFCOUNT %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 0);
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db, "PFINFO %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
+	ASSERT_EQ(reply->n_element, 6);
+	ASSERT_EQ(reply->elements[5]->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->elements[5]->integer, time_window_ms);
+	swarmkv_reply_free(reply);
+}
 TEST_F(SwarmkvBasicTest, HashTags)
 {
 	struct swarmkv *db=SwarmkvBasicTest::db;
@@ -1883,6 +1969,37 @@ TEST_F(SwarmkvTwoNodes, TypeCMS)
 	reply=swarmkv_command(db[0], "CMSRCLEAR %s %s", key, uuid);
 	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
 	swarmkv_reply_free(reply);
+}
+TEST_F(SwarmkvTwoNodes, TypeHyperLogLog)
+{
+	struct swarmkv *db[2];
+	db[0]=SwarmkvTwoNodes::db1;
+	db[1]=SwarmkvTwoNodes::db2;
+	struct swarmkv_reply *reply=NULL;
+	const char *key="hll-001";
+	const char *prefix[4]={"Philippe", "Flajolet", "Invents", "Hyperloglog"};
+
+
+	char precision=12;
+	reply=swarmkv_command(db[0], "PFINIT %s %d", key, precision);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	EXPECT_STREQ(reply->str, "OK");
+	swarmkv_reply_free(reply);
+	srand(171);
+	int n_item=10000;
+	for(int i=0; i<n_item; i++)
+	{
+		reply=swarmkv_command(db[i%2], "PFADD %s %s-%d", key, prefix[i%4], i);
+		swarmkv_reply_free(reply);
+		if(i%1000==0)
+		{
+			wait_for_sync();
+			reply=swarmkv_command(db[(i+1)%2], "PFCOUNT %s", key);
+			ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+			EXPECT_NEAR(reply->integer, i+1, i/20);
+			swarmkv_reply_free(reply);
+		}
+	}
 }
 TEST_F(SwarmkvTwoNodes, Info)
 {

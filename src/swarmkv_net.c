@@ -490,7 +490,7 @@ static void __accept_error_cb(struct evconnlistener *listener, void *arg)
 	log_fatal(net->logger, MODULE_SWAMRKV_NET, "accept peer connection failed %d (%s).",
 							err, evutil_socket_error_to_string(err));
 }
-
+#define	MAX_OUTPUT_BUFFER_SIZE	1024*1024*64
 struct swarmkv_net *swarmkv_net_new(struct event_base *evbases[], int nr_threads, struct swarmkv_options *opts, struct log_handle *logger, char **err)
 {
 	struct swarmkv_net *net=NULL;	
@@ -550,6 +550,7 @@ void swarmkv_net_info(struct swarmkv_net *net, struct snet_info *info)
 {
 	struct snet_thread *thr=NULL;
 	memset(info, 0, sizeof(struct snet_info));
+	info->output_buf_max=MAX_OUTPUT_BUFFER_SIZE;
 	for(size_t i=0; i<net->nr_threads; i++)
 	{
 		thr=net->threads+i;
@@ -615,7 +616,7 @@ void swarmkv_net_set_on_msg_callback(struct swarmkv_net *net, on_msg_callback_t 
 	net->on_msg_cb_arg=cb_arg;
 	return;
 }
-#define	MAX_OUTPUT_BUFFER_SIZE	1024*1024*64
+
 int swarmkv_net_send(struct swarmkv_net *net, const node_t *dest, struct swarmkv_msg *msg, const char **err_str)
 {
 	int tid=swarmkv_gettid((struct swarmkv *)(net->on_msg_cb_arg));

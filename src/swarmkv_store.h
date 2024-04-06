@@ -15,6 +15,7 @@
 #include "bulk_token_bucket.h"
 #include "ap_bloom.h"
 #include "cm_sketch.h"
+#include "st_hyperloglog.h"
 
 enum sobj_type
 {
@@ -27,6 +28,7 @@ enum sobj_type
 	OBJ_TYPE_BULK_TOKEN_BUCKET,
 	OBJ_TYPE_BLOOM_FILTER,
 	OBJ_TYPE_CMS,
+	OBJ_TYPE_HYPERLOGLOG,
 	OBJ_TYPE_UNDEFINED,
 	__SWARMKV_OBJ_TYPE_MAX
 };
@@ -46,6 +48,7 @@ struct sobj
 		struct bulk_token_bucket *btb;
 		struct AP_bloom *bloom;
 		struct CM_sketch *cms;
+		struct ST_hyperloglog *hll;
 		void *raw;
 	};
 };

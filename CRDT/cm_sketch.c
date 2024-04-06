@@ -17,7 +17,7 @@ struct cms_opt
 struct cms_node
 {
     uuid_t uuid;
-    unsigned long long sequence;
+    unsigned long long version;
     uint64_t elements_added;
     int width;
     int depth;
@@ -51,7 +51,7 @@ static void cms_node_incrby(struct cms_node *node, int *hash, int n_hash, int in
         //node->array[offset] += increment;
     }
     node->elements_added += increment;
-    node->sequence ++;
+    node->version ++;
     return;
 }
 static int cms_node_query(const struct cms_node *node, const int *hash, int n_hash)
@@ -73,7 +73,7 @@ static void cms_node_reset(struct cms_node *node)
 {
     memset(node->array, 0, sizeof(int)*node->width*node->depth);
     node->elements_added=0;
-    node->sequence++;
+    node->version++;
     return;
 }
 static size_t cms_node_blob_size(const struct cms_node *node)
@@ -109,10 +109,10 @@ static void cms_node_merge(struct cms_node *dst, const struct cms_node *src)
 {
     assert(dst->depth==src->depth);
     assert(dst->width==src->width);
-    if(dst->sequence<src->sequence)
+    if(dst->version<src->version)
     {
         dst->elements_added=src->elements_added;
-        dst->sequence=src->sequence;
+        dst->version=src->version;
         memcpy(dst->array, src->array, sizeof(int)*dst->width*dst->depth);
     }
     return;

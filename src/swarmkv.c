@@ -25,6 +25,7 @@
 #include "t_token_bucket.h"
 #include "t_bloom_filter.h"
 #include "t_cms.h"
+#include "t_hyperloglog.h"
 
 #include "uthash.h"
 #include "sds.h"
@@ -344,6 +345,7 @@ enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct sw
 	swarmkv_net_info(db->net, &net_info);
 	snprintf(net_info_buff, sizeof(net_info_buff), "# Network\r\n"
 												"timeout_in_msec: %.3f\r\n"
+												"output_buf_max: %lld\r\n"
 												"connections: %lld\r\n"
 												"input_bytes: %lld\r\n"
 												"output_bytes: %lld\r\n"
@@ -359,6 +361,7 @@ enum cmd_exec_result info_command(struct swarmkv_module *mod_db, const struct sw
 												"instantaneous_output_msgs: %.2f\r\n"
 												,
 												(double)db->opts->cluster_timeout_us/1000,
+												net_info.output_buf_max,
 												net_info.connections,
 												net_info.input_bytes,
 												net_info.output_bytes,
@@ -1193,6 +1196,20 @@ void command_spec_init(struct swarmkv *db)
 	command_register(&(db->command_table), "CMSRCLEAR", "key uuid",
 					2, 1, CMD_KEY_RW, REPLY_ERROR, AUTO_ROUTE,
 					cmsrclear_command, db->mod_store);
+	
+	/*Hyperloglog Commands*/
+	command_register(&(db->command_table), "PFINIT", "key precison [TIME window-milliseconds]",
+					2, 1, CMD_KEY_OW, REPLY_EMPTY_ARRAY, AUTO_ROUTE,
+					pfinit_command, db->mod_store);
+	command_register(&(db->command_table), "PFADD", "key item [item ...]",
+					2, 1, CMD_KEY_RW, REPLY_INT_MINORS1, AUTO_ROUTE,
+					pfadd_command, db->mod_store);
+	command_register(&(db->command_table), "PFCOUNT", "key",
+					1, 1, CMD_KEY_RO, REPLY_INT_MINORS1, AUTO_ROUTE,
+					pfcount_command, db->mod_store);
+	command_register(&(db->command_table), "PFINFO", "key",
+					1, 1, CMD_KEY_RO, REPLY_EMPTY_ARRAY, AUTO_ROUTE,
+					pfinfo_command, db->mod_store);
 
 	/* Debug Commands */
 	command_register(&(db->command_table), "INFO", "[section]",

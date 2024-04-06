@@ -12,7 +12,7 @@ struct counter_item
 struct counter_array
 {
 	uuid_t replica_id;
-	long long sequence;
+	long long version;
 	long long array_sz;
 	struct counter_item  *array;
 	UT_hash_handle hh;
@@ -89,7 +89,7 @@ long long g_array_incrby(struct g_array *ga, long long idx, long long increment)
 	}
 	assert(idx < a->array_sz);
 	a->array[idx].count += increment;
-	a->sequence++;
+	a->version++;
 	return g_array_get(ga, idx);
 }
 void g_array_reset(struct g_array *ga)
@@ -106,7 +106,7 @@ void g_array_reset(struct g_array *ga)
 	{
 		a->array[i].count -= g_array_get(ga, i);
 	}
-	a->sequence++;
+	a->version++;
 }
 void g_array_resize(struct g_array *ga, long long new_size)
 {
@@ -205,7 +205,7 @@ void g_array_merge(struct g_array *dst, const struct g_array *src)
 		}
 		else
 		{
-			if(src_item->sequence > dst_item->sequence)
+			if(src_item->version > dst_item->version)
 			{
 				memcpy(dst_item, src_item, G_ARRAY_ITEM_HEADER_SIZE);
 				if(dst_item->array_sz < src_item->array_sz)

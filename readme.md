@@ -34,7 +34,7 @@ SwarmKV Data Types
     - Bulk Token Bucket: Optimized for scenarios requiring a large number of token buckets with identical configurations.
 - Bloom Filter with the ability to expire.
 - Count-min Sketch
-- HyperLogLog [Todo]
+- HyperLogLog
 
 
 
@@ -151,6 +151,15 @@ It's recommended to use [jemalloc](https://github.com/jemalloc/jemalloc) for bet
 
 Here are some specific details about the SwarmKV.
 * [Commands](./docs/command_toc.md)
+    * [Generic Type](./commands/generic.md)
+    * [String and Integer Types](./commands/string_and_integer.md)
+    * [Set Type](./commands/set.md)
+    * [Hash Type](./commands/hash.md)
+    * [Token Bucket Types](./commands/token_bucket.md)
+    * [Bloom Filter Type](./commands/bloom_filter.md)
+    * [Count-Min Sketch Type](./commands/count_min_sketch.md)
+    * [Cluster Management](./commands/cluster.md)
+    * [Trouble Shooting](./commands/trouble_shooting.md)
 * [Design](./docs/design.md)
 * [Command-line interface (CLI)](./docs/cli.md)
 * [Conflict-free Replicated Data Type (CRDT)](./docs/crdt.md)

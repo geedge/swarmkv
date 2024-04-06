@@ -12,6 +12,8 @@
 #include <stddef.h>
 #include <sys/time.h>
 #include <stdint.h>
+#include <uuid/uuid.h>
+
 #ifdef __cplusplus
 extern "C"
 {
@@ -38,8 +40,15 @@ struct ST_hyperloglog;
  */
 struct ST_hyperloglog *ST_hyperloglog_new(unsigned char precision, long long time_window_ms, const struct timeval now);
 void ST_hyperloglog_free(struct ST_hyperloglog *h);
-struct ST_hyperloglog *ST_hyperloglog_duplicate(const struct ST_hyperloglog *origin);
-
+//The parameter 'uuid' is included for consistency with other CRDT types and is not used.
+struct ST_hyperloglog *ST_hyperloglog_replicate(uuid_t uuid, const char *blob, size_t blob_sz);
+struct ST_hyperloglog_info
+{
+    long long time_window_ms;
+    double error;
+    unsigned char precision;
+};
+void ST_hyperloglog_info(const struct ST_hyperloglog *h, struct ST_hyperloglog_info *info);
 //Return 1 if at least 1 ST HyperLogLog internal register was altered. 0 otherwise.
 int ST_hyperloglog_add(struct ST_hyperloglog *h, const char *key, size_t keylen, const struct timeval now);
 int ST_hyperloglog_add_hash(struct ST_hyperloglog *h, uint64_t hash, const struct timeval now);

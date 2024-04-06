@@ -20,7 +20,7 @@
 #define INT_CEIL(num, denom) (((num) + (denom) - 1) / (denom))
 
 #define PRECISION_TO_WORD(precision) INT_CEIL(NUM_REG(precision), REG_PER_WORD)
-#define RESET_TIME_SLOT_US(time_window_seconds, precision) (time_window_seconds*2*1000/NUM_REG(precision))
+#define RESET_TIME_SLOT_US(time_window_ms, precision) (time_window_ms*2*1000/NUM_REG(precision))
 
 struct ST_HLL_configuration
 {
@@ -373,6 +373,13 @@ void ST_hyperloglog_configure(struct ST_hyperloglog *h, unsigned char precision,
     
     return;
 }
+void ST_hyperloglog_info(const struct ST_hyperloglog *h, struct ST_hyperloglog_info *info)
+{
+    info->time_window_ms=h->cfg.time_window_ms;
+    info->precision=h->cfg.precision;
+    info->error=ST_hyperloglog_error_for_precision(h->cfg.precision);
+    return;
+}
 void ST_hyperloglog_free(struct ST_hyperloglog *h)
 {
     free(h->registers);
@@ -381,18 +388,21 @@ void ST_hyperloglog_free(struct ST_hyperloglog *h)
     return;
 }
 #define ST_HLL_HASH_SEED    171
-int ST_hyperloglog_add(struct ST_hyperloglog *h, const char *key, size_t keylen, const struct timeval now)
-{
-    st_hll_slide_window(h, now);
-
-    uint64_t hash=0;
-    hash=XXH3_64bits_withSeed(key, keylen, ST_HLL_HASH_SEED);
-    return st_hll_add_hash(h, hash);
-}
 int ST_hyperloglog_add_hash(struct ST_hyperloglog *h, uint64_t hash, const struct timeval now)
 {
     st_hll_slide_window(h, now);
     return st_hll_add_hash(h, hash);
+}
+int ST_hyperloglog_add(struct ST_hyperloglog *h, const char *key, size_t keylen, const struct timeval now)
+{
+    uint64_t hash=0;
+    hash=XXH3_64bits_withSeed(key, keylen, ST_HLL_HASH_SEED);
+    return ST_hyperloglog_add_hash(h, hash, now);
+}
+struct ST_hyperloglog *ST_hyperloglog_replicate(uuid_t uuid, const char *blob, size_t blob_sz)
+{
+    struct ST_hyperloglog *h=ST_hyperloglog_deserialize(blob, blob_sz);
+    return h;
 }
 struct ST_hyperloglog *ST_hyperloglog_duplicate(const struct ST_hyperloglog *origin)
 {

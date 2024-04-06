@@ -23,7 +23,11 @@ Swarm KV implements Add-Wins Observed-Remove Set (OR Set) to store set and hash 
 An Age-partitioned Bloom Filter (APBloom) is a Bloom filter variant that supports duplicate detection within a sliding window. The APBloom records elements within a time range from 'now-window' to 'now'. It's a CRDT version of the [Age-partitioned bloom filters](https://arxiv.org/pdf/2001.03147.pdf).
 
 ## Staggered HyperLogLog
-Staggered HyperLogLog is a HyperLogLog variant that supports near-continuous-time cardinality estimation. Please refere to [Staggered HLL: Near-continuous-time cardinality estimation with no overhead](https://www.sciencedirect.com/science/article/abs/pii/S0140366422002407) for more information.
+Staggered HyperLogLog is a HyperLogLog variant that supports near-continuous-time cardinality estimation. Please refere to [Staggered HLL: Near-continuous-time cardinality estimation with no overhead](https://www.sciencedirect.com/science/article/abs/pii/S0140366422002407) for more information. The data of the HyperLogLog is stored in an array M of m registers. Each register is 6-bit.
+
+## Count-min Sketch
+The count–min sketch (CMS) is a probabilistic data structure that serves as a frequency table of events in a stream of data.
+The state-based CMS CRDT is implemented similarly to a G-counter, assigning each node in the cluster a unique CMS within the array. Each node updates its CMS locally and monotonically increases the version with every update. The merge function takes the maximum version of every CMS in the array.
 
 # Token Bucket CRDT
 
