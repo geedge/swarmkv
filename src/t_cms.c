@@ -277,7 +277,7 @@ enum cmd_exec_result cmsrlist_command(struct swarmkv_module *mod_store, const st
 	{
 		char uuid_str[37];
 		uuid_unparse(replicas[i], uuid_str);
-		(*reply)->elements[i]=swarmkv_reply_new_string(uuid_str, strlen(uuid_str)+1);
+		(*reply)->elements[i]=swarmkv_reply_new_string(uuid_str, strlen(uuid_str));
 	}
 	return FINISHED;
 }

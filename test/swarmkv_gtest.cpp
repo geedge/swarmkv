@@ -970,7 +970,7 @@ protected:
 		char ip_list[1024]={0};
 		snprintf(ip_list, sizeof(ip_list), "127.0.0.1:%d 127.0.0.1:%d", TWO_NODES_TEST_CLUSTER_PORT, TWO_NODES_TEST_CLUSTER_PORT+1);
 		swarmkv_cli_create_cluster(cluster_name, ip_list);
-		unsigned int very_long_timeout_us=600*1000*1000;
+		//unsigned int very_long_timeout_us=600*1000*1000;
 		logger=log_handle_create(log_path, 0);
 		struct swarmkv_options *opts[2];
 		struct swarmkv *tmp_db[2];
@@ -981,7 +981,7 @@ protected:
 			swarmkv_options_set_health_check_port(opts[i], TWO_NODES_TEST_HEALTH_PORT+i);
 			swarmkv_options_set_logger(opts[i], logger);
 			swarmkv_options_set_sync_interval_us(opts[i], 10000);
-			swarmkv_options_set_cluster_timeout_us(opts[i], very_long_timeout_us);
+			swarmkv_options_set_cluster_timeout_us(opts[i], 500*1000);
 			swarmkv_options_set_worker_thread_number(opts[i], 2);
 			swarmkv_options_set_caller_thread_number(opts[i], 1);
 			swarmkv_options_set_batch_sync_enabled(opts[i], 1);
@@ -2029,8 +2029,8 @@ TEST_F(SwarmkvTwoNodes, Monitor)
 }
 TEST_F(SwarmkvTwoNodes, Wait)
 {
-	//return;
-	sleep(3600*2);
+	return;
+	//sleep(3600*2);
 }
 TEST(CloudNative, AnnounceIPPort)
 {

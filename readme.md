@@ -23,20 +23,16 @@ Main Features
 <img src="./docs/imgs/cluster.png" alt="swamrkv-cluster" /> 
 
 SwarmKV Data Types
-
-- String
-- Integer
-- Set
-- Hash Table
-- Token Buckets
+- [String and Integer](./docs/commands/string_and_integer.md) by Last-Write-Wins (LWW) Register and Positive-Negative Counter.
+- [Set](./docs/commands/set.md) by Observed-Remove Set (OR-Set).
+- [Hash](./docs/commands/hash.md) embed string and integer by OR-Set.
+- [Token Buckets](./docs/commands/token_bucket.md)
     - Generic Token Buckets
     - Fair Token Bucket: Implements stochastic fairness allocation to ensure equitable resource distribution.
     - Bulk Token Bucket: Optimized for scenarios requiring a large number of token buckets with identical configurations.
-- Bloom Filter with the ability to expire.
-- Count-min Sketch
-- HyperLogLog
-
-
+- [Bloom Filter](./docs/commands/bloom_filter.md) by age-partitioned bloom filter with the ability to expire.
+- [Count-Min Sketch](./docs/commands/count_min_sketch.md).
+- [HyperLogLog](./docs/commands/hyperloglog.md) by staggered HyperLogLog with the ability to expire.
 
 # Getting started
 
@@ -154,13 +150,5 @@ Here are some specific details about the SwarmKV.
 * [Command-line interface (CLI)](./docs/cli.md)
 * [Conflict-free Replicated Data Type (CRDT)](./docs/crdt.md)
 * [Commands](./docs/command_toc.md)
-    * [Generic Type](./docs/commands/generic.md)
-    * [String and Integer Types](./docs/commands/string_and_integer.md)
-    * [Set Type](./docs/commands/set.md)
-    * [Hash Type](./docs/commands/hash.md)
-    * [Token Bucket Types](./docs/commands/token_bucket.md)
-    * [Bloom Filter Type](./docs/commands/bloom_filter.md)
-    * [Count-Min Sketch Type](./docs/commands/count_min_sketch.md)
-    * [HyperLogLog Type](./docs/commands/hyperloglog.md)
-    * [Cluster Management](./docs/commands/cluster.md)
-    * [Trouble Shooting](./docs/commands/trouble_shooting.md)
+* [Cluster Management](./docs/commands/cluster.md)
+* [Trouble Shooting](./docs/commands/trouble_shooting.md)
