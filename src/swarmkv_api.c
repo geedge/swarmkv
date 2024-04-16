@@ -287,6 +287,7 @@ void swarmkv_async_command(struct swarmkv *db, swarmkv_on_reply_callback_t * cb,
 	vasprintf(&cmd_str, format, ap);
 	va_end(ap);
 	swarmkv_async_command_on(db, cb, cb_arg, NULL, cmd_str);
+    free(cmd_str);
 }
 void swarmkv_set(struct swarmkv * db,
 	const char * key, size_t keylen, const char * value, size_t vallen, swarmkv_on_reply_callback_t * cb, void * cb_arg)
