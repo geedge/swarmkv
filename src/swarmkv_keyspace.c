@@ -226,6 +226,7 @@ struct ks_thread
 	struct http_client *consul_client;
 	int consul_slots_modify_idx;
 	int consul_nodes_modify_idx;
+	int consul_connect_failed_idx;
 	struct swarmkv_keyspace *ref_ks;
 	struct event_base *evbase;	//reference of swarmkv
 
@@ -775,6 +776,11 @@ void watch_slots_changes_on_success(void *result, void *arg)
 void watch_slots_changes_on_fail(enum e_future_error err, const char * what, void * arg)
 {
 	struct ks_thread *thr=(struct ks_thread*)arg;
+	thr->consul_connect_failed_idx++;
+	if(thr->consul_connect_failed_idx >= 8)
+	{
+		sleep(1);
+	}
 	consul_watch_slots_changes_async(thr);
 }
 void consul_watch_slots_changes_async(struct ks_thread *thr)
@@ -1008,6 +1014,11 @@ void watch_nodes_changes_on_success(void *result, void *arg)
 void watch_nodes_changes_on_fail(enum e_future_error err, const char * what, void * arg)
 {
 	struct ks_thread *thr=(struct ks_thread*)arg;
+	thr->consul_connect_failed_idx++;
+	if(thr->consul_connect_failed_idx >= 8)
+	{
+		sleep(1);
+	}
 	consul_watch_nodes_changes_async(thr);
 }
 void consul_watch_nodes_changes_async(struct ks_thread *thr)
