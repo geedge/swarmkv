@@ -1,4 +1,4 @@
-add_definitions(-D_GNU_SOURCE) 
+add_definitions(-D_GNU_SOURCE -D_XOPEN_SOURCE) 
 add_definitions(-fPIC)
 
 add_library(CRDT lww_register.c pn_counter.c or_map.c or_set.c hll_common.c st_hyperloglog.c ap_bloom.c cm_sketch.c
@@ -23,3 +23,9 @@ add_executable(probabilistic_CRDT_gtest probabilistic_crdt_gtest.cpp
 				${PROJECT_SOURCE_DIR}/deps/mpack/mpack.c
 				${PROJECT_SOURCE_DIR}/deps/xxhash/xxhash.c)
 target_link_libraries(probabilistic_CRDT_gtest CRDT gtest-static uuid)
+
+add_executable(ap_bloom_gtest ap_bloom_gtest.cpp
+				${PROJECT_SOURCE_DIR}/CRDT/ap_bloom.c
+				${PROJECT_SOURCE_DIR}/deps/xxhash/xxhash.c
+				${PROJECT_SOURCE_DIR}/CRDT/crdt_utils.c)
+target_link_libraries(ap_bloom_gtest gtest-static pthread fieldstat4)				
