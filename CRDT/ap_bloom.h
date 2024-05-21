@@ -73,6 +73,14 @@ struct AP_bloom *AP_bloom_replicate(uuid_t uuid, const char *blob, size_t blob_s
 size_t AP_bloom_serialized_size(const struct AP_bloom *bloom);
 size_t AP_bloom_mem_size(const struct AP_bloom *bloom);
 
+size_t AP_bloom_stat_get_hash_num(const struct AP_bloom *bloom);
+size_t AP_bloom_mem_blocks(const struct AP_bloom *bloom);
+size_t AP_bloom_stat_get_new_num(const struct AP_bloom *bloom);
+size_t AP_bloom_stat_get_free_num(const struct AP_bloom *bloom);
+size_t AP_bloom_stat_get_expand_num(const struct AP_bloom *bloom);
+size_t AP_bloom_stat_get_cur_slice_num(const struct AP_bloom *bloom);
+size_t AP_bloom_stat_get_expand_max_multiple(const struct AP_bloom *bloom);
+
 #ifdef __cplusplus
 }
 #endif

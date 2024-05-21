@@ -18,7 +18,7 @@
 static unsigned int BM_CAPACITY = 10000000;
 static double BM_ERROR_RATE = 0.000001d;
 static int BM_TIMEOUT = 10 * 1000; // ms
-static int BM_SLICE_NUM = 0;
+static int BM_SLICE_NUM = 3;
 static int MAX_ITEM_NUM = 10000000;
 static int ITEM_BATCH_NUM = 1000;
 #define TUPLE4_ADDR_LEN (12 + 1) // sizeof(tuple4) add begin char 'Y' or 'N'
@@ -89,7 +89,9 @@ static void bm_add_item(struct AP_bloom *bloom_filter, char *tuple4_buf, unsigne
     }
     total_add_time += (unsigned long long)time_diff;
 
-    fieldstat_easy_histogram_record(fs4_instance, 0, fs4_add_metric_id, &FS4_HISGRAM_TAG, 1, time_diff);
+    if(fs4_instance){
+        fieldstat_easy_histogram_record(fs4_instance, 0, fs4_add_metric_id, &FS4_HISGRAM_TAG, 1, time_diff);
+    }
 }
 
 static int bm_search_item(struct AP_bloom *bloom_filter, char *tuple4_buf, unsigned int index, int fs4_metric_id)
@@ -111,7 +113,9 @@ static int bm_search_item(struct AP_bloom *bloom_filter, char *tuple4_buf, unsig
     }
     total_search_time += (unsigned long long)time_diff;
 
-    fieldstat_easy_histogram_record(fs4_instance, 0, fs4_metric_id, &FS4_HISGRAM_TAG, 1, time_diff);
+    if(fs4_instance){
+        fieldstat_easy_histogram_record(fs4_instance, 0, fs4_metric_id, &FS4_HISGRAM_TAG, 1, time_diff);
+    }
     return ret;
 }
 
@@ -308,6 +312,65 @@ int ap_bloom_filter_test(const char *user_define_args)
 TEST(apbloom, perf)
 {
     EXPECT_EQ(0, ap_bloom_filter_test(g_user_define_args));
+}
+
+static int apbloom_merge_test_run(void)
+{
+    int ret = 0;
+    const int max_item_num = 1000000;
+    struct timeval current_time_tv;
+    gettimeofday(&current_time_tv, NULL);
+
+    struct AP_bloom *apbma = (struct AP_bloom *)AP_bloom_new(g_current_time_tv, BM_ERROR_RATE, BM_CAPACITY, 1000 * 999, BM_SLICE_NUM);
+    assert(apbma);
+    char tuple4_buf[1024] = {};
+
+    tuple4_buf[0] = 'A';
+    for(int i = 0; i < max_item_num; i++){
+        bm_add_item(apbma, tuple4_buf, i);
+    }
+
+    struct AP_bloom *apbmb = (struct AP_bloom *)AP_bloom_new(g_current_time_tv, BM_ERROR_RATE, BM_CAPACITY, 1000 * 999, BM_SLICE_NUM);
+    assert(apbmb);
+    
+    tuple4_buf[0] = 'B';
+    for(int i = 0; i < max_item_num; i++){
+        bm_add_item(apbmb, tuple4_buf, i);
+    }
+
+    tuple4_buf[0] = 'B';
+    for(int i = 0; i < max_item_num; i++){
+        ret = bm_search_item(apbma, tuple4_buf, i, -1);
+        if(ret > 0){
+            fprintf(stderr, "found tuple4 with B apbma before merge!\n");
+            return -1;
+        }  
+    }
+
+    AP_bloom_merge(apbma, apbmb);
+
+    for(int i = 0; i < max_item_num; i++){
+        tuple4_buf[0] = 'A';
+        ret = bm_search_item(apbma, tuple4_buf, i, -1);
+        if(ret <= 0){
+            fprintf(stderr, "not found tuple4 with A after merge, index:%d\n", i);
+            return -1;
+        }
+        tuple4_buf[0] = 'B';
+        ret = bm_search_item(apbma, tuple4_buf, i, -1);
+        if(ret <= 0){
+            fprintf(stderr, "not found tuple4 with B after merge, index:%d\n", i);
+            return -1;
+        }        
+    }
+    AP_bloom_free(apbma);
+    AP_bloom_free(apbmb);
+    return 0;
+}
+
+TEST(apbloom, merge)
+{
+    EXPECT_EQ(0, apbloom_merge_test_run());
 }
 
 static const char *gtest_cla_short_options = "hLf:u:";

@@ -37,7 +37,7 @@
 
 // Double hashing for fast hashing, 
 // reference: Kirsch, Adam, and Michael Mitzenmacher. "Less hashing, same performance: Building a better bloom filter." 
-// Algorithms–ESA 2006: 14th Annual European Symposium, Zurich, Switzerland, September 11-13, 2006. Proceedings 14. Springer Berlin Heidelberg, 2006.
+// AlgorithmsCESA 2006: 14th Annual European Symposium, Zurich, Switzerland, September 11-13, 2006. Proceedings 14. Springer Berlin Heidelberg, 2006.
 // https://www.eecs.harvard.edu/~michaelm/postscripts/rsa2008.pdf 
 struct double_hash
 {
@@ -45,4 +45,29 @@ struct double_hash
     uint64_t b;
 };
 void double_hash_init(struct double_hash *rv, const void *buffer, int len);
-int double_hash_generate(const struct double_hash *rv, int i, int m);
+static inline unsigned int double_hash_generate(const struct double_hash *rv, unsigned int i, unsigned int m)
+{
+    return (rv->a + i * rv->b) % m;
+}
+
+#define TIME_MEASURE 0 //to observe delay jitter
+#if TIME_MEASURE
+#define MAX_DELAY (100000) //ns
+#define TIME_RECORD()  struct timespec _start_time, _end_time; long long time_diff_ns;  clock_gettime(CLOCK_REALTIME, &_start_time)
+#define TIME_DIFF()  \
+    do {             \
+        clock_gettime(CLOCK_REALTIME, &_end_time); \
+        if (likely(_end_time.tv_sec == _start_time.tv_sec))\
+        {\
+            time_diff_ns = (_end_time.tv_nsec - _start_time.tv_nsec);\
+        }else{\
+            time_diff_ns = ((long long)_end_time.tv_sec * 1000 * 1000 * 1000 + _end_time.tv_nsec) - ((long long)_start_time.tv_sec * 1000 * 1000 * 1000 + _start_time.tv_nsec);\
+        }\
+        if(unlikely(time_diff_ns > MAX_DELAY)){\
+            fprintf(stderr, "%s:%d, timestamp:%lld.%lld, time diff:%ld ns\n", __FILE__, __LINE__, (long long)_start_time.tv_sec, (long long)_start_time.tv_nsec, time_diff_ns);\
+        }\
+    }while (0)
+#else
+#define TIME_RECORD()
+#define TIME_DIFF()
+#endif
