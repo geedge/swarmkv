@@ -28,7 +28,7 @@ SwarmKV Data Types
 - [Hash](./docs/commands/hash.md) embed string and integer by OR-Set.
 - [Token Buckets](./docs/commands/token_bucket.md)
     - Generic Token Buckets
-    - Fair Token Bucket: Implements stochastic fairness allocation to ensure equitable resource distribution.
+    - Fair Token Bucket: Implements weighted stochastic fairness allocation to ensure equitable resource distribution.
     - Bulk Token Bucket: Optimized for scenarios requiring a large number of token buckets with identical configurations.
 - [Bloom Filter](./docs/commands/bloom_filter.md) by age-partitioned bloom filter with the ability to expire.
 - [Count-Min Sketch](./docs/commands/count_min_sketch.md).
