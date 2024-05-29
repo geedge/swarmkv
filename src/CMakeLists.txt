@@ -1,5 +1,5 @@
 set(SWARMKV_MAJOR_VERSION 4)
-set(SWARMKV_MINOR_VERSION 3)
+set(SWARMKV_MINOR_VERSION 4)
 set(SWARMKV_PATCH_VERSION 0)
 set(SWARMKV_VERSION ${SWARMKV_MAJOR_VERSION}.${SWARMKV_MINOR_VERSION}.${SWARMKV_PATCH_VERSION})
 
@@ -60,7 +60,7 @@ set_target_properties(swarmkv-static PROPERTIES CLEAN_DIRECT_OUTPUT 1)
 set_target_properties(swarmkv-static PROPERTIES LINK_FLAGS "-Wl,--version-script=${CMAKE_CURRENT_LIST_DIR}/version.map")
 target_include_directories(swarmkv-static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/inc_internal/)
 
-target_link_libraries(swarmkv-static CRDT libevent-static libevent-static-pthreads libevent-static libhdr-static)
+target_link_libraries(swarmkv-static CRDT libevent-static libevent-static-pthreads libevent-static libhdr-static snappy-static)
 
 
 
@@ -74,7 +74,7 @@ set_target_properties(swarmkv-shared PROPERTIES SOVERSION ${SWARMKV_MAJOR_VERSIO
 set_target_properties(swarmkv-shared PROPERTIES LINK_FLAGS "-Wl,--version-script=${CMAKE_CURRENT_LIST_DIR}/version.map")
 #target_include_directories(swarmkv-shared PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/inc_internal/)
 
-target_link_libraries(swarmkv-shared CRDT libevent-static libevent-static-pthreads libhdr-static ${SWARMKV_DEPEND_DYN_LIB})
+target_link_libraries(swarmkv-shared CRDT libevent-static libevent-static-pthreads libhdr-static snappy-static ${SWARMKV_DEPEND_DYN_LIB})
 
 set(CMAKE_INSTALL_PREFIX /opt/MESA/)
 install(FILES ${PROJECT_SOURCE_DIR}/include/swarmkv/swarmkv.h DESTINATION ${CMAKE_INSTALL_PREFIX}/include/MESA/ COMPONENT HEADER)

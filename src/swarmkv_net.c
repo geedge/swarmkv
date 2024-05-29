@@ -299,7 +299,7 @@ static void peer_conn_read_cb(struct bufferevent *bev, void *arg)
 			hdr = (struct swarmkv_msg*) recv_buff;
 			if(hdr->magic != SWARMKV_MSG_MAGIC)
 			{
-				log_fatal(thr->ref_logger, MODULE_SWAMRKV_NET, "invalid message header magic from %s:%u",
+				log_fatal(thr->ref_logger, MODULE_SWAMRKV_NET, "invalid message header magic from %s",
 										conn->connected_from.addr);
 				if(conn->is_in_conn_table)
 				{

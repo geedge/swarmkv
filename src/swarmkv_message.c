@@ -1,6 +1,7 @@
 #include "mpack.h"
 #include "swarmkv_utils.h"
 #include "swarmkv_message.h"
+#include "snappy-c.h"
 #include <string.h>
 
 static struct swarmkv_reply* deserialize_reply(mpack_node_t reply_node)
@@ -232,9 +233,9 @@ void swarmkv_msg_free(struct swarmkv_msg *msg)
 	free(msg);
 	return;
 }
+#define	COMPRESS_ENABLED
 void swarmkv_msg_serialize(const struct swarmkv_msg *msg, char **blob, size_t *blob_sz)
 {
-	struct swarmkv_msg *pseudo_hdr=NULL;
 	char *payload=NULL;
 	size_t payload_len=0;
 	if(msg->type==MSG_TYPE_CMD)
@@ -247,12 +248,18 @@ void swarmkv_msg_serialize(const struct swarmkv_msg *msg, char **blob, size_t *b
 		assert(msg->reply!=NULL);
 		swarmkv_reply_serialize(msg->reply, &payload, &payload_len);
 	}
-	*blob=ALLOC(char, payload_len+SWARMKV_MSG_HDR_SIZE);
+	size_t compressed_length = snappy_max_compressed_length(payload_len);
+	*blob=ALLOC(char, compressed_length+SWARMKV_MSG_HDR_SIZE);
+	if(SNAPPY_OK != snappy_compress(payload, payload_len, *blob+SWARMKV_MSG_HDR_SIZE, &compressed_length))
+	{
+		fprintf(stderr, "snappy_compress failed\n");
+		assert(0);
+	}
 	memcpy(*blob, msg, SWARMKV_MSG_HDR_SIZE);
+	struct swarmkv_msg *pseudo_hdr=NULL;
 	pseudo_hdr=(struct swarmkv_msg *)*blob;
-	pseudo_hdr->payload_len=payload_len;
-	memcpy(*blob+SWARMKV_MSG_HDR_SIZE, payload, payload_len);
-	*blob_sz=payload_len+SWARMKV_MSG_HDR_SIZE;
+	pseudo_hdr->payload_len=compressed_length;
+	*blob_sz=compressed_length+SWARMKV_MSG_HDR_SIZE;
 	free(payload);
 	return;
 }
@@ -269,13 +276,26 @@ struct swarmkv_msg *swarmkv_msg_deserialize(const char *blob, size_t size)
 	}
 	struct swarmkv_msg *msg=ALLOC(struct swarmkv_msg, 1);
 	memcpy(msg, blob, SWARMKV_MSG_HDR_SIZE);
+	size_t uncompressed_length=0;
+	if (SNAPPY_OK != snappy_uncompressed_length(blob+SWARMKV_MSG_HDR_SIZE, msg->payload_len, &uncompressed_length))
+	{
+		fprintf(stderr, "snappy_uncompressed_length failed\n");
+		assert(0);
+	}
+	char *uncompressed_data=ALLOC(char, uncompressed_length);
+	if(SNAPPY_OK != snappy_uncompress(blob+SWARMKV_MSG_HDR_SIZE, msg->payload_len, uncompressed_data, &uncompressed_length))
+	{
+		fprintf(stderr, "snappy_uncompress failed\n");
+		assert(0);
+	}
 	if(msg->type==MSG_TYPE_CMD)
 	{
-		msg->cmd=swarmkv_cmd_deserialize(blob+SWARMKV_MSG_HDR_SIZE, msg->payload_len);
+		msg->cmd=swarmkv_cmd_deserialize(uncompressed_data, uncompressed_length);
 	}
 	else
 	{
-		msg->reply=swarmkv_reply_deserialize(blob+SWARMKV_MSG_HDR_SIZE, msg->payload_len);
+		msg->reply=swarmkv_reply_deserialize(uncompressed_data, uncompressed_length);
 	}
+	free(uncompressed_data);
 	return msg;
 }

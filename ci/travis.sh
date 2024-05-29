@@ -39,13 +39,12 @@ if [ -n "${INSTALL_DEPENDENCY_LIBRARY}" ]; then
 fi
 mkdir build || true
 cd build
-
+cmake --version
 cmake3 -DCMAKE_CXX_FLAGS=$CXX_FLAGS \
       -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
       -DCMAKE_INSTALL_PREFIX=$INSTALL_PREFIX \
       -DENABLE_DEVEL=$ENABLE_DEVEL_SWITCH \
       ..
-
 make
 
 if [ -n "${PACKAGE}" ]; then

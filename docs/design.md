@@ -168,7 +168,7 @@ If a node fails, the cluster leader gets notification and removes the failed nod
 
 ## Wire protocol
 
-Messages between nodes is start with a fixed length header and a variable length payload. The payload is serialized with [MessagePack](https://msgpack.org/index.html) format.  For readability, we use JSON to describe the request and response here.
+Messages between nodes is start with a fixed length header and a variable length payload. The payload is serialized with [MessagePack](https://msgpack.org/index.html) format. For readability, we use JSON to describe the request and response here.
 
 Take the following command as an example:
 
@@ -203,6 +203,12 @@ Reply message
   ]
 }
 ```
+The MessagePack payload is then compressed using [Snappy](https://github.com/google/snappy) for network transmission. The following table shows the message size before and after compression.
+
+| Test Case                           | Uncompressed | Snappy       |
+| ----------------------------------- | ------------ | ------------ |
+| SwarmkvTwoNodes.TypeFairTokenBucket | 1849.5 bytes | 316.3 bytes  |
+| SwarmkvTwoNodes.TypeBulkTokenBucket | 131076 bytes | 8975.5 bytes |
 
 
 

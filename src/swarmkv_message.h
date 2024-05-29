@@ -7,7 +7,7 @@ enum MSG_TYPE
 	MSG_TYPE_CMD,
 	MSG_TYPE_REPLY
 };
-#define	SWARMKV_MSG_MAGIC	0x5210
+#define	SWARMKV_MSG_MAGIC	0x5211
 struct swarmkv_msg
 {
     unsigned int magic;

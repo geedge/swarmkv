@@ -10,7 +10,7 @@ include(Version)
 
 set(CMAKE_C_FLAGS "-std=gnu99 -Wall") 
 set(CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS} -Wall)
-set(SWARMKV_DEPEND_DYN_LIB pthread uuid m)
+set(SWARMKV_DEPEND_DYN_LIB pthread uuid m stdc++)
 
 include_directories(${PROJECT_SOURCE_DIR}/inc/)
 include_directories(/opt/MESA/include/)
