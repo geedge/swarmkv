@@ -210,19 +210,15 @@ The MessagePack payload is then compressed using [Snappy](https://github.com/goo
 | SwarmkvTwoNodes.TypeFairTokenBucket | 1849.5 bytes | 316.3 bytes  |
 | SwarmkvTwoNodes.TypeBulkTokenBucket | 131076 bytes | 8975.5 bytes |
 
-
-
 ## Node design
 
-### Lock design
+### Lock Design
+The swarmkv node adopts a share-nothing design to maximize multithread scalability. The three data modules are:
+- Store Module: This module stores actual CRDT objects. The number of key-CRDT hash tables is equal to the number of worker threads, with each worker thread accessing its own designated hash table in a lock-free manner.
+- Keyspace Module: This module stores the replica addresses of keys. It features a key-route hash table with 16,384 slots. A worker thread can only access its designated slots. The access by worker threads to the key-route hash table is lock-free.
+- Monitor Module: This module collects performance metrics for diagnostics. It achieves lock-freedom by utilizing [HdrHistogram_c](https://github.com/HdrHistogram/HdrHistogram_c)'s interval recorder.
 
-The swarmkv node adopts a share-nothing design to maximum multithread scalability.  The three data modules are:
-
-- The store Module stores actual CRDT objects. It's a key-CRDT hash table which is sharded by worker thread numbers. The access of worker threads to the key-CRDT hash table is lock-free.
-- The keyspace Module stores replica addresses of keys. It's a key-route hash table which has 16384 slots. A worker thread can only access its designate slots. The access of worker threads to the key-route hash table is lock-free.
-- The monitor Module collects runtime metrics for diagnostic. It's lock-free by taking advantage of [HdrHistogram_c](https://github.com/HdrHistogram/HdrHistogram_c)'s interval recorder.
-
-If a thread need to access data of other threads, it will send message via mesh (ringbuf) to the target thread. The mesh is lock-free.
+If a thread needs to access data from other threads, it sends a message via a mesh (ringbuf) to the target thread. The mesh is lock-free.
 
 ### Thread model
 There two thread types in a swarmkv node:
@@ -252,7 +248,7 @@ The worker thread 0 has extra tasks including:
 - For leader node:
   - Watch cluster health check, remove failed node from cluster by assigning its slots to other nodes.
 
-## Source code layout
+## Source Code layout
 
 The source files are organized as follows:
 
