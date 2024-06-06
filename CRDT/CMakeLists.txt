@@ -3,7 +3,7 @@ add_definitions(-fPIC)
 
 add_library(CRDT lww_register.c pn_counter.c or_map.c or_set.c hll_common.c st_hyperloglog.c ap_bloom.c cm_sketch.c
 			g_array.c token_bucket_common.c oc_token_bucket.c fair_token_bucket.c bulk_token_bucket.c
-			crdt_utils.c)
+			crdt_utils.c hll_sheet.c spread_sketch.c)
 
 include_directories(${PROJECT_SOURCE_DIR}/deps/mpack
 					${PROJECT_SOURCE_DIR}/deps/uthash
