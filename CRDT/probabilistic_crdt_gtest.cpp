@@ -2,11 +2,19 @@
 #include "cm_sketch.h"
 #include "st_hyperloglog.h"
 #include "ap_bloom.h"
+#include "spread_sketch.h"
+#include "hll_common.h"
 
 #include <gtest/gtest.h>
 #include <unistd.h> //usleep
 #include <uuid/uuid.h>
 #include <math.h>
+#include <vector>
+#include <unordered_map>
+#include <unordered_set>
+#include <string>
+#include <bitset>
+
 #define	CMS_TEST_WIDTH		(1024*16)
 #define	CMS_TEST_DEPTH		6
 TEST(CMSketch, Basic)
@@ -1337,6 +1345,637 @@ TEST(APBloom, Debug)
 {
 
 }
+
+
+/* -------------------------------------------------------------------------- */
+/*                                Spread Sketch                               */
+/* -------------------------------------------------------------------------- */
+
+struct timeval ms_to_timeval(long long ms)
+{
+    struct timeval tv;
+    tv.tv_sec=ms/1000;
+    tv.tv_usec=(ms%1000)*1000;
+    return tv;
+}
+
+struct Flow {
+    std::string src_ip;
+    std::string dst_ip;
+    long long time;
+};
+
+class InputGenerator {
+private:
+    double _now;
+    int _n_super_spreader;
+    int _n_others;
+    int _fanout_superspreader;
+    int _fanout_others;
+    double _probability_ss;
+
+    double _ms_per_packet;
+
+public:
+    InputGenerator(int n_super_spreader, int n_others, double probability_ss, int fanout_superspreader, int fanout_others, long long now, double ms_per_packet ) {
+        _now = (double)now;
+        _n_super_spreader = n_super_spreader;
+        _n_others = n_others;
+        _probability_ss = probability_ss;
+
+        _fanout_superspreader = fanout_superspreader;
+        _fanout_others = fanout_others;
+        _ms_per_packet = ms_per_packet;
+
+        if (_n_super_spreader == 0) {
+            _probability_ss = 0;
+        }
+        if (_n_others == 0) {
+            _probability_ss = 1;
+        }
+
+        // printf("created a generator, n_super_spreader: %d, n_others: %d, probability_ss: %f, fanout_superspreader: %d, fanout_others: %d, now: %lld, ms_per_packet: %f\n",
+        //                               n_super_spreader,      n_others,     probability_ss,     fanout_superspreader,       fanout_others, now,      ms_per_packet);
+    }
+
+    struct Flow next() {
+        struct Flow flow;
+        if (rand() % 100 < _probability_ss * 100 && _n_super_spreader > 0) {
+            flow.src_ip = "s_" + std::to_string(rand() % _n_super_spreader);
+            flow.dst_ip = "sd_" + std::to_string(rand() % _fanout_superspreader);
+        } else {
+            flow.src_ip = std::to_string(rand() % _n_others);
+            flow.dst_ip = "d_" + std::to_string(rand() % _fanout_others);
+        }
+        flow.time = (long long)_now;
+        _now += _ms_per_packet;
+        return flow;
+    }
+};
+
+class TestRet {
+private:
+    struct ss_query_result *ret_raw;
+    std::unordered_map<std::string, std::unordered_set<std::string>> benchmark;
+    std::unordered_map<std::string, double> results;
+    std::unordered_map<std::string, struct ST_hyperloglog *> benchmark_sthll;
+
+    unsigned char _precision;
+    long long _window_s;
+
+    long long _last_time;
+
+
+public:
+    TestRet(){
+        ret_raw = NULL;
+        _precision = 4;
+        _window_s = 10;
+    }
+
+    TestRet(unsigned char precision, long long window_s) {
+        ret_raw = NULL;
+        _precision = precision;
+        _window_s = window_s;
+    }
+
+    ~TestRet(){
+        ss_query_result_free(ret_raw);
+        for (auto &kv : benchmark_sthll) {
+            ST_hyperloglog_free(kv.second);
+        }
+    }
+
+    void feed(std::string key_main, std::string key_spread, long long now_ms){
+        benchmark[key_main].insert(key_spread);
+
+        if (benchmark_sthll.find(key_main) == benchmark_sthll.end()) {
+            benchmark_sthll[key_main] = ST_hyperloglog_new(_precision, _window_s * 1000, ms_to_timeval(now_ms));
+        }
+
+        ST_hyperloglog_add(benchmark_sthll[key_main], key_spread.c_str(), key_spread.size(), ms_to_timeval(now_ms));
+
+        _last_time = now_ms;
+    }
+
+    void read_ss_query_result(struct ss_query_result *ret){
+        this->ret_raw = ret;
+
+        for (int i = 0; i < ret->n_results; i++) {
+            results[ret->key[i]] = ret->count[i];
+        }
+    }
+
+    double cal_mre(){
+        double mre = 0;
+        int cnt = 0;
+        for (auto &kv : benchmark) {
+            // only calculate MRE for keys that exist in benchmark
+            // and only take account of spread keys(start with s_)
+            if (kv.first[0] != 's') {
+                continue;
+            }
+            double est = results.find(kv.first) == results.end() ? 0 : results[kv.first];
+            double actual = kv.second.size();
+
+            mre += fabs(est - actual) / actual;
+            cnt++;
+        }
+        return mre / cnt;
+    }
+
+    bool assess_estimate(unsigned char hll_precision, double eplilon, double delta) {
+        int good = 0;
+        int total_valid_key = 0;
+        double sigma = hll_error(hll_precision) * 2; // RSD -> max error estimation
+
+        for (auto &kv : benchmark) {
+            if (results.find(kv.first) == results.end()) {
+                continue;
+            }
+
+            double actual = kv.second.size();
+            double est = results[kv.first];
+            total_valid_key++;
+ 
+            // sigma is actually an RSD instead of an error estimation, but the chances of error estimation being larger than RSD is low enough to ignore, compared to the error of CM sketch
+           // est is always bigger than actual if HLL error is omitted
+            if (est <= (1+sigma) * (1+eplilon) * actual && est >= (1-sigma) * actual) {
+                good++;
+            }
+            // else {
+            //     // stagger HLL does not provide an error estimation, so just use the already implemented hll as a benchmark.
+
+            //     actual = ST_hyperloglog_count(benchmark_sthll[kv.first], ms_to_timeval(_last_time));
+            //     if (fabs(est - actual) / actual < sigma) {
+            //         good++;
+            //     }
+            // }
+        }
+        
+        bool ret = good >= total_valid_key * (1 - delta);
+        if (!ret) {
+        // if (true) {
+            printf("test failed, good: %d, total: %d\n", good, total_valid_key);
+            printf("allowed error percentage: %f\n", delta);
+            // print out the whole benchmark and results
+            for (auto &kv : benchmark) {
+                if (results.find(kv.first) == results.end()) {
+                    continue;
+                }
+
+                printf("key: %s, actual: %lu, estimated: %f, allowed range [%f, %f], hll result: %f\n", 
+                    kv.first.c_str(),
+                    kv.second.size(),
+                    results[kv.first], (1-sigma) * kv.second.size(),
+                    (1+sigma) * (1+eplilon) * kv.second.size(),
+                    ST_hyperloglog_count(benchmark_sthll[kv.first], ms_to_timeval(_last_time)));
+            }
+        }
+        return ret;
+    }
+
+    double cal_recall_rate() {
+        int good = 0;
+        int total_ss = 0;
+        for (auto &kv : benchmark) {
+            if (kv.first[0] != 's') {
+                continue;
+            }
+
+            if (results.find(kv.first) != results.end()) {
+                good++;
+            }
+            total_ss++;
+        }
+        return 1.0 * good / total_ss;
+    }
+
+    void print() {
+        for (auto &kv : benchmark) {
+            printf("key: %s, benchmark size: %lu, estimated size: %f, hll result: %f\n",
+             kv.first.c_str(), kv.second.size(), results.find(kv.first) == results.end() ? -1.0 : results[kv.first], ST_hyperloglog_count(benchmark_sthll[kv.first], ms_to_timeval(_last_time)));
+        }
+
+        for (auto &kv : results) {
+            if (benchmark.find(kv.first) == benchmark.end()) {
+                printf("key not existed in benchmark:: %s, estimated size: %f\n", kv.first.c_str(), kv.second);
+            }
+        }
+    }
+
+    bool key_exist(std::string key) {
+        return results.find(key) != results.end();
+    }
+};
+
+TestRet *spread_sketch_test_deprecated(struct spread_sketch *ss, long long window_s, long long duration_s, int n_super_spreader, int n_total, int fanout_superspreader, int fanout_others, int start_ms)
+{
+    long long now = start_ms;
+    long long duration_ms = duration_s * 1000;
+    TestRet *test_ret = new TestRet(4, window_s);
+
+    double ms_per_packet = 1.0 * (window_s * 1000) / (fanout_superspreader * n_super_spreader + fanout_others * (n_total - n_super_spreader));
+    printf("ms_per_packet: %f\n", ms_per_packet);
+
+    int src_start = 0;
+    int dst_start = 0;
+
+    while (now - start_ms < duration_ms) {
+        double now_tmp = now;
+        for (int src_id = 0; src_id < n_super_spreader; src_id++) {
+            int x = src_start + src_id;
+            for (int dst_id = 0; dst_id < fanout_superspreader; dst_id++) {
+                int y = dst_start + dst_id;
+                std::string src_ip = "s_" + std::to_string(x);
+                std::string dst_ip = "sd_" + std::to_string(y);
+                // printf("feed %s %s at %f\n", src_ip.c_str(), dst_ip.c_str(), now_tmp);
+                spread_sketch_update(ss, src_ip.c_str(), dst_ip.c_str(), ms_to_timeval((long long)now_tmp));
+                test_ret->feed(src_ip, dst_ip, (long long)now_tmp);
+                now_tmp += ms_per_packet;
+            }
+        }
+        for (int src_id = n_super_spreader; src_id < n_total; src_id++) {
+            int x = src_start + src_id;
+            for (int dst_id = 0; dst_id < fanout_others; dst_id++) {
+                int y = dst_start + dst_id;
+                std::string src_ip = std::to_string(x);
+                std::string dst_ip = "d_" + std::to_string(y);
+                // printf("feed %s %s at %f\n", src_ip.c_str(), dst_ip.c_str(), now_tmp);
+                spread_sketch_update(ss, src_ip.c_str(), dst_ip.c_str(), ms_to_timeval((long long)now_tmp));
+                test_ret->feed(src_ip, dst_ip, (long long)now_tmp);
+                now_tmp += ms_per_packet;
+            }
+        }
+        now += window_s * 1000;
+    }
+
+    // printf("query at %lld\n", duration
+    struct ss_query_result *results = spread_sketch_query(ss, ms_to_timeval(duration_ms + start_ms));
+
+    test_ret->read_ss_query_result(results);
+
+    return test_ret;
+}
+
+TestRet *spread_sketch_test(struct spread_sketch *ss, long long window_s, long long duration_s, class InputGenerator &gen)
+{
+    long long duration_ms = duration_s * 1000;
+    long long last_window_start_ms = duration_ms - window_s * 1000;
+
+    TestRet *test_ret = new TestRet(4, window_s);
+
+    struct Flow flow = gen.next();
+    long long start_ms = flow.time;
+    while (flow.time - start_ms <= duration_ms) {
+        std::string src_ip = flow.src_ip;
+        std::string dst_ip = flow.dst_ip;
+        long long now = flow.time;
+
+        spread_sketch_update(ss, src_ip.c_str(), dst_ip.c_str(), ms_to_timeval(now));
+        if (now >= last_window_start_ms) {
+            test_ret->feed(src_ip, dst_ip, now);
+        }
+
+        flow = gen.next();
+    }
+
+    struct ss_query_result *results = spread_sketch_query(ss, ms_to_timeval(duration_ms + start_ms));
+
+    test_ret->read_ss_query_result(results);
+
+    return test_ret;
+}
+
+TestRet *spread_sketch_test(int precision, int depth, int width, long long window_s, long long duration_s, int n_super_spreader, int n_total, int fanout_superspreader, int fanout_others) 
+{
+    /*
+    参数描述了供测试的流的特征，n_total个src ip，其中n_super_spreader个流是超级传播者，其余的是普通流。
+    每个时间周期`window_ms` 里，都会涉及每个src ip 的流量产生，产生方式固定为超级传播者产生`fanout_superspreader` 种 dst ip，其余的产生`fanout_others` 种dst ip。产生基本匀速。
+    测试的时间长度为`duration_ms`。
+    */
+
+    long long now = 0;
+    TestRet *test_ret;
+
+    struct spread_sketch *ss = spread_sketch_new(depth, width, precision, window_s, ms_to_timeval(now));
+
+    double ms_per_packet = 1.0 * (window_s * 1000) / (fanout_superspreader * n_super_spreader + fanout_others * (n_total - n_super_spreader));
+    class InputGenerator gen(n_super_spreader, n_total - n_super_spreader, 0.5, fanout_superspreader, fanout_others, now, ms_per_packet / 1.0);
+
+
+    test_ret = spread_sketch_test(ss, window_s, duration_s, gen);
+
+    spread_sketch_free(ss);
+
+    return test_ret;
+}
+
+
+double cal_CM_delta(int depth) {
+    return 1.0 / (1 << depth);
+}
+
+double cal_CM_epsilon(int width) {
+    return 2.0 / width;
+}
+
+TEST(SpreadSketch, test_hll_on_a_single_bucket)
+{
+    TestRet *test_ret = spread_sketch_test(
+        4, // hll precision
+        4, 1024, // depth, width
+        10, 100, // window, duration
+        0, 1, // n_super_spreader, n_total. just one flow, so no error on CM sketch
+        10000, 10000); // fanout_superspreader, fanout_others
+
+    bool good = test_ret->assess_estimate(4, 0, 0);
+    EXPECT_TRUE(good);
+
+    delete test_ret;
+}
+
+TEST(SpreadSketch, test_hll_given_short_input)
+{
+    // use very little fp compared to big sketch so that CM sketch error are negligible
+    TestRet *test_ret = spread_sketch_test(
+        4, // hll precision
+        4, 1024, // depth, width
+        10, 1, // window, duration
+        0, 1, // n_super_spreader, n_total. just one flow, so no error on CM sketch
+        10000, 10000); // fanout_superspreader, fanout_others
+    
+    bool good = test_ret->assess_estimate(4, 0, cal_CM_delta(8));
+    EXPECT_TRUE(good);
+
+    delete test_ret;
+}
+
+TEST(SpreadSketch, normal_flows)
+{
+    TestRet *test_ret = spread_sketch_test(
+        6, // hll precision
+        4, 1024, // depth, width
+        100, 200, // window, duration
+        500, 10000, // n_super_spreader, n_total.
+        1000, 3); // fanout_superspreader, fanout_others
+    
+    double mre = test_ret->cal_mre();
+    EXPECT_LE(mre, 0.4);
+
+    bool good = test_ret->assess_estimate(6, cal_CM_epsilon(1024), cal_CM_delta(4));
+    EXPECT_TRUE(good);
+
+    double recall_rate = test_ret->cal_recall_rate();
+    EXPECT_GE(recall_rate, 0.9);
+
+    // printf("normal_flows recall rate: %f, mre: %f \n", recall_rate, mre);
+
+    delete test_ret;
+}
+
+TEST(SpreadSketch, scarce_flow)
+{
+    int window_s = 100;
+    struct spread_sketch *ss = spread_sketch_new(5, 1024, 4, window_s, ms_to_timeval(0));
+    InputGenerator gen(100, 1000, 0.5, 1000, 3, 0, 100);
+
+
+    TestRet *test_ret = spread_sketch_test(ss, window_s, window_s * 5, gen);
+    
+    double mre = test_ret->cal_mre();
+    EXPECT_LE(mre, 0.4);
+
+    // not a typical case, so STHLL accuracy is not guaranteed
+
+    double recall_rate = test_ret->cal_recall_rate();
+    EXPECT_GE(recall_rate, 0.9);
+
+    // printf("scarce_flow recall rate: %f, mre: %f \n", recall_rate, mre);
+
+    delete test_ret;
+    spread_sketch_free(ss);
+}
+
+TEST(SpreadSketch, decay_old_key_not_included) {
+    int n_super_spreader = 1000;
+    int window_s = 10;
+
+    struct spread_sketch *ss = spread_sketch_new(4, 1024, 4, window_s, ms_to_timeval(0));
+    long long now = 0;
+
+    for (int i = 0; i < n_super_spreader; i++) {
+        std::string src = "old_" + std::to_string(i);
+
+        for (int k = 0; k < 1000; k++) {
+            std::string dst = "d_" + std::to_string(k);
+            spread_sketch_update(ss, src.c_str(), dst.c_str(), ms_to_timeval(now));
+            now += 5;
+        }
+    }
+
+    InputGenerator gen(n_super_spreader, n_super_spreader * 9, 0.5, 1000, 3, now, 1);
+    TestRet *test_ret = spread_sketch_test(ss, window_s, window_s * 1.5, gen);
+    // all old keys should be decayed
+    for (int i = 0; i < n_super_spreader; i++) {
+        EXPECT_FALSE(test_ret->key_exist("old_" + std::to_string(i)));
+    }
+
+    double recall_rate = test_ret->cal_recall_rate();
+    EXPECT_GE(recall_rate, 0.9);
+    // printf("decay_old_key_not_included recall rate: %f\n", recall_rate);
+
+    double MRE = test_ret->cal_mre();
+    EXPECT_LE(MRE, 0.4);
+    // printf("decay_old_key_not_included MRE: %f\n", MRE);
+
+    delete test_ret;
+    spread_sketch_free(ss);
+}
+
+extern "C"  {
+    void buffer_set_with_bit_idx(uint32_t *registers, int bit_id, int val);
+    void memset_in_reg(uint32_t *registers, int reg_left, int reg_right);
+}
+
+void compress_reg(uint32_t registers_before_compress[], size_t n_registers, uint32_t **registers_after_compress, size_t *n_word) {
+    *n_word = ceil(n_registers / 5.0);
+    *registers_after_compress = (uint32_t *)calloc(sizeof(uint32_t), (*n_word));
+    for (size_t i = 0; i < n_registers; i++) {
+        buffer_set_with_bit_idx(*registers_after_compress, i, registers_before_compress[i]);
+    }
+}
+
+void my_reset_register(uint32_t *registers, int left, int right) {
+    for (int i = left; i < right; i++) {
+        buffer_set_with_bit_idx(registers, i, 0);
+    }
+}
+
+void print_as_binary(uint32_t *registers, size_t n_word) {
+    for (size_t i = 0; i < n_word; i++) {
+        std::bitset<32> x(registers[i]);
+        printf("%s ", x.to_string().c_str());
+    }
+    printf("\n");
+}
+
+TEST(SpreadSketch_unittest, memset_whole) {
+    uint32_t registers[] = {0,1,2,4,8,16,32};
+    size_t n_register = sizeof(registers) / sizeof(uint32_t);
+
+    uint32_t *registers_after_compress;
+    size_t n_word;
+    compress_reg(registers, n_register, &registers_after_compress, &n_word);
+    uint32_t *registers_after_compress_copy = (uint32_t *)malloc(sizeof(uint32_t) * n_word);
+    memcpy(registers_after_compress_copy, registers_after_compress, sizeof(uint32_t) * n_word);
+
+    memset_in_reg(registers_after_compress, 0, n_register);
+    my_reset_register(registers_after_compress_copy, 0, n_register);
+
+    for (size_t i = 0; i < n_word; i++) {
+        EXPECT_EQ(registers_after_compress[i], registers_after_compress_copy[i]);
+    }
+
+    free(registers_after_compress);
+    free(registers_after_compress_copy);
+}
+
+TEST(SpreadSketch_unittest, memset_leave_some_at_right) {
+    uint32_t registers[] = {0,1,2,4,8,16,32};
+    size_t n_register = sizeof(registers) / sizeof(uint32_t);
+    uint32_t *registers_after_compress;
+    size_t n_word;
+    compress_reg(registers, n_register, &registers_after_compress, &n_word);
+    uint32_t *registers_after_compress_copy = (uint32_t *)malloc(sizeof(uint32_t) * n_word);
+    memcpy(registers_after_compress_copy, registers_after_compress, sizeof(uint32_t) * n_word);
+
+    memset_in_reg(registers_after_compress, 0, 7);
+    my_reset_register(registers_after_compress_copy, 0, 7);
+
+    for (size_t i = 0; i < n_word; i++) {
+        EXPECT_EQ(registers_after_compress[i], registers_after_compress_copy[i]);
+    }
+
+    free(registers_after_compress);
+    free(registers_after_compress_copy);
+}
+
+TEST(SpreadSketch_unittest, memset_leave_some_at_left) {
+    uint32_t registers[] = {0,1,2,4,8,16,32};
+    size_t n_register = sizeof(registers) / sizeof(uint32_t);
+
+    uint32_t *registers_after_compress;
+    size_t n_word;
+    compress_reg(registers, n_register, &registers_after_compress, &n_word);
+    uint32_t *registers_after_compress_copy = (uint32_t *)malloc(sizeof(uint32_t) * n_word);
+    memcpy(registers_after_compress_copy, registers_after_compress, sizeof(uint32_t) * n_word);
+
+    memset_in_reg(registers_after_compress, 2, n_register);
+    my_reset_register(registers_after_compress_copy, 2, n_register);
+
+    for (size_t i = 0; i < n_word; i++) {
+        EXPECT_EQ(registers_after_compress[i], registers_after_compress_copy[i]);
+    }
+
+    free(registers_after_compress);
+    free(registers_after_compress_copy);
+}
+
+TEST(SpreadSketch_unittest, memset_only_middle) {
+    uint32_t registers[] = {0,1,2,4,8,16,32};
+    size_t n_register = sizeof(registers) / sizeof(uint32_t);
+    uint32_t *registers_after_compress;
+    size_t n_word;
+    compress_reg(registers, n_register, &registers_after_compress, &n_word);
+    uint32_t *registers_after_compress_copy = (uint32_t *)malloc(sizeof(uint32_t) * n_word);
+    memcpy(registers_after_compress_copy, registers_after_compress, sizeof(uint32_t) * n_word);
+
+    memset_in_reg(registers_after_compress, 2, 4);
+    my_reset_register(registers_after_compress_copy, 2, 4);
+    
+    for (size_t i = 0; i < n_word; i++) {
+        EXPECT_EQ(registers_after_compress[i], registers_after_compress_copy[i]);
+    }
+
+    free(registers_after_compress);
+    free(registers_after_compress_copy);
+}
+
+TEST(SpreadSketch_unittest, memset_single) {
+    uint32_t registers[] = {0,1,2,4,8,16,32};
+    size_t n_register = sizeof(registers) / sizeof(uint32_t);
+
+    uint32_t *registers_after_compress;
+    size_t n_word;
+    compress_reg(registers, n_register, &registers_after_compress, &n_word);
+    uint32_t *registers_after_compress_copy = (uint32_t *)malloc(sizeof(uint32_t) * n_word);
+    memcpy(registers_after_compress_copy, registers_after_compress, sizeof(uint32_t) * n_word);
+
+    memset_in_reg(registers_after_compress, 1, 2);
+    my_reset_register(registers_after_compress_copy, 1, 2);
+
+    for (size_t i = 0; i < n_word; i++) {
+        EXPECT_EQ(registers_after_compress[i], registers_after_compress_copy[i]);
+    }
+
+    free(registers_after_compress);
+    free(registers_after_compress_copy);
+}
+
+void spread_sketch_parameter_experiments(int depth, int width, int precision, long long window_s, int n_super_spreader, int fanout_superspreader) {
+    TestRet *test_ret = spread_sketch_test(
+        precision, // hll precision
+        depth, width, // depth, width
+        window_s, window_s * 5, // window, duration
+        n_super_spreader, n_super_spreader * 10, // n_super_spreader, n_total
+        fanout_superspreader, 3); // fanout_superspreader, fanout_others
+
+    double mre = test_ret->cal_mre();
+    double recall_rate = test_ret->cal_recall_rate();
+    struct spread_sketch *ss = spread_sketch_new(depth, width, precision, window_s, ms_to_timeval(0));
+    size_t memory_cost = spread_sketch_calculate_memory_usage(ss);
+    spread_sketch_free(ss);
+
+    delete test_ret;
+
+    printf("depth: %d, width: %d, precision: %d, window: %lld, n_super_spreader: %d, fanout_superspreader: %d. \n\trecall rate: %f, mre: %f, memory cost: %fkb\n",
+        depth, width, precision, window_s, n_super_spreader, fanout_superspreader, recall_rate, mre, memory_cost / 1024.0);
+    printf("===============================================\n");
+}
+
+TEST(SpreadSketch, parameter_experiments) {
+    long long window_s = 10;
+    // check CM sketch related parameters
+    int depth[] = {3, 4};
+    int width[] = {64, 128, 256, 512, 1024, 2048};
+    int n_super_spreader[] = {10, 100, 1000};
+
+    for (size_t i = 0; i < sizeof(depth) / sizeof(int); i++) {
+        for (size_t j = 0; j < sizeof(width) / sizeof(int); j++) {
+            for (size_t l = 0; l < sizeof(n_super_spreader) / sizeof(int); l++) {
+                    spread_sketch_parameter_experiments(depth[i], width[j], 4, window_s, n_super_spreader[l], 500);
+            }
+        }
+    }
+
+    // HLL related parameters
+    int precision[] = {4,5,6,7};
+    int fanouts[] = {10, 100, 1000, 10000};
+    for (size_t i = 0; i < sizeof(precision) / sizeof(int); i++) {
+        for (size_t j = 0; j < sizeof(fanouts) / sizeof(int); j++) {
+            spread_sketch_parameter_experiments(4, 1024, precision[i], window_s, 100, fanouts[j]);
+        }
+    }
+
+    // window 
+    long long windows[] = {5, 10, 20, 30, 60};
+    for (size_t i = 0; i < sizeof(windows) / sizeof(long long); i++) {
+        spread_sketch_parameter_experiments(3, 256, 5, windows[i], 100, 500);
+    }
+}
+
+
 int main(int argc, char ** argv)
 {
 	int ret=0;

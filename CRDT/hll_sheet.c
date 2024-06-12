@@ -15,6 +15,9 @@
 #define PRECISION_TO_WORD(precision) INT_CEIL(NUM_REG(precision), REG_PER_WORD)
 #define RESET_TIME_SLOT_US(time_window_ms, precision) (time_window_ms*2*1000/NUM_REG(precision))
 #define REGISTER_SIZE(precision) INT_WIDTH*INT_CEIL(NUM_REG(precision), REG_PER_WORD)
+#define UINT32_BIT_RESET_LOW(word, bit_high) ((word) &= (~0u << (bit_high)))
+#define UINT32_BIT_RESET_HIGH(word, bit_low) ((word) &= ((1u<<(bit_low)) - 1))
+#define UINT32_BIT_RESET(word, bit_low, bit_high) ((word) &= ((~0u << (bit_high)) | ((1u<<(bit_low)) - 1)))
 
 static int buffer_get_with_bit_idx(const uint32_t *registers, int bit_id) {
     uint32_t word = registers[bit_id / REG_PER_WORD];
@@ -22,7 +25,7 @@ static int buffer_get_with_bit_idx(const uint32_t *registers, int bit_id) {
     return word & ((1 << REG_WIDTH) - 1);
 }
 
-static void buffer_set_with_bit_idx(uint32_t *registers, int bit_id, int val) {
+void buffer_set_with_bit_idx(uint32_t *registers, int bit_id, int val) {
     uint32_t *word = registers + (bit_id / REG_PER_WORD);
     unsigned shift = REG_WIDTH * (bit_id % REG_PER_WORD);
     val = val << shift;
@@ -293,6 +296,49 @@ void buffer_reset_with_bitid(uint32_t *registers, int bit_id)
     return;
 }
 
+void memset_in_reg(uint32_t *registers, int reg_left, int reg_right)
+{
+    int start_word_id = reg_left / REG_PER_WORD;
+    int end_word_id = reg_right / REG_PER_WORD;
+    uint32_t residual_bit_low = reg_left % REG_PER_WORD * REG_WIDTH;
+    uint32_t residual_bit_high = reg_right % REG_PER_WORD * REG_WIDTH;
+
+    if (start_word_id == end_word_id) {
+        UINT32_BIT_RESET(registers[start_word_id], residual_bit_low, residual_bit_high);
+
+        return;
+    }
+
+    if (residual_bit_low != 0)
+    {
+        UINT32_BIT_RESET_HIGH(registers[start_word_id], residual_bit_low);
+
+        start_word_id += 1;
+    }
+    if (residual_bit_high != 0)
+    {
+        UINT32_BIT_RESET_LOW(registers[end_word_id], residual_bit_high);
+    }
+
+    if (start_word_id < end_word_id)
+    {
+        memset(registers + start_word_id, 0, sizeof(uint32_t) * (end_word_id - start_word_id));
+    }
+}
+
+void print_arrat_as_bits(uint32_t *registers, int len)
+{
+    for(int i=0; i<len; i++)
+    {
+        for(int j=0; j<32; j++)
+        {
+            printf("%d", (registers[i]>>j)&1);
+        }
+        printf(" ");
+    }
+    printf("\n");
+}
+
 void hlls_reset_registers(uint32_t *registers, unsigned char precision, int sheet_size, long long offset, long long count)
 {
     int num_reg=NUM_REG(precision);
@@ -303,38 +349,20 @@ void hlls_reset_registers(uint32_t *registers, unsigned char precision, int shee
         memset(registers, 0, get_buffer_len(precision, sheet_size) * sizeof(uint32_t));
         return;
     }
-    printf("register part reset, the offset is %lld, the count is %lld, sheetsize is: %d\n", offset, count, sheet_size);
-    // register print in hex
-    size_t reg_len = get_buffer_len(precision, sheet_size);
-    for(size_t i=0; i<reg_len; i++) {
-        printf("%08x ", registers[i]);
-    }
-    printf("\n");
 
-    int start_reg_offset = offset * sheet_size;
-    int end_reg_offset = (offset + count) * sheet_size;
-    int start_word_id = start_reg_offset / REG_PER_WORD;
-    int end_word_id = end_reg_offset / REG_PER_WORD;
-    if (start_reg_offset % REG_PER_WORD != 0)
-    {
-        buffer_reset_with_bitid(registers, start_reg_offset);
-        start_word_id += 1;
-    }
-    if (end_reg_offset % REG_PER_WORD != 0)
-    {
-        buffer_reset_with_bitid(registers, end_reg_offset);
+    // printf("the register before reset: \n");
+    // print_arrat_as_bits(registers, get_buffer_len(precision, sheet_size));
+
+    long long reset_reg_right = offset + count;
+    if (reset_reg_right > num_reg) {
+        memset_in_reg(registers, offset * sheet_size, num_reg * sheet_size);
+        memset_in_reg(registers, 0, (reset_reg_right - num_reg) * sheet_size);
+    } else {
+        memset_in_reg(registers, offset * sheet_size, reset_reg_right * sheet_size);
     }
 
-    memset(registers + start_word_id, 0, sizeof(uint32_t) * (end_word_id - start_word_id));
-
-    printf("reset end\n");
-    for (int i = 0; i < reg_len; i++)
-    {
-        printf("%08x ", registers[i]);
-    }
-    printf("\n");
-    
-    return;
+    // printf("the register after reset: \n");
+    // print_arrat_as_bits(registers, get_buffer_len(precision, sheet_size));
 }
 
 void hlls_advance_reset_index(long long *reset_idx, long long reset_reg_count, unsigned char precision)
