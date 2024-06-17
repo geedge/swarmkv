@@ -36,12 +36,12 @@ struct cuckoo_bucket
 		size_t pnc_size;	//Used as part of serialization header
 	};
 };
-struct cuckoo_bucket *cuckoo_bucket_new(const XXH128_hash_t hash, uuid_t my_id, long long capacity)
+struct cuckoo_bucket *cuckoo_bucket_new(const XXH128_hash_t hash, uuid_t my_id, long long capacity, long long now_ms)
 {
 	struct cuckoo_bucket *btb=ALLOC(struct cuckoo_bucket, 1);
 	btb->hash = hash;
 	btb->refilled = capacity;
-	btb->refill_ms = 0;
+	btb->refill_ms = now_ms;
 	btb->consumed = PN_counter_new(my_id);
 	return btb;
 }
@@ -58,15 +58,12 @@ size_t cuckoo_bucket_mem_size(const struct cuckoo_bucket *bucket)
 	sz += PN_counter_mem_size(bucket->consumed);
 	return sz;
 }
-long long cuckoo_bucket_read_avialable(struct cuckoo_bucket *bucket, const struct btb_configuration *cfg, long long now_ms)
+int cuckoo_bucket_is_stale(struct cuckoo_bucket *bucket, const struct btb_configuration *cfg, long long now_ms)
 {
-	long long consumed = PN_counter_get(bucket->consumed);
-	long long refilled = bucket->refilled;
-	long long refill_ms = bucket->refill_ms;
-	long long available = tb_available(cfg->rate, cfg->period, cfg->capacity, cfg->refill_interval_ms, 
-				consumed, &refilled, 
-				now_ms, &refill_ms);
-	return available;
+	long long delta_ms = now_ms - bucket->refill_ms;
+	if(delta_ms > 2*cfg->capacity*cfg->period*1000/cfg->rate)
+		return 1;
+	return 0;
 }
 size_t cuckoo_bucket_serialize_size(const struct cuckoo_bucket *bucket)
 {
@@ -125,7 +122,7 @@ struct bulk_token_bucket
     struct btb_configuration cfg;
 	uuid_t uuid;
 	long long bucket_num;
-	long long active_bucket_num;
+	struct timeval last_consume;
 	struct cuckoo_bucket **table;
 	long long kickout_count;
 	long long new_bucket_count;
@@ -218,7 +215,8 @@ static struct cuckoo_bucket *cuckoo_table_insert(struct cuckoo_bucket **table, l
 		{
 			break;
 		}
-		else if(cuckoo_bucket_read_avialable(tmp, cfg, now_ms) == cfg->capacity && tmp != bkt)
+		//A new insert bucket with the refill_ms = 0, may be considered as stale
+		else if(cuckoo_bucket_is_stale(tmp, cfg, now_ms) && tmp != bkt)
 		{
 			//printf("retire %lld %p\n", alt_idx, tmp);
 			cuckoo_bucket_free(tmp);
@@ -242,19 +240,21 @@ do_expansion:
 	if(new_bucket_num > CUCKOO_TABLE_MAX_SIZE) return -1;
 	new_table=realloc(new_table, sizeof(struct cuckoo_bucket*)*new_bucket_num);
 	memset(new_table, 0, sizeof(struct cuckoo_bucket*)*new_bucket_num);
-	long long old_active_bucket_num=btb->active_bucket_num, active_bucket_num=0;
 	for(int i=0; i<btb->bucket_num; i++)
 	{
 		if(!btb->table[i]) continue;
+		if(cuckoo_bucket_is_stale(btb->table[i], &btb->cfg, now_ms))
+		{
+			cuckoo_bucket_free(btb->table[i]);
+			continue;
+		}
 		struct cuckoo_bucket *victim = NULL;
 		retire_cnt = 0;
 		victim = cuckoo_table_insert(new_table, new_bucket_num, &btb->cfg, now_ms, btb->table[i], &retire_cnt);
 		assert(retire_cnt == 0);
 		if(victim) 
 			goto do_expansion;
-		active_bucket_num++;
 	}
-	assert(active_bucket_num == old_active_bucket_num);
 	free(btb->table);
 	btb->table = new_table;
 	btb->bucket_num = new_bucket_num;
@@ -266,7 +266,6 @@ static void btb_insert(struct bulk_token_bucket *btb, struct cuckoo_bucket *bkt,
 	struct cuckoo_bucket *victim = NULL;
 	int retire_cnt = 0;
 	victim = cuckoo_table_insert(btb->table, btb->bucket_num, &btb->cfg, now_ms, bkt, &retire_cnt);
-	btb->active_bucket_num -= retire_cnt;
 	retire_cnt = 0;
 	if(victim)
 	{
@@ -281,19 +280,19 @@ static void btb_insert(struct bulk_token_bucket *btb, struct cuckoo_bucket *bkt,
 			btb->kickout_count++;
 		}
 	}
-	btb->active_bucket_num++;
 	return;
 }
 long long bulk_token_bucket_consume(struct bulk_token_bucket *btb, struct timeval now, const char *key, size_t keylen, enum tb_consume_type cmd, long long tokens)
 {
 	long long now_ms = timeval_delta_ms(btb->cfg.last_cfg, now);
-	struct cuckoo_bucket *bkt=NULL;
+	struct cuckoo_bucket *bkt = NULL;
+	btb->last_consume = now;
 	XXH128_hash_t hash;
 	hash = XXH3_128bits_withSeed(key, keylen, CUCKOO_HASH_SEED);
 	bkt = btb_lookup(btb, hash);
 	if(!bkt)
 	{
-		bkt = cuckoo_bucket_new(hash, btb->uuid, btb->cfg.capacity);
+		bkt = cuckoo_bucket_new(hash, btb->uuid, btb->cfg.capacity, now_ms);
 		btb_insert(btb, bkt, now_ms);
 		btb->new_bucket_count++;
 	}
@@ -333,7 +332,6 @@ void bulk_token_bucket_configure(struct bulk_token_bucket *btb, struct timeval n
     btb->cfg.capacity = capacity;
     btb->cfg.last_cfg = now;
 
-	struct cuckoo_bucket **new_table=ALLOC(struct cuckoo_bucket*, bucket_num);
 	for(int i=0; i<btb->bucket_num; i++)
 	{
 		if(!btb->table[i])
@@ -342,11 +340,12 @@ void bulk_token_bucket_configure(struct bulk_token_bucket *btb, struct timeval n
 		}
 		cuckoo_bucket_free(btb->table[i]);
 	}
+	free(btb->table);
+
 	btb->cfg.initial_bucket_num = bucket_num;
 	btb->bucket_num = bucket_num;
-	btb->active_bucket_num = 0;
-	free(btb->table);
-	btb->table = new_table;
+	
+	btb->table = ALLOC(struct cuckoo_bucket*, bucket_num);;
     return;
 }
 void bulk_token_bucket_info(const struct bulk_token_bucket *btb, struct timeval now, struct bulk_token_bucket_info *info)
@@ -357,46 +356,67 @@ void bulk_token_bucket_info(const struct bulk_token_bucket *btb, struct timeval 
 	info->capacity = btb->cfg.capacity;
 	info->initial_bucket_number = btb->cfg.initial_bucket_num;
 	info->bucket_number = btb->bucket_num;
-	info->replicas = 0;
+	info->max_replicas = 0;
 	for(int i=0; i<btb->bucket_num; i++)
 	{
 		if(!btb->table[i]) continue;
-		if(cuckoo_bucket_read_avialable(btb->table[i], &btb->cfg, timeval_delta_ms(btb->cfg.last_cfg, now))==btb->cfg.capacity)
+		if(cuckoo_bucket_is_stale(btb->table[i], &btb->cfg, timeval_delta_ms(btb->cfg.last_cfg, now)))
 		{
 			continue;
 		}
-		info->replicas = MAX(info->replicas, PN_counter_replica_num(btb->table[i]->consumed));
+		info->max_replicas = MAX(info->max_replicas, PN_counter_replica_num(btb->table[i]->consumed));
 		info->active_bucket_number++;
 	}
 	return;
 }
-long long bulk_token_bucket_read_available(const struct bulk_token_bucket *btb, struct timeval now, const char *key, size_t keylen)
-{
-	if(btb->cfg.rate==0 && btb->cfg.capacity==0) return INT64_MAX;
 
-	struct cuckoo_bucket *bkt=NULL;
+void bulk_token_bucket_query(const struct bulk_token_bucket *btb, struct timeval now, const char *key, size_t keylen, struct bulk_token_bucket_key_info *key_info)
+{	
 	XXH128_hash_t hash;
 	hash = XXH3_128bits_withSeed(key, keylen, CUCKOO_HASH_SEED);
-	bkt = btb_lookup(btb, hash);
-	if(!bkt) return btb->cfg.capacity;
-	long long now_ms = timeval_delta_ms(btb->cfg.last_cfg, now);
-	long long available = cuckoo_bucket_read_avialable(bkt, &btb->cfg, now_ms);
-	return available;
+
+	memset(key_info, 0, sizeof(struct bulk_token_bucket_key_info));
+	key_info->hash_low64 = hash.low64;
+	key_info->hash_high64 = hash.high64;
+
+	struct cuckoo_bucket *bkt = btb_lookup(btb, hash);
+	if(!bkt)
+	{
+		key_info->consumed = 0;
+		key_info->refilled = btb->cfg.capacity;
+		key_info->available = (btb->cfg.period == 0) ? INT64_MAX : btb->cfg.capacity;
+	}
+	else
+	{
+		long long now_ms = timeval_delta_ms(btb->cfg.last_cfg, now);
+		long long refill_ms = bkt->refill_ms;
+		key_info->consumed = PN_counter_get(bkt->consumed);
+		key_info->refilled = bkt->refilled;
+		key_info->available = tb_available(btb->cfg.rate, btb->cfg.period, btb->cfg.capacity, btb->cfg.refill_interval_ms, 
+					key_info->consumed, &key_info->refilled, 
+					now_ms, &refill_ms);
+		key_info->available = (btb->cfg.period == 0) ? INT64_MAX : key_info->available;
+		key_info->number_of_replica = PN_counter_replica_num(bkt->consumed);
+		key_info->last_consume_ms = btb->cfg.last_cfg.tv_sec*1000 + btb->cfg.last_cfg.tv_usec/1000 + bkt->refill_ms;
+	}
+	return;
 }
 const size_t  BULK_TOKEN_BUCKET_HEADER_SIZE=offsetof(struct bulk_token_bucket, table);
 
 void bulk_token_bucket_serialize(const struct bulk_token_bucket *btb, char **blob, size_t *blob_sz)
 {
 	size_t sz=0, offset=0;
-	long long active_bucket_num=0;
+	long long now_ms = timeval_delta_ms(btb->cfg.last_cfg, btb->last_consume);
 	sz += BULK_TOKEN_BUCKET_HEADER_SIZE;
 	for(int i=0; i<btb->bucket_num; i++)
 	{
-		if(!btb->table[i]) continue;	
+		if(!btb->table[i]) continue;
+		if(cuckoo_bucket_is_stale(btb->table[i], &btb->cfg, now_ms))
+		{
+			continue;
+		}
 		sz += cuckoo_bucket_serialize_size(btb->table[i]);
-		active_bucket_num++;
 	}
-	assert(active_bucket_num == btb->active_bucket_num);
 	char *buffer = ALLOC(char, sz);
 	memcpy(buffer+offset, btb, BULK_TOKEN_BUCKET_HEADER_SIZE);
 	offset += BULK_TOKEN_BUCKET_HEADER_SIZE;
@@ -407,10 +427,16 @@ void bulk_token_bucket_serialize(const struct bulk_token_bucket *btb, char **blo
 	offset += tmp_sz;
 	free(tmp_blob);
 	tmp_blob=NULL;
+
 	for(int i=0; i<btb->bucket_num; i++)
 	{
-		if(!btb->table[i])	continue;
-		//Keep it simple and stupid. We do not skip the full bucket, since full bucket can also been consumed.
+		if(!btb->table[i])	continue;		
+		//We skip the stale bucket.
+		if(cuckoo_bucket_is_stale(btb->table[i], &btb->cfg, now_ms))
+		{
+			continue;
+		}
+		//We do not skip the full bucket, since full bucket can also been consumed.
 		/*
 		if(cuckoo_bucket_read_avialable(btb->table[i], &btb->cfg, now_ms)==btb->cfg.capacity)
 		{
@@ -437,18 +463,14 @@ struct bulk_token_bucket *bulk_token_bucket_deserialize(const char *blob, size_t
 	memcpy(btb, blob+offset, BULK_TOKEN_BUCKET_HEADER_SIZE);
 	offset += BULK_TOKEN_BUCKET_HEADER_SIZE;
 	btb->table = ALLOC(struct cuckoo_bucket*, btb->bucket_num);
-	long long active_bucket_num=0, declared_active_bucket_num=btb->active_bucket_num;
-	btb->active_bucket_num=0;
 	while(offset < blob_sz)
 	{
 		struct cuckoo_bucket *bucket=NULL;
 		bucket = cuckoo_bucket_deserialize(blob+offset, blob_sz-offset);
 		offset += cuckoo_bucket_serialize_size(bucket);
 		btb_insert(btb, bucket, bucket->refill_ms);
-		active_bucket_num++;
 	}
 	assert(offset == blob_sz);
-	assert(active_bucket_num == declared_active_bucket_num);
 	return btb;
 }
 void bulk_token_bucket_merge(struct bulk_token_bucket *dst, const struct bulk_token_bucket *src)
@@ -458,7 +480,6 @@ void bulk_token_bucket_merge(struct bulk_token_bucket *dst, const struct bulk_to
 		bulk_token_bucket_configure(dst, src->cfg.last_cfg, src->cfg.rate, src->cfg.period, src->cfg.capacity, src->cfg.initial_bucket_num);
     }
 	assert(isPower2(dst->bucket_num) && isPower2(src->bucket_num));
-	long long old_active_bucket_num = dst->active_bucket_num;
 	long long new_insert=0;
 	for(int i=0; i<src->bucket_num; i++)
 	{
@@ -470,13 +491,13 @@ void bulk_token_bucket_merge(struct bulk_token_bucket *dst, const struct bulk_to
 		}
 		else
 		{
-			dst_bkt = cuckoo_bucket_new(src->table[i]->hash, dst->uuid, dst->cfg.capacity);
+			//The dst bucket should has smaller refill timestamp than the src bucket, so that can be merged to src refill tokens.
+			dst_bkt = cuckoo_bucket_new(src->table[i]->hash, dst->uuid, dst->cfg.capacity, src->table[i]->refill_ms-1);
 			cuckoo_bucket_merge(dst_bkt, src->table[i]);
 			btb_insert(dst, dst_bkt, src->table[i]->refill_ms);
 			new_insert++;
 		}
 	}
-	assert(old_active_bucket_num <= dst->active_bucket_num);
 	return;
 }
 void bulk_token_bucket_merge_blob(struct bulk_token_bucket *btb, const char * blob, size_t blob_sz)

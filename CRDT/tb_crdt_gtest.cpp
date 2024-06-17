@@ -1549,14 +1549,17 @@ TEST(BulkTokenBucket, Basic)
 	struct bulk_token_bucket *btb=bulk_token_bucket_new(uuid, now, CIR, 1, CBS, 4);
 	
 
-	long long allocated=0, max_tokens=duration_s*CIR+CBS, available=0;
+	long long allocated=0, max_tokens=duration_s*CIR+CBS;
 	const char *key="192.168.0.1";
-	available=bulk_token_bucket_read_available(btb, now, key, strlen(key));
-	EXPECT_EQ(available, CBS);
+	struct bulk_token_bucket_key_info key_info;
+	bulk_token_bucket_query(btb, now, key, strlen(key), &key_info);
+	EXPECT_EQ(key_info.available, CBS);
 	allocated+=bulk_token_bucket_consume(btb, now, key, strlen(key), TB_CONSUME_FLEXIBLE, 100);
 	EXPECT_EQ(allocated, 100);
-	available=bulk_token_bucket_read_available(btb, now, key, strlen(key));
-	EXPECT_EQ(available, CBS-allocated);
+	bulk_token_bucket_query(btb, now, key, strlen(key), &key_info);
+	EXPECT_EQ(key_info.available, CBS-allocated);
+	EXPECT_EQ(key_info.consumed, allocated);
+	EXPECT_EQ(key_info.number_of_replica, 1);
 
 	int i=0;
 	for(i=0; i<duration_s*(1000*1000/step_us); i++)
@@ -1585,14 +1588,16 @@ TEST(BulkTokenBucket, Period)
 	
 	struct bulk_token_bucket *btb=bulk_token_bucket_new(uuid, now, rate, period, capacity, 4);
 
-	long long allocated=0, max_tokens=duration_s/period*rate+capacity, available=0;
+	long long allocated=0, max_tokens=duration_s/period*rate+capacity;
 	const char *key="192.168.0.1";
-	available=bulk_token_bucket_read_available(btb, now, key, strlen(key));
-	EXPECT_EQ(available, capacity);
+	struct bulk_token_bucket_key_info key_info;
+	bulk_token_bucket_query(btb, now, key, strlen(key), &key_info);
+	EXPECT_EQ(key_info.available, capacity);
 	allocated+=bulk_token_bucket_consume(btb, now, key, strlen(key), TB_CONSUME_FLEXIBLE, capacity);
 	EXPECT_EQ(allocated, capacity);
-	available=bulk_token_bucket_read_available(btb, now, key, strlen(key));
-	EXPECT_EQ(available, 0);
+	bulk_token_bucket_query(btb, now, key, strlen(key), &key_info);
+	EXPECT_EQ(key_info.available, 0);
+
 
 	int i=0;
 	for(i=0; i<duration_s*(1000*1000/step_us); i++)
@@ -1602,8 +1607,8 @@ TEST(BulkTokenBucket, Period)
 	}
 	EXPECT_EQ(allocated, max_tokens);
 	now.tv_sec+=period/2;
-	available=bulk_token_bucket_read_available(btb, now, key, strlen(key));
-	EXPECT_EQ(available, capacity/2);
+	bulk_token_bucket_query(btb, now, key, strlen(key), &key_info);
+	EXPECT_EQ(key_info.available, capacity/2);
 	bulk_token_bucket_free(btb);
 }
 TEST(BulkTokenBucket, Reconfigure)
@@ -1618,19 +1623,20 @@ TEST(BulkTokenBucket, Reconfigure)
 
 	struct bulk_token_bucket *btb=bulk_token_bucket_new(uuid, now, rate, period, capacity, 4);
 
-	long long allocated=0, available=0;
+	long long allocated=0;
 	const char *key="192.168.0.1";
-	available=bulk_token_bucket_read_available(btb, now, key, strlen(key));
-	EXPECT_EQ(available, capacity);
+	struct bulk_token_bucket_key_info key_info;
+	bulk_token_bucket_query(btb, now, key, strlen(key), &key_info);
+	EXPECT_EQ(key_info.available, capacity);
 	allocated+=bulk_token_bucket_consume(btb, now, key, strlen(key), TB_CONSUME_FLEXIBLE, capacity);
 	EXPECT_EQ(allocated, capacity);
-	available=bulk_token_bucket_read_available(btb, now, key, strlen(key));
-	EXPECT_EQ(available, 0);
+	bulk_token_bucket_query(btb, now, key, strlen(key), &key_info);
+	EXPECT_EQ(key_info.available, 0);
 
 	now.tv_sec += 1;
 	bulk_token_bucket_configure(btb, now, rate, period, capacity, 8);
-	available=bulk_token_bucket_read_available(btb, now, key, strlen(key));
-	EXPECT_EQ(available, capacity);
+	bulk_token_bucket_query(btb, now, key, strlen(key), &key_info);
+	EXPECT_EQ(key_info.available, capacity);
 	
 	struct bulk_token_bucket_info info;
 	bulk_token_bucket_info(btb, now, &info);
@@ -1684,8 +1690,12 @@ TEST(BulkTokenBucket, Merge)
 	struct bulk_token_bucket_info info;
 	bulk_token_bucket_info(btb[0], now, &info);
 	EXPECT_EQ(info.active_bucket_number, n_key);
-	EXPECT_EQ(info.replicas, n_replica);
-	
+	EXPECT_EQ(info.max_replicas, n_replica);
+
+	struct bulk_token_bucket_key_info key_info;
+	bulk_token_bucket_query(btb[1], now, key, strlen(key), &key_info);	
+	EXPECT_EQ(key_info.number_of_replica, 2);
+
 	int success=0;
 	for(int i=0; i<n_key; i++)
 	{
@@ -1864,7 +1874,7 @@ TEST(BulkTokenBucket, KeyNonStickyWithReplica10)
 	struct bulk_token_bucket_info info;
 	bulk_token_bucket_info(btb[0], now, &info);
 	EXPECT_EQ(info.active_bucket_number, n_key);
-	EXPECT_EQ(info.replicas, n_replica);
+	EXPECT_EQ(info.max_replicas, n_replica);
 	long long upper_limit=CIR*timeval_delta_ms(start, now)/1000+CBS;
 	int success=0, more=0, less=0;
 	double index=0;

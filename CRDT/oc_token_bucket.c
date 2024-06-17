@@ -101,16 +101,17 @@ long long OC_token_bucket_consume(struct OC_token_bucket *bucket, struct timeval
 
 void OC_token_bucket_info(struct OC_token_bucket *bucket, struct timeval now, struct OC_token_bucket_info *info)
 {
-	info->rate=bucket->cfg.rate;
-	info->period=bucket->cfg.period;
-	info->capacity=bucket->cfg.capacity;
-	info->refill_interval_ms=bucket->cfg.refill_interval_ms;
-	info->consumed=PN_counter_get(bucket->consumed);
-	info->refilled=bucket->refilled;
-	long long tmp_refill_time_ms=bucket->refill_time_ms;
-	info->available=tb_available(bucket->cfg.rate, bucket->cfg.period, bucket->cfg.capacity, bucket->cfg.refill_interval_ms,
+	info->rate = bucket->cfg.rate;
+	info->period = bucket->cfg.period;
+	info->capacity = bucket->cfg.capacity;
+	info->refill_interval_ms = bucket->cfg.refill_interval_ms;
+	info->consumed = PN_counter_get(bucket->consumed);
+	info->refilled = bucket->refilled;
+	long long tmp_refill_time_ms = bucket->refill_time_ms;
+	info->available = tb_available(bucket->cfg.rate, bucket->cfg.period, bucket->cfg.capacity, bucket->cfg.refill_interval_ms,
 								info->consumed, &info->refilled, timeval_to_ms(now), &tmp_refill_time_ms);
-	info->number_of_replica=PN_counter_replica_num(bucket->consumed);
+	info->number_of_replica = PN_counter_replica_num(bucket->consumed);
+	info->last_consume_ms = bucket->cfg.last_cfg.tv_sec*1000 + bucket->cfg.last_cfg.tv_usec/1000 + bucket->refill_time_ms;
 	return;
 }
 size_t OC_token_bucket_serialized_size(const struct OC_token_bucket *bucket)

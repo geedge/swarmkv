@@ -20,7 +20,7 @@ Swarm KV implements Add-Wins Observed-Remove Set (OR Set) to store set and hash 
 # Probabilistic CRDT
 
 ## Age-Partioned Bloom Filter
-An Age-partitioned Bloom Filter (APBloom) is a Bloom filter variant that supports duplicate detection within a sliding window. The APBloom records elements within a time range from 'now-window' to 'now'. It's a CRDT version of the [Age-partitioned bloom filters](https://arxiv.org/pdf/2001.03147.pdf).
+An Age-partitioned Bloom Filter (APBloom) is a Bloom filter variant that supports duplicate detection within a sliding window. The APBloom records elements within a time range from 'now - time_window' to 'now'. It's a CRDT version of the [Age-partitioned bloom filters](https://arxiv.org/pdf/2001.03147.pdf).
 
 ## Staggered HyperLogLog
 Staggered HyperLogLog is a HyperLogLog variant that supports near-continuous-time cardinality estimation. Please refere to [Staggered HLL: Near-continuous-time cardinality estimation with no overhead](https://www.sciencedirect.com/science/article/abs/pii/S0140366422002407) for more information. The data of the HyperLogLog is stored in an array M of m registers. Each register is 6-bit.
@@ -62,7 +62,7 @@ The underlying principle of the FTB is to reserve quantum for a perturbation int
 Note that the SFQ is not synchronized across replicas, and an excessive member may consume more tokens than its allotted share.
 
 ## Bulk Token Bucket
-This is a bulk version of the OC token bucket, designed to manage a large number of token buckets with the same configuration. It integrates the concepts of [Cuckoo Hashing](https://en.wikipedia.org/wiki/Cuckoo_hashing) and [Cuckoo Filter](https://en.wikipedia.org/wiki/Cuckoo_filter) to effectively manage these buckets. Each bucket is identified by a provided key, which includes the same members as the OC token bucket, along with a 128-bit hash of the key. The `consume` function hashes the key and utilizes Cuckoo Hashing to locate the target bucket. If a bucket is not found, a new one is created and inserted into the Cuckoo hash table. During the Cuckoo interation of insertion, if a victim bucket is full, it is retired. If the initial bucket number is not enough to resolve conflicts, it will expand in a factor of 2.
+This is a bulk version of the OC token bucket, designed to manage a large number of token buckets with the same configuration. It integrates the concepts of [Cuckoo Hashing](https://en.wikipedia.org/wiki/Cuckoo_hashing) and [Cuckoo Filter](https://en.wikipedia.org/wiki/Cuckoo_filter) to effectively manage these buckets. Each bucket is identified by a provided key, which includes the same members as the OC token bucket, along with a 128-bit hash of the key. The `consume` function hashes the key and utilizes Cuckoo Hashing to locate the target bucket. If a bucket is not found, a new one is created and inserted into the Cuckoo hash table. A bucket that has not been used for a duration of `2*capacity*period/rate` time, is considered as stale. During the Cuckoo interation of insertion, if a victim bucket is stale, it is retired. If the bucket number is not big enough to resolve conflicts, the capacity will be expanded by a factor of 2.
 
 # References
 Bieniusa, Annette, et al. "[An optimized conflict-free replicated set](https://arxiv.org/pdf/1210.3368.pdf)." *arXiv preprint arXiv:1210.3368* (2012).

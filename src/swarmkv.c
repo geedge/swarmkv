@@ -1147,9 +1147,12 @@ void command_spec_init(struct swarmkv *db)
 	command_register(&(db->command_table), "BTCONSUME", "key member tokens [NORMAL|FORCE|FLEXIBLE]",
 					3, 1, CMD_KEY_RW, REPLY_INT_MINORS1, AUTO_ROUTE,
 					btconsume_command, db->mod_store);
-	command_register(&(db->command_table), "BTINFO", "key [member]",
+	command_register(&(db->command_table), "BTINFO", "key",
 					1, 1, CMD_KEY_RO, REPLY_EMPTY_ARRAY, AUTO_ROUTE,
 					btinfo_command, db->mod_store);
+	command_register(&(db->command_table), "BTQUERY", "key member",
+					2, 1, CMD_KEY_RO, REPLY_EMPTY_ARRAY, AUTO_ROUTE,
+					btquery_command, db->mod_store);
 
 	/*Bloom Filter commands*/
 	command_register(&(db->command_table), "BFINIT", "key error capacity [TIME window-milliseconds slice-number]",

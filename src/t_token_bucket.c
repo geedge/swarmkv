@@ -123,7 +123,7 @@ enum cmd_exec_result tinfo_command(struct swarmkv_module *mod_store, const struc
 	memset(&oc_info, 0, sizeof(oc_info));
 	OC_token_bucket_info(obj->bucket, now, &oc_info);
 	int i=0;
-	*reply=swarmkv_reply_new_array(12);
+	*reply=swarmkv_reply_new_array(14);
 	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("Rate");
 	(*reply)->elements[i++]=swarmkv_reply_new_integer(oc_info.rate);
 	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("Period");
@@ -136,7 +136,9 @@ enum cmd_exec_result tinfo_command(struct swarmkv_module *mod_store, const struc
 	(*reply)->elements[i++]=swarmkv_reply_new_integer(oc_info.refilled);
 	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("Available");
 	(*reply)->elements[i++]=swarmkv_reply_new_integer(oc_info.available);
-	assert(i==12);
+	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("LastConsumeMs");
+	(*reply)->elements[i++]=swarmkv_reply_new_integer(oc_info.last_consume_ms);	
+	assert(i==14);
 	return FINISHED;
 }
 enum cmd_exec_result tconsume_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
@@ -344,7 +346,7 @@ enum cmd_exec_result ftinfo_command(struct swarmkv_module *mod_store, const stru
 	fair_token_bucket_info(obj->ftb, now, &ftb_info);
 	
 	int i=0;
-	*reply=swarmkv_reply_new_array(16);
+	*reply=swarmkv_reply_new_array(18);
 	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("Refill");
 	(*reply)->elements[i++]=swarmkv_reply_new_integer(ftb_info.bucket_info.rate);
 	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("Period");
@@ -357,11 +359,13 @@ enum cmd_exec_result ftinfo_command(struct swarmkv_module *mod_store, const stru
 	(*reply)->elements[i++]=swarmkv_reply_new_integer(ftb_info.bucket_info.refilled);
 	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("Available");
 	(*reply)->elements[i++]=swarmkv_reply_new_integer(ftb_info.bucket_info.available);
+	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("LastConsumeMs");
+	(*reply)->elements[i++]=swarmkv_reply_new_integer(ftb_info.bucket_info.last_consume_ms);
 	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("Divisor");
 	(*reply)->elements[i++]=swarmkv_reply_new_integer(ftb_info.divisor);
 	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("ActiveMembers");
 	(*reply)->elements[i++]=swarmkv_reply_new_integer(ftb_info.active_key_number);
-	assert(i==16);
+	assert(i==18);
 	return FINISHED;
 }
 enum cmd_exec_result btcfg_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
@@ -485,7 +489,7 @@ enum cmd_exec_result btconsume_command(struct swarmkv_module *mod_store, const s
 }
 enum cmd_exec_result btinfo_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
 {
-/*BTINFO key [member]*/	
+/*BTINFO key*/	
 	struct sobj *obj=NULL;
 	const sds key=cmd->argv[1];
 	
@@ -509,13 +513,9 @@ enum cmd_exec_result btinfo_command(struct swarmkv_module *mod_store, const stru
 	struct bulk_token_bucket_info btb_info;
 	memset(&btb_info, 0, sizeof(btb_info));
 	bulk_token_bucket_info(obj->btb, now, &btb_info);
-	long long available=-1;
-	if(cmd->argc>2)
-	{
-		available=bulk_token_bucket_read_available(obj->btb, now, cmd->argv[2], sdslen(cmd->argv[2]));
-	}
+
 	int i=0;
-	*reply=swarmkv_reply_new_array(16);
+	*reply=swarmkv_reply_new_array(14);
 	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("Rate");
 	(*reply)->elements[i++]=swarmkv_reply_new_integer(btb_info.rate);
 	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("Period");
@@ -526,12 +526,55 @@ enum cmd_exec_result btinfo_command(struct swarmkv_module *mod_store, const stru
 	(*reply)->elements[i++]=swarmkv_reply_new_integer(btb_info.initial_bucket_number);
 	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("Buckets");
 	(*reply)->elements[i++]=swarmkv_reply_new_integer(btb_info.bucket_number);
-	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("ActiveMembers");
+	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("ActiveBuckets");
 	(*reply)->elements[i++]=swarmkv_reply_new_integer(btb_info.active_bucket_number);
+	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("MaxReplicas");
+	(*reply)->elements[i++]=swarmkv_reply_new_integer(btb_info.max_replicas);
+	assert(i==14);
+	return FINISHED;
+}
+enum cmd_exec_result btquery_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
+{
+/*BTQUERY key member*/	
+	struct sobj *obj=NULL;
+	const sds key=cmd->argv[1];
+	const sds member=cmd->argv[2];
+
+	obj=store_lookup(mod_store, key);
+	if(!obj)
+	{
+		return NEED_KEY_ROUTE;		
+	}
+	if(obj->type==OBJ_TYPE_UNDEFINED)
+	{
+		return handle_undefined_object(obj, reply);
+	}
+	if(obj->type!=OBJ_TYPE_BULK_TOKEN_BUCKET)
+	{
+		*reply=swarmkv_reply_new_error(error_wrong_type);
+		return FINISHED;
+	}
+	struct timeval now;
+	gettimeofday(&now, NULL);
+
+	struct bulk_token_bucket_key_info key_info;
+	memset(&key_info, 0, sizeof(key_info));
+	bulk_token_bucket_query(obj->btb, now, member, sdslen(member), &key_info);
+
+	int i=0;
+	*reply=swarmkv_reply_new_array(12);
+	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("Consumed");
+	(*reply)->elements[i++]=swarmkv_reply_new_integer(key_info.consumed);
+	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("Refilled");
+	(*reply)->elements[i++]=swarmkv_reply_new_integer(key_info.refilled);
+	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("Available");
+	(*reply)->elements[i++]=swarmkv_reply_new_integer(key_info.available);
 	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("Replicas");
-	(*reply)->elements[i++]=swarmkv_reply_new_integer(btb_info.replicas);
-	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("Query");
-	(*reply)->elements[i++]=swarmkv_reply_new_integer(available);
-	assert(i==16);
+	(*reply)->elements[i++]=swarmkv_reply_new_integer(key_info.number_of_replica);
+	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("LastConsumeMs");
+	(*reply)->elements[i++]=swarmkv_reply_new_integer(key_info.last_consume_ms);
+	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("Hash");
+	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("%llu.%llu", key_info.hash_low64, key_info.hash_high64);
+	assert(i==12);
 	return FINISHED;
 }

@@ -6,6 +6,7 @@
 #pragma once
 #include "token_bucket_common.h"
 #include <stddef.h>
+#include <stdint.h>
 #include <sys/time.h>
 #include <uuid/uuid.h>
 #ifdef __cplusplus
@@ -34,9 +35,8 @@ struct bulk_token_bucket;
 struct bulk_token_bucket *bulk_token_bucket_new(uuid_t my_id, struct timeval now, long long rate, long long period, long long capacity, long long bucket_num);
 void bulk_token_bucket_free(struct bulk_token_bucket *btb);
 void bulk_token_bucket_configure(struct bulk_token_bucket *btb, struct timeval now, long long rate, long long period, long long capacity, long long bucket_num);
-
 long long bulk_token_bucket_consume(struct bulk_token_bucket *btb, struct timeval now, const char *key, size_t key_len, enum tb_consume_type cmd, long long tokens);
-long long bulk_token_bucket_read_available(const struct bulk_token_bucket *btb, struct timeval now, const char *key, size_t keylen);
+
 struct bulk_token_bucket_info
 {
 	long long rate;
@@ -45,7 +45,7 @@ struct bulk_token_bucket_info
 	long long initial_bucket_number;
 	long long bucket_number;
 	long long active_bucket_number;
-	long long replicas;
+	long long max_replicas;
 };
 void bulk_token_bucket_info(const struct bulk_token_bucket *btb, struct timeval now, struct bulk_token_bucket_info *info);
 void bulk_token_bucket_serialize(const struct bulk_token_bucket *btb, char **blob, size_t *blob_sz);
@@ -54,6 +54,18 @@ void bulk_token_bucket_merge(struct bulk_token_bucket *dst, const struct bulk_to
 void bulk_token_bucket_merge_blob(struct bulk_token_bucket *btb, const char * blob, size_t blob_sz);
 struct bulk_token_bucket *bulk_token_bucket_replicate(uuid_t uuid, const char *blob, size_t blob_sz);
 size_t bulk_token_bucket_mem_size(const struct bulk_token_bucket *btb);
+
+struct bulk_token_bucket_key_info
+{
+	uint64_t hash_low64;
+	uint64_t hash_high64;
+	long long consumed;
+	long long refilled;
+	long long available;
+	long long last_consume_ms;
+	long long number_of_replica;
+};
+void bulk_token_bucket_query(const struct bulk_token_bucket *btb, struct timeval now, const char *key, size_t keylen, struct bulk_token_bucket_key_info *key_info);
 #ifdef __cplusplus
 }
 #endif

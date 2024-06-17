@@ -43,6 +43,7 @@ struct OC_token_bucket_info
 	long long refilled;
 	long long available;
 	long long number_of_replica;
+	long long last_consume_ms;
 };
 void OC_token_bucket_info(struct OC_token_bucket *bucket, struct timeval now, struct OC_token_bucket_info *info);
 void OC_token_bucket_free(struct OC_token_bucket *bucket);

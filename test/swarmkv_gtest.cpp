@@ -497,7 +497,7 @@ TEST_F(SwarmkvBasicTest, TypeTokenBucket)
 	EXPECT_EQ(reply->type, SWARMKV_REPLY_STATUS);
 	swarmkv_reply_free(reply);
 	reply=swarmkv_command(db, "TINFO %s", key);
-	ASSERT_EQ(reply->n_element, 12);
+	ASSERT_EQ(reply->n_element, 14);
 	allocated_tokens=reply->elements[7]->integer;
 	swarmkv_reply_free(reply);
 	
@@ -510,7 +510,7 @@ TEST_F(SwarmkvBasicTest, TypeTokenBucket)
 	}
 	EXPECT_EQ(inf_token, 10000*i);
 	reply=swarmkv_command(db, "TINFO %s", key);
-	ASSERT_EQ(reply->n_element, 12);
+	ASSERT_EQ(reply->n_element, 14);
 	EXPECT_EQ(reply->elements[7]->integer, allocated_tokens+inf_token);
 	swarmkv_reply_free(reply);
 
@@ -569,7 +569,7 @@ TEST_F(SwarmkvBasicTest, TypeFairTokenBucket)
 	}
 	EXPECT_EQ(inf_token, 10000*i);
 	reply=swarmkv_command(db, "FTINFO %s", key);
-	ASSERT_EQ(reply->n_element, 16);
+	ASSERT_EQ(reply->n_element, 18);
 	EXPECT_EQ(reply->elements[7]->integer, allocated_tokens+inf_token);
 	swarmkv_reply_free(reply);
 
@@ -608,11 +608,24 @@ TEST_F(SwarmkvBasicTest, TypeBulkTokenBucket)
 		gettimeofday(&now, NULL);
 		round++;
 	}
-	printf("consume round %d, speed %d ops\n", round, round/(int)(now.tv_sec-start.tv_sec));
+	//printf("consume round %d, speed %d ops\n", round, round/(int)(now.tv_sec-start.tv_sec));
 	EXPECT_LE(allocated_tokens/n_member, (now.tv_sec -start.tv_sec)*rate+capacity);	
 	reply=swarmkv_command(db, "BTINFO %s", key);
-	ASSERT_EQ(reply->n_element, 16);
+	ASSERT_EQ(reply->n_element, 14);
 	EXPECT_EQ(reply->elements[11]->integer, n_member);
+	swarmkv_reply_free(reply);
+
+	const char *tmp_member = "localhost";
+	reply=swarmkv_command(db, "BTCONSUME %s %s 10000", key, tmp_member);
+	EXPECT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 10000);
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db, "BTQUERY %s %s", key, tmp_member);
+	EXPECT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
+	EXPECT_EQ(reply->n_element, 12);
+	EXPECT_EQ(reply->elements[1]->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->elements[1]->integer, 10000);
 	swarmkv_reply_free(reply);
 
 	//Infinite tokens
@@ -628,6 +641,13 @@ TEST_F(SwarmkvBasicTest, TypeBulkTokenBucket)
 		swarmkv_reply_free(reply);
 	}
 	EXPECT_EQ(t, 10000*i);
+
+	reply=swarmkv_command(db, "BTQUERY %s %s", key, tmp_member);
+	EXPECT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
+	EXPECT_EQ(reply->n_element, 12);
+	EXPECT_EQ(reply->elements[5]->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->elements[5]->integer, INT64_MAX);
+	swarmkv_reply_free(reply);
 
 	reply=swarmkv_command(db, "type %s", key);
 	ASSERT_EQ(reply->type, SWARMKV_REPLY_STRING);
@@ -1746,14 +1766,14 @@ TEST_F(SwarmkvTwoNodes, TypeFairTokenBucket)
 
 	reply=swarmkv_command(db[0], "FTINFO %s", key);
 	ASSERT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
-	ASSERT_EQ(reply->n_element, 16);
-	EXPECT_NEAR(reply->elements[15]->integer, n_member, (double)n_member/5);
+	ASSERT_EQ(reply->n_element, 18);
+	EXPECT_NEAR(reply->elements[17]->integer, n_member, (double)n_member/5);
 	swarmkv_reply_free(reply);
 
 	reply=swarmkv_command(db[1], "FTINFO %s", key);
 	ASSERT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
-	ASSERT_EQ(reply->n_element, 16);
-	EXPECT_NEAR(reply->elements[15]->integer, n_member, (double)n_member/5);
+	ASSERT_EQ(reply->n_element, 18);
+	EXPECT_NEAR(reply->elements[17]->integer, n_member, (double)n_member/5);
 	swarmkv_reply_free(reply);
 
 	reply=swarmkv_command(db[0], "DEL %s", key);
@@ -1807,7 +1827,7 @@ TEST_F(SwarmkvTwoNodes, TypeBulkTokenBucket)
 		member_id=(member_id+1)%n_member;
 		round++;
 	}
-	printf("consume round %d, speed %d ops\n", round, round/(int)(now.tv_sec-start.tv_sec));
+	//printf("consume round %d, speed %d ops\n", round, round/(int)(now.tv_sec-start.tv_sec));
 	//EXPECT_GE(round/(int)(now.tv_sec-start.tv_sec), 5000);
 	long long upper_limit=(now.tv_sec-start.tv_sec)*rate/period+capacity;
 	upper_limit=upper_limit*n_member;
@@ -1816,15 +1836,14 @@ TEST_F(SwarmkvTwoNodes, TypeBulkTokenBucket)
 	wait_for_sync();
 	reply=swarmkv_command(db[0], "BTINFO %s", key);
 	ASSERT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
-	ASSERT_EQ(reply->n_element, 16);
+	ASSERT_EQ(reply->n_element, 14);
 	EXPECT_EQ(reply->elements[11]->integer, n_member);
 	swarmkv_reply_free(reply);
 
-	reply=swarmkv_command(db[1], "BTINFO %s user-%lld", key, n_member);
+	reply=swarmkv_command(db[1], "BTINFO %s", key);
 	ASSERT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
-	ASSERT_EQ(reply->n_element, 16);
+	ASSERT_EQ(reply->n_element, 14);
 	EXPECT_EQ(reply->elements[11]->integer, n_member);
-	EXPECT_EQ(reply->elements[15]->integer, capacity);
 	swarmkv_reply_free(reply);
 
 	reply=swarmkv_command(db[0], "DEL %s", key);
@@ -1859,6 +1878,10 @@ TEST_F(SwarmkvTwoNodes, TypeBulkTokenBucket)
 	EXPECT_EQ(reply->integer, -1);
 	swarmkv_reply_free(reply);
 
+	reply=swarmkv_command(db[1], "BTQUERY %s abc", key);
+	EXPECT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
+	EXPECT_EQ(reply->n_element, 0);
+	swarmkv_reply_free(reply);
 }
 TEST_F(SwarmkvTwoNodes, TypeBloomFilter)
 {
