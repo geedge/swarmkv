@@ -18,7 +18,7 @@
 struct bucket {
     char *key;
     uint32_t key_len;
-    unsigned char level;
+    uint32_t level;
     long long last_update_ms; // linux timestamp since Jan 1st 1970
     uint32_t *sthll_register;
 };
@@ -39,7 +39,7 @@ struct spread_sketch {
 struct ss_query_result; // defined in spread_sketch.h
 
 
-unsigned char cal_true_level(const struct spread_sketch *ss, int bucket_idx, long long t) {
+uint32_t cal_true_level(const struct spread_sketch *ss, int bucket_idx, long long t) {
     /*
     return f(t), the actual level of bucket, which satisfy:
     1. d 2^f(t)/dt is constants
@@ -63,7 +63,7 @@ unsigned char cal_true_level(const struct spread_sketch *ss, int bucket_idx, lon
     double a = ((double)(2 - tmp_exp)) / ((double)T);
     double b = (double)(tmp_exp);
 
-    return (unsigned char)(log2(a * ((double)(t-t0)) + b) + 0.5);
+    return (uint32_t)(log2(a * ((double)(t-t0)) + b) + 0.5);
 }
 
 struct spread_sketch *spread_sketch_new(int depth, int width, unsigned char precision, int time_window_s, struct timeval now) {
@@ -95,15 +95,28 @@ void move_registers_forward(struct spread_sketch *ss, struct timeval *now) {
     }
 }
 
-void spread_sketch_update(struct spread_sketch *ss, const char *key_main, const char *key_spread, struct timeval now) {
-    uint64_t hash_y = XXH3_64bits_withSeed(key_spread, strlen(key_spread), 171);
-    unsigned char level = (unsigned char)__builtin_clzll(hash_y) + 1;
+static inline bool key_equal(const char *key1, size_t key1_len, const char *key2, size_t key2_len) {
+    if (key1_len != key2_len) {
+        return false;
+    }
+    return memcmp(key1, key2, key1_len) == 0;
+}
+
+static inline char *key_dup(const char *key, size_t key_len) {
+    char *ret = malloc(key_len);
+    memcpy(ret, key, key_len);
+    return ret;
+}
+
+void spread_sketch_update(struct spread_sketch *ss, const char *key_main, size_t key_main_length, const char *key_spread, size_t key_spread_length, struct timeval now) {
+    uint64_t hash_y = XXH3_64bits_withSeed(key_spread, key_spread_length, 171);
+    uint32_t level = (uint32_t)__builtin_clzll(hash_y) + 1;
     long long now_ms = now.tv_sec * 1000 + now.tv_usec / 1000;
     
     // https://www.eecs.harvard.edu/~michaelm/postscripts/tr-02-05.pdf
     // A technique from the hashing literature is to use two hash functions h1(x) and h2(x) to simulate additional hash functions of the form gi(x) = h1(x) + ih2(x)
     // Assuming that the 128-bit xxhash function is perfect, we can view it as a combination of two 64-bit hash functions.
-    uint64_t hash_x_tmp = XXH3_64bits_withSeed(key_main, strlen(key_main), 171);
+    uint64_t hash_x_tmp = XXH3_64bits_withSeed(key_main, key_main_length, 171);
     uint32_t hash_x1 = (uint32_t) (hash_x_tmp >> 32);
     uint32_t hash_x2 = (uint32_t) hash_x_tmp;
 
@@ -114,13 +127,13 @@ void spread_sketch_update(struct spread_sketch *ss, const char *key_main, const 
         int bucket_idx = (hash_x % ss->width) + i * ss->width;
         struct bucket *bucket = &ss->buckets[bucket_idx];
 
-        if (bucket->key != NULL && (strcmp(bucket->key, key_main) == 0)) {
+        if (bucket->key != NULL && key_equal(bucket->key, bucket->key_len, key_main, key_main_length)) {
             bucket->last_update_ms = now_ms;
             if (bucket->level < level) {
                 bucket->level = level;
             }
         } else {
-            unsigned char true_level;
+            uint32_t true_level;
             if (bucket->key == NULL) {
                 true_level = 0;
             } else {
@@ -129,7 +142,8 @@ void spread_sketch_update(struct spread_sketch *ss, const char *key_main, const 
 
             if (true_level < level) {
                 free(bucket->key);
-                bucket->key = strdup(key_main);
+                bucket->key = key_dup(key_main, key_main_length);
+                bucket->key_len = key_main_length;
                 bucket->last_update_ms = now_ms;
                 bucket->level = level;
             }
@@ -139,8 +153,8 @@ void spread_sketch_update(struct spread_sketch *ss, const char *key_main, const 
     }
 }
 
-double spread_sketch_point_query(struct spread_sketch *ss, const char *key_main) {
-    uint64_t hash_x_tmp = XXH3_64bits_withSeed(key_main, strlen(key_main), 171);
+double spread_sketch_point_query(struct spread_sketch *ss, const char *key_main, size_t key_main_length) {
+    uint64_t hash_x_tmp = XXH3_64bits_withSeed(key_main, key_main_length, 171);
     uint32_t hash_x1 = (uint32_t) (hash_x_tmp >> 32);
     uint32_t hash_x2 = (uint32_t) hash_x_tmp;
 
@@ -167,6 +181,7 @@ void ss_query_result_free(struct ss_query_result *result) {
     }
     free(result->key);
     free(result->count);
+    free(result->key_len);
     free(result);
 }
 
@@ -175,6 +190,7 @@ struct ss_query_result *spread_sketch_query(const struct spread_sketch *ss, stru
     // find out all unique keys
     struct key_item {
         char *key;
+        uint32_t key_len;
         UT_hash_handle hh;
     } *key_counts = NULL;
 
@@ -192,11 +208,12 @@ struct ss_query_result *spread_sketch_query(const struct spread_sketch *ss, stru
             }
 
             struct key_item *kc;
-            HASH_FIND_STR(key_counts, key, kc);
+            HASH_FIND(hh, key_counts, key, bucket->key_len, kc);
             if (kc == NULL) {
                 kc = malloc(sizeof(struct key_item));
                 kc->key = key;
-                HASH_ADD_KEYPTR(hh, key_counts, kc->key, strlen(kc->key), kc);
+                kc->key_len = bucket->key_len;
+                HASH_ADD_KEYPTR(hh, key_counts, kc->key, bucket->key_len, kc);
             }
         }
     }
@@ -212,6 +229,7 @@ struct ss_query_result *spread_sketch_query(const struct spread_sketch *ss, stru
     }
     ret->key = malloc(sizeof(char *) * n_result);
     ret->count = malloc(sizeof(double) * n_result);
+    ret->key_len = malloc(sizeof(size_t) * n_result);
 
     // gen a duplication, so that step won't change the original
     struct spread_sketch *duplicate = malloc(sizeof(struct spread_sketch));
@@ -233,9 +251,10 @@ struct ss_query_result *spread_sketch_query(const struct spread_sketch *ss, stru
     int n_results_found = 0;
     struct key_item *kc, *tmp;
     HASH_ITER(hh, key_counts, kc, tmp) {
-        double count = spread_sketch_point_query(duplicate, kc->key);
+        double count = spread_sketch_point_query(duplicate, kc->key, kc->key_len);
         if (count >= 1.0) {
-            ret->key[n_results_found] = strdup(kc->key);
+            ret->key[n_results_found] = key_dup(kc->key, kc->key_len);
+            ret->key_len[n_results_found] = kc->key_len;
             ret->count[n_results_found] = count;
             n_results_found++;
         }
@@ -281,7 +300,7 @@ void spread_sketch_merge(struct spread_sketch *dst, const struct spread_sketch *
         }
 
         if (bucket_dst->key == NULL) {
-            bucket_dst->key = strdup(bucket_src->key);
+            bucket_dst->key = key_dup(bucket_src->key, bucket_src->key_len);
             bucket_dst->key_len = bucket_src->key_len;
             bucket_dst->level = bucket_src->level;
             bucket_dst->last_update_ms = bucket_src->last_update_ms;
@@ -298,12 +317,12 @@ void spread_sketch_merge(struct spread_sketch *dst, const struct spread_sketch *
                 bucket_dst->last_update_ms = bucket_src->last_update_ms;
             }
         } else {
-            unsigned char true_level_src = cal_true_level(src, i, bucket_src->last_update_ms);
-            unsigned char true_level_dst = cal_true_level(dst, i, bucket_dst->last_update_ms);
+            uint32_t true_level_src = cal_true_level(src, i, bucket_src->last_update_ms);
+            uint32_t true_level_dst = cal_true_level(dst, i, bucket_dst->last_update_ms);
 
             if (true_level_src > true_level_dst) {
                 free(bucket_dst->key);
-                bucket_dst->key = strdup(bucket_src->key);
+                bucket_dst->key = key_dup(bucket_src->key, bucket_src->key_len);
                 bucket_dst->key_len = bucket_src->key_len;
                 bucket_dst->level = bucket_src->level;
                 bucket_dst->last_update_ms = bucket_src->last_update_ms;
@@ -331,7 +350,7 @@ void spread_sketch_serialize(const struct spread_sketch *ss, char **blob, size_t
         serializer_reader_read_uint(reader, bucket->level);
         serializer_reader_read_longlong(reader, bucket->last_update_ms);
         if (bucket->key != NULL) {
-            serializer_reader_read_str(reader, bucket->key);
+            serializer_reader_read_bin(reader, bucket->key, bucket->key_len);
         } else {
             serializer_reader_read_nil(reader);
         }
@@ -359,14 +378,19 @@ struct spread_sketch *spread_sketch_deserialize(const char *blob, size_t blob_sz
     ss->precision = (unsigned char)precision_tmp;
     ret = serializer_writer_write_longlong(writer, &ss->reset_idx);
     assert(ret != -1);
-    ret = serializer_writer_write_longlong(writer, &ss->reset_time.tv_sec);
+    long long reset_time_sec_tmp;
+    ret = serializer_writer_write_longlong(writer, &reset_time_sec_tmp);
     assert(ret != -1);
-    ret = serializer_writer_write_longlong(writer, &ss->reset_time.tv_usec);
+    ss->reset_time.tv_sec = reset_time_sec_tmp;
+    long long reset_time_usec_tmp;
+    ret = serializer_writer_write_longlong(writer, &reset_time_usec_tmp);
     assert(ret != -1);
+    ss->reset_time.tv_usec = reset_time_usec_tmp;
 
     ss->buckets = calloc(ss->depth * ss->width, sizeof(struct bucket));
     for (int i = 0; i < ss->depth * ss->width; i++) {
         struct bucket *bucket = &ss->buckets[i];
+
         ret = serializer_writer_write_uint(writer, &bucket->level);
         assert(ret != -1);
         ret = serializer_writer_write_longlong(writer, &bucket->last_update_ms);
@@ -378,10 +402,11 @@ struct spread_sketch *spread_sketch_deserialize(const char *blob, size_t blob_sz
             bucket->key = NULL;
         } else {
             char *key;
-            ret = serializer_writer_write_str(writer, &key);
+            size_t key_len;
+            ret = serializer_writer_write_bin(writer, &key, &key_len);
             assert(ret != -1);
             bucket->key = key;
-            bucket->key_len = strlen(key);
+            bucket->key_len = key_len;
         }
 
         size_t dummy;
@@ -396,6 +421,9 @@ struct spread_sketch *spread_sketch_deserialize(const char *blob, size_t blob_sz
 
 void spread_sketch_merge_blob(struct spread_sketch *dst, const char *blob, size_t blob_sz)
 {
+    struct spread_sketch *src = spread_sketch_deserialize(blob, blob_sz);
+    spread_sketch_merge(dst, src);
+    spread_sketch_free(src);
 }
 
 size_t spread_sketch_calculate_memory_usage(const struct spread_sketch *ss)
@@ -409,4 +437,23 @@ size_t spread_sketch_calculate_memory_usage(const struct spread_sketch *ss)
 
     ret += ss->depth * ss->width * bucket_size;
     return ret;
+}
+
+void get_parameter_recommendation(int max_super_spreader_number, int *depth_out, int *width_out, unsigned char *precision_out)
+{
+    int logk = max_super_spreader_number >= 3200 ? 4 : 3; // lg3200 = 3.51,round up to 4
+    *depth_out = logk;
+
+    int w;
+    if (max_super_spreader_number <= 100) {
+        w = max_super_spreader_number * 3 /2; // * 1.5, when the number is small, we need more width
+    } else {
+        w = max_super_spreader_number + 50; // + 50: 100*1.5-100 = 50, make w=f(k) continuous
+    }
+    if (w < 32) {
+        w = 32;
+    }
+    *width_out = w;
+
+    *precision_out = 6;
 }

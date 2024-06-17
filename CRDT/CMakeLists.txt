@@ -23,8 +23,3 @@ add_executable(probabilistic_CRDT_gtest probabilistic_crdt_gtest.cpp
 				${PROJECT_SOURCE_DIR}/deps/mpack/mpack.c
 				${PROJECT_SOURCE_DIR}/deps/xxhash/xxhash.c)
 target_link_libraries(probabilistic_CRDT_gtest CRDT gtest-static uuid)
-
-add_executable(spread_sketch_experiments spread_sketch_experiments.cpp
-				${PROJECT_SOURCE_DIR}/deps/mpack/mpack.c
-				${PROJECT_SOURCE_DIR}/deps/xxhash/xxhash.c)
-target_link_libraries(spread_sketch_experiments CRDT gtest-static uuid)

@@ -14,6 +14,9 @@
 #include <unordered_set>
 #include <string>
 #include <bitset>
+#include <random>
+#include <fstream>
+
 
 #define	CMS_TEST_WIDTH		(1024*16)
 #define	CMS_TEST_DEPTH		6
@@ -1416,14 +1419,13 @@ public:
 class TestRet {
 private:
     struct ss_query_result *ret_raw;
-    std::unordered_map<std::string, std::unordered_set<std::string>> benchmark;
-    std::unordered_map<std::string, double> results;
-    std::unordered_map<std::string, struct ST_hyperloglog *> benchmark_sthll;
+
 
     unsigned char _precision;
     long long _window_s;
 
     long long _last_time;
+    bool _use_hll;
 
 
 public:
@@ -1431,29 +1433,35 @@ public:
         ret_raw = NULL;
         _precision = 4;
         _window_s = 10;
+        _use_hll = false;
     }
 
     TestRet(unsigned char precision, long long window_s) {
         ret_raw = NULL;
         _precision = precision;
         _window_s = window_s;
+        _use_hll = true;
     }
 
     ~TestRet(){
         ss_query_result_free(ret_raw);
-        for (auto &kv : benchmark_sthll) {
-            ST_hyperloglog_free(kv.second);
+        if (_use_hll) {
+            for (auto &kv : benchmark_sthll) {
+                ST_hyperloglog_free(kv.second);
+            }
         }
     }
 
     void feed(std::string key_main, std::string key_spread, long long now_ms){
         benchmark[key_main].insert(key_spread);
 
-        if (benchmark_sthll.find(key_main) == benchmark_sthll.end()) {
-            benchmark_sthll[key_main] = ST_hyperloglog_new(_precision, _window_s * 1000, ms_to_timeval(now_ms));
+        if (_use_hll) {
+            if (benchmark_sthll.find(key_main) == benchmark_sthll.end()) {
+                benchmark_sthll[key_main] = ST_hyperloglog_new(_precision, _window_s * 1000, ms_to_timeval(now_ms));
+            }
+            
+            ST_hyperloglog_add(benchmark_sthll[key_main], key_spread.c_str(), key_spread.size(), ms_to_timeval(now_ms));
         }
-
-        ST_hyperloglog_add(benchmark_sthll[key_main], key_spread.c_str(), key_spread.size(), ms_to_timeval(now_ms));
 
         _last_time = now_ms;
     }
@@ -1462,7 +1470,9 @@ public:
         this->ret_raw = ret;
 
         for (int i = 0; i < ret->n_results; i++) {
-            results[ret->key[i]] = ret->count[i];
+            std::string key(ret->key[i], ret->key_len[i]);
+
+            results[key] = ret->count[i];
         }
     }
 
@@ -1482,6 +1492,28 @@ public:
             cnt++;
         }
         return mre / cnt;
+    }
+
+    double cal_mre(double top_percent){
+        double mre = 0;
+        std::vector<std::pair<std::string, int>> top_n_keys;
+        for (auto &kv : benchmark) {
+            int fanout = kv.second.size();
+            top_n_keys.push_back(std::make_pair(kv.first, fanout));
+        }
+        std::sort(top_n_keys.begin(), top_n_keys.end(), [](const std::pair<std::string, int> &a, const std::pair<std::string, int> &b) {
+            return a.second > b.second;
+        });
+
+        int total_ss = top_percent * top_n_keys.size();
+        for (int i = 0; i < total_ss; i++) {
+
+            double est = results.find(top_n_keys[i].first) == results.end() ? 0 : results[top_n_keys[i].first];
+            double actual = top_n_keys[i].second;
+
+            mre += fabs(est - actual) / actual;
+        }
+        return mre / total_ss;
     }
 
     bool assess_estimate(unsigned char hll_precision, double eplilon, double delta) {
@@ -1524,37 +1556,56 @@ public:
                     continue;
                 }
 
-                printf("key: %s, actual: %lu, estimated: %f, allowed range [%f, %f], hll result: %f\n", 
-                    kv.first.c_str(),
-                    kv.second.size(),
-                    results[kv.first], (1-sigma) * kv.second.size(),
-                    (1+sigma) * (1+eplilon) * kv.second.size(),
-                    ST_hyperloglog_count(benchmark_sthll[kv.first], ms_to_timeval(_last_time)));
+                if (_use_hll) {
+                    printf("key: %s, actual: %lu, estimated: %f, allowed range [%f, %f], hll result: %f\n", 
+                        kv.first.c_str(),
+                        kv.second.size(),
+                        results[kv.first], (1-sigma) * kv.second.size(),
+                        (1+sigma) * (1+eplilon) * kv.second.size(),
+                        ST_hyperloglog_count(benchmark_sthll[kv.first], ms_to_timeval(_last_time)));
+                } else {
+                    printf("key: %s, actual: %lu, estimated: %f, allowed range [%f, %f]\n", 
+                        kv.first.c_str(),
+                        kv.second.size(),
+                        results[kv.first], (1-sigma) * kv.second.size(),
+                        (1+sigma) * (1+eplilon) * kv.second.size());
+                }
             }
         }
         return ret;
     }
 
-    double cal_recall_rate() {
-        int good = 0;
-        int total_ss = 0;
+    double cal_recall_rate(int top_n) {
+        std::vector<std::pair<std::string, int>> top_n_keys;
         for (auto &kv : benchmark) {
-            if (kv.first[0] != 's') {
-                continue;
-            }
+            int fanout = kv.second.size();
+            top_n_keys.push_back(std::make_pair(kv.first, fanout));
+        }
+        std::sort(top_n_keys.begin(), top_n_keys.end(), [](const std::pair<std::string, int> &a, const std::pair<std::string, int> &b) {
+            return a.second > b.second;
+        });
 
-            if (results.find(kv.first) != results.end()) {
+        printf("cal_recall_rate top_n_keys size: %lu\n", top_n_keys.size());
+        // for (size_t i = 0; i < top_n_keys.size(); i++) {
+        //     printf("key: %s, fanout: %d\n", top_n_keys[i].first.c_str(), top_n_keys[i].second);
+        // }
+
+        int good = 0;
+        int total_ss = MIN(top_n, (int)top_n_keys.size());
+        for (int i = 0; i < total_ss; i++) {
+            if (results.find(top_n_keys[i].first) != results.end()) {
                 good++;
             }
-            total_ss++;
         }
+
         return 1.0 * good / total_ss;
     }
 
     void print() {
         for (auto &kv : benchmark) {
+            double hll_result = _use_hll ? ST_hyperloglog_count(benchmark_sthll[kv.first], ms_to_timeval(_last_time)) : -1.0;
             printf("key: %s, benchmark size: %lu, estimated size: %f, hll result: %f\n",
-             kv.first.c_str(), kv.second.size(), results.find(kv.first) == results.end() ? -1.0 : results[kv.first], ST_hyperloglog_count(benchmark_sthll[kv.first], ms_to_timeval(_last_time)));
+             kv.first.c_str(), kv.second.size(), results.find(kv.first) == results.end() ? -1.0 : results[kv.first], hll_result);
         }
 
         for (auto &kv : results) {
@@ -1567,56 +1618,11 @@ public:
     bool key_exist(std::string key) {
         return results.find(key) != results.end();
     }
+
+    std::unordered_map<std::string, std::unordered_set<std::string>> benchmark;
+    std::unordered_map<std::string, double> results;
+    std::unordered_map<std::string, struct ST_hyperloglog *> benchmark_sthll;
 };
-
-TestRet *spread_sketch_test_deprecated(struct spread_sketch *ss, long long window_s, long long duration_s, int n_super_spreader, int n_total, int fanout_superspreader, int fanout_others, int start_ms)
-{
-    long long now = start_ms;
-    long long duration_ms = duration_s * 1000;
-    TestRet *test_ret = new TestRet(4, window_s);
-
-    double ms_per_packet = 1.0 * (window_s * 1000) / (fanout_superspreader * n_super_spreader + fanout_others * (n_total - n_super_spreader));
-    printf("ms_per_packet: %f\n", ms_per_packet);
-
-    int src_start = 0;
-    int dst_start = 0;
-
-    while (now - start_ms < duration_ms) {
-        double now_tmp = now;
-        for (int src_id = 0; src_id < n_super_spreader; src_id++) {
-            int x = src_start + src_id;
-            for (int dst_id = 0; dst_id < fanout_superspreader; dst_id++) {
-                int y = dst_start + dst_id;
-                std::string src_ip = "s_" + std::to_string(x);
-                std::string dst_ip = "sd_" + std::to_string(y);
-                // printf("feed %s %s at %f\n", src_ip.c_str(), dst_ip.c_str(), now_tmp);
-                spread_sketch_update(ss, src_ip.c_str(), dst_ip.c_str(), ms_to_timeval((long long)now_tmp));
-                test_ret->feed(src_ip, dst_ip, (long long)now_tmp);
-                now_tmp += ms_per_packet;
-            }
-        }
-        for (int src_id = n_super_spreader; src_id < n_total; src_id++) {
-            int x = src_start + src_id;
-            for (int dst_id = 0; dst_id < fanout_others; dst_id++) {
-                int y = dst_start + dst_id;
-                std::string src_ip = std::to_string(x);
-                std::string dst_ip = "d_" + std::to_string(y);
-                // printf("feed %s %s at %f\n", src_ip.c_str(), dst_ip.c_str(), now_tmp);
-                spread_sketch_update(ss, src_ip.c_str(), dst_ip.c_str(), ms_to_timeval((long long)now_tmp));
-                test_ret->feed(src_ip, dst_ip, (long long)now_tmp);
-                now_tmp += ms_per_packet;
-            }
-        }
-        now += window_s * 1000;
-    }
-
-    // printf("query at %lld\n", duration
-    struct ss_query_result *results = spread_sketch_query(ss, ms_to_timeval(duration_ms + start_ms));
-
-    test_ret->read_ss_query_result(results);
-
-    return test_ret;
-}
 
 TestRet *spread_sketch_test(struct spread_sketch *ss, long long window_s, long long duration_s, class InputGenerator &gen)
 {
@@ -1631,8 +1637,7 @@ TestRet *spread_sketch_test(struct spread_sketch *ss, long long window_s, long l
         std::string src_ip = flow.src_ip;
         std::string dst_ip = flow.dst_ip;
         long long now = flow.time;
-
-        spread_sketch_update(ss, src_ip.c_str(), dst_ip.c_str(), ms_to_timeval(now));
+        spread_sketch_update(ss, src_ip.c_str(), src_ip.size(), dst_ip.c_str(), dst_ip.size(), ms_to_timeval(now));
         if (now >= last_window_start_ms) {
             test_ret->feed(src_ip, dst_ip, now);
         }
@@ -1641,13 +1646,12 @@ TestRet *spread_sketch_test(struct spread_sketch *ss, long long window_s, long l
     }
 
     struct ss_query_result *results = spread_sketch_query(ss, ms_to_timeval(duration_ms + start_ms));
-
     test_ret->read_ss_query_result(results);
 
     return test_ret;
 }
 
-TestRet *spread_sketch_test(int precision, int depth, int width, long long window_s, long long duration_s, int n_super_spreader, int n_total, int fanout_superspreader, int fanout_others) 
+TestRet *spread_sketch_test_swarm(int precision, int depth, int width, long long window_s, long long duration_s, int n_super_spreader, int n_total, int fanout_superspreader, int fanout_others) 
 {
     /*
     参数描述了供测试的流的特征，n_total个src ip，其中n_super_spreader个流是超级传播者，其余的是普通流。
@@ -1656,17 +1660,46 @@ TestRet *spread_sketch_test(int precision, int depth, int width, long long windo
     */
 
     long long now = 0;
-    TestRet *test_ret;
+    const int N_INSTANCES = 10;
 
-    struct spread_sketch *ss = spread_sketch_new(depth, width, precision, window_s, ms_to_timeval(now));
+    struct spread_sketch *ss_instances[N_INSTANCES];
+    for (int i = 0; i < N_INSTANCES; i++) {
+        ss_instances[i] = spread_sketch_new(depth, width, precision, window_s, ms_to_timeval(now));
+    }
 
     double ms_per_packet = 1.0 * (window_s * 1000) / (fanout_superspreader * n_super_spreader + fanout_others * (n_total - n_super_spreader));
     class InputGenerator gen(n_super_spreader, n_total - n_super_spreader, 0.5, fanout_superspreader, fanout_others, now, ms_per_packet / 1.0);
+    long long duration_ms = duration_s * 1000;
+    long long last_window_start_ms = duration_ms - window_s * 1000;
+    TestRet *test_ret = new TestRet(precision, window_s);
 
+    struct Flow flow = gen.next();
+    long long start_ms = flow.time;
+    while (flow.time - start_ms <= duration_ms) {
+        std::string src_ip = flow.src_ip;
+        std::string dst_ip = flow.dst_ip;
+        long long now = flow.time;
 
-    test_ret = spread_sketch_test(ss, window_s, duration_s, gen);
+        struct spread_sketch *ss = ss_instances[rand() % N_INSTANCES];
+        spread_sketch_update(ss, src_ip.c_str(), src_ip.size(), dst_ip.c_str(), dst_ip.size(), ms_to_timeval(now));
+        if (now >= last_window_start_ms) {
+            test_ret->feed(src_ip, dst_ip, now);
+        }
 
-    spread_sketch_free(ss);
+        flow = gen.next();
+    }
+
+    struct spread_sketch *ss = ss_instances[0];
+    for (int i = 1; i < N_INSTANCES; i++) {
+        spread_sketch_merge(ss, ss_instances[i]);
+    }
+
+    struct ss_query_result *results = spread_sketch_query(ss, ms_to_timeval(duration_ms + start_ms));
+    test_ret->read_ss_query_result(results);
+
+    for (int i = 0; i < N_INSTANCES; i++) {
+        spread_sketch_free(ss_instances[i]);
+    }
 
     return test_ret;
 }
@@ -1682,7 +1715,7 @@ double cal_CM_epsilon(int width) {
 
 TEST(SpreadSketch, test_hll_on_a_single_bucket)
 {
-    TestRet *test_ret = spread_sketch_test(
+    TestRet *test_ret = spread_sketch_test_swarm(
         4, // hll precision
         4, 1024, // depth, width
         10, 100, // window, duration
@@ -1698,14 +1731,14 @@ TEST(SpreadSketch, test_hll_on_a_single_bucket)
 TEST(SpreadSketch, test_hll_given_short_input)
 {
     // use very little fp compared to big sketch so that CM sketch error are negligible
-    TestRet *test_ret = spread_sketch_test(
+    TestRet *test_ret = spread_sketch_test_swarm(
         4, // hll precision
         4, 1024, // depth, width
-        10, 1, // window, duration
+        10, 1, // window, duration, window is larger than duration
         0, 1, // n_super_spreader, n_total. just one flow, so no error on CM sketch
         10000, 10000); // fanout_superspreader, fanout_others
     
-    bool good = test_ret->assess_estimate(4, 0, cal_CM_delta(8));
+    bool good = test_ret->assess_estimate(4, 0, 0);
     EXPECT_TRUE(good);
 
     delete test_ret;
@@ -1713,7 +1746,7 @@ TEST(SpreadSketch, test_hll_given_short_input)
 
 TEST(SpreadSketch, normal_flows)
 {
-    TestRet *test_ret = spread_sketch_test(
+    TestRet *test_ret = spread_sketch_test_swarm(
         6, // hll precision
         4, 1024, // depth, width
         100, 200, // window, duration
@@ -1726,7 +1759,7 @@ TEST(SpreadSketch, normal_flows)
     bool good = test_ret->assess_estimate(6, cal_CM_epsilon(1024), cal_CM_delta(4));
     EXPECT_TRUE(good);
 
-    double recall_rate = test_ret->cal_recall_rate();
+    double recall_rate = test_ret->cal_recall_rate(500); // 500: n_super_spreader
     EXPECT_GE(recall_rate, 0.9);
 
     // printf("normal_flows recall rate: %f, mre: %f \n", recall_rate, mre);
@@ -1737,9 +1770,9 @@ TEST(SpreadSketch, normal_flows)
 TEST(SpreadSketch, scarce_flow)
 {
     int window_s = 100;
+    int n_super_spreader = 100;
     struct spread_sketch *ss = spread_sketch_new(5, 1024, 4, window_s, ms_to_timeval(0));
-    InputGenerator gen(100, 1000, 0.5, 1000, 3, 0, 100);
-
+    InputGenerator gen(n_super_spreader, 1000, 0.5, 1000, 3, 0, 100);
 
     TestRet *test_ret = spread_sketch_test(ss, window_s, window_s * 5, gen);
     
@@ -1748,7 +1781,7 @@ TEST(SpreadSketch, scarce_flow)
 
     // not a typical case, so STHLL accuracy is not guaranteed
 
-    double recall_rate = test_ret->cal_recall_rate();
+    double recall_rate = test_ret->cal_recall_rate(n_super_spreader);
     EXPECT_GE(recall_rate, 0.9);
 
     // printf("scarce_flow recall rate: %f, mre: %f \n", recall_rate, mre);
@@ -1761,7 +1794,7 @@ TEST(SpreadSketch, decay_old_key_not_included) {
     int n_super_spreader = 1000;
     int window_s = 10;
 
-    struct spread_sketch *ss = spread_sketch_new(4, 1024, 4, window_s, ms_to_timeval(0));
+    struct spread_sketch *ss = spread_sketch_new(4, 1024, 6, window_s, ms_to_timeval(0));
     long long now = 0;
 
     for (int i = 0; i < n_super_spreader; i++) {
@@ -1769,19 +1802,19 @@ TEST(SpreadSketch, decay_old_key_not_included) {
 
         for (int k = 0; k < 1000; k++) {
             std::string dst = "d_" + std::to_string(k);
-            spread_sketch_update(ss, src.c_str(), dst.c_str(), ms_to_timeval(now));
+            spread_sketch_update(ss, src.c_str(), src.size(), dst.c_str(), dst.size(), ms_to_timeval(now));
             now += 5;
         }
     }
 
     InputGenerator gen(n_super_spreader, n_super_spreader * 9, 0.5, 1000, 3, now, 1);
-    TestRet *test_ret = spread_sketch_test(ss, window_s, window_s * 1.5, gen);
+    TestRet *test_ret = spread_sketch_test(ss, window_s, window_s * 2, gen);
     // all old keys should be decayed
     for (int i = 0; i < n_super_spreader; i++) {
         EXPECT_FALSE(test_ret->key_exist("old_" + std::to_string(i)));
     }
 
-    double recall_rate = test_ret->cal_recall_rate();
+    double recall_rate = test_ret->cal_recall_rate(n_super_spreader);
     EXPECT_GE(recall_rate, 0.9);
     // printf("decay_old_key_not_included recall rate: %f\n", recall_rate);
 
@@ -1793,147 +1826,47 @@ TEST(SpreadSketch, decay_old_key_not_included) {
     spread_sketch_free(ss);
 }
 
-extern "C"  {
-    void buffer_set_with_bit_idx(uint32_t *registers, int bit_id, int val);
-    void memset_in_reg(uint32_t *registers, int reg_left, int reg_right);
-}
+TEST(SpreadSketch, serialize_with_nonstring_keys) {
+    struct spread_sketch *ss = spread_sketch_new(4, 1024, 4, 10, ms_to_timeval(0));
+    int key1 = 1;
+    int key2 = 2;
+    int dstKey1 = 11;
+    int dstKey2 = 22;
 
-void compress_reg(uint32_t registers_before_compress[], size_t n_registers, uint32_t **registers_after_compress, size_t *n_word) {
-    *n_word = ceil(n_registers / 5.0);
-    *registers_after_compress = (uint32_t *)calloc(sizeof(uint32_t), (*n_word));
-    for (size_t i = 0; i < n_registers; i++) {
-        buffer_set_with_bit_idx(*registers_after_compress, i, registers_before_compress[i]);
-    }
-}
+    spread_sketch_update(ss, (char *)&key1, sizeof(key1), (char *)&dstKey1, sizeof(dstKey1), ms_to_timeval(0));
+    spread_sketch_update(ss, (char *)&key1, sizeof(key1), (char *)&dstKey2, sizeof(dstKey2), ms_to_timeval(10));
+    spread_sketch_update(ss, (char *)&key2, sizeof(key2), (char *)&dstKey1, sizeof(dstKey1), ms_to_timeval(20));
 
-void my_reset_register(uint32_t *registers, int left, int right) {
-    for (int i = left; i < right; i++) {
-        buffer_set_with_bit_idx(registers, i, 0);
-    }
-}
+    char *blob;
+    size_t blob_sz;
+    spread_sketch_serialize(ss, &blob, &blob_sz);
 
-void print_as_binary(uint32_t *registers, size_t n_word) {
-    for (size_t i = 0; i < n_word; i++) {
-        std::bitset<32> x(registers[i]);
-        printf("%s ", x.to_string().c_str());
-    }
-    printf("\n");
-}
+    struct spread_sketch *ss_deserialized = spread_sketch_deserialize(blob, blob_sz);
 
-TEST(SpreadSketch_unittest, memset_whole) {
-    uint32_t registers[] = {0,1,2,4,8,16,32};
-    size_t n_register = sizeof(registers) / sizeof(uint32_t);
+    struct ss_query_result *result = spread_sketch_query(ss, ms_to_timeval(30));
+    struct ss_query_result *result_deserialized = spread_sketch_query(ss_deserialized, ms_to_timeval(30));
 
-    uint32_t *registers_after_compress;
-    size_t n_word;
-    compress_reg(registers, n_register, &registers_after_compress, &n_word);
-    uint32_t *registers_after_compress_copy = (uint32_t *)malloc(sizeof(uint32_t) * n_word);
-    memcpy(registers_after_compress_copy, registers_after_compress, sizeof(uint32_t) * n_word);
-
-    memset_in_reg(registers_after_compress, 0, n_register);
-    my_reset_register(registers_after_compress_copy, 0, n_register);
-
-    for (size_t i = 0; i < n_word; i++) {
-        EXPECT_EQ(registers_after_compress[i], registers_after_compress_copy[i]);
+    EXPECT_EQ(result->n_results, result_deserialized->n_results);
+    for (int i = 0; i < result->n_results; i++) {
+        EXPECT_EQ(result->key_len[i], result_deserialized->key_len[i]);
+        EXPECT_TRUE(memcmp(result->key[i], result_deserialized->key[i], result->key_len[i]) == 0);
+        EXPECT_EQ(result->count[i], result_deserialized->count[i]);
     }
 
-    free(registers_after_compress);
-    free(registers_after_compress_copy);
-}
-
-TEST(SpreadSketch_unittest, memset_leave_some_at_right) {
-    uint32_t registers[] = {0,1,2,4,8,16,32};
-    size_t n_register = sizeof(registers) / sizeof(uint32_t);
-    uint32_t *registers_after_compress;
-    size_t n_word;
-    compress_reg(registers, n_register, &registers_after_compress, &n_word);
-    uint32_t *registers_after_compress_copy = (uint32_t *)malloc(sizeof(uint32_t) * n_word);
-    memcpy(registers_after_compress_copy, registers_after_compress, sizeof(uint32_t) * n_word);
-
-    memset_in_reg(registers_after_compress, 0, 7);
-    my_reset_register(registers_after_compress_copy, 0, 7);
-
-    for (size_t i = 0; i < n_word; i++) {
-        EXPECT_EQ(registers_after_compress[i], registers_after_compress_copy[i]);
-    }
-
-    free(registers_after_compress);
-    free(registers_after_compress_copy);
-}
-
-TEST(SpreadSketch_unittest, memset_leave_some_at_left) {
-    uint32_t registers[] = {0,1,2,4,8,16,32};
-    size_t n_register = sizeof(registers) / sizeof(uint32_t);
-
-    uint32_t *registers_after_compress;
-    size_t n_word;
-    compress_reg(registers, n_register, &registers_after_compress, &n_word);
-    uint32_t *registers_after_compress_copy = (uint32_t *)malloc(sizeof(uint32_t) * n_word);
-    memcpy(registers_after_compress_copy, registers_after_compress, sizeof(uint32_t) * n_word);
-
-    memset_in_reg(registers_after_compress, 2, n_register);
-    my_reset_register(registers_after_compress_copy, 2, n_register);
-
-    for (size_t i = 0; i < n_word; i++) {
-        EXPECT_EQ(registers_after_compress[i], registers_after_compress_copy[i]);
-    }
-
-    free(registers_after_compress);
-    free(registers_after_compress_copy);
-}
-
-TEST(SpreadSketch_unittest, memset_only_middle) {
-    uint32_t registers[] = {0,1,2,4,8,16,32};
-    size_t n_register = sizeof(registers) / sizeof(uint32_t);
-    uint32_t *registers_after_compress;
-    size_t n_word;
-    compress_reg(registers, n_register, &registers_after_compress, &n_word);
-    uint32_t *registers_after_compress_copy = (uint32_t *)malloc(sizeof(uint32_t) * n_word);
-    memcpy(registers_after_compress_copy, registers_after_compress, sizeof(uint32_t) * n_word);
-
-    memset_in_reg(registers_after_compress, 2, 4);
-    my_reset_register(registers_after_compress_copy, 2, 4);
-    
-    for (size_t i = 0; i < n_word; i++) {
-        EXPECT_EQ(registers_after_compress[i], registers_after_compress_copy[i]);
-    }
-
-    free(registers_after_compress);
-    free(registers_after_compress_copy);
-}
-
-TEST(SpreadSketch_unittest, memset_single) {
-    uint32_t registers[] = {0,1,2,4,8,16,32};
-    size_t n_register = sizeof(registers) / sizeof(uint32_t);
-
-    uint32_t *registers_after_compress;
-    size_t n_word;
-    compress_reg(registers, n_register, &registers_after_compress, &n_word);
-    uint32_t *registers_after_compress_copy = (uint32_t *)malloc(sizeof(uint32_t) * n_word);
-    memcpy(registers_after_compress_copy, registers_after_compress, sizeof(uint32_t) * n_word);
-
-    memset_in_reg(registers_after_compress, 1, 2);
-    my_reset_register(registers_after_compress_copy, 1, 2);
-
-    for (size_t i = 0; i < n_word; i++) {
-        EXPECT_EQ(registers_after_compress[i], registers_after_compress_copy[i]);
-    }
-
-    free(registers_after_compress);
-    free(registers_after_compress_copy);
+    ss_query_result_free(result);
+    ss_query_result_free(result_deserialized);
+    spread_sketch_free(ss);
+    spread_sketch_free(ss_deserialized);
+    free(blob);
 }
 
 void spread_sketch_parameter_experiments(int depth, int width, int precision, long long window_s, int n_super_spreader, int fanout_superspreader) {
-    TestRet *test_ret = spread_sketch_test(
-        precision, // hll precision
-        depth, width, // depth, width
-        window_s, window_s * 5, // window, duration
-        n_super_spreader, n_super_spreader * 10, // n_super_spreader, n_total
-        fanout_superspreader, 3); // fanout_superspreader, fanout_others
+    struct spread_sketch *ss = spread_sketch_new(depth, width, precision, window_s, ms_to_timeval(0));
+    InputGenerator gen(n_super_spreader, n_super_spreader * 9, 0.5, fanout_superspreader, 3, 0, 1);    
+    TestRet *test_ret = spread_sketch_test(ss, window_s, window_s * 5, gen);
 
     double mre = test_ret->cal_mre();
-    double recall_rate = test_ret->cal_recall_rate();
-    struct spread_sketch *ss = spread_sketch_new(depth, width, precision, window_s, ms_to_timeval(0));
+    double recall_rate = test_ret->cal_recall_rate(n_super_spreader);
     size_t memory_cost = spread_sketch_calculate_memory_usage(ss);
     spread_sketch_free(ss);
 
@@ -1944,7 +1877,7 @@ void spread_sketch_parameter_experiments(int depth, int width, int precision, lo
     printf("===============================================\n");
 }
 
-TEST(SpreadSketch, parameter_experiments) {
+TEST(SpreadSketchExperiments, uniform_distribution) {
     long long window_s = 10;
     // check CM sketch related parameters
     int depth[] = {3, 4};
@@ -1976,10 +1909,259 @@ TEST(SpreadSketch, parameter_experiments) {
 }
 
 
+//===========================================================================
+//=  Function to generate Zipf (power law) distributed random variables     =
+//=    - Input: alpha and N                                                 =
+//=    - Output: Returns with Zipf distributed random variable              =
+//===========================================================================
+int zipf(double alpha, int n)
+{
+  static bool first = true;      // Static first time flag
+  static double c = 0;          // Normalization constant
+  double z;                     // Uniform random number (0 < z < 1)
+  double sum_prob;              // Sum of probabilities
+  double zipf_value;            // Computed exponential value to be returned
+  int    i;                     // Loop counter
+
+  // Compute normalization constant on first call only
+  if (first)
+  {
+    for (i=1; i<=n; i++)
+      c = c + (1.0 / pow((double) i, alpha));
+    c = 1.0 / c;
+    first = false;
+  }
+
+  // Pull a uniform random number (0 < z < 1)
+  do
+  {
+    z = (double)rand() / (double)RAND_MAX;
+  }
+  while ((z == 0.0) || (z == 1.0));
+
+  // Map z to the value
+  sum_prob = 0;
+  for (i=1; i<=n; i++)
+  {
+    sum_prob = sum_prob + c / pow((double) i, alpha);
+    if (sum_prob >= z)
+    {
+      zipf_value = i;
+      break;
+    }
+  }
+
+  return(zipf_value);
+}
+
+class ZipfInputGenerator {
+private:
+    double _now;
+    double _ms_per_packet;
+
+    const int MAX_DATA = 1000000;
+    std::pair<std::string, std::string> *loadeds;
+    unsigned cursor;
+
+public:
+    ZipfInputGenerator(double alpha, int n, long long now, double ms_per_packet) {
+        _now = now;
+        _ms_per_packet = ms_per_packet;
+        _alpha = alpha;
+        _n = n;
+        
+        // generate data and write them to file
+        std::string filename = "zipf_" + std::to_string(alpha) + "_" + std::to_string(n) + ".txt";
+
+        std::unordered_map<int, int> fanout_map; // src_ip_id -> fanout being used
+
+        if (access(filename.c_str(), F_OK) != 0) {
+            printf("file %s not found, generating data\n", filename.c_str());
+
+            std::ofstream file(filename);
+            if (!file.is_open()) {
+                printf("failed to open file %s\n", filename.c_str());
+                return;
+            }
+            
+            for (int i = 0; i < MAX_DATA; i++) {
+                int src_id = zipf(alpha, n);
+                int fanout = fanout_map.find(src_id) == fanout_map.end() ? 0 : fanout_map[src_id];
+                fanout_map[src_id] = fanout + 1;
+
+                file << "s_" << src_id << " d_" << fanout << std::endl;
+            }
+            
+            file.close();
+            printf("data generated and saved to file %s\n", filename.c_str());
+        }
+
+        // load data
+        std::ifstream file(filename);
+        if (!file.is_open()) {
+            printf("failed to open file %s\n", filename.c_str());
+            return;
+        }
+
+        loadeds = new std::pair<std::string, std::string>[MAX_DATA];
+        std::string line;
+        int i = 0;
+        while (std::getline(file, line) && i < MAX_DATA) {
+            std::istringstream iss(line);
+            std::string src_ip, dst_ip;
+            iss >> src_ip >> dst_ip;
+            loadeds[i] = std::make_pair(src_ip, dst_ip);
+            i++;
+        }
+        file.close();
+    }
+
+    struct Flow next() {
+        int r_cursor = cursor % MAX_DATA;
+        struct Flow flow;
+        flow.src_ip = loadeds[r_cursor].first;
+        flow.dst_ip = loadeds[r_cursor].second;
+        flow.time = _now;
+
+        _now += _ms_per_packet;
+        cursor++;
+
+        return flow;
+    }
+
+    ~ZipfInputGenerator() {
+        delete[] loadeds;
+    }
+
+    double _alpha;
+    int _n;
+};
+
+void parameter_experiments_given_zipf_experiment(int depth, int width, int precision, long long window_s, ZipfInputGenerator &input) {
+    struct spread_sketch *ss = spread_sketch_new(depth, width, precision, window_s, ms_to_timeval(0));
+    TestRet *ret = new TestRet();
+
+    Flow flow = input.next();
+    long long start_ms = flow.time;
+    long long duration_ms = 1000 * window_s * 5;
+    long long last_window = duration_ms - window_s * 1000;
+
+    while (flow.time - start_ms <= duration_ms) {
+        spread_sketch_update(ss, flow.src_ip.c_str(), flow.src_ip.size(), flow.dst_ip.c_str(), flow.dst_ip.size(), ms_to_timeval(flow.time));
+        flow = input.next();
+
+        if (flow.time >= last_window) {
+            ret->feed(flow.src_ip, flow.dst_ip, flow.time);
+        }
+    }
+
+    struct ss_query_result *results = spread_sketch_query(ss, ms_to_timeval(duration_ms + start_ms));
+    ret->read_ss_query_result(results);
+
+    double mre = ret->cal_mre();
+    double mre_reach_top_10 = ret->cal_mre(0.1);
+    double recall_rate = ret->cal_recall_rate(input._n / 10); // int n_src_ip = 10 * n_superspreader
+
+    printf("depth: %d, width: %d, precision: %d, window: %lld. Skewness: %f n_src: %d.\n\tmre: %f, recall: %f, top_mre: %f\n",
+           depth,     width,          precision,    window_s,    input._alpha,   input._n,     mre,     recall_rate,     mre_reach_top_10);
+
+    delete ret;
+    spread_sketch_free(ss);
+}
+
+TEST(SpreadSketchExperiments, zipf_distribution) {
+    /*
+    test with flows in zipf distribution fanout. 
+    Every time window, there are `n_flows` distinct flows generated. Cardinality({y|x=x_i}) ~ Zipf(N, skewness), where N = 10 * n_superspreader
+    */
+    long long window_s = 10;
+    // check CM sketch related parameters
+    int depth[] = {3,4};
+    int width[] = {64,128,256,512,1024};
+    double skewness[] = {0.3,0.7,1.0};
+    int n_superspreader[] = {10,100,1000};
+
+    for (size_t i = 0; i < sizeof(depth) / sizeof(int); i++) {
+        for (size_t j = 0; j < sizeof(width) / sizeof(int); j++) {
+            for (size_t l = 0; l < sizeof(skewness) / sizeof(double); l++) {
+                for (size_t k = 0; k < sizeof(n_superspreader) / sizeof(int); k++) {
+                    int n_src_ip = 10 * n_superspreader[k];
+                    int n_flows_per_window = n_src_ip * 100; // 10 * 1000 * 100 = 1e6
+                    double ms_per_packet = 1.0 * window_s * 1000 / n_flows_per_window;
+
+                    ZipfInputGenerator input(skewness[l], n_src_ip, 0, ms_per_packet);
+                    parameter_experiments_given_zipf_experiment(depth[i], width[j], 4, window_s, input);
+                }
+            }
+        }
+    }
+
+    // // HLL related parameters
+    int precision[] = {4,5,6,7};
+    for (size_t i = 0; i < sizeof(precision) / sizeof(int); i++) {
+        for (size_t j = 0; j < sizeof(skewness) / sizeof(double); j++) {
+            for (size_t k = 0; k < sizeof(n_superspreader) / sizeof(int); k++) {
+                int n_src_ip = 10 * n_superspreader[k];
+                int n_flows_per_window = n_src_ip * 100; // 10 * 1000 * 100 = 1e6
+                double ms_per_packet = 1.0 * window_s * 1000 / n_flows_per_window;
+
+                ZipfInputGenerator input(skewness[j], n_src_ip, 0, ms_per_packet);
+                parameter_experiments_given_zipf_experiment(4, 1024, precision[i], window_s, input);
+            }
+        }
+    }
+
+    // after deciding precision = 6, and width = K, check which depth is better.
+    int depth2[] = {3, 4};
+    int width2_10[] = {60};
+    int width2_100[] = {100,150,200,250,300,350,400};
+    int width2_1000[] = {800,900,1000,1100,1200,1300,1400,1500};
+    int *width2[3] = {width2_10, width2_100, width2_1000};
+    size_t n_w_choice[3] = {sizeof(width2_10) / sizeof(int), sizeof(width2_100) / sizeof(int), sizeof(width2_1000) / sizeof(int)};
+
+    for (size_t i = 0; i < sizeof(depth2) / sizeof(int); i++) {
+        for (size_t j = 0; j < sizeof(n_superspreader) / sizeof(int); j++) {
+            int *widths_tmp = width2[j];
+
+            for (size_t k = 0; k < n_w_choice[j]; k++) {
+                int n_src_ip = 10 * n_superspreader[j];
+                int n_flows_per_window = n_src_ip * 100;
+                double ms_per_packet = 1.0 * window_s * 1000 / n_flows_per_window;
+
+                ZipfInputGenerator input(0.7, n_src_ip, 0, ms_per_packet);
+                parameter_experiments_given_zipf_experiment(depth2[i], widths_tmp[k], 6, window_s, input);
+            }
+        }
+    }
+
+    // verify the strategy of parameter setting
+    int n_superspreader2[] = {10, 20, 50,100, 150, 200,250,300,350,400,450,500,600,700,800,900};
+    for (size_t i = 0; i < sizeof(n_superspreader2) / sizeof(int); i++) {
+        int n_src_ip = 10 * n_superspreader2[i];
+        int n_flows_per_window = n_src_ip * 500;
+        double ms_per_packet = 1.0 * window_s * 1000 / n_flows_per_window;
+
+        ZipfInputGenerator input(1, n_src_ip, 0, ms_per_packet);
+        int width;
+        if (n_superspreader2[i] <= 100) {
+            width = n_superspreader2[i] * 3 / 2;
+        } else {
+            width = n_superspreader2[i] + 50;
+        }
+        if (width < 32) {
+            width = 32;
+        }
+
+        parameter_experiments_given_zipf_experiment(3, width, 6, window_s, input);
+    }
+}
+
 int main(int argc, char ** argv)
 {
 	int ret=0;
 	::testing::InitGoogleTest(&argc, argv);
+    // ::testing::GTEST_FLAG(filter) = "SpreadSketch.*"; // only run SpreadSketch tests
+    ::testing::GTEST_FLAG(filter) = "-SpreadSketchExperiments.*"; // Exclude SpreadSketchExperiments tests
 	ret=RUN_ALL_TESTS();
 	return ret;
 }
