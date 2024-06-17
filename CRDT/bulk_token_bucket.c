@@ -129,7 +129,6 @@ struct bulk_token_bucket
 	struct cuckoo_bucket **table;
 	long long kickout_count;
 	long long new_bucket_count;
-	struct timeval last_consumed;
 };
 static int isPower2(uint64_t num) { return (num & (num - 1)) == 0 && num != 0; }
 struct bulk_token_bucket *bulk_token_bucket_new(uuid_t my_id, struct timeval now, long long rate, long long period, long long capacity, long long bucket_num)
@@ -288,7 +287,6 @@ static void btb_insert(struct bulk_token_bucket *btb, struct cuckoo_bucket *bkt,
 long long bulk_token_bucket_consume(struct bulk_token_bucket *btb, struct timeval now, const char *key, size_t keylen, enum tb_consume_type cmd, long long tokens)
 {
 	long long now_ms = timeval_delta_ms(btb->cfg.last_cfg, now);
-	btb->last_consumed = now;
 	struct cuckoo_bucket *bkt=NULL;
 	XXH128_hash_t hash;
 	hash = XXH3_128bits_withSeed(key, keylen, CUCKOO_HASH_SEED);
@@ -409,17 +407,17 @@ void bulk_token_bucket_serialize(const struct bulk_token_bucket *btb, char **blo
 	offset += tmp_sz;
 	free(tmp_blob);
 	tmp_blob=NULL;
-	long long now_ms = timeval_delta_ms(btb->cfg.last_cfg, btb->last_consumed);
 	for(int i=0; i<btb->bucket_num; i++)
 	{
 		if(!btb->table[i])	continue;
-		//Keep it simple and stupid. We do not skip the full bucket, since full bucket can also been consumed.	
+		//Keep it simple and stupid. We do not skip the full bucket, since full bucket can also been consumed.
+		/*
 		if(cuckoo_bucket_read_avialable(btb->table[i], &btb->cfg, now_ms)==btb->cfg.capacity)
 		{
 			printf("skip full bucket %d\n", i);
 			continue;
 		}
-		
+		*/
 		cuckoo_bucket_serialize(btb->table[i], i, &tmp_blob, &tmp_sz);
 		memcpy(buffer+offset, tmp_blob, tmp_sz);
 		offset += tmp_sz;
@@ -446,7 +444,7 @@ struct bulk_token_bucket *bulk_token_bucket_deserialize(const char *blob, size_t
 		struct cuckoo_bucket *bucket=NULL;
 		bucket = cuckoo_bucket_deserialize(blob+offset, blob_sz-offset);
 		offset += cuckoo_bucket_serialize_size(bucket);
-		btb_insert(btb, bucket, 0);
+		btb_insert(btb, bucket, bucket->refill_ms);
 		active_bucket_num++;
 	}
 	assert(offset == blob_sz);
