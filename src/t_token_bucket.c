@@ -522,12 +522,12 @@ enum cmd_exec_result btinfo_command(struct swarmkv_module *mod_store, const stru
 	(*reply)->elements[i++]=swarmkv_reply_new_integer(btb_info.period);
 	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("Capacity");
 	(*reply)->elements[i++]=swarmkv_reply_new_integer(btb_info.capacity);
+	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("InitialBuckets");
+	(*reply)->elements[i++]=swarmkv_reply_new_integer(btb_info.initial_bucket_number);
 	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("Buckets");
 	(*reply)->elements[i++]=swarmkv_reply_new_integer(btb_info.bucket_number);
 	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("ActiveMembers");
-	(*reply)->elements[i++]=swarmkv_reply_new_integer(btb_info.approximate_keys);
-	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("Collisions");
-	(*reply)->elements[i++]=swarmkv_reply_new_double(btb_info.collision_rate);
+	(*reply)->elements[i++]=swarmkv_reply_new_integer(btb_info.active_bucket_number);
 	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("Replicas");
 	(*reply)->elements[i++]=swarmkv_reply_new_integer(btb_info.replicas);
 	(*reply)->elements[i++]=swarmkv_reply_new_string_fmt("Query");

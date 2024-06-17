@@ -3,57 +3,53 @@
 
 #include <assert.h>
 
-long long tb_available(long long rate, long long period, long long capacity, long long consumed, long long refilled, long long delta_ms, long long refill_interval_ms, long long *new_refilled)
+long long tb_available(long long rate, long long period, long long capacity, long long refill_interval_ms, long long consumed, long long *refilled, long long now_ms, long long *last_refill_ms)
 {
-
+	long long delta_ms = now_ms - *last_refill_ms ;
+	delta_ms -= delta_ms % refill_interval_ms;
 	long long to_add = period?(rate*delta_ms/period/1000):0;
-	*new_refilled = refilled;
-	if(refilled==0 && consumed==0)
-	{
-		*new_refilled=capacity;
-		return *new_refilled;
-	}
 	if(delta_ms > refill_interval_ms && to_add>0)
 	{
-		if(refilled < consumed)
+		if(*refilled < consumed)
 		{
-			*new_refilled = consumed;
+			*refilled = consumed;
 		}
-		if(to_add + refilled - consumed < capacity)
+		if(to_add + *refilled - consumed < capacity)
 		{
-			*new_refilled += to_add;
+			*refilled += to_add;
 		}
 		else
 		{
-			*new_refilled += capacity - (refilled - consumed);
+			*refilled += capacity - (*refilled - consumed);
 		}
+		*last_refill_ms += delta_ms;
 	}
-	return MAX(*new_refilled-consumed, 0);
+	return MAX(*refilled-consumed, 0);
 }
 long long tb_local_available(long long rate, long long period, long long available, long long capacity, size_t n_replica)
 {
-	long long reserved=period?(rate*(n_replica-1)/n_replica/period):0;
-	reserved=MIN(reserved, capacity*(n_replica-1)/n_replica);
-	long long local_available=MAX(available-reserved, 0);
+	long long reserved = period ? (rate*(n_replica-1)/n_replica/period) : 0;
+	reserved = MIN(reserved, capacity*(n_replica-1)/n_replica);
+	long long local_available = MAX(available-reserved, 0);
 	return local_available;
 }
 long long tb_consume_reserve_based(long long rate, long long period, long long available, long long capacity, size_t n_replica, enum tb_consume_type cmd, long long tokens)
 {
-	long long local_available=tb_local_available(rate, period, available, capacity, n_replica);
-	long long allocated=0;
+	long long local_available = tb_local_available(rate, period, available, capacity, n_replica);
+	long long allocated = 0;
 	switch(cmd)
 	{
 		case TB_CONSUME_AS_MUCH_AS_POSSIBLE:
-			allocated=available;
+			allocated = available;
 			break;
 		case TB_CONSUME_FORCE:
-			allocated=tokens;
+			allocated = tokens;
 			break;
 		case TB_CONSUME_FLEXIBLE:
-			allocated=MIN(tokens, local_available);
+			allocated = MIN(tokens, local_available);
 			break;
 		case TB_CONSUME_NORMAL:
-			allocated=(tokens<=local_available) ? tokens:0;			
+			allocated = (tokens <= local_available) ? tokens:0;			
 			break;
 		default:
 			assert(0);

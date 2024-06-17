@@ -1141,7 +1141,7 @@ void command_spec_init(struct swarmkv *db)
 	command_register(&(db->command_table), "FTINFO", "key",
 					1, 1, CMD_KEY_RO, REPLY_EMPTY_ARRAY, AUTO_ROUTE,
 					ftinfo_command, db->mod_store);
-	command_register(&(db->command_table), "BTCFG", "key rate capacity number-of-buckets [PD seconds]",
+	command_register(&(db->command_table), "BTCFG", "key rate capacity initial-bucket-number [PD seconds]",
 					4, 1, CMD_KEY_OW, REPLY_ERROR, AUTO_ROUTE, 
 					btcfg_command, db->mod_store);
 	command_register(&(db->command_table), "BTCONSUME", "key member tokens [NORMAL|FORCE|FLEXIBLE]",

@@ -150,5 +150,3 @@ Here are some specific details about the SwarmKV.
 * [Command-line interface (CLI)](./docs/cli.md)
 * [Conflict-free Replicated Data Type (CRDT)](./docs/crdt.md)
 * [Commands](./docs/command_toc.md)
-* [Cluster Management](./docs/commands/cluster.md)
-* [Trouble Shooting](./docs/commands/trouble_shooting.md)

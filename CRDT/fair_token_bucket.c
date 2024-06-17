@@ -157,12 +157,12 @@ long long fair_token_bucket_consume(struct fair_token_bucket *ftb, struct timeva
 #endif
     return allocated_tokens;
 }
-void fair_token_bucket_configure(struct fair_token_bucket *ftb, struct timeval now, long long refill, long long period, long long capacity, long long divisor)
+void fair_token_bucket_configure(struct fair_token_bucket *ftb, struct timeval now, long long rate, long long period, long long capacity, long long divisor)
 {
     ftb->divisor=divisor;
     ftb->sfq=(long long*)realloc(ftb->sfq, sizeof(long long)*ftb->divisor);
     memcpy(&ftb->last_cfg, &now, sizeof(ftb->last_cfg));
-    OC_token_bucket_configure(ftb->bucket, now, refill, period, capacity);
+    OC_token_bucket_configure(ftb->bucket, now, rate, period, capacity);
     ftb_perturb(ftb, now);
     return;
 }

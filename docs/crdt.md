@@ -45,6 +45,10 @@ At the very beginning, the bucket is full, which means it has *capacity* tokens.
 
 If a network partition happens, the token bucket is out-of-sync, and each replica has the entire rate. And after the partition heals, replicas share the rate again. The OC Token Bucket is robust to overuse as long as the sync interval is reasonable, i.e., 200ms.
 
+The OC token bucket tracks the rate with the following members:
+- `refilled`: This member tracks the number of tokens that have been refilled, implemented using a Last-Write-Wins Register.
+- `consumed`: This member records the number of tokens consumed, implemented using a PN-Counter.
+
 ## Fair Token Bucket
 Fair Token Bucket is used to distribute tokens from a single bucket among multiple members. It achieves [max-min fairness](https://www.ece.rutgers.edu/~marsic/Teaching/CCN/minmax-fairsh.html) through the use of Deficit Round Robin (DRR), which is defined as follows:
 - Resources are allocated in order of increasing demand
@@ -58,9 +62,7 @@ The underlying principle of the FTB is to reserve quantum for a perturbation int
 Note that the SFQ is not synchronized across replicas, and an excessive member may consume more tokens than its allotted share.
 
 ## Bulk Token Bucket
-A bulk version of OC token bucket, which can be used for large amount of token buckets with same configuration. It uses a Grow-Only Counter Array for recording consumed tokens.
-
-
+This is a bulk version of the OC token bucket, designed to manage a large number of token buckets with the same configuration. It integrates the concepts of [Cuckoo Hashing](https://en.wikipedia.org/wiki/Cuckoo_hashing) and [Cuckoo Filter](https://en.wikipedia.org/wiki/Cuckoo_filter) to effectively manage these buckets. Each bucket is identified by a provided key, which includes the same members as the OC token bucket, along with a 128-bit hash of the key. The `consume` function hashes the key and utilizes Cuckoo Hashing to locate the target bucket. If a bucket is not found, a new one is created and inserted into the Cuckoo hash table. During the Cuckoo interation of insertion, if a victim bucket is full, it is retired. If the initial bucket number is not enough to resolve conflicts, it will expand in a factor of 2.
 
 # References
 Bieniusa, Annette, et al. "[An optimized conflict-free replicated set](https://arxiv.org/pdf/1210.3368.pdf)." *arXiv preprint arXiv:1210.3368* (2012).
@@ -96,3 +98,5 @@ Cornacchia, Alessandro, et al. "[Staggered HLL: Near-continuous-time cardinality
 Shtul, Ariel, Carlos Baquero, and Paulo Sérgio Almeida. "[Age-partitioned bloom filters.](https://arxiv.org/pdf/2001.03147.pdf)" arXiv preprint arXiv:2001.03147 (2020). 
 
 Rodrigues, Ana, et al. "[Time-limited Bloom Filter.](https://arxiv.org/pdf/2306.06742.pdf)" Proceedings of the 38th ACM/SIGAPP Symposium on Applied Computing. 2023.
+
+Fan, Bin, et al. "[Cuckoo filter: Practically better than bloom.](https://dl.acm.org/doi/pdf/10.1145/2674005.2674994)" Proceedings of the 10th ACM International on Conference on emerging Networking Experiments and Technologies. 2014.

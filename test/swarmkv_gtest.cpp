@@ -612,7 +612,7 @@ TEST_F(SwarmkvBasicTest, TypeBulkTokenBucket)
 	EXPECT_LE(allocated_tokens/n_member, (now.tv_sec -start.tv_sec)*rate+capacity);	
 	reply=swarmkv_command(db, "BTINFO %s", key);
 	ASSERT_EQ(reply->n_element, 16);
-	EXPECT_NEAR(reply->elements[9]->integer, n_member, n_member/5);
+	EXPECT_EQ(reply->elements[11]->integer, n_member);
 	swarmkv_reply_free(reply);
 
 	//Infinite tokens
@@ -1817,14 +1817,14 @@ TEST_F(SwarmkvTwoNodes, TypeBulkTokenBucket)
 	reply=swarmkv_command(db[0], "BTINFO %s", key);
 	ASSERT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
 	ASSERT_EQ(reply->n_element, 16);
-	EXPECT_NEAR(reply->elements[9]->integer, n_member, n_member/5);
+	EXPECT_EQ(reply->elements[11]->integer, n_member);
 	swarmkv_reply_free(reply);
 
-	reply=swarmkv_command(db[1], "BTINFO %s user-001", key);
+	reply=swarmkv_command(db[1], "BTINFO %s user-%lld", key, n_member);
 	ASSERT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
 	ASSERT_EQ(reply->n_element, 16);
-	EXPECT_NEAR(reply->elements[9]->integer, n_member, n_member/5);
-	EXPECT_LE(reply->elements[11]->integer, capacity);
+	EXPECT_EQ(reply->elements[11]->integer, n_member);
+	EXPECT_EQ(reply->elements[15]->integer, capacity);
 	swarmkv_reply_free(reply);
 
 	reply=swarmkv_command(db[0], "DEL %s", key);

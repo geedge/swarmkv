@@ -814,6 +814,8 @@ TEST(STHyperLogLog, EventualConsistency)
 {
 	struct timeval start, step, now;
 	gettimeofday(&start, NULL);
+	start.tv_sec=1;
+	start.tv_usec=5210;
 	memcpy(&now, &start, sizeof(now));
 	int n_replica=2;
 	struct ST_hyperloglog *h[n_replica];
