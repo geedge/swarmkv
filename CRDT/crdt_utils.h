@@ -46,3 +46,36 @@ struct double_hash
 };
 void double_hash_init(struct double_hash *rv, const void *buffer, int len);
 int double_hash_generate(const struct double_hash *rv, int i, int m);
+
+
+
+struct serializer_reader;
+
+struct serializer_reader *serializer_reader_new();
+void serializer_reader_finalize(struct serializer_reader *reader, char **blob, size_t *size);
+const char *serializer_reader_unwrap(const struct serializer_reader *reader, size_t *size);
+
+void serializer_reader_read_uint(struct serializer_reader *reader, uint32_t value);
+void serializer_reader_read_longlong(struct serializer_reader *reader, uint64_t value);
+void serializer_reader_read_double(struct serializer_reader *reader, double value);
+void serializer_reader_read_bin(struct serializer_reader *reader, const char *value, size_t size);
+void serializer_reader_read_nil(struct serializer_reader *reader);
+void serializer_reader_read_str(struct serializer_reader *reader, const char *value);
+void serializer_reader_start_bin_array(struct serializer_reader *reader, size_t size);
+void serializer_reader_read_int_array(struct serializer_reader *reader, const int *value, size_t size); 
+
+
+/* ------------------------------------------------------------------------ */
+struct serializer_writer;
+struct serializer_writer *serializer_writer_new(const char *blob, size_t size);
+void serializer_writer_free(struct serializer_writer *writer);
+
+// for all below, return -1 if error
+int serializer_writer_write_uint(struct serializer_writer *writer, uint32_t *value);
+int serializer_writer_write_longlong(struct serializer_writer *writer, long long *value);
+int serializer_writer_write_double(struct serializer_writer *writer, double *value);
+int serializer_writer_write_bin(struct serializer_writer *writer, char **value, size_t *size);
+int serializer_writer_expect_nil(struct serializer_writer *writer); // return 0 if not nil. return 1 if nil, and move cursor.
+int serializer_writer_write_str(struct serializer_writer *writer, char **value);
+int serializer_writer_write_bin_array(struct serializer_writer *writer, char ***array, size_t *n_arr, size_t **arr_len);
+int serializer_writer_write_int_array(struct serializer_writer *writer, int **value, size_t *size);

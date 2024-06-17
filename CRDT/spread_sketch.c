@@ -10,114 +10,46 @@
 #include "uthash.h"
 
 #include "spread_sketch.h"
-#include "hll_sheet.h"
+#include "hll_common.h"
+#include "crdt_utils.h"
 
-#define DECAY_RATE_FACTOR 1.1 // 每隔 DECAY_RATE_FACTOR * time_window 的时间，将L 减小
 
 
-struct stagger_hll_group {
-    uint32_t *registers;
-
-    // shared configuration
-    long long reset_idx;
-    struct timeval reset_time;
-
-    // configuration
-    unsigned char precision;
-    long long time_window_ms;
-    int sheet_size;
+struct bucket {
+    char *key;
+    uint32_t key_len;
+    unsigned char level;
+    long long last_update_ms; // linux timestamp since Jan 1st 1970
+    uint32_t *sthll_register;
 };
 
 struct spread_sketch {
     int depth;
     int width;
     long long time_window_ms;
+    unsigned char precision;
 
-    // buckets
-    unsigned char *max_levels;
-    char **keys;
-    struct stagger_hll_group *counters;
-    long long *last_updates;
+    // shared states of all sthlls
+    long long reset_idx;
+    struct timeval reset_time;
+
+    struct bucket *buckets;
 };
 
 struct ss_query_result; // defined in spread_sketch.h
 
-struct stagger_hll_group *shllg_new(unsigned depth, unsigned width, unsigned char precision, int time_window_s, struct timeval now) {
-    struct stagger_hll_group *pthis = malloc(sizeof(struct stagger_hll_group));
-
-    pthis->sheet_size = depth * width;
-
-    pthis->precision = precision;
-    pthis->time_window_ms = time_window_s * 1000;
-
-    pthis->reset_idx = 0;
-    pthis->reset_time = now;
-
-    pthis->registers = hlls_create_register(precision, pthis->sheet_size);
-
-    return pthis;
-}
-
-void move_registers_forward(struct stagger_hll_group *pthis, const struct timeval *now) {
-    long long reset_reg_count = hlls_get_reset_register_count(pthis->precision, pthis->time_window_ms, *now, &pthis->reset_time);
-    if(reset_reg_count)
-    {
-        hlls_reset_registers(pthis->registers, pthis->precision, pthis->sheet_size, pthis->reset_idx, reset_reg_count);
-        hlls_advance_reset_index(&pthis->reset_idx, reset_reg_count, pthis->precision);
-    }
-}
-
-void shllg_update(struct stagger_hll_group *pthis, int bucket_idx, uint64_t key) {
-    hlls_add_hash(pthis->registers, pthis->precision, pthis->sheet_size, key, bucket_idx);
-}
-
-double shllg_count(struct stagger_hll_group *pthis, int bucket_idx) {
-    return hlls_count(pthis->registers, bucket_idx, pthis->precision, pthis->sheet_size, pthis->reset_idx, pthis->time_window_ms);
-}
-
-void shllg_free(struct stagger_hll_group *pthis) {
-    hlls_free_register(pthis->registers);
-    free(pthis);
-}
-
-size_t shllg_size(unsigned char precision, int sheet_size) {
-    return hlls_size(precision, sheet_size) + sizeof(struct stagger_hll_group);
-}
-
-struct stagger_hll_group *shllg_duplicate(const struct stagger_hll_group *src) {
-    struct stagger_hll_group *pthis = malloc(sizeof(struct stagger_hll_group));
-    pthis->sheet_size = src->sheet_size;
-
-    pthis->precision = src->precision;
-    pthis->time_window_ms = src->time_window_ms;
-
-    pthis->reset_idx = src->reset_idx;
-    pthis->reset_time = src->reset_time;
-
-    pthis->registers = hlls_duplicate(src->registers, src->precision, src->sheet_size);
-
-    return pthis;
-}
-
-/* -------------------------------------------------------------------------- */
-/*                                spread_sketch                               */
-/* -------------------------------------------------------------------------- */
 
 unsigned char cal_true_level(const struct spread_sketch *ss, int bucket_idx, long long t) {
-
-    if (!DECAY_L_FLAG) {
-        return ss->max_levels[bucket_idx];
-    }
-
     /*
     return f(t), the actual level of bucket, which satisfy:
-    1. d 2^f(t)/dt is constant
-    2.  f(t0 + 2T) = 1
+    1. d 2^f(t)/dt is constants
+    2.  f(t0 + T) = 1
     3. f((t0) = L )
     */
-    unsigned L = ss->max_levels[bucket_idx];
+   struct bucket *bucket = &ss->buckets[bucket_idx];
+    unsigned L = bucket->level;
     long long T = ss->time_window_ms;
-    long long t0 = ss->last_updates[bucket_idx];
+    long long t0 = bucket->last_update_ms;
 
     assert(t >= t0);
     if (t - t0 >= T) {
@@ -140,23 +72,28 @@ struct spread_sketch *spread_sketch_new(int depth, int width, unsigned char prec
     pthis->depth = depth;
     pthis->width = width;
     pthis->time_window_ms = time_window_s * 1000;
+    pthis->precision = precision;
 
-    pthis->max_levels = calloc(depth * width, sizeof(unsigned char));
-    pthis->keys = calloc(depth * width, sizeof(char *));
-    pthis->counters = shllg_new(depth, width, precision, time_window_s, now);
-    pthis->last_updates = calloc(depth * width, sizeof(long long));
+    pthis->reset_idx = 0;
+    pthis->reset_time = now;
+
+    pthis->buckets = calloc(depth * width, sizeof(struct bucket));
+    for (int i = 0; i < depth * width; i++) {
+        pthis->buckets[i].sthll_register = hll_create_register(precision);
+    }
 
     return pthis;
 }
 
-/*
-hash utils:
-
-xxhash 在输入较短的情况下比murmurhash 快（https://github.com/sebastian-software/node-hash-comparison），因此使用xxhash。
-
-需要把src和dst 哈希到一起，但是我严重觉得只哈希dst 就行，这里可以实验一下。
-anyway, 我觉得xxhash 就好
-*/
+void move_registers_forward(struct spread_sketch *ss, struct timeval *now) {
+    long long reset_reg_count = hll_get_reset_register_count(ss->precision, ss->time_window_ms, *now, &ss->reset_time);
+    if (reset_reg_count > 0) {
+        for (int i = 0; i < ss->depth * ss->width; i++) {
+            hll_reset_registers(ss->buckets[i].sthll_register, ss->precision, ss->reset_idx, reset_reg_count);
+        }
+        hll_advance_reset_index(&ss->reset_idx, reset_reg_count, ss->precision);
+    }
+}
 
 void spread_sketch_update(struct spread_sketch *ss, const char *key_main, const char *key_spread, struct timeval now) {
     uint64_t hash_y = XXH3_64bits_withSeed(key_spread, strlen(key_spread), 171);
@@ -170,40 +107,35 @@ void spread_sketch_update(struct spread_sketch *ss, const char *key_main, const 
     uint32_t hash_x1 = (uint32_t) (hash_x_tmp >> 32);
     uint32_t hash_x2 = (uint32_t) hash_x_tmp;
 
-    move_registers_forward(ss->counters, &now);
+    move_registers_forward(ss, &now);
 
     for (int i = 0; i < ss->depth; i++) {
         uint32_t hash_x = hash_x1 + i * hash_x2; 
         int bucket_idx = (hash_x % ss->width) + i * ss->width;
+        struct bucket *bucket = &ss->buckets[bucket_idx];
 
-        if (!DECAY_L_FLAG) { // 方案2，到时间就去掉老的
-            if (now_ms - ss->last_updates[bucket_idx] > ss->time_window_ms) {
-                ss->max_levels[bucket_idx] = 0;
-            }
-        }
-
-        if ((ss->keys[bucket_idx] != NULL) && (strcmp(ss->keys[bucket_idx], key_main) == 0)) {
-            ss->last_updates[bucket_idx] = now_ms;
-            if (ss->max_levels[bucket_idx] < level) {
-                ss->max_levels[bucket_idx] = level;
+        if (bucket->key != NULL && (strcmp(bucket->key, key_main) == 0)) {
+            bucket->last_update_ms = now_ms;
+            if (bucket->level < level) {
+                bucket->level = level;
             }
         } else {
             unsigned char true_level;
-            if (ss->keys[bucket_idx] == NULL) {
+            if (bucket->key == NULL) {
                 true_level = 0;
             } else {
                 true_level = cal_true_level(ss, bucket_idx, now_ms);
             }
 
             if (true_level < level) {
-                free(ss->keys[bucket_idx]);
-                ss->keys[bucket_idx] = strdup(key_main);
-                ss->last_updates[bucket_idx] = now_ms;
-                ss->max_levels[bucket_idx] = level;
+                free(bucket->key);
+                bucket->key = strdup(key_main);
+                bucket->last_update_ms = now_ms;
+                bucket->level = level;
             }
         }
 
-        shllg_update(ss->counters, bucket_idx, hash_y);
+        hll_add_hash(bucket->sthll_register, ss->precision, hash_y);
     }
 }
 
@@ -217,10 +149,10 @@ double spread_sketch_point_query(struct spread_sketch *ss, const char *key_main)
         uint32_t hash_x = hash_x1 + i * hash_x2; 
         int bucket_idx = (hash_x % ss->width) + i * ss->width;
 
-        double est = shllg_count(ss->counters, bucket_idx);
+        double est = hll_count(ss->buckets[bucket_idx].sthll_register, ss->precision, ss->reset_idx, ss->time_window_ms);
         if (est < count_min) {
             count_min = est;
-        }
+        } 
     }
     return count_min;
 }
@@ -240,20 +172,6 @@ void ss_query_result_free(struct ss_query_result *result) {
 
 
 struct ss_query_result *spread_sketch_query(const struct spread_sketch *ss, struct timeval now) {
-    // gen a duplication, so that step won't change the original
-    struct spread_sketch *duplicate = malloc(sizeof(struct spread_sketch));
-    duplicate->depth = ss->depth;
-    duplicate->width = ss->width;
-    duplicate->time_window_ms = ss->time_window_ms;
-    duplicate->max_levels = NULL; // `max level` is useless in query
-    duplicate->keys = ss->keys; // keys are read only, so just shallow copy
-    duplicate->counters = shllg_duplicate(ss->counters); //  counters are deep copy
-
-    struct stagger_hll_group *hlls = duplicate->counters;
-    if (hlls_should_slide(hlls->precision, hlls->time_window_ms, now, hlls->reset_time)) {
-        move_registers_forward(hlls, &now);
-    }
-
     // find out all unique keys
     struct key_item {
         char *key;
@@ -263,11 +181,13 @@ struct ss_query_result *spread_sketch_query(const struct spread_sketch *ss, stru
     long long now_ms = now.tv_sec * 1000 + now.tv_usec / 1000;
     for (int i = 0; i < ss->depth; i++) {
         for (int j = 0; j < ss->width; j++) {
-            char *key = ss->keys[i * ss->width + j];
+            struct bucket *bucket = &ss->buckets[i * ss->width + j];
+            char *key = bucket->key;
             if (key == NULL) {
                 continue;
             }
-            if (now_ms - ss->last_updates[i * ss->width + j] > ss->time_window_ms) {
+
+            if (now_ms - bucket->last_update_ms > ss->time_window_ms) {
                 continue;
             }
 
@@ -284,8 +204,31 @@ struct ss_query_result *spread_sketch_query(const struct spread_sketch *ss, stru
     // query
     int n_result = HASH_COUNT(key_counts);
     struct ss_query_result *ret = malloc(sizeof(struct ss_query_result));
+    if (n_result == 0) {
+        ret->n_results = 0;
+        ret->key = NULL;
+        ret->count = NULL;
+        return ret;
+    }
     ret->key = malloc(sizeof(char *) * n_result);
     ret->count = malloc(sizeof(double) * n_result);
+
+    // gen a duplication, so that step won't change the original
+    struct spread_sketch *duplicate = malloc(sizeof(struct spread_sketch));
+    duplicate->depth = ss->depth;
+    duplicate->width = ss->width;
+    duplicate->precision = ss->precision;
+    duplicate->reset_idx = ss->reset_idx;
+    duplicate->reset_time = ss->reset_time;
+    duplicate->time_window_ms = ss->time_window_ms;
+    duplicate->buckets = calloc(ss->depth * ss->width, sizeof(struct bucket));
+    for (int i = 0; i < ss->depth * ss->width; i++) {
+        duplicate->buckets[i].sthll_register = hll_duplicate(ss->buckets[i].sthll_register, ss->precision);
+    }
+
+    if (hll_should_slide(ss->precision, ss->time_window_ms, now, ss->reset_time)) {
+        move_registers_forward(duplicate, &now);
+    }
 
     int n_results_found = 0;
     struct key_item *kc, *tmp;
@@ -304,7 +247,11 @@ struct ss_query_result *spread_sketch_query(const struct spread_sketch *ss, stru
         HASH_DEL(key_counts, kc);
         free(kc);
     }
-    shllg_free(duplicate->counters);
+    
+    for (int i = 0; i < ss->depth * ss->width; i++) {
+        hll_free_register(duplicate->buckets[i].sthll_register);
+    }
+    free(duplicate->buckets);
     free(duplicate);
 
     return ret;
@@ -312,26 +259,139 @@ struct ss_query_result *spread_sketch_query(const struct spread_sketch *ss, stru
 
 void spread_sketch_free(struct spread_sketch *ss) {
     for (int i = 0; i < ss->depth * ss->width; i++) {
-        free(ss->keys[i]);
+        free(ss->buckets[i].key);
+        hll_free_register(ss->buckets[i].sthll_register);
     }
-    free(ss->keys);
-    free(ss->max_levels);
-    shllg_free(ss->counters);
-    free(ss->last_updates);
+    free(ss->buckets);
     free(ss);
 }
 
-void merge(struct spread_sketch *dst, const struct spread_sketch *src)
+void spread_sketch_merge(struct spread_sketch *dst, const struct spread_sketch *src)
 {
+    assert(dst->depth == src->depth && dst->width == src->width);
+    assert(dst->time_window_ms == src->time_window_ms);
+    assert(dst->precision == src->precision);
+
+    for (int i = 0; i < dst->depth * dst->width; i++) {
+        const struct bucket *bucket_src = &src->buckets[i];
+        struct bucket *bucket_dst = &dst->buckets[i];
+
+        if (bucket_src->key == NULL) {
+            continue;
+        }
+
+        if (bucket_dst->key == NULL) {
+            bucket_dst->key = strdup(bucket_src->key);
+            bucket_dst->key_len = bucket_src->key_len;
+            bucket_dst->level = bucket_src->level;
+            bucket_dst->last_update_ms = bucket_src->last_update_ms;
+
+            bucket_dst->sthll_register = hll_duplicate(bucket_src->sthll_register, dst->precision);
+            continue;
+        }
+
+        if (strcmp(bucket_dst->key, bucket_src->key) == 0) {
+            if (bucket_src->level > bucket_dst->level) {
+                bucket_dst->level = bucket_src->level;
+            }
+            if (bucket_src->last_update_ms > bucket_dst->last_update_ms) {
+                bucket_dst->last_update_ms = bucket_src->last_update_ms;
+            }
+        } else {
+            unsigned char true_level_src = cal_true_level(src, i, bucket_src->last_update_ms);
+            unsigned char true_level_dst = cal_true_level(dst, i, bucket_dst->last_update_ms);
+
+            if (true_level_src > true_level_dst) {
+                free(bucket_dst->key);
+                bucket_dst->key = strdup(bucket_src->key);
+                bucket_dst->key_len = bucket_src->key_len;
+                bucket_dst->level = bucket_src->level;
+                bucket_dst->last_update_ms = bucket_src->last_update_ms;
+            }
+        }
+
+        hll_merge(bucket_dst->sthll_register, src->buckets[i].sthll_register, dst->precision);
+    }
 }
 
-void serialize(struct spread_sketch *ss, char **blob, size_t *blob_sz)
+void spread_sketch_serialize(const struct spread_sketch *ss, char **blob, size_t *blob_sz)
 {
+    struct serializer_reader *reader = serializer_reader_new();
+    serializer_reader_read_uint(reader, ss->depth);
+    serializer_reader_read_uint(reader, ss->width);
+    serializer_reader_read_longlong(reader, ss->time_window_ms);
+    serializer_reader_read_uint(reader, ss->precision);
+
+    serializer_reader_read_longlong(reader, ss->reset_idx);
+    serializer_reader_read_longlong(reader, ss->reset_time.tv_sec);
+    serializer_reader_read_longlong(reader, ss->reset_time.tv_usec);
+
+    for (int i = 0; i < ss->depth * ss->width; i++) {
+        const struct bucket *bucket = &ss->buckets[i];
+        serializer_reader_read_uint(reader, bucket->level);
+        serializer_reader_read_longlong(reader, bucket->last_update_ms);
+        if (bucket->key != NULL) {
+            serializer_reader_read_str(reader, bucket->key);
+        } else {
+            serializer_reader_read_nil(reader);
+        }
+
+        serializer_reader_read_bin(reader, (const char *)bucket->sthll_register, hll_size(ss->precision));
+    }
+
+    serializer_reader_finalize(reader, blob, blob_sz);
 }
 
-struct spread_sketch *deserialize(const char *blob, size_t blob_sz)
+struct spread_sketch *spread_sketch_deserialize(const char *blob, size_t blob_sz)
 {
-    return NULL;
+    struct serializer_writer *writer = serializer_writer_new(blob, blob_sz);
+    struct spread_sketch *ss = malloc(sizeof(struct spread_sketch));
+    int ret;
+    ret = serializer_writer_write_uint(writer, (uint32_t*)&ss->depth);
+    assert(ret != -1);
+    ret = serializer_writer_write_uint(writer, (uint32_t*)&ss->width);
+    assert(ret != -1);
+    ret = serializer_writer_write_longlong(writer, &ss->time_window_ms);
+    assert(ret != -1);
+    uint32_t precision_tmp;
+    ret = serializer_writer_write_uint(writer, &precision_tmp);
+    assert(ret != -1);
+    ss->precision = (unsigned char)precision_tmp;
+    ret = serializer_writer_write_longlong(writer, &ss->reset_idx);
+    assert(ret != -1);
+    ret = serializer_writer_write_longlong(writer, &ss->reset_time.tv_sec);
+    assert(ret != -1);
+    ret = serializer_writer_write_longlong(writer, &ss->reset_time.tv_usec);
+    assert(ret != -1);
+
+    ss->buckets = calloc(ss->depth * ss->width, sizeof(struct bucket));
+    for (int i = 0; i < ss->depth * ss->width; i++) {
+        struct bucket *bucket = &ss->buckets[i];
+        ret = serializer_writer_write_uint(writer, &bucket->level);
+        assert(ret != -1);
+        ret = serializer_writer_write_longlong(writer, &bucket->last_update_ms);
+        assert(ret != -1);
+
+        ret = serializer_writer_expect_nil(writer);
+        assert(ret != -1);
+        if (ret == 1) {
+            bucket->key = NULL;
+        } else {
+            char *key;
+            ret = serializer_writer_write_str(writer, &key);
+            assert(ret != -1);
+            bucket->key = key;
+            bucket->key_len = strlen(key);
+        }
+
+        size_t dummy;
+        ret = serializer_writer_write_bin(writer, (char **)&bucket->sthll_register, &dummy);
+        assert(ret != -1);
+        assert(dummy == hll_size(ss->precision));
+    }
+
+    serializer_writer_free(writer);
+    return ss;
 }
 
 void spread_sketch_merge_blob(struct spread_sketch *dst, const char *blob, size_t blob_sz)
@@ -343,9 +403,8 @@ size_t spread_sketch_calculate_memory_usage(const struct spread_sketch *ss)
     size_t ret = 0;
     ret += sizeof(struct spread_sketch);
 
-    size_t bucket_size = sizeof(unsigned char) + (sizeof(char *) + 5) + sizeof(long long);
-    size_t average_sthllg = shllg_size(ss->counters->precision, ss->counters->sheet_size) / ss->width / ss->depth;
-    bucket_size += average_sthllg;
+    size_t bucket_size = sizeof(struct bucket) + hll_size(ss->precision) + 5; // 5 key length in average by assumption
+
     printf("every bucket size: %ld\n", bucket_size);
 
     ret += ss->depth * ss->width * bucket_size;

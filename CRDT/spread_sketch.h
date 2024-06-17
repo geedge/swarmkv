@@ -11,8 +11,6 @@ extern "C"
 #endif
 #include <sys/time.h>
 
-#define DECAY_L_FLAG true
-
 struct spread_sketch;
 struct ss_query_result {
     char **key;
@@ -26,6 +24,10 @@ void spread_sketch_update(struct spread_sketch *ss, const char *key_main, const 
 struct ss_query_result *spread_sketch_query(const struct spread_sketch *ss, struct timeval now);
 void ss_query_result_free(struct ss_query_result *result);
 void spread_sketch_free(struct spread_sketch *ss);
+
+void spread_sketch_merge(struct spread_sketch *dst, const struct spread_sketch *src);
+void spread_sketch_serialize(const struct spread_sketch *ss, char **blob, size_t *blob_sz);
+struct spread_sketch *spread_sketch_deserialize(const char *blob, size_t blob_sz);
 
 double spread_sketch_point_query(struct spread_sketch *ss, const char *key_main);
 size_t spread_sketch_calculate_memory_usage(const struct spread_sketch *ss);
