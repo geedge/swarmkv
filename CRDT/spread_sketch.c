@@ -160,7 +160,7 @@ double spread_sketch_add(struct spread_sketch *ss, const char *key, size_t key_l
     return min_est;
 }
 
-double spread_sketch_point_query(struct spread_sketch *ss, const char *key, size_t key_length) {
+double spread_sketch_point_query(const struct spread_sketch *ss, const char *key, size_t key_length) {
     uint64_t hash_x_tmp = XXH3_64bits_withSeed(key, key_length, 171);
     uint32_t hash_x1 = (uint32_t) (hash_x_tmp >> 32);
     uint32_t hash_x2 = (uint32_t) hash_x_tmp;
@@ -355,87 +355,58 @@ void spread_sketch_merge(struct spread_sketch *dst, const struct spread_sketch *
 
 void spread_sketch_serialize(const struct spread_sketch *ss, char **blob, size_t *blob_sz)
 {
-    struct serializer_reader *reader = serializer_reader_new();
-    serializer_reader_read_uint(reader, ss->depth);
-    serializer_reader_read_uint(reader, ss->width);
-    serializer_reader_read_longlong(reader, ss->time_window_ms);
-    serializer_reader_read_uint(reader, ss->precision);
-
-    serializer_reader_read_longlong(reader, ss->reset_idx);
-    serializer_reader_read_longlong(reader, ss->reset_time.tv_sec);
-    serializer_reader_read_longlong(reader, ss->reset_time.tv_usec);
-
+    // get serialize size 
+    size_t sz = 0;
+    sz += sizeof(struct spread_sketch);
+    sz += ss->depth * ss->width * (sizeof(struct bucket) + hll_size(ss->precision));
     for (int i = 0; i < ss->depth * ss->width; i++) {
-        const struct bucket *bucket = &ss->buckets[i];
-        serializer_reader_read_uint(reader, bucket->level);
-        serializer_reader_read_longlong(reader, bucket->last_update_ms);
-        if (bucket->key != NULL) {
-            serializer_reader_read_bin(reader, bucket->key, bucket->key_len);
-        } else {
-            serializer_reader_read_nil(reader);
-        }
-
-        serializer_reader_read_bin(reader, (const char *)bucket->sthll_register, hll_size(ss->precision));
+        sz += ss->buckets[i].key_len;
     }
 
-    serializer_reader_finalize(reader, blob, blob_sz);
+    char *buffer = malloc(sz);
+    *blob = buffer;
+    *blob_sz = sz;
+
+    memcpy(buffer, ss, sizeof(struct spread_sketch));
+    buffer += sizeof(struct spread_sketch);
+    for (int i = 0; i < ss->depth * ss->width; i++) {
+        const struct bucket *bucket = &ss->buckets[i];
+        memcpy(buffer, bucket, sizeof(struct bucket));
+        buffer += sizeof(struct bucket);
+        memcpy(buffer, bucket->sthll_register, hll_size(ss->precision));
+        buffer += hll_size(ss->precision);
+        if (bucket->key != NULL) {
+            memcpy(buffer, bucket->key, bucket->key_len);
+            buffer += bucket->key_len;
+        }
+    }
 }
 
 struct spread_sketch *spread_sketch_deserialize(const char *blob, size_t blob_sz)
 {
-    struct serializer_writer *writer = serializer_writer_new(blob, blob_sz);
     struct spread_sketch *ss = malloc(sizeof(struct spread_sketch));
-    int ret;
-    ret = serializer_writer_write_uint(writer, (uint32_t*)&ss->depth);
-    assert(ret != -1);
-    ret = serializer_writer_write_uint(writer, (uint32_t*)&ss->width);
-    assert(ret != -1);
-    ret = serializer_writer_write_longlong(writer, &ss->time_window_ms);
-    assert(ret != -1);
-    uint32_t precision_tmp;
-    ret = serializer_writer_write_uint(writer, &precision_tmp);
-    assert(ret != -1);
-    ss->precision = (unsigned char)precision_tmp;
-    ret = serializer_writer_write_longlong(writer, &ss->reset_idx);
-    assert(ret != -1);
-    long long reset_time_sec_tmp;
-    ret = serializer_writer_write_longlong(writer, &reset_time_sec_tmp);
-    assert(ret != -1);
-    ss->reset_time.tv_sec = reset_time_sec_tmp;
-    long long reset_time_usec_tmp;
-    ret = serializer_writer_write_longlong(writer, &reset_time_usec_tmp);
-    assert(ret != -1);
-    ss->reset_time.tv_usec = reset_time_usec_tmp;
+    memcpy(ss, blob, sizeof(struct spread_sketch));
+    blob += sizeof(struct spread_sketch);
+    blob_sz -= sizeof(struct spread_sketch);
 
     ss->buckets = calloc(ss->depth * ss->width, sizeof(struct bucket));
     for (int i = 0; i < ss->depth * ss->width; i++) {
         struct bucket *bucket = &ss->buckets[i];
 
-        ret = serializer_writer_write_uint(writer, &bucket->level);
-        assert(ret != -1);
-        ret = serializer_writer_write_longlong(writer, &bucket->last_update_ms);
-        assert(ret != -1);
+        memcpy(bucket, blob, sizeof(struct bucket));
+        blob += sizeof(struct bucket);
 
-        ret = serializer_writer_expect_nil(writer);
-        assert(ret != -1);
-        if (ret == 1) {
-            bucket->key = NULL;
-        } else {
-            char *key;
-            size_t key_len;
-            ret = serializer_writer_write_bin(writer, &key, &key_len);
-            assert(ret != -1);
-            bucket->key = key;
-            bucket->key_len = key_len;
+        bucket->sthll_register = (uint32_t *)hll_create_register(ss->precision);
+        memcpy(bucket->sthll_register, blob, hll_size(ss->precision));
+        blob += hll_size(ss->precision);
+
+        if (bucket->key_len > 0) {
+            bucket->key = malloc(bucket->key_len);
+            memcpy(bucket->key, blob, bucket->key_len);
+            blob += bucket->key_len;
         }
-
-        size_t dummy;
-        ret = serializer_writer_write_bin(writer, (char **)&bucket->sthll_register, &dummy);
-        assert(ret != -1);
-        assert(dummy == hll_size(ss->precision));
     }
 
-    serializer_writer_free(writer);
     return ss;
 }
 
