@@ -450,8 +450,8 @@ void get_parameter_recommendation(int max_super_spreader_number, int *depth_out,
     } else {
         w = max_super_spreader_number + 50; // + 50: 100*1.5-100 = 50, make w=f(k) continuous
     }
-    if (w < 32) {
-        w = 32;
+    if (w < 40) {
+        w = 40;
     }
     *width_out = w;
 

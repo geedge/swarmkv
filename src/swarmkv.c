@@ -1211,6 +1211,8 @@ void command_spec_init(struct swarmkv *db)
 					1, 1, CMD_KEY_RO, REPLY_EMPTY_ARRAY, AUTO_ROUTE,
 					pfinfo_command, db->mod_store);
 
+    /*TODO: spread sketch commands*/
+
 	/* Debug Commands */
 	command_register(&(db->command_table), "INFO", "[section]",
 					0, KEY_OFFSET_NONE, CMD_KEY_NA, REPLY_NA, AUTO_ROUTE,
