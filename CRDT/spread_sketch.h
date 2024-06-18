@@ -12,7 +12,7 @@ extern "C"
 #include <sys/time.h>
 
 struct spread_sketch;
-struct ss_query_result {
+struct spread_sketch_list {
     char **key;
     size_t *key_len;
     double *count;
@@ -20,14 +20,19 @@ struct ss_query_result {
 };
 
 struct spread_sketch *spread_sketch_new(int depth, int width, unsigned char precision, int time_window_s, struct timeval now);
-void spread_sketch_update(struct spread_sketch *ss, const char *key_main, size_t key_main_length, const char *key_spread, size_t key_spread_length, struct timeval now);
+double spread_sketch_add(struct spread_sketch *ss, const char *key, size_t key_length, const char *identifier, size_t identifier_length, struct timeval now);
 
-struct ss_query_result *spread_sketch_query(const struct spread_sketch *ss, struct timeval now);
-void ss_query_result_free(struct ss_query_result *result);
+// TODO: 有空阅读：
+// https://github.com/apache/datasketches-java/blob/master/src/main/java/org/apache/datasketches/hllmap/UniqueCountMap.java
+
+struct spread_sketch_list *spread_sketch_list(const struct spread_sketch *ss, struct timeval now);
+void ss_query_result_free(struct spread_sketch_list *result);
+double spread_sketch_query(const struct spread_sketch *ss, const char *key, size_t key_length, struct timeval now);
+
 void spread_sketch_free(struct spread_sketch *ss);
 
 void spread_sketch_merge(struct spread_sketch *dst, const struct spread_sketch *src);
-void spread_sketch_serialize(const struct spread_sketch *ss, char **blob, size_t *blob_sz);
+void spread_sketch_serialize(const struct spread_sketch *ss, char **blob, size_t *blob_sz); // TODO: 这里的实现不够简洁，自己写吧。
 struct spread_sketch *spread_sketch_deserialize(const char *blob, size_t blob_sz);
 
 size_t spread_sketch_calculate_memory_usage(const struct spread_sketch *ss);

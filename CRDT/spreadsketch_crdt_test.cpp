@@ -74,7 +74,7 @@ public:
 
 class TestRet {
 private:
-    struct ss_query_result *ret_raw;
+    struct spread_sketch_list *ret_raw;
 
     unsigned char _precision;
     long long _window_s;
@@ -121,7 +121,7 @@ public:
         _last_time = now_ms;
     }
 
-    void read_ss_query_result(struct ss_query_result *ret){
+    void read_ss_query_result(struct spread_sketch_list *ret){
         this->ret_raw = ret;
 
         for (int i = 0; i < ret->n_results; i++) {
@@ -279,7 +279,7 @@ TestRet *spread_sketch_test(struct spread_sketch *ss, long long window_s, long l
         std::string src_ip = flow.src_ip;
         std::string dst_ip = flow.dst_ip;
         long long now = flow.time;
-        spread_sketch_update(ss, src_ip.c_str(), src_ip.size(), dst_ip.c_str(), dst_ip.size(), ms_to_timeval(now));
+        spread_sketch_add(ss, src_ip.c_str(), src_ip.size(), dst_ip.c_str(), dst_ip.size(), ms_to_timeval(now));
         if (now >= last_window_start_ms) {
             test_ret->feed(src_ip, dst_ip, now);
         }
@@ -287,7 +287,7 @@ TestRet *spread_sketch_test(struct spread_sketch *ss, long long window_s, long l
         flow = gen.next();
     }
 
-    struct ss_query_result *results = spread_sketch_query(ss, ms_to_timeval(duration_ms + start_ms));
+    struct spread_sketch_list *results = spread_sketch_list(ss, ms_to_timeval(duration_ms + start_ms));
     test_ret->read_ss_query_result(results);
 
     return test_ret;
@@ -317,7 +317,7 @@ TestRet *spread_sketch_test_swarm(int precision, int depth, int width, long long
         long long now = flow.time;
 
         struct spread_sketch *ss = ss_instances[rand() % N_INSTANCES];
-        spread_sketch_update(ss, src_ip.c_str(), src_ip.size(), dst_ip.c_str(), dst_ip.size(), ms_to_timeval(now));
+        spread_sketch_add(ss, src_ip.c_str(), src_ip.size(), dst_ip.c_str(), dst_ip.size(), ms_to_timeval(now));
         if (now >= last_window_start_ms) {
             test_ret->feed(src_ip, dst_ip, now);
         }
@@ -330,7 +330,7 @@ TestRet *spread_sketch_test_swarm(int precision, int depth, int width, long long
         spread_sketch_merge(ss, ss_instances[i]);
     }
 
-    struct ss_query_result *results = spread_sketch_query(ss, ms_to_timeval(duration_ms + start_ms));
+    struct spread_sketch_list *results = spread_sketch_list(ss, ms_to_timeval(duration_ms + start_ms));
     test_ret->read_ss_query_result(results);
 
     for (int i = 0; i < N_INSTANCES; i++) {
@@ -438,7 +438,7 @@ TEST(SpreadSketch, decay_old_key) {
 
         for (int k = 0; k < 1000; k++) {
             std::string dst = "d_" + std::to_string(k);
-            spread_sketch_update(ss, src.c_str(), src.size(), dst.c_str(), dst.size(), ms_to_timeval(now));
+            spread_sketch_add(ss, src.c_str(), src.size(), dst.c_str(), dst.size(), ms_to_timeval(now));
             now += 5;
         }
     }
@@ -469,9 +469,9 @@ TEST(SpreadSketch, serialize_with_nonstring_keys) {
     int dstKey1 = 11;
     int dstKey2 = 22;
 
-    spread_sketch_update(ss, (char *)&key1, sizeof(key1), (char *)&dstKey1, sizeof(dstKey1), ms_to_timeval(0));
-    spread_sketch_update(ss, (char *)&key1, sizeof(key1), (char *)&dstKey2, sizeof(dstKey2), ms_to_timeval(10));
-    spread_sketch_update(ss, (char *)&key2, sizeof(key2), (char *)&dstKey1, sizeof(dstKey1), ms_to_timeval(20));
+    spread_sketch_add(ss, (char *)&key1, sizeof(key1), (char *)&dstKey1, sizeof(dstKey1), ms_to_timeval(0));
+    spread_sketch_add(ss, (char *)&key1, sizeof(key1), (char *)&dstKey2, sizeof(dstKey2), ms_to_timeval(10));
+    spread_sketch_add(ss, (char *)&key2, sizeof(key2), (char *)&dstKey1, sizeof(dstKey1), ms_to_timeval(20));
 
     char *blob;
     size_t blob_sz;
@@ -479,8 +479,8 @@ TEST(SpreadSketch, serialize_with_nonstring_keys) {
 
     struct spread_sketch *ss_deserialized = spread_sketch_deserialize(blob, blob_sz);
 
-    struct ss_query_result *result = spread_sketch_query(ss, ms_to_timeval(30));
-    struct ss_query_result *result_deserialized = spread_sketch_query(ss_deserialized, ms_to_timeval(30));
+    struct spread_sketch_list *result = spread_sketch_list(ss, ms_to_timeval(30));
+    struct spread_sketch_list *result_deserialized = spread_sketch_list(ss_deserialized, ms_to_timeval(30));
 
     EXPECT_EQ(result->n_results, result_deserialized->n_results);
     for (int i = 0; i < result->n_results; i++) {
@@ -683,7 +683,7 @@ void parameter_experiments_given_zipf_experiment(int depth, int width, int preci
     long long last_window = duration_ms - window_s * 1000;
 
     while (flow.time - start_ms <= duration_ms) {
-        spread_sketch_update(ss, flow.src_ip.c_str(), flow.src_ip.size(), flow.dst_ip.c_str(), flow.dst_ip.size(), ms_to_timeval(flow.time));
+        spread_sketch_add(ss, flow.src_ip.c_str(), flow.src_ip.size(), flow.dst_ip.c_str(), flow.dst_ip.size(), ms_to_timeval(flow.time));
         flow = input.next();
 
         if (flow.time >= last_window) {
@@ -691,7 +691,7 @@ void parameter_experiments_given_zipf_experiment(int depth, int width, int preci
         }
     }
 
-    struct ss_query_result *results = spread_sketch_query(ss, ms_to_timeval(duration_ms + start_ms));
+    struct spread_sketch_list *results = spread_sketch_list(ss, ms_to_timeval(duration_ms + start_ms));
     ret->read_ss_query_result(results);
 
     double mre = ret->cal_mre();
@@ -792,6 +792,10 @@ TEST(SpreadSketchExperiments, zipf_distribution) {
     }
 }
 
+// TODO: 不断更新时返回的count est 的结果。
+//TODO: update 每次都会返回hll 的count值。在SWARM KV 里是这样（测这个返回ok不，和查询到的一致就行了）
+
+// TODO: 顺便把point query 的接口spread_sketch_query测了。
 
 int main(int argc, char ** argv)
 {

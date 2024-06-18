@@ -36,7 +36,7 @@ struct spread_sketch {
     struct bucket *buckets;
 };
 
-struct ss_query_result; // defined in spread_sketch.h
+struct spread_sketch_list; // defined in spread_sketch.h
 
 
 uint32_t cal_true_level(const struct spread_sketch *ss, int bucket_idx, long long t) {
@@ -108,26 +108,27 @@ static inline char *key_dup(const char *key, size_t key_len) {
     return ret;
 }
 
-void spread_sketch_update(struct spread_sketch *ss, const char *key_main, size_t key_main_length, const char *key_spread, size_t key_spread_length, struct timeval now) {
-    uint64_t hash_y = XXH3_64bits_withSeed(key_spread, key_spread_length, 171);
+double spread_sketch_add(struct spread_sketch *ss, const char *key, size_t key_length, const char *identifier, size_t identifier_length, struct timeval now) {
+    uint64_t hash_y = XXH3_64bits_withSeed(identifier, identifier_length, 171);
     uint32_t level = (uint32_t)__builtin_clzll(hash_y) + 1;
     long long now_ms = now.tv_sec * 1000 + now.tv_usec / 1000;
     
     // https://www.eecs.harvard.edu/~michaelm/postscripts/tr-02-05.pdf
     // A technique from the hashing literature is to use two hash functions h1(x) and h2(x) to simulate additional hash functions of the form gi(x) = h1(x) + ih2(x)
     // Assuming that the 128-bit xxhash function is perfect, we can view it as a combination of two 64-bit hash functions.
-    uint64_t hash_x_tmp = XXH3_64bits_withSeed(key_main, key_main_length, 171);
+    uint64_t hash_x_tmp = XXH3_64bits_withSeed(key, key_length, 171);
     uint32_t hash_x1 = (uint32_t) (hash_x_tmp >> 32);
     uint32_t hash_x2 = (uint32_t) hash_x_tmp;
 
     move_registers_forward(ss, &now);
 
+    double min_est = (double)INT32_MAX;
     for (int i = 0; i < ss->depth; i++) {
         uint32_t hash_x = hash_x1 + i * hash_x2; 
         int bucket_idx = (hash_x % ss->width) + i * ss->width;
         struct bucket *bucket = &ss->buckets[bucket_idx];
 
-        if (bucket->key != NULL && key_equal(bucket->key, bucket->key_len, key_main, key_main_length)) {
+        if (bucket->key != NULL && key_equal(bucket->key, bucket->key_len, key, key_length)) {
             bucket->last_update_ms = now_ms;
             if (bucket->level < level) {
                 bucket->level = level;
@@ -142,19 +143,25 @@ void spread_sketch_update(struct spread_sketch *ss, const char *key_main, size_t
 
             if (true_level < level) {
                 free(bucket->key);
-                bucket->key = key_dup(key_main, key_main_length);
-                bucket->key_len = key_main_length;
+                bucket->key = key_dup(key, key_length);
+                bucket->key_len = key_length;
                 bucket->last_update_ms = now_ms;
                 bucket->level = level;
             }
         }
 
         hll_add_hash(bucket->sthll_register, ss->precision, hash_y);
+        double est = hll_count(bucket->sthll_register, ss->precision, ss->reset_idx, ss->time_window_ms);
+        if (est < min_est) {
+            min_est = est;
+        }
     }
+
+    return min_est;
 }
 
-double spread_sketch_point_query(struct spread_sketch *ss, const char *key_main, size_t key_main_length) {
-    uint64_t hash_x_tmp = XXH3_64bits_withSeed(key_main, key_main_length, 171);
+double spread_sketch_point_query(struct spread_sketch *ss, const char *key, size_t key_length) {
+    uint64_t hash_x_tmp = XXH3_64bits_withSeed(key, key_length, 171);
     uint32_t hash_x1 = (uint32_t) (hash_x_tmp >> 32);
     uint32_t hash_x2 = (uint32_t) hash_x_tmp;
 
@@ -171,7 +178,7 @@ double spread_sketch_point_query(struct spread_sketch *ss, const char *key_main,
     return count_min;
 }
 
-void ss_query_result_free(struct ss_query_result *result) {
+void ss_query_result_free(struct spread_sketch_list *result) {
     if (result == NULL) {
         return;
     }
@@ -185,8 +192,24 @@ void ss_query_result_free(struct ss_query_result *result) {
     free(result);
 }
 
+struct spread_sketch *duplicate_and_step(const struct spread_sketch *ss, struct timeval *now) {
+    struct spread_sketch *duplicate = malloc(sizeof(struct spread_sketch));
+    duplicate->depth = ss->depth;
+    duplicate->width = ss->width;
+    duplicate->precision = ss->precision;
+    duplicate->reset_idx = ss->reset_idx;
+    duplicate->reset_time = ss->reset_time;
+    duplicate->time_window_ms = ss->time_window_ms;
+    duplicate->buckets = calloc(ss->depth * ss->width, sizeof(struct bucket));
+    for (int i = 0; i < ss->depth * ss->width; i++) {
+        duplicate->buckets[i].sthll_register = hll_duplicate(ss->buckets[i].sthll_register, ss->precision);
+    }
 
-struct ss_query_result *spread_sketch_query(const struct spread_sketch *ss, struct timeval now) {
+    move_registers_forward(duplicate, now);
+    return duplicate;
+}
+
+struct spread_sketch_list *spread_sketch_list(const struct spread_sketch *ss, struct timeval now) {
     // find out all unique keys
     struct key_item {
         char *key;
@@ -220,7 +243,7 @@ struct ss_query_result *spread_sketch_query(const struct spread_sketch *ss, stru
 
     // query
     int n_result = HASH_COUNT(key_counts);
-    struct ss_query_result *ret = malloc(sizeof(struct ss_query_result));
+    struct spread_sketch_list *ret = malloc(sizeof(struct spread_sketch_list));
     if (n_result == 0) {
         ret->n_results = 0;
         ret->key = NULL;
@@ -231,27 +254,15 @@ struct ss_query_result *spread_sketch_query(const struct spread_sketch *ss, stru
     ret->count = malloc(sizeof(double) * n_result);
     ret->key_len = malloc(sizeof(size_t) * n_result);
 
-    // gen a duplication, so that step won't change the original
-    struct spread_sketch *duplicate = malloc(sizeof(struct spread_sketch));
-    duplicate->depth = ss->depth;
-    duplicate->width = ss->width;
-    duplicate->precision = ss->precision;
-    duplicate->reset_idx = ss->reset_idx;
-    duplicate->reset_time = ss->reset_time;
-    duplicate->time_window_ms = ss->time_window_ms;
-    duplicate->buckets = calloc(ss->depth * ss->width, sizeof(struct bucket));
-    for (int i = 0; i < ss->depth * ss->width; i++) {
-        duplicate->buckets[i].sthll_register = hll_duplicate(ss->buckets[i].sthll_register, ss->precision);
-    }
-
+    struct spread_sketch *using_ss = (struct spread_sketch *)ss;
     if (hll_should_slide(ss->precision, ss->time_window_ms, now, ss->reset_time)) {
-        move_registers_forward(duplicate, &now);
+        using_ss = duplicate_and_step(ss, &now);
     }
 
     int n_results_found = 0;
     struct key_item *kc, *tmp;
     HASH_ITER(hh, key_counts, kc, tmp) {
-        double count = spread_sketch_point_query(duplicate, kc->key, kc->key_len);
+        double count = spread_sketch_point_query(using_ss, kc->key, kc->key_len);
         if (count >= 1.0) {
             ret->key[n_results_found] = key_dup(kc->key, kc->key_len);
             ret->key_len[n_results_found] = kc->key_len;
@@ -267,13 +278,22 @@ struct ss_query_result *spread_sketch_query(const struct spread_sketch *ss, stru
         free(kc);
     }
     
-    for (int i = 0; i < ss->depth * ss->width; i++) {
-        hll_free_register(duplicate->buckets[i].sthll_register);
+    if (using_ss != ss) {
+        spread_sketch_free(using_ss);
     }
-    free(duplicate->buckets);
-    free(duplicate);
 
     return ret;
+}
+
+double spread_sketch_query(const struct spread_sketch *ss, const char *key, size_t key_length, struct timeval now) {    
+    if (hll_should_slide(ss->precision, ss->time_window_ms, now, ss->reset_time)) {
+        struct spread_sketch *duplicate = duplicate_and_step(ss, &now);
+        double ret = spread_sketch_point_query(duplicate, key, key_length);
+        spread_sketch_free(duplicate);
+        return ret;
+    } else {
+        return spread_sketch_point_query(ss, key, key_length);
+    }
 }
 
 void spread_sketch_free(struct spread_sketch *ss) {
@@ -309,7 +329,7 @@ void spread_sketch_merge(struct spread_sketch *dst, const struct spread_sketch *
             continue;
         }
 
-        if (strcmp(bucket_dst->key, bucket_src->key) == 0) {
+        if (key_equal(bucket_src->key, bucket_src->key_len, bucket_dst->key, bucket_dst->key_len)) {
             if (bucket_src->level > bucket_dst->level) {
                 bucket_dst->level = bucket_src->level;
             }

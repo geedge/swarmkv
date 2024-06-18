@@ -41,7 +41,7 @@ struct spread_sketch {
     long long *last_updates_ms; // linux timestamp since Jan 1st 1970
 };
 
-struct ss_query_result; // defined in spread_sketch.h
+struct spread_sketch_list; // defined in spread_sketch.h
 
 struct stagger_hll_group *shllg_new(unsigned depth, unsigned width, unsigned char precision, int time_window_s, struct timeval now) {
     struct stagger_hll_group *pthis = malloc(sizeof(struct stagger_hll_group));
@@ -212,7 +212,7 @@ xxhash 在输入较短的情况下比murmurhash 快（https://github.com/sebasti
 anyway, 我觉得xxhash 就好
 */
 
-void spread_sketch_update(struct spread_sketch *ss, const char *key_main, size_t key_main_length, const char *key_spread, size_t key_spread_length, struct timeval now) {
+void spread_sketch_add(struct spread_sketch *ss, const char *key_main, size_t key_main_length, const char *key_spread, size_t key_spread_length, struct timeval now) {
     uint64_t hash_y = XXH3_64bits_withSeed(key_spread, strlen(key_spread), 171);
     unsigned char level = (unsigned char)__builtin_clzll(hash_y) + 1;
     long long now_ms = now.tv_sec * 1000 + now.tv_usec / 1000;
@@ -274,7 +274,7 @@ double spread_sketch_point_query(struct spread_sketch *ss, const char *key_main)
     return count_min;
 }
 
-void ss_query_result_free(struct ss_query_result *result) {
+void ss_query_result_free(struct spread_sketch_list *result) {
     if (result == NULL) {
         return;
     }
@@ -288,7 +288,7 @@ void ss_query_result_free(struct ss_query_result *result) {
 }
 
 
-struct ss_query_result *spread_sketch_query(const struct spread_sketch *ss, struct timeval now) {
+struct spread_sketch_list *spread_sketch_list(const struct spread_sketch *ss, struct timeval now) {
     // gen a duplication, so that step won't change the original
     struct spread_sketch *duplicate = malloc(sizeof(struct spread_sketch));
     duplicate->depth = ss->depth;
@@ -334,7 +334,7 @@ struct ss_query_result *spread_sketch_query(const struct spread_sketch *ss, stru
     printf("find number of keys: %d\n", HASH_COUNT(key_counts));
     // query
     int n_result = HASH_COUNT(key_counts);
-    struct ss_query_result *ret = malloc(sizeof(struct ss_query_result));
+    struct spread_sketch_list *ret = malloc(sizeof(struct spread_sketch_list));
     ret->key = malloc(sizeof(char *) * n_result);
     ret->count = malloc(sizeof(double) * n_result);
 
