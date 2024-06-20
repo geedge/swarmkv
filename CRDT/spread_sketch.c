@@ -66,12 +66,12 @@ uint32_t cal_true_level(const struct spread_sketch *ss, int bucket_idx, long lon
     return (uint32_t)(log2(a * ((double)(t-t0)) + b) + 0.5);
 }
 
-struct spread_sketch *spread_sketch_new(int depth, int width, unsigned char precision, int time_window_s, struct timeval now) {
+struct spread_sketch *spread_sketch_new(int depth, int width, unsigned char precision, int time_window_ms, struct timeval now) {
     struct spread_sketch *pthis = malloc(sizeof(struct spread_sketch));
 
     pthis->depth = depth;
     pthis->width = width;
-    pthis->time_window_ms = time_window_s * 1000;
+    pthis->time_window_ms = time_window_ms;
     pthis->precision = precision;
 
     pthis->reset_idx = 0;
