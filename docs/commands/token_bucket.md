@@ -153,9 +153,9 @@ Syntax
 BTCFG key rate capacity buckets [PD seconds]
 ```
 
-Configure a bulk token bucket for a `key`. In addition to the usual `rate` and `capacity` settings of a normal token bucket, this configuration includes a `buckets` parameter, which specifies the initial number of buckets. The value for `buckets` must be a power of two and should be proportional to the potential number of members; otherwise, it will be expanded by a factor of 2. The optional `PD` parameter sets the token refill period, which defaults to 1 second.
+Configure a bulk token bucket for a `key`. A bulk token bucket holds multiple token buckets of same configuration. It uses cuckoo hashing to resolve key collisions. In addition to the usual `rate` and `capacity` settings of a normal token bucket, this configuration includes a `buckets` parameter, which specifies the initial number of buckets. The value for `buckets` must be a power of two and should be proportional to the potential number of members; otherwise, it will be expanded by a factor of 2. The optional `PD` parameter sets the token refill period, which defaults to 1 second.
 
-If `key` does not exist, a new key holding a fair token bucket is created. 
+If `key` does not exist, a new key holding a bulk token bucket is created. 
 
 Return
 

@@ -67,5 +67,17 @@ struct swarmkv_cmd_spec
 	struct swarmkv_module *module;
 	UT_hash_handle hh;
 };
+int command_spec_is_sufficient_args(const struct swarmkv_cmd_spec *spec, const struct swarmkv_cmd *cmd);
+struct swarmkv_module *swarmkv_command_table_new();
+void swarmkv_command_table_free(struct swarmkv_module *table);
+void swarmkv_command_table_register(struct swarmkv_module *table, const char *name, const char *hint,
+						int arity, int key_offset, enum cmd_key_flag flag, enum key_not_found_reply failover, int auto_route,
+						command_proc_func *proc, struct swarmkv_module *module);
+const struct swarmkv_cmd_spec *swarmkv_command_table_get_spec_by_argv(const struct swarmkv_module *table, size_t argc, char* const argv[]);
 
-
+size_t swarmkv_command_table_find_possible_names(const struct swarmkv_module *mod_table, const char *prefix, const char* cmd_names[], size_t sz);
+char *swarmkv_command_table_get_command_hint(const struct swarmkv_module *mod_table, const char *cmd_name);
+size_t swarmkv_command_table_count(const struct swarmkv_module *mod_table);
+size_t swarmkv_command_table_list_names(const struct swarmkv_module *mod_table, const char* cmd_names[], size_t sz);
+size_t swarmkv_command_table_count(const struct swarmkv_module *mod_table);
+enum cmd_exec_result command_list_command(struct swarmkv_module *mod_command_table, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply);

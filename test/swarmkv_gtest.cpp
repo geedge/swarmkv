@@ -975,6 +975,7 @@ TEST_F(SwarmkvBasicTest, HashTags)
 		swarmkv_reply_free(reply);
 	}
 }
+
 class SwarmkvTwoNodes : public testing::Test 
 {
 
@@ -1005,6 +1006,7 @@ protected:
 			swarmkv_options_set_worker_thread_number(opts[i], 2);
 			swarmkv_options_set_caller_thread_number(opts[i], 1);
 			swarmkv_options_set_batch_sync_enabled(opts[i], 1);
+			swarmkv_options_set_network_compression_enabled(opts[i], i%2);
 			tmp_db[i]=swarmkv_open(opts[i], cluster_name, &err);
 			if(err)
 			{
@@ -2050,6 +2052,107 @@ TEST_F(SwarmkvTwoNodes, Monitor)
 		swarmkv_reply_free(reply);
 	}
 }
+TEST_F(SwarmkvTwoNodes, Management)
+{
+	struct swarmkv *db1=SwarmkvTwoNodes::db1;
+	struct swarmkv_reply *reply=NULL;
+
+	reply=swarmkv_command(db1, "info");
+	EXPECT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db1, "info Store");
+	EXPECT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db1, "command list");
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
+	EXPECT_GE(reply->n_element, 50);
+	for(size_t i=0; i<reply->n_element; i++)
+	{
+		EXPECT_EQ(reply->elements[i]->type, SWARMKV_REPLY_STRING);
+		EXPECT_GE(strlen(reply->elements[i]->str), 2);
+	}
+	swarmkv_reply_free(reply);
+}
+TEST_F(SwarmkvTwoNodes, Ping)
+{
+	struct swarmkv *db1=SwarmkvTwoNodes::db1;
+	struct swarmkv_reply *reply=NULL;
+	char db1_address[128], db2_address[128];
+	snprintf(db1_address, sizeof(db1_address), "127.0.0.1:%d", TWO_NODES_TEST_CLUSTER_PORT);
+	snprintf(db2_address, sizeof(db2_address), "127.0.0.1:%d", TWO_NODES_TEST_CLUSTER_PORT+1);
+	reply=swarmkv_command_on(db1, db1_address, "ping %s", db1_address);
+	EXPECT_EQ(reply->type, SWARMKV_REPLY_STRING);
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command_on(db1, db1_address, "ping %s", db2_address);
+	EXPECT_EQ(reply->type, SWARMKV_REPLY_STRING);
+	swarmkv_reply_free(reply);
+}
+TEST_F(SwarmkvTwoNodes, Latency)
+{
+	struct swarmkv *db1=SwarmkvTwoNodes::db1;
+	struct swarmkv_reply *reply=NULL;
+
+	reply=swarmkv_command(db1, "latency reset command");
+	EXPECT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db1, "latency reset peer");
+	EXPECT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db1, "latency reset event");
+	EXPECT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db1, "latency reset");
+	EXPECT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	swarmkv_reply_free(reply);
+
+	const char *key="6aoX1f94XXIUJYH";
+	reply=swarmkv_command(db1, "set %s abc", key);
+	EXPECT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	swarmkv_reply_free(reply);
+
+	//Read the count of 'SET' command
+	long long exec_count=0;
+	char ignore[128];
+
+	reply=swarmkv_command(db1, "latency command set");
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
+	EXPECT_EQ(reply->n_element, 2);
+	EXPECT_EQ(reply->elements[1]->type, SWARMKV_REPLY_STATUS);
+
+	sscanf(reply->elements[1]->str, "| %[^|] | %lld", ignore, &exec_count);
+	EXPECT_EQ(exec_count, 2);
+	swarmkv_reply_free(reply);
+	
+	reply=swarmkv_command(db1, "latency reset");
+	EXPECT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	swarmkv_reply_free(reply);
+
+	//Excute count is reseted, should be 0 now.
+	reply=swarmkv_command(db1, "latency command set");
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
+	EXPECT_EQ(reply->n_element, 2);
+	EXPECT_EQ(reply->elements[1]->type, SWARMKV_REPLY_STATUS);
+	sscanf(reply->elements[1]->str, "| %[^|] | %lld", ignore, &exec_count);
+	EXPECT_EQ(exec_count, 0);
+	swarmkv_reply_free(reply);
+
+	char db2_address[128];
+	snprintf(db2_address, sizeof(db2_address), "127.0.0.1:%d", TWO_NODES_TEST_CLUSTER_PORT+1);
+	reply=swarmkv_command_on(db1, db2_address, "get %s", key);
+	EXPECT_EQ(reply->type, SWARMKV_REPLY_STRING);
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db1, "latency peer");
+	EXPECT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
+	swarmkv_reply_free(reply);
+	sleep(3500);
+}
 TEST_F(SwarmkvTwoNodes, Wait)
 {
 	return;
@@ -2283,6 +2386,7 @@ TEST_F(SwarmkvNNodes, TypeTokenBucket)
 }
 int main(int argc, char ** argv)
 {
+	printf("If see valgrind memory leak waring: 'local_caller_on_success->blocking_query_cb->swarmkv_reply_dup', DON'T WORRY, it's because gtest's ASSERT_EQ interrupts swarmkv_reply_free\n");
 	int ret=0;
 	g_current_thread_id=syscall(SYS_gettid);
 	::testing::InitGoogleTest(&argc, argv);

@@ -23,7 +23,7 @@ add_definitions(-DGIT_VERSION=\"${GIT_VERSION}\")
 
 add_definitions(-D_GNU_SOURCE) 
 add_definitions(-fPIC)
-set(SWARMKV_SRC swarmkv.c swarmkv_api.c
+set(SWARMKV_SRC swarmkv_cmd_spec.c swarmkv.c swarmkv_api.c
 		swarmkv_mesh.c swarmkv_rpc.c swarmkv_message.c swarmkv_net.c 
 		swarmkv_sync.c swarmkv_store.c swarmkv_keyspace.c swarmkv_monitor.c
 		t_string.c t_set.c t_token_bucket.c t_hash.c t_bloom_filter.c t_cms.c t_hyperloglog.c
