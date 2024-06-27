@@ -143,7 +143,7 @@ int swarmkv_cli_exec_cmd(const char *db, const char *ip_addr, unsigned int port,
 	return 1;
 }
 
-TEST_F(SwarmkvCliNodes, CLI_Command)
+TEST_F(SwarmkvCliNodes, SwarmkvCliCommand)
 {
 	int ret=0;
 	char result[2048]={0};
@@ -167,7 +167,7 @@ TEST_F(SwarmkvCliNodes, CLI_Command)
 	ret=ret;
 }
 
-TEST_F(SwarmkvCliNodes, CLI_Get_Slots)
+TEST_F(SwarmkvCliNodes, GetSlotsAndOwner)
 {
 	struct swarmkv *db=SwarmkvCliNodes::db;
 	struct swarmkv_reply *reply=NULL;
@@ -178,7 +178,7 @@ TEST_F(SwarmkvCliNodes, CLI_Get_Slots)
 	swarmkv_reply_free(reply);
 }
 
-TEST_F(SwarmkvCliNodes, CLI_Get_Nodes)
+TEST_F(SwarmkvCliNodes, GetNodesAndLeader)
 {
 	struct swarmkv *db=SwarmkvCliNodes::db2;
 	struct swarmkv_reply *reply=NULL;
@@ -192,7 +192,7 @@ TEST_F(SwarmkvCliNodes, CLI_Get_Nodes)
 	swarmkv_reply_free(reply);
 }
 
-TEST_F(SwarmkvCliNodes, SANITY_BASIC)
+TEST_F(SwarmkvCliNodes, BasicSanityCheck)
 {
 	struct swarmkv *db=SwarmkvCliNodes::db;
 	const char *cluster_name="swarmkv-cli-nodes";
@@ -254,7 +254,7 @@ TEST_F(SwarmkvCliNodes, SANITY_BASIC)
 	CLUSTER SANITY heal
 	GET xiaolv
 */
-TEST_F(SwarmkvCliNodes, SANITY_CRDT_DEL)
+TEST_F(SwarmkvCliNodes, CrdtDelAndSanityCheck)
 {
 	struct swarmkv *db=SwarmkvCliNodes::db;
 	struct swarmkv *db2=SwarmkvCliNodes::db2;
@@ -300,7 +300,7 @@ TEST_F(SwarmkvCliNodes, SANITY_CRDT_DEL)
 	CLUSTER SANITY heal
 	GET xiaoqin
 */
-TEST_F(SwarmkvCliNodes, SANITY_KEYSPACE_RDEL)
+TEST_F(SwarmkvCliNodes, KeyspaceRdelAndSanityCheck)
 {
 	struct swarmkv *db=SwarmkvCliNodes::db;
 	struct swarmkv *db2=SwarmkvCliNodes::db2;
@@ -344,7 +344,7 @@ TEST_F(SwarmkvCliNodes, SANITY_KEYSPACE_RDEL)
 	CLUSTER SANITY heal
 	KEYSPACE RLIST xiaolan
 */
-TEST_F(SwarmkvCliNodes, SANITY_KEYSPACE_RADD)
+TEST_F(SwarmkvCliNodes, KeyspaceRaddAndSanityCheck)
 {
 	struct swarmkv *db=SwarmkvCliNodes::db;
 	struct swarmkv *db2=SwarmkvCliNodes::db2;
@@ -489,7 +489,7 @@ struct swarmkv *create_swarmkv_db()
  * test for cluster_sanity_command
  * 
 */
-TEST_F(SwarmkvCliNodes, MultiInterface)
+TEST_F(SwarmkvCliNodes, AddSlotOwner)
 {
 	struct swarmkv *db=SwarmkvCliNodes::db;
 	struct swarmkv *db2=SwarmkvCliNodes::db2;
@@ -546,7 +546,7 @@ TEST_F(SwarmkvCliNodes, MultiInterface)
 			reply = cluster_slots_command(db2, NULL, 0);
 			ASSERT_EQ(reply->type, SWARMKV_REPLY_VERBATIM);
 			snprintf(target, sizeof(target), "127.0.0.1:%zu", p2p_port_start+i);
-			if(!strstr(result, target) || i==2)
+			if(!strstr(reply->str, target) || i==2)
 			{
 				break;
 			}
@@ -626,7 +626,7 @@ struct log_handle* SwarmkvTwoNodes::logger;
 struct swarmkv* SwarmkvTwoNodes::db1;
 struct swarmkv* SwarmkvTwoNodes::db2;
 
-TEST_F(SwarmkvTwoNodes, SANITY_BASIC)
+TEST_F(SwarmkvTwoNodes, BasicSanityCheck)
 {
 	struct swarmkv *db1=SwarmkvTwoNodes::db1;
 	struct swarmkv *db2=SwarmkvTwoNodes::db2;
@@ -647,7 +647,6 @@ TEST_F(SwarmkvTwoNodes, SANITY_BASIC)
 	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
 	EXPECT_EQ(reply->integer, 1);
 	swarmkv_reply_free(reply);
-	reply=NULL;
 
 	wait_for_node_run();
 	config_init(db1, cluster_name); 
@@ -663,6 +662,7 @@ TEST_F(SwarmkvTwoNodes, SANITY_BASIC)
 	ASSERT_EQ(reply->n_element, 2);
 	EXPECT_STREQ(reply->elements[0]->str, "127.0.0.1:10211");
 	EXPECT_STREQ(reply->elements[1]->str, "127.0.0.1:10210");
+	swarmkv_reply_free(reply);
 
 	reply=swarmkv_command_on(db2, "127.0.0.1:10211", "CRDT DEL %s", "id01");
 	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
@@ -678,6 +678,7 @@ TEST_F(SwarmkvTwoNodes, SANITY_BASIC)
 	ASSERT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
 	ASSERT_EQ(reply->n_element, 1);
 	EXPECT_STREQ(reply->elements[0]->str, "127.0.0.1:10210");
+	swarmkv_reply_free(reply);
 
 	reply=swarmkv_command_on(db2, "127.0.0.1:10210", "CRDT ADD %s %s", "id01", "127.0.0.1:10211");
 	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
