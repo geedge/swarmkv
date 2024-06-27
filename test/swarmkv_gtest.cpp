@@ -2151,7 +2151,6 @@ TEST_F(SwarmkvTwoNodes, Latency)
 	reply=swarmkv_command(db1, "latency peer");
 	EXPECT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
 	swarmkv_reply_free(reply);
-	sleep(3500);
 }
 TEST_F(SwarmkvTwoNodes, Wait)
 {

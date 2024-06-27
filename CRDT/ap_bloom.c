@@ -44,8 +44,8 @@ inline static int test_bit_set_bit(unsigned char *buf, uint64_t x, int mode) {
 struct ap_slice
 {
     int hash_index;
-    int popcount;   //the number of 1-bits in the slice
     int slice_size; //in bytes
+    int popcount;   //the number of 1-bits in the slice
     struct timeval last_insert;
     struct timeval first_insert;
     unsigned char * data;
@@ -274,6 +274,21 @@ static void ap_slice_chain_free(struct ap_slice *head)
         ap_slice_free(slice);
     }
 }
+static void ap_slice_chain_reset(struct ap_slice *head)
+{
+    struct ap_slice *slice=NULL, *tmp=NULL;
+    LL_FOREACH_SAFE(head, slice, tmp)
+    {
+        if(slice == head) continue;
+        LL_DELETE(head, slice);
+        ap_slice_free(slice);
+    }
+    head->popcount = 0;
+    head->first_insert.tv_sec = head->last_insert.tv_sec = 0;
+    head->first_insert.tv_usec = head->last_insert.tv_usec = 0;
+    memset(head->data, 0, head->slice_size);
+    return;
+}
 static struct ap_slice *ap_slice_chain_duplicate(const struct ap_slice *src)
 {
     struct ap_slice *new_head=NULL;
@@ -481,7 +496,6 @@ struct AP_bloom *AP_bloom_new(struct timeval now, double error_rate, long long c
     {
         bloom->heads[i] = ap_slice_new(bloom->default_slice_size, i % bloom->chain_num);
     }
-
     return bloom;
 }
 
@@ -505,9 +519,7 @@ static void slide_time(struct AP_bloom *bloom, struct timeval now)
         for(int i=0; i<n_slide; i++)
         {
             int reset_idx = (bloom->cursor + bloom->hash_num) % chain_num;
-            struct ap_slice *slice = ap_slice_new(bloom->default_slice_size, bloom->heads[reset_idx]->hash_index);
-            ap_slice_chain_free(bloom->heads[reset_idx]);
-            bloom->heads[reset_idx] = slice;
+            ap_slice_chain_reset(bloom->heads[reset_idx]);
             bloom->cursor = (bloom->cursor + 1) % chain_num;
         }
     }
@@ -515,9 +527,7 @@ static void slide_time(struct AP_bloom *bloom, struct timeval now)
     {
         for(int i=0; i<chain_num; i++)
         {
-            struct ap_slice *new_slice=ap_slice_new(bloom->default_slice_size, bloom->heads[i]->hash_index);
-            ap_slice_chain_free(bloom->heads[i]);
-            bloom->heads[i] = new_slice;
+            ap_slice_chain_reset(bloom->heads[i]);
         }
         bloom->cursor = (bloom->cursor + n_slide) % chain_num;
     }
@@ -545,7 +555,15 @@ void AP_bloom_add(struct AP_bloom *bloom, struct timeval now, const char *buffer
     }
     return;
 }
-
+static int is_slice_expired(const struct ap_slice *slice, struct timeval now, long long time_window_ms)
+{
+    if(time_window_ms == 0)
+    {
+        return 0;
+    }
+    long long delta_us = timeval_delta_us(slice->last_insert, now);
+    return delta_us > time_window_ms*1000;
+}
 int AP_bloom_check(const struct AP_bloom *bloom, struct timeval now, const char *buffer, int len)
 {
     if(timeval_delta_ms(bloom->cfg.last_cfg, now) < 0)
@@ -555,13 +573,38 @@ int AP_bloom_check(const struct AP_bloom *bloom, struct timeval now, const char 
     struct double_hash hash;
     double_hash_init(&hash, buffer, len);
     int chain_num = bloom->chain_num;
-
+    //FAST PATH for no slice expansion
+    int consecutive_matches=0, i =0;
+    for(i = 0; i < bloom->hash_num+chain_num; i++)
+    {
+        if(bloom->heads[i%chain_num]->next) break;
+        if(is_slice_expired(bloom->heads[i%chain_num], now, bloom->cfg.time_window_ms))
+        {
+            consecutive_matches=0;
+        }
+        if(ap_slice_check_hash(bloom->heads[i%chain_num], hash))
+        {
+            consecutive_matches++;
+        }
+        else
+        {
+            consecutive_matches = 0;
+        }
+        if (consecutive_matches == bloom->hash_num)
+        {
+           return 1;
+        }
+    }
+    if(i == bloom->hash_num+chain_num)
+    {
+        return 0;
+    }
+    //SLOW PATH for slice expansion
     struct ap_state state;
     ap_state_init(&state, bloom->hash_num);
-    for(int i = 0; i < bloom->hash_num+chain_num; i++)
+    for(i = 0; i < bloom->hash_num+chain_num; i++)
     {
-        long long delta_us = timeval_delta_us(bloom->heads[i%chain_num]->last_insert, now);
-        if(bloom->cfg.time_window_ms && delta_us > bloom->cfg.time_window_ms*1000)
+        if(is_slice_expired(bloom->heads[i%chain_num], now, bloom->cfg.time_window_ms))
         {
             ap_state_clear(&state);
             continue;
