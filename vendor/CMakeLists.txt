@@ -81,3 +81,16 @@ add_dependencies(snappy-static snappy)
 set_property(TARGET snappy-static PROPERTY IMPORTED_LOCATION ${VENDOR_BUILD}/lib64/libsnappy.a)
 set_property(TARGET snappy-static PROPERTY IMPORTED_INTERFACE_LINK_LIBRARIES)
 set_property(TARGET snappy-static PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${VENDOR_BUILD}/include)
+
+### FieldStat4
+ExternalProject_Add(libfieldstat4 PREFIX libfieldstat4
+        URL ${CMAKE_CURRENT_SOURCE_DIR}/FieldStat-v4.5.9.tar.gz
+	CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${VENDOR_BUILD} -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DCMAKE_CXX_CPPCHECK=/usr/bin/cppcheck
+        CMAKE_CACHE_ARGS -DCMAKE_POSITION_INDEPENDENT_CODE:BOOL=true)                
+file(MAKE_DIRECTORY ${VENDOR_BUILD}/include)
+
+add_library(libfieldstat4-static STATIC IMPORTED GLOBAL)
+add_dependencies(libfieldstat4-static libfieldstat4)
+set_property(TARGET libfieldstat4-static PROPERTY IMPORTED_LOCATION ${VENDOR_BUILD}/lib/libfieldstat4.a)
+set_property(TARGET libfieldstat4-static PROPERTY IMPORTED_INTERFACE_LINK_LIBRARIES)
+set_property(TARGET libfieldstat4-static PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${VENDOR_BUILD}/include)

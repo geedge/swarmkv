@@ -16,7 +16,7 @@
 */
 
 #define SLICE_EXPANSION 2
-#define FILL_RATIO_THRESHOLD 0.1
+#define FILL_RATIO_THRESHOLD 0.5
 #define MIN_CAPACITY    1000
 
 
