@@ -44,28 +44,36 @@ inline static int test_bit_set_bit(unsigned char *buf, uint64_t x, int mode) {
 struct ap_slice
 {
     int hash_index;
-    int slice_size; //in bytes
     int popcount;   //the number of 1-bits in the slice
+    size_t slice_size; //in bytes
     struct timeval last_insert;
     struct timeval first_insert;
-    unsigned char * data;
+    unsigned char * bitmap;
     struct ap_slice * next;
 };
-static struct ap_slice *ap_slice_new(int slice_size, int hash_index)
+static struct ap_slice *ap_slice_new(size_t slice_size, int hash_index)
 {
-    struct ap_slice *slice = ALLOC(struct ap_slice, 1);
+    struct ap_slice *slice = (struct ap_slice*) aligned_alloc(1, sizeof(struct ap_slice) + slice_size);
     slice->slice_size = slice_size;
     assert(slice_size % sizeof(unsigned long long) == 0);
     //ap_slice_chain_deserialize may alloc slice_size=0
-    if(slice_size > 0) slice->data = ALLOC(unsigned char, slice_size);
+    if(slice_size > 0) slice->bitmap = (unsigned char*) (slice+1);
     slice->hash_index = hash_index;
     slice->popcount = 0;
     return slice;
 }
+void ap_slice_init(struct ap_slice *slice, size_t slice_size, int hash_index)
+{
+    slice->slice_size = slice_size;
+    slice->bitmap = (unsigned char*) (slice+1);
+    slice->hash_index = hash_index;
+    slice->popcount = 0;
+    return;
+}
 static void ap_slice_free(struct ap_slice *slice)
 {
-    free(slice->data);
-    slice->data = NULL;
+    //free(slice->bitmap);
+    slice->bitmap = NULL;
     free(slice);
 }
 void ap_slice_chain_info(const struct ap_slice *head, double *fill_ratio, int *slice_num)
@@ -105,18 +113,32 @@ static int ap_slice_cmp(const struct ap_slice *a, const struct ap_slice *b)
     //bigger size first
     return b->slice_size - a->slice_size;
 }
-static struct ap_slice * ap_slice_duplicate(const struct ap_slice *slice)
+static struct ap_slice * ap_slice_duplicate(const struct ap_slice *origin)
 {
-    struct ap_slice *new_slice = ap_slice_new(slice->slice_size, slice->hash_index);
-    memcpy(new_slice, slice, offsetof(struct ap_slice, data));
-    memcpy(new_slice->data, slice->data, slice->slice_size);
+    struct ap_slice *new_slice = (struct ap_slice*) malloc(sizeof(struct ap_slice) + origin->slice_size);
+    memcpy(new_slice, origin, sizeof(struct ap_slice) + origin->slice_size);
+    new_slice->bitmap = (unsigned char*) (new_slice+1);
+    new_slice->next = NULL;
+    //memcpy(new_slice->bitmap, slice->bitmap, slice->slice_size);
     return new_slice;
+}
+static void ap_slice_copy(struct ap_slice *dst, const struct ap_slice *src)
+{
+    assert(dst->slice_size == src->slice_size);
+    memcpy(dst, src, sizeof(struct ap_slice) + src->slice_size);
+    dst->bitmap = (unsigned char*) (dst+1);
+    dst->next = NULL;
+    return;
+}
+size_t ap_slice_mem_size(const struct ap_slice *slice)
+{
+    return sizeof(struct ap_slice) + slice->slice_size;
 }
 #define HASH_TO_OFFSET(hash, slice) ((hash.a + slice->hash_index * hash.b) % (slice->slice_size<<3))
 void ap_slice_add_hash(struct ap_slice *slice, struct double_hash hash, struct timeval now)
 {
-    int index=double_hash_generate(&hash, slice->hash_index, slice->slice_size<<3);
-    int added = !test_bit_set_bit(slice->data, index, MODE_WRITE);
+    int index = double_hash_generate(&hash, slice->hash_index, slice->slice_size<<3);
+    int added = !test_bit_set_bit(slice->bitmap, index, MODE_WRITE);
 
     slice->last_insert = now;
     if(slice->popcount == 0)
@@ -128,8 +150,8 @@ void ap_slice_add_hash(struct ap_slice *slice, struct double_hash hash, struct t
 }
 int ap_slice_check_hash(const struct ap_slice *slice, struct double_hash hash)
 {
-    int index=double_hash_generate(&hash, slice->hash_index, slice->slice_size<<3);
-    return test_bit_set_bit(slice->data, index, MODE_READ);
+    int index = double_hash_generate(&hash, slice->hash_index, slice->slice_size<<3);
+    return test_bit_set_bit(slice->bitmap, index, MODE_READ);
 }
 struct ap_slice_event
 {
@@ -286,7 +308,7 @@ static void ap_slice_chain_reset(struct ap_slice *head)
     head->popcount = 0;
     head->first_insert.tv_sec = head->last_insert.tv_sec = 0;
     head->first_insert.tv_usec = head->last_insert.tv_usec = 0;
-    memset(head->data, 0, head->slice_size);
+    memset(head->bitmap, 0, head->slice_size);
     return;
 }
 static struct ap_slice *ap_slice_chain_duplicate(const struct ap_slice *src)
@@ -324,15 +346,13 @@ static size_t ap_slice_chain_serialize_size(const struct ap_slice *head)
     sz += sizeof(struct slice_chain_header);
     LL_FOREACH(head, slice)
     {
-        sz += offsetof(struct ap_slice, data);
-        sz += slice->slice_size;
+        sz += ap_slice_mem_size(slice);
     }
     return sz;
 }
 static size_t ap_slice_chain_serialize(const struct ap_slice *head, int chain_sequence, char *buffer, size_t buffer_sz)
 {
-    size_t offset=0;
-    
+    size_t offset=0;  
     struct slice_chain_header *header=(struct slice_chain_header*)(buffer+offset);
     header->chain_sequence=chain_sequence;
     header->chain_size=0;
@@ -341,11 +361,8 @@ static size_t ap_slice_chain_serialize(const struct ap_slice *head, int chain_se
     const struct ap_slice *slice=NULL;
     LL_FOREACH(head, slice)
     {
-        memcpy(buffer+offset, slice, offsetof(struct ap_slice, data));
-        header->chain_size += offsetof(struct ap_slice, data);
-        offset += offsetof(struct ap_slice, data);
-        memcpy(buffer+offset, slice->data, slice->slice_size);
-        offset += slice->slice_size;
+        memcpy(buffer+offset, slice, ap_slice_mem_size(slice));
+        offset += ap_slice_mem_size(slice);
         header->chain_size += slice->slice_size;
         header->slice_number++;
         if(slice->next)
@@ -363,17 +380,13 @@ static struct ap_slice *ap_slice_chain_deserialize(const char *buffer, size_t bu
     struct ap_slice *head=NULL;
     for(size_t i=0; i<header->slice_number; i++)
     {
-        struct ap_slice *slice = ap_slice_new(0, 0);
-        memcpy(slice, buffer+offset, offsetof(struct ap_slice, data));
-        offset += offsetof(struct ap_slice, data);
-        slice->data = (unsigned char*) malloc(slice->slice_size);
-        memcpy(slice->data, buffer+offset, slice->slice_size);
-        offset += slice->slice_size;
+        struct ap_slice *slice = ap_slice_duplicate((struct ap_slice*)(buffer+offset));
         LL_APPEND(head, slice);
         if(head->next)
         {
             assert(head->slice_size / head->next->slice_size == SLICE_EXPANSION);
         }
+        offset += ap_slice_mem_size(slice);
     }
     return head;
 }
@@ -387,15 +400,14 @@ static void ap_slice_merge(struct ap_slice *dst, const struct ap_slice *src)
     }
     if(dst->popcount == 0)
     {
-        memcpy(dst, src, offsetof(struct ap_slice, data));
-        memcpy(dst->data, src->data, src->slice_size);
+        ap_slice_copy(dst, src);
         return;
     }
     int popcnt=0;
     for(int i=0; i<dst->slice_size/sizeof(unsigned long long); i++)
     {
-        ((unsigned long long*)dst->data)[i] |= ((unsigned long long*)src->data)[i];
-        popcnt += __builtin_popcountll( ((unsigned long long*)dst->data)[i]);
+        ((unsigned long long*)dst->bitmap)[i] |= ((unsigned long long*)src->bitmap)[i];
+        popcnt += __builtin_popcountll( ((unsigned long long*)dst->bitmap)[i]);
     }
     dst->popcount = popcnt;
     if(timercmp(&(dst->last_insert), &(src->last_insert), <))
@@ -460,6 +472,7 @@ struct AP_bloom
     int cursor;
     struct timeval last_slide;
     struct ap_slice **heads; //hash_num+timeframe_num
+    unsigned char *mempool;
 };
 #define DBL_EPSILON 2.2204460492503131e-16
 bool definitelyLessThan(float a, float b)
@@ -551,6 +564,7 @@ void AP_bloom_add(struct AP_bloom *bloom, struct timeval now, const char *buffer
     for(int i=0; i<bloom->hash_num; i++)
     {
         int idx=(bloom->cursor+i) % (bloom->chain_num);
+        //__builtin_prefetch(bloom->heads[(idx+1)%bloom->chain_num], 1, 3);
         ap_slice_chain_add_hash(&(bloom->heads[idx]), hash, now);
     }
     return;
@@ -575,6 +589,7 @@ int AP_bloom_check(const struct AP_bloom *bloom, struct timeval now, const char 
     int chain_num = bloom->chain_num;
     //FAST PATH for no slice expansion
     int consecutive_matches=0, i =0;
+   
     for(i = 0; i < bloom->hash_num+chain_num; i++)
     {
         if(bloom->heads[i%chain_num]->next) break;
@@ -582,6 +597,7 @@ int AP_bloom_check(const struct AP_bloom *bloom, struct timeval now, const char 
         {
             consecutive_matches=0;
         }
+        //__builtin_prefetch(bloom->heads[(i+1)%chain_num], 0, 3);
         if(ap_slice_check_hash(bloom->heads[i%chain_num], hash))
         {
             consecutive_matches++;

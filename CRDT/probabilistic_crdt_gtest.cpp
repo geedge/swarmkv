@@ -1326,7 +1326,7 @@ TEST(APBloom, VariousError)
 TEST(APBloom, Performance)
 {
 	struct ap_bloom_case mycase[1]={
-		{1, 300, 4, 100000, 0.001, 10}
+		{1, 300, 4, 1000000, 0.001, 2}
 	};
 	for(int i=0; i<1; i++)
 	{
