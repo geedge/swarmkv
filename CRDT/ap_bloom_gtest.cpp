@@ -13,7 +13,6 @@
 #include <getopt.h>
 #include "ap_bloom.h"
 #include "crdt_utils.h"
-#include "fieldstat/fieldstat_easy.h"
 
 static unsigned int BM_CAPACITY = 10000000;
 static double BM_ERROR_RATE = 0.000001;
@@ -35,9 +34,6 @@ static const unsigned short INIT_DPORT = 0x4321;
 static long g_time_increment_ms = 0;
 static struct timeval g_time_increment_tv = {0, 0};
 static int g_force_timeout = 0;
-static struct fieldstat_easy *fs4_instance = NULL;
-static struct fieldstat_tag FS4_HISGRAM_TAG;
-static int fs4_add_metric_id, fs4_check_true_metric_id, fs4_check_false_metric_id;
 
 static inline void bm_update_key(char *tuple4_buf, unsigned int index)
 {
@@ -89,14 +85,9 @@ static void bm_add_item(struct AP_bloom *bloom_filter, char *tuple4_buf, unsigne
         max_add_time = time_diff;
     }
     total_add_time += (unsigned long long)time_diff;
-
-    if (fs4_instance)
-    {
-        fieldstat_easy_histogram_record(fs4_instance, 0, fs4_add_metric_id, &FS4_HISGRAM_TAG, 1, time_diff);
-    }
 }
 
-static int bm_search_item(struct AP_bloom *bloom_filter, char *tuple4_buf, unsigned int index, int fs4_metric_id)
+static int bm_search_item(struct AP_bloom *bloom_filter, char *tuple4_buf, unsigned int index)
 {
     struct timeval current_time_tv;
     bm_update_key(tuple4_buf, index);
@@ -115,27 +106,11 @@ static int bm_search_item(struct AP_bloom *bloom_filter, char *tuple4_buf, unsig
         max_search_time = time_diff;
     }
     total_search_time += (unsigned long long)time_diff;
-
-    if (fs4_instance)
-    {
-        fieldstat_easy_histogram_record(fs4_instance, 0, fs4_metric_id, &FS4_HISGRAM_TAG, 1, time_diff);
-    }
     return ret;
 }
 
 static int apbm_test(void)
 {
-    FS4_HISGRAM_TAG.key = "time";
-    FS4_HISGRAM_TAG.type = TAG_DOUBLE;
-    FS4_HISGRAM_TAG.value_double = 0.00001;
-
-    fs4_instance = fieldstat_easy_new(1, "apbm-test", &FS4_HISGRAM_TAG, 1);
-    fieldstat_easy_enable_auto_output(fs4_instance, "./apbm_gtest_fs4.log", 1);
-    // fieldstat_easy_enable_delta_in_active_output(fs4_instance);
-    fs4_add_metric_id = fieldstat_easy_register_histogram(fs4_instance, "add", 1, 99999999, 5);
-    fs4_check_true_metric_id = fieldstat_easy_register_histogram(fs4_instance, "chk_true", 1, 99999999, 5);
-    fs4_check_false_metric_id = fieldstat_easy_register_histogram(fs4_instance, "chk_false", 1, 99999999, 5);
-
     struct timeval current_time_tv;
     gettimeofday(&current_time_tv, NULL);
 
@@ -167,7 +142,7 @@ static int apbm_test(void)
         tuple4_buf[0] = 'Y';
         for (int b = 0; b < ITEM_BATCH_NUM && search_index_y < MAX_ITEM_NUM; b++, search_index_y++)
         {
-            ret = bm_search_item(bm_handle, tuple4_buf, search_index_y, fs4_check_true_metric_id);
+            ret = bm_search_item(bm_handle, tuple4_buf, search_index_y);
             if (ret <= 0) // expect exist
             {
                 search_y_error_num++;
@@ -177,7 +152,7 @@ static int apbm_test(void)
         tuple4_buf[0] = 'N';
         for (int b = 0; b < ITEM_BATCH_NUM && search_index_n < MAX_ITEM_NUM; b++, search_index_n++)
         {
-            ret = bm_search_item(bm_handle, tuple4_buf, search_index_n, fs4_check_false_metric_id);
+            ret = bm_search_item(bm_handle, tuple4_buf, search_index_n);
             if (ret > 0) // expect not exist
             {
                 search_n_error_num++;
@@ -197,8 +172,6 @@ static int apbm_test(void)
     printf("---------------------------------------------------------------\n");
     AP_bloom_free(bm_handle);
 
-    sleep(2); // wait fs4 output
-    fieldstat_easy_free(fs4_instance);
     return search_y_error_num + (err_rate > (double)BM_ERROR_RATE);
 }
 
@@ -327,7 +300,6 @@ static int apbloom_merge_test_run(void)
     const int max_item_num = 1000000;
     struct timeval current_time_tv;
     gettimeofday(&current_time_tv, NULL);
-    fs4_instance = NULL;
 
     struct AP_bloom *apbma = (struct AP_bloom *)AP_bloom_new(g_current_time_tv, BM_ERROR_RATE, BM_CAPACITY, 1000 * 999, BM_SLICE_NUM);
     assert(apbma);
@@ -351,7 +323,7 @@ static int apbloom_merge_test_run(void)
     tuple4_buf[0] = 'B';
     for (int i = 0; i < max_item_num; i++)
     {
-        ret = bm_search_item(apbma, tuple4_buf, i, -1);
+        ret = bm_search_item(apbma, tuple4_buf, i);
         if (ret > 0)
         {
             fprintf(stderr, "found tuple4 with B apbma before merge!\n");
@@ -364,14 +336,14 @@ static int apbloom_merge_test_run(void)
     for (int i = 0; i < max_item_num; i++)
     {
         tuple4_buf[0] = 'A';
-        ret = bm_search_item(apbma, tuple4_buf, i, -1);
+        ret = bm_search_item(apbma, tuple4_buf, i);
         if (ret <= 0)
         {
             fprintf(stderr, "not found tuple4 with A after merge, index:%d\n", i);
             return -1;
         }
         tuple4_buf[0] = 'B';
-        ret = bm_search_item(apbma, tuple4_buf, i, -1);
+        ret = bm_search_item(apbma, tuple4_buf, i);
         if (ret <= 0)
         {
             fprintf(stderr, "not found tuple4 with B after merge, index:%d\n", i);
@@ -438,7 +410,7 @@ int main(int argc, char *argv[])
             break;
 
         case 'f':
-            strncpy(temp_string, (char *)"--gtest_filter=", strlen("--gtest_filter="));
+            strncpy(temp_string, "--gtest_filter=", strlen("--gtest_filter=")+1);
             strcat(temp_string, optarg);
             to_gtest_argc++;
             to_gtest_args[1] = temp_string;

@@ -28,4 +28,4 @@ add_executable(ap_bloom_gtest ap_bloom_gtest.cpp
 				${PROJECT_SOURCE_DIR}/CRDT/ap_bloom.c
 				${PROJECT_SOURCE_DIR}/deps/xxhash/xxhash.c
 				${PROJECT_SOURCE_DIR}/CRDT/crdt_utils.c)
-target_link_libraries(ap_bloom_gtest gtest-static pthread libfieldstat4-static z)	
+target_link_libraries(ap_bloom_gtest gtest-static pthread z)	
