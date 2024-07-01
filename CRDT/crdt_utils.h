@@ -3,6 +3,7 @@
 #include <stdlib.h>	//calloc
 #include <sys/time.h>//gettimeofday
 #include <stdint.h>	//uint64_t
+#include "xxhash.h"
 
 #define ALLOC(type, number) ((type *)calloc(sizeof(type), number))
 #define	FREE(p)	{free(*p);*p=NULL;}
@@ -44,5 +45,17 @@ struct double_hash
     uint64_t a;
     uint64_t b;
 };
-void double_hash_init(struct double_hash *rv, const void *buffer, int len);
-int double_hash_generate(const struct double_hash *rv, int i, int m);
+//void double_hash_init(struct double_hash *rv, const void *buffer, int len);
+static inline void double_hash_init(struct double_hash *rv, const void *buffer, int len)
+{
+    XXH128_hash_t hash = XXH3_128bits(buffer, len);
+    rv->a = hash.high64;
+    rv->b = hash.low64;
+	return;
+}
+
+// int double_hash_generate(const struct double_hash *rv, int i, int m);
+static inline unsigned int double_hash_generate(const struct double_hash *rv, unsigned int i, unsigned int m)
+{
+    return (rv->a + i * rv->b) % m;
+}

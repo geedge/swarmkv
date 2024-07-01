@@ -26,26 +26,25 @@
 #define MODE_WRITE 1
 
 //return 1 if the bit is already set, 0 if it was not set
-inline static int test_bit_set_bit(unsigned char *buf, uint64_t x, int mode) {
-    uint64_t byte = x >> 3;
+inline static unsigned int test_bit_set_bit(unsigned char *buf, uint32_t x, int mode) {
+    uint32_t byte = x >> 3;
     uint8_t mask = 1 << (x % 8);
     uint8_t c = buf[byte]; // expensive memory access
 
     if (c & mask) {
         return 1;
-    } else {
-        if (mode == MODE_WRITE) {
-            buf[byte] = c | mask;
-        }
-        return 0;
+    } 
+    if (mode == MODE_WRITE) {
+        buf[byte] = c | mask;
     }
+    return 0;
 }
 
 struct ap_slice
 {
-    int hash_index;
-    int popcount;   //the number of 1-bits in the slice
-    size_t slice_size; //in bytes
+    unsigned int hash_index;
+    unsigned int popcount;   //the number of 1-bits in the slice
+    unsigned int slice_size; //in bytes
     struct timeval last_insert;
     struct timeval first_insert;
     unsigned char * bitmap;
@@ -136,22 +135,24 @@ size_t ap_slice_mem_size(const struct ap_slice *slice)
     return sizeof(struct ap_slice) + slice->slice_size;
 }
 #define HASH_TO_OFFSET(hash, slice) ((hash.a + slice->hash_index * hash.b) % (slice->slice_size<<3))
-void ap_slice_add_hash(struct ap_slice *slice, struct double_hash hash, struct timeval now)
+void ap_slice_add_hash(struct ap_slice *slice, const struct double_hash *hash, struct timeval now)
 {
-    int index = double_hash_generate(&hash, slice->hash_index, slice->slice_size<<3);
-    int added = !test_bit_set_bit(slice->bitmap, index, MODE_WRITE);
+    unsigned int index = double_hash_generate(hash, slice->hash_index, slice->slice_size<<3);
+    // __builtin_prefetch(&slice->bitmap[index/8], 1);
+    unsigned int added = !test_bit_set_bit(slice->bitmap, index, MODE_WRITE);
 
     slice->last_insert = now;
-    if(slice->popcount == 0)
+    if(unlikely(slice->popcount == 0))
     {
         slice->first_insert = now;
     }
     slice->popcount += added;
     return;
 }
-int ap_slice_check_hash(const struct ap_slice *slice, struct double_hash hash)
+unsigned int ap_slice_check_hash(const struct ap_slice *slice, const struct double_hash *hash)
 {
-    int index = double_hash_generate(&hash, slice->hash_index, slice->slice_size<<3);
+    unsigned int index = double_hash_generate(hash, slice->hash_index, slice->slice_size<<3);
+    // __builtin_prefetch(&slice->bitmap[index/8], 0);
     return test_bit_set_bit(slice->bitmap, index, MODE_READ);
 }
 struct ap_slice_event
@@ -223,7 +224,7 @@ int ap_state_is_match(struct ap_state *state)
     }
     return 0;
 }
-static void ap_slice_chain_check_hash(const struct ap_slice *head, struct double_hash hash, struct ap_state *state)
+static void ap_slice_chain_check_hash(const struct ap_slice *head, const struct double_hash *hash, struct ap_state *state)
 {
     //In a stackable (scalable) Bloom filter, checking for membership now involves inspecting each layer for presence. 
     const struct ap_slice *slice=NULL;
@@ -263,10 +264,10 @@ static void ap_slice_chain_check_hash(const struct ap_slice *head, struct double
  *     0 - element was not present and was added
  *     1 - element (or a collision) had already been added previously
  */
-static void ap_slice_chain_add_hash(struct ap_slice **head, struct double_hash hash, struct timeval now)
+static void ap_slice_chain_add_hash(struct ap_slice **head, const struct double_hash *hash, struct timeval now)
 {
     //add new slice if the current slice is full
-    if( (double) (*head)->popcount / ((*head)->slice_size<<3) > FILL_RATIO_THRESHOLD)
+    if(unlikely((double) (*head)->popcount / ((*head)->slice_size<<3) > FILL_RATIO_THRESHOLD))
     {
         struct ap_slice *new_slice = ap_slice_new((*head)->slice_size * SLICE_EXPANSION, (*head)->hash_index);
         LL_PREPEND((*head), new_slice);
@@ -515,16 +516,16 @@ struct AP_bloom *AP_bloom_new(struct timeval now, double error_rate, long long c
 
 static void slide_time(struct AP_bloom *bloom, struct timeval now)
 {
-    int chain_num = bloom->chain_num;
     long long slide_time_frame_us=bloom->cfg.time_slice_num?(bloom->cfg.time_window_ms*1000/bloom->cfg.time_slice_num):INT64_MAX;
     long long slide_us=timeval_delta_us(bloom->last_slide, now);
-    long long elapse_us=timeval_delta_us(bloom->cfg.last_cfg, now);
-    long long epoches=elapse_us/slide_time_frame_us;
     
-    if(slide_us < slide_time_frame_us)
+    if(likely(slide_us < slide_time_frame_us))
     {
         return;
     }
+    int chain_num = bloom->chain_num;
+    long long elapse_us=timeval_delta_us(bloom->cfg.last_cfg, now);
+    long long epoches=elapse_us/slide_time_frame_us;    
     slide_us -= slide_us % slide_time_frame_us;
     int n_slide = slide_us/slide_time_frame_us;
     
@@ -562,15 +563,17 @@ void AP_bloom_add(struct AP_bloom *bloom, struct timeval now, const char *buffer
     {
         slide_time(bloom, now);
     }
-    for(int i=0; i<bloom->hash_num; i++)
+    int hash_num = bloom->hash_num;
+    int chain_num = bloom->chain_num;
+    for(int i=0; i< hash_num; i++)
     {
-        int idx=(bloom->cursor+i) % (bloom->chain_num);
+        int idx=(bloom->cursor+i) % chain_num;
         //__builtin_prefetch(bloom->heads[(idx+1)%bloom->chain_num], 1, 3);
-        ap_slice_chain_add_hash(&(bloom->heads[idx]), hash, now);
+        ap_slice_chain_add_hash(&(bloom->heads[idx]), &hash, now);
     }
     return;
 }
-static int is_slice_expired(const struct ap_slice *slice, struct timeval now, long long time_window_ms)
+static inline int is_slice_expired(const struct ap_slice *slice, struct timeval now, long long time_window_ms)
 {
     if(time_window_ms == 0)
     {
@@ -581,7 +584,7 @@ static int is_slice_expired(const struct ap_slice *slice, struct timeval now, lo
 }
 int AP_bloom_check(const struct AP_bloom *bloom, struct timeval now, const char *buffer, int len)
 {
-    if(timeval_delta_ms(bloom->cfg.last_cfg, now) < 0)
+    if(unlikely(timeval_delta_ms(bloom->cfg.last_cfg, now) < 0))
     {
         return 0;
     }
@@ -589,16 +592,20 @@ int AP_bloom_check(const struct AP_bloom *bloom, struct timeval now, const char 
     double_hash_init(&hash, buffer, len);
     int chain_num = bloom->chain_num;
     //FAST PATH for no slice expansion
-    int consecutive_matches=0, i =0;
-    for(i = 0; i < bloom->hash_num+chain_num; i++)
+    int consecutive_matches=0, i;
+    int max_num = bloom->hash_num+chain_num;
+    for(i = 0; i < max_num; i++)
     {
-        if(bloom->heads[i%chain_num]->next) break;
-        if(is_slice_expired(bloom->heads[i%chain_num], now, bloom->cfg.time_window_ms))
+        int idx = i%chain_num;
+        if(unlikely(bloom->heads[idx]->next != NULL)){ 
+            break;
+        }
+        if(unlikely(is_slice_expired(bloom->heads[idx], now, bloom->cfg.time_window_ms)))
         {
             consecutive_matches=0;
         }
         //__builtin_prefetch(bloom->heads[(i+1)%chain_num], 0, 3);
-        if(ap_slice_check_hash(bloom->heads[i%chain_num], hash))
+        if(ap_slice_check_hash(bloom->heads[idx], &hash))
         {
             consecutive_matches++;
         }
@@ -611,7 +618,7 @@ int AP_bloom_check(const struct AP_bloom *bloom, struct timeval now, const char 
            return 1;
         }
     }
-    if(i == bloom->hash_num+chain_num)
+    if(i == max_num)
     {
         return 0;
     }
@@ -625,7 +632,7 @@ int AP_bloom_check(const struct AP_bloom *bloom, struct timeval now, const char 
             ap_state_clear(&state);
             continue;
         }
-        ap_slice_chain_check_hash(bloom->heads[i%chain_num], hash, &state);
+        ap_slice_chain_check_hash(bloom->heads[i%chain_num], &hash, &state);
         if(ap_state_is_match(&state))
         {
             ap_state_done(&state);
