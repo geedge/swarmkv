@@ -45,15 +45,22 @@ struct ap_slice
     unsigned int hash_index;
     unsigned int popcount;   //the number of 1-bits in the slice
     unsigned int slice_size; //in bytes
+    unsigned char alloc_from_mempool;
     struct timeval last_insert;
     struct timeval first_insert;
     unsigned char * bitmap;
     struct ap_slice * next;
 };
-static struct ap_slice *ap_slice_new(size_t slice_size, int hash_index)
+static struct ap_slice *ap_slice_new(size_t slice_size, int hash_index, unsigned char *mempool_addr)
 {
-    struct ap_slice *slice = (struct ap_slice*) aligned_alloc(64, sizeof(struct ap_slice) + slice_size);
-    memset(slice, 0, sizeof(struct ap_slice) + slice_size);
+    struct ap_slice *slice;
+    if(mempool_addr){
+        slice = (struct ap_slice*)mempool_addr;
+        slice->alloc_from_mempool = 1;
+    }else{
+        slice = (struct ap_slice*) aligned_alloc(64, sizeof(struct ap_slice) + slice_size);
+        memset(slice, 0, sizeof(struct ap_slice) + slice_size);
+    }
     slice->slice_size = slice_size;
     assert(slice_size % sizeof(unsigned long long) == 0);
     //ap_slice_chain_deserialize may alloc slice_size=0
@@ -73,8 +80,10 @@ void ap_slice_init(struct ap_slice *slice, size_t slice_size, int hash_index)
 static void ap_slice_free(struct ap_slice *slice)
 {
     //free(slice->bitmap);
-    slice->bitmap = NULL;
-    free(slice);
+    // slice->bitmap = NULL;
+    if(0 == slice->alloc_from_mempool){
+        free(slice);
+    }
 }
 void ap_slice_chain_info(const struct ap_slice *head, double *fill_ratio, int *slice_num)
 {
@@ -113,21 +122,35 @@ static int ap_slice_cmp(const struct ap_slice *a, const struct ap_slice *b)
     //bigger size first
     return b->slice_size - a->slice_size;
 }
-static struct ap_slice * ap_slice_duplicate(const struct ap_slice *origin)
+static struct ap_slice * ap_slice_duplicate(const struct ap_slice *origin, int default_slice_size, unsigned char *mempool_addr)
 {
-    struct ap_slice *new_slice = (struct ap_slice*) malloc(sizeof(struct ap_slice) + origin->slice_size);
+    struct ap_slice *new_slice;
+    int alloc_from_mempool;
+    if(default_slice_size == origin->slice_size && mempool_addr != NULL)
+    {
+        new_slice = (struct ap_slice *)mempool_addr;
+        alloc_from_mempool = 1;
+    }
+    else
+    {
+        new_slice = (struct ap_slice*) malloc(sizeof(struct ap_slice) + origin->slice_size);
+        alloc_from_mempool = 0;
+    }
     memcpy(new_slice, origin, sizeof(struct ap_slice) + origin->slice_size);
     new_slice->bitmap = (unsigned char*) (new_slice+1);
     new_slice->next = NULL;
+    new_slice->alloc_from_mempool = alloc_from_mempool;
     //memcpy(new_slice->bitmap, slice->bitmap, slice->slice_size);
     return new_slice;
 }
 static void ap_slice_copy(struct ap_slice *dst, const struct ap_slice *src)
 {
     assert(dst->slice_size == src->slice_size);
+    int alloc_from_mempool = dst->alloc_from_mempool;
     memcpy(dst, src, sizeof(struct ap_slice) + src->slice_size);
     dst->bitmap = (unsigned char*) (dst+1);
     dst->next = NULL;
+    dst->alloc_from_mempool = alloc_from_mempool;
     return;
 }
 size_t ap_slice_mem_size(const struct ap_slice *slice)
@@ -269,7 +292,7 @@ static void ap_slice_chain_add_hash(struct ap_slice **head, const struct double_
     //add new slice if the current slice is full
     if(unlikely((double) (*head)->popcount / ((*head)->slice_size<<3) > FILL_RATIO_THRESHOLD))
     {
-        struct ap_slice *new_slice = ap_slice_new((*head)->slice_size * SLICE_EXPANSION, (*head)->hash_index);
+        struct ap_slice *new_slice = ap_slice_new((*head)->slice_size * SLICE_EXPANSION, (*head)->hash_index, NULL);
         LL_PREPEND((*head), new_slice);
     }
     //Add it to the current (head) slice.
@@ -313,13 +336,13 @@ static void ap_slice_chain_reset(struct ap_slice *head)
     memset(head->bitmap, 0, head->slice_size);
     return;
 }
-static struct ap_slice *ap_slice_chain_duplicate(const struct ap_slice *src)
+static struct ap_slice *ap_slice_chain_duplicate(const struct ap_slice *src, int default_slice_size, unsigned char *mempool_addr)
 {
     struct ap_slice *new_head=NULL;
     const struct ap_slice *slice=NULL;
     LL_FOREACH(src, slice)
     {
-        struct ap_slice * new_slice=ap_slice_duplicate(slice);
+        struct ap_slice * new_slice=ap_slice_duplicate(slice, default_slice_size, mempool_addr);
         LL_APPEND(new_head, new_slice);
     }
     return new_head;
@@ -375,14 +398,14 @@ static size_t ap_slice_chain_serialize(const struct ap_slice *head, int chain_se
     assert(offset<=buffer_sz);
     return offset;
 }
-static struct ap_slice *ap_slice_chain_deserialize(const char *buffer, size_t buffer_sz)
+static struct ap_slice *ap_slice_chain_deserialize(const char *buffer, size_t buffer_sz, int default_slice_size, unsigned char *mempool_addr)
 {
     struct slice_chain_header *header=(struct slice_chain_header*)buffer;
     size_t offset=sizeof(struct slice_chain_header);
     struct ap_slice *head=NULL;
     for(size_t i=0; i<header->slice_number; i++)
     {
-        struct ap_slice *slice = ap_slice_duplicate((struct ap_slice*)(buffer+offset));
+        struct ap_slice *slice = ap_slice_duplicate((struct ap_slice*)(buffer+offset), default_slice_size, mempool_addr);
         LL_APPEND(head, slice);
         if(head->next)
         {
@@ -422,7 +445,7 @@ static void ap_slice_merge(struct ap_slice *dst, const struct ap_slice *src)
     }
     return;
 }
-static void ap_slice_chain_merge(struct ap_slice **dst_head, const struct ap_slice *src_head)
+static void ap_slice_chain_merge(struct ap_slice **dst_head, const struct ap_slice *src_head, int dst_default_slice_size, unsigned char *dst_head_mempool_addr)
 {
     const struct ap_slice *src_slice=NULL;
     int merged=0;
@@ -445,7 +468,7 @@ static void ap_slice_chain_merge(struct ap_slice **dst_head, const struct ap_sli
         }
         if(!merged)
         {
-            struct ap_slice *new_slice = ap_slice_duplicate(src_slice);
+            struct ap_slice *new_slice = ap_slice_duplicate(src_slice, dst_default_slice_size, dst_head_mempool_addr);
             LL_APPEND(*dst_head, new_slice);
         }
     }
@@ -473,8 +496,8 @@ struct AP_bloom
     //runtime variables
     int cursor;
     struct timeval last_slide;
+    unsigned char *mempool; //use malloc if extension
     struct ap_slice **heads; //hash_num+timeframe_num
-    unsigned char *mempool;
 };
 #define DBL_EPSILON 2.2204460492503131e-16
 bool definitelyLessThan(float a, float b)
@@ -507,9 +530,12 @@ struct AP_bloom *AP_bloom_new(struct timeval now, double error_rate, long long c
 
     bloom->chain_num = bloom->hash_num + bloom->cfg.time_slice_num;
     bloom->heads = ALLOC(struct ap_slice*, bloom->chain_num);
+    posix_memalign((void **)&bloom->mempool, 64, bloom->chain_num * (sizeof(struct ap_slice) + bloom->default_slice_size));
+    memset(bloom->mempool, 0, bloom->chain_num * (sizeof(struct ap_slice) + bloom->default_slice_size));
     for(int i=0; i<bloom->chain_num; i++)
     {
-        bloom->heads[i] = ap_slice_new(bloom->default_slice_size, i % bloom->chain_num);
+        // bloom->heads[i] = ap_slice_new(bloom->default_slice_size, i % bloom->chain_num);
+        bloom->heads[i] = ap_slice_new(bloom->default_slice_size, i % bloom->chain_num, bloom->mempool + i * (sizeof(struct ap_slice) + bloom->default_slice_size));
     }
     return bloom;
 }
@@ -651,6 +677,7 @@ void AP_bloom_free(struct AP_bloom *bloom)
     }
     free(bloom->heads);
     bloom->heads=NULL;
+    free(bloom->mempool);
     free(bloom);
 }
 size_t AP_bloom_mem_size(const struct AP_bloom *bloom)
@@ -696,9 +723,12 @@ struct AP_bloom * AP_bloom_deserialize(const char *blob, size_t blob_sz)
     memcpy(bloom, blob+offset, offsetof(struct AP_bloom, heads));
     offset += offsetof(struct AP_bloom, heads);
     bloom->heads=ALLOC(struct ap_slice*, bloom->chain_num);
+    bloom->mempool = NULL;
+    posix_memalign((void **)&bloom->mempool, 64, bloom->chain_num * (sizeof(struct ap_slice) + bloom->default_slice_size));
+    memset(bloom->mempool, 0, bloom->chain_num * (sizeof(struct ap_slice) + bloom->default_slice_size));
     for(int i=0; i<bloom->chain_num; i++)
     {
-        bloom->heads[i]=ap_slice_chain_deserialize(blob+offset, blob_sz-offset);
+        bloom->heads[i]=ap_slice_chain_deserialize(blob+offset, blob_sz-offset, bloom->default_slice_size, bloom->mempool + i * (sizeof(struct ap_slice) + bloom->default_slice_size));
         offset += ap_slice_chain_serialize_size(bloom->heads[i]);
     }
     assert(offset==blob_sz);
@@ -719,13 +749,16 @@ void AP_bloom_merge(struct AP_bloom *dst, const struct AP_bloom *src)
             {
                 ap_slice_chain_free(dst->heads[i]);
             }
-            
-            memcpy(dst, src, offsetof(struct AP_bloom, heads));
             free(dst->heads);
+            free(dst->mempool);
+            memcpy(dst, src, offsetof(struct AP_bloom, heads));
+            dst->mempool = NULL;
+            posix_memalign((void **)&dst->mempool, 64, dst->chain_num * (sizeof(struct ap_slice) + dst->default_slice_size));
+            memset(dst->mempool, 0, dst->chain_num * (sizeof(struct ap_slice) + dst->default_slice_size));
             dst->heads = ALLOC(struct ap_slice*, dst->chain_num);
             for(int i=0; i<dst->chain_num; i++)
             {
-                dst->heads[i] = ap_slice_chain_duplicate(src->heads[i]);
+                dst->heads[i] = ap_slice_chain_duplicate(src->heads[i], dst->default_slice_size, dst->mempool + i * (sizeof(struct ap_slice) + dst->default_slice_size));
             }
         }
         return;
@@ -746,7 +779,7 @@ void AP_bloom_merge(struct AP_bloom *dst, const struct AP_bloom *src)
         {
             continue;
         }
-        ap_slice_chain_merge(&(dst->heads[i]), src->heads[i]);
+        ap_slice_chain_merge(&(dst->heads[i]), src->heads[i], dst->default_slice_size, dst->mempool + i * (sizeof(struct ap_slice) + dst->default_slice_size));
     }
     return;
 }
