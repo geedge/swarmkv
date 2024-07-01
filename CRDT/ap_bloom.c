@@ -53,7 +53,8 @@ struct ap_slice
 };
 static struct ap_slice *ap_slice_new(size_t slice_size, int hash_index)
 {
-    struct ap_slice *slice = (struct ap_slice*) aligned_alloc(1, sizeof(struct ap_slice) + slice_size);
+    struct ap_slice *slice = (struct ap_slice*) aligned_alloc(64, sizeof(struct ap_slice) + slice_size);
+    memset(slice, 0, sizeof(struct ap_slice) + slice_size);
     slice->slice_size = slice_size;
     assert(slice_size % sizeof(unsigned long long) == 0);
     //ap_slice_chain_deserialize may alloc slice_size=0
@@ -589,7 +590,6 @@ int AP_bloom_check(const struct AP_bloom *bloom, struct timeval now, const char 
     int chain_num = bloom->chain_num;
     //FAST PATH for no slice expansion
     int consecutive_matches=0, i =0;
-   
     for(i = 0; i < bloom->hash_num+chain_num; i++)
     {
         if(bloom->heads[i%chain_num]->next) break;
