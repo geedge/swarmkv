@@ -35,7 +35,7 @@ env | sort
 # Install dependency from YUM
 if [ -n "${INSTALL_DEPENDENCY_LIBRARY}" ]; then
 	yum install -y $INSTALL_DEPENDENCY_LIBRARY
-	source /etc/profile.d/framework.sh
+	# source /etc/profile.d/framework.sh
 fi
 mkdir build || true
 cd build
