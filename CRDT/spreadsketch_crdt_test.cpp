@@ -300,7 +300,7 @@ TestRet *spread_sketch_test_swarm(int precision, int depth, int width, long long
 
     struct spread_sketch *ss_instances[N_INSTANCES];
     for (int i = 0; i < N_INSTANCES; i++) {
-        ss_instances[i] = spread_sketch_new(depth, width, precision, window_s, ms_to_timeval(now));
+        ss_instances[i] = spread_sketch_new(depth, width, precision, window_s * 1000, ms_to_timeval(now));
     }
 
     double ms_per_packet = 1.0 * (window_s * 1000) / (fanout_superspreader * n_super_spreader + fanout_others * (n_total - n_super_spreader));
@@ -407,7 +407,7 @@ TEST(SpreadSketch, scarce_flow)
 {
     int window_s = 100;
     int n_super_spreader = 100;
-    struct spread_sketch *ss = spread_sketch_new(5, 1024, 4, window_s, ms_to_timeval(0));
+    struct spread_sketch *ss = spread_sketch_new(5, 1024, 4, window_s * 1000, ms_to_timeval(0));
     InputGenerator gen(n_super_spreader, 1000, 0.5, 1000, 3, 0, 100);
 
     TestRet *test_ret = spread_sketch_test(ss, window_s, window_s * 5, gen);
@@ -430,7 +430,7 @@ TEST(SpreadSketch, decay_old_key) {
     int n_super_spreader = 1000;
     int window_s = 10;
 
-    struct spread_sketch *ss = spread_sketch_new(4, 1024, 6, window_s, ms_to_timeval(0));
+    struct spread_sketch *ss = spread_sketch_new(4, 1024, 6, window_s * 1000, ms_to_timeval(0));
     long long now = 0;
 
     for (int i = 0; i < n_super_spreader; i++) {
@@ -463,7 +463,7 @@ TEST(SpreadSketch, decay_old_key) {
 }
 
 TEST(SpreadSketch, serialize_with_nonstring_keys) {
-    struct spread_sketch *ss = spread_sketch_new(4, 1024, 4, 10, ms_to_timeval(0));
+    struct spread_sketch *ss = spread_sketch_new(4, 1024, 4, 10*1000, ms_to_timeval(0));
     int key1 = 1;
     int key2 = 2;
     int dstKey1 = 11;
@@ -497,7 +497,7 @@ TEST(SpreadSketch, serialize_with_nonstring_keys) {
 }
 
 void spread_sketch_parameter_experiments(int depth, int width, int precision, long long window_s, int n_super_spreader, int fanout_superspreader) {
-    struct spread_sketch *ss = spread_sketch_new(depth, width, precision, window_s, ms_to_timeval(0));
+    struct spread_sketch *ss = spread_sketch_new(depth, width, precision, window_s * 1000, ms_to_timeval(0));
     InputGenerator gen(n_super_spreader, n_super_spreader * 9, 0.5, fanout_superspreader, 3, 0, 1);    
     TestRet *test_ret = spread_sketch_test(ss, window_s, window_s * 5, gen);
 
@@ -674,7 +674,7 @@ public:
 };
 
 void parameter_experiments_given_zipf_experiment(int depth, int width, int precision, long long window_s, ZipfInputGenerator &input) {
-    struct spread_sketch *ss = spread_sketch_new(depth, width, precision, window_s, ms_to_timeval(0));
+    struct spread_sketch *ss = spread_sketch_new(depth, width, precision, window_s * 1000, ms_to_timeval(0));
     TestRet *ret = new TestRet();
 
     Flow flow = input.next();
