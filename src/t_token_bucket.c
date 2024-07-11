@@ -15,7 +15,7 @@ static int get_consume_type(sds s, enum tb_consume_type *consume_type)
 	{
 		*consume_type = TB_CONSUME_NORMAL;
 	}
-	if (0 == strncasecmp(s, "FORCE", sdslen(s)))
+	else if (0 == strncasecmp(s, "FORCE", sdslen(s)))
 	{
 		*consume_type = TB_CONSUME_FORCE;
 	}
@@ -306,7 +306,7 @@ enum cmd_exec_result ftconsume_command(struct swarmkv_module *mod_store, const s
 	{
 		if (0 > get_consume_type(cmd->argv[5], &consume_type))
 		{
-			*reply = swarmkv_reply_new_error(error_arg_string_should_be, cmd->argv[4], "NORMAL|FORCE|FLEXIBLE");
+			*reply = swarmkv_reply_new_error(error_arg_string_should_be, cmd->argv[5], "NORMAL|FORCE|FLEXIBLE");
 			return FINISHED;
 		}
 	}

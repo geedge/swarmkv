@@ -897,7 +897,7 @@ double test_fair_token_bucket(struct ftb_class *classes, size_t n_class, struct 
 	long long got=0;
 	int r=0;
 	struct timeval last_sync=now;
-	for(int i=0; i<mycase->duration_s*(1000*1000/step_us); i++)
+	while(timeval_delta_ms(start, now)<mycase->duration_s*1000)
 	{
 		timeradd(&now, &step, &now);
 		int k=random()%n_class;
@@ -909,6 +909,7 @@ double test_fair_token_bucket(struct ftb_class *classes, size_t n_class, struct 
 				continue;
 			}
 			r=idx%n_replica;// each class sticks to one replica.
+			//r=0;
 			classes[idx].next_demand += (double)classes[idx].rate*step_us/(1000*1000);
 			if(classes[idx].next_demand < 1)
 			{
@@ -1140,21 +1141,33 @@ TEST(FairTokenBucket, Replicas)
 	EXPECT_NEAR(index, 1, expected_fairness_index);
 
 }
-TEST(FairTokenBucket, TwoWeightedClass)
+TEST(FairTokenBucket, TwoWeightedClasses)
 {
-	double index=0;
+	double index = 0;
 	struct ftb_case mycase;
 	ftb_case_init(&mycase);
-	mycase.rate=8*1024*1024;
-	mycase.capacity=mycase.rate;
-	mycase.duration_s=500;
-	mycase.n_replica=1;
-	struct ftb_class test_class[2]={
-								{.class_id=1, .weight=1, .rate=mycase.rate}, 
-								{.class_id=2, .weight=3, .rate=mycase.rate}};
+	mycase.rate = 8 * 1024 * 1024;
+	mycase.capacity = mycase.rate;
+	mycase.duration_s = 500;
+	mycase.n_replica = 1;
+	struct ftb_class test_class[2] = {
+		{.class_id = 1, .weight = 1, .rate = mycase.rate},
+		{.class_id = 2, .weight = 3, .rate = mycase.rate}};
 
+	index = test_fair_token_bucket(test_class, 2, &mycase);
+	EXPECT_NEAR(index, 1, expected_fairness_index);
 	
-	index=test_fair_token_bucket(test_class, 2, &mycase);
+	//https://jira.geedge.net/browse/TSG-19846
+	//When the bucket is full, estimated quantum is larger than requested tokens, there is no fairness.
+	//So short duration, i.e., 10s, will induce bad fairness indes.
+	//mycase.capacity = mycase.rate * 2;
+	mycase.duration_s = 120;
+	mycase.n_replica = 1;
+	struct ftb_class all_heavy_class[2] = {
+		{.class_id = 1, .weight = 1, .rate = mycase.rate * 2},
+		{.class_id = 2, .weight = 4, .rate = mycase.rate * 2}};
+
+	index = test_fair_token_bucket(all_heavy_class, 2, &mycase);
 	EXPECT_NEAR(index, 1, expected_fairness_index);
 }
 TEST(FairTokenBucket, Weight)
@@ -1244,41 +1257,7 @@ TEST(FairTokenBucket, Weight)
 	double sd_al_index=test_fair_token_bucket(sd_al, 10, &mycase);
 	EXPECT_NEAR(sd_al_index, 1, expected_fairness_index);
 }
-TEST(FairTokenBucket, Weight5000)
-{
-	size_t n_class=5000;
-	long long per_class_CIR=1000000;
 
-	struct ftb_case mycase;
-	ftb_case_init(&mycase);
-	mycase.rate=n_class*per_class_CIR;
-	mycase.capacity=mycase.rate;
-	mycase.duration_s=40;
-	mycase.n_replica=1;
-	mycase.perturb_interval_ms=10;
-
-	struct ftb_class very_heavy_classes[n_class];
-	memset(very_heavy_classes, 0, sizeof(very_heavy_classes));
-	for(size_t i=0; i<n_class; i++)
-	{
-		very_heavy_classes[i].class_id=i;
-		very_heavy_classes[i].rate=per_class_CIR+(random()%20)*per_class_CIR;
-		very_heavy_classes[i].weight=i%20+1;
-	}
-	double index=test_fair_token_bucket(very_heavy_classes, n_class, &mycase);
-	EXPECT_NEAR(index, 1, expected_fairness_index);
-
-	struct ftb_class slight_heavy_classes[n_class];
-	memset(slight_heavy_classes, 0, sizeof(slight_heavy_classes));
-	for(size_t i=0; i<n_class; i++)
-	{
-		slight_heavy_classes[i].class_id=i;
-		slight_heavy_classes[i].rate=per_class_CIR+i*per_class_CIR/n_class;
-		slight_heavy_classes[i].weight=i%20+1;
-	}
-	index=test_fair_token_bucket(slight_heavy_classes, n_class, &mycase);
-	EXPECT_NEAR(index, 1, expected_fairness_index);
-}
 TEST(FairTokenBucket, VariousPerturb1)
 {
 	double index=0;
@@ -1390,6 +1369,41 @@ TEST(FairTokenBucket, DynamicMembers)
 
 	
 	index=test_fair_token_bucket(heavy_1_of_5_class, 5, &mycase);
+	EXPECT_NEAR(index, 1, expected_fairness_index);
+}
+TEST(FairTokenBucket, Weight5000)
+{
+	size_t n_class=5000;
+	long long per_class_CIR=1000000;
+
+	struct ftb_case mycase;
+	ftb_case_init(&mycase);
+	mycase.rate=n_class*per_class_CIR;
+	mycase.capacity=mycase.rate;
+	mycase.duration_s=40;
+	mycase.n_replica=1;
+	mycase.perturb_interval_ms=10;
+
+	struct ftb_class very_heavy_classes[n_class];
+	memset(very_heavy_classes, 0, sizeof(very_heavy_classes));
+	for(size_t i=0; i<n_class; i++)
+	{
+		very_heavy_classes[i].class_id=i;
+		very_heavy_classes[i].rate=per_class_CIR+(random()%20)*per_class_CIR;
+		very_heavy_classes[i].weight=i%20+1;
+	}
+	double index=test_fair_token_bucket(very_heavy_classes, n_class, &mycase);
+	EXPECT_NEAR(index, 1, expected_fairness_index);
+
+	struct ftb_class slight_heavy_classes[n_class];
+	memset(slight_heavy_classes, 0, sizeof(slight_heavy_classes));
+	for(size_t i=0; i<n_class; i++)
+	{
+		slight_heavy_classes[i].class_id=i;
+		slight_heavy_classes[i].rate=per_class_CIR+i*per_class_CIR/n_class;
+		slight_heavy_classes[i].weight=i%20+1;
+	}
+	index=test_fair_token_bucket(slight_heavy_classes, n_class, &mycase);
 	EXPECT_NEAR(index, 1, expected_fairness_index);
 }
 struct btb_key
