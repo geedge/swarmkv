@@ -357,12 +357,15 @@ static void ap_slice_chain_free(struct ap_slice *head)
         ap_slice_free(slice);
     }
 }
-static void ap_slice_chain_reset(struct ap_slice *head)
+/* keep the first defalult size slice, not expanding slice, ensure the slice memory (bitmap) is contiguous */
+static void ap_slice_chain_reset(unsigned int default_slice_size, struct ap_slice **head_pointer)
 {
+    struct ap_slice *head = *head_pointer;
     struct ap_slice *slice=NULL, *tmp=NULL;
     LL_FOREACH_SAFE(head, slice, tmp)
     {
-        if(slice == head) continue;
+        //if(slice == head) continue;
+        if(slice->slice_size == default_slice_size) continue;
         LL_DELETE(head, slice);
         ap_slice_free(slice);
     }
@@ -370,6 +373,7 @@ static void ap_slice_chain_reset(struct ap_slice *head)
     head->first_insert.tv_sec = head->last_insert.tv_sec = 0;
     head->first_insert.tv_usec = head->last_insert.tv_usec = 0;
     memset(head->bitmap, 0, head->slice_size);
+    *head_pointer = head;
     return;
 }
 static struct ap_slice *ap_slice_chain_duplicate(const struct ap_slice *src, int default_slice_size, unsigned char *mempool_addr)
@@ -596,7 +600,7 @@ static void slide_time(struct AP_bloom *bloom, struct timeval now)
         for(int i=0; i<n_slide; i++)
         {
             int reset_idx = (bloom->cursor + bloom->hash_num) % chain_num;
-            ap_slice_chain_reset(bloom->heads[reset_idx]);
+            ap_slice_chain_reset(bloom->default_slice_size, &bloom->heads[reset_idx]);
             bloom->cursor = (bloom->cursor + 1) % chain_num;
         }
     }
@@ -604,7 +608,7 @@ static void slide_time(struct AP_bloom *bloom, struct timeval now)
     {
         for(int i=0; i<chain_num; i++)
         {
-            ap_slice_chain_reset(bloom->heads[i]);
+            ap_slice_chain_reset(bloom->default_slice_size, &bloom->heads[i]);
         }
         bloom->cursor = (bloom->cursor + n_slide) % chain_num;
     }
