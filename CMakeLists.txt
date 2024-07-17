@@ -8,8 +8,8 @@ include_directories(${PROJECT_SOURCE_DIR}/include)
 set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
 include(Version)
 
-set(CMAKE_C_FLAGS "-std=gnu99 -Wall") 
-set(CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS} -Wall)
+set(CMAKE_C_FLAGS "-std=gnu99 -Wall -g") 
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -g")
 set(SWARMKV_DEPEND_DYN_LIB pthread uuid m stdc++)
 
 include_directories(${PROJECT_SOURCE_DIR}/inc/)

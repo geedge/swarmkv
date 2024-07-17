@@ -269,7 +269,7 @@ static void scontainer_remove_replica_node(struct scontainer *ctr, const node_t 
 	found=(node_t*)utarray_find(ctr->replica_node_list, node, node_cmp);
 	if(!found) return;
 	int pos=utarray_eltidx(ctr->replica_node_list, found);
-	utarray_erase(ctr->replica_node_list, pos, 1);
+	utarray_erase(ctr->replica_node_list, pos, 1); // todo: 研究一下
 	return;
 }
 void store_add_scontainer(struct swarmkv_store *store, struct scontainer *ctr)
