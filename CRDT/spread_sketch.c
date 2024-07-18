@@ -12,11 +12,6 @@
 #include "hll_common.h"
 #include "exdata.h"
 
-
-// TODO: 适配swarm kv 时的问题：
-// 需要返回一个double，正常spread sketch 一定返回值（key 不在也更新hll），所以这里的查询怎么样比较好？
-
-
 struct entry {
     int ref_count;
     void *exdata;
@@ -62,8 +57,7 @@ struct spread_sketch {
     struct bucket *buckets;
     struct entry_table *table;
 
-    int level_cnt[65]; // 64: the level range is [1,65] // count every level number。
-    uint32_t level_min; // the minimum level in the sketch
+    int level0_cnt; // used to filter out dummy adding
 };
 
 static void *default_new_fn(void *arg) {
@@ -94,7 +88,7 @@ uint32_t cal_true_level(const struct spread_sketch *ss, int bucket_idx, long lon
     /*
     return f(t), the actual level of bucket, which satisfy:
     1. d 2^f(t)/dt is constants
-    2.  f(t0 + T) = 1
+    2.  f(t0 + 2T) = 0
     3. f((t0) = L )
     */
     struct bucket *bucket = &ss->buckets[bucket_idx];
@@ -107,15 +101,15 @@ uint32_t cal_true_level(const struct spread_sketch *ss, int bucket_idx, long lon
     long long t0 = bucket->last_update_ms;
 
     assert(t >= t0);
-    if (t - t0 >= T) {
-        return 1;
+    if (t - t0 >= 2 * T) {
+        return 0;
     }
     if (L <= 1) {
-        return L;
+        return t - t0 >= T ? 0 : L;
     }
 
     long long tmp_exp = 1 << L;
-    double a = ((double)(2 - tmp_exp)) / ((double)T);
+    double a = ((double)(1 - tmp_exp)) / (2.0 * T);
     double b = (double)(tmp_exp);
 
     return (uint32_t)(log2(a * ((double)(t-t0)) + b) + 0.5);
@@ -227,9 +221,7 @@ struct spread_sketch *spread_sketch_new(int depth, int width, unsigned char prec
         pthis->buckets[i].sthll_register = hll_create_register(precision);
     }
 
-    pthis->level_min = 0;
-    memset(pthis->level_cnt, 0, sizeof(pthis->level_cnt));
-    pthis->level_cnt[0] = pthis->depth * pthis->width;
+    pthis->level0_cnt = pthis->depth * pthis->width;
 
     return pthis;
 }
@@ -248,29 +240,18 @@ void move_registers_forward(struct spread_sketch *ss, const struct timeval *now)
     }
 }
 
-void min_level_state_update(struct spread_sketch *ss, uint32_t level_old, uint32_t level_new) {
-    ss->level_cnt[level_old]--;
-    ss->level_cnt[level_new]++;
-    while (ss->level_cnt[ss->level_min] == 0) {
-        ss->level_min++;
-    }
-}
-
 // return 0 if not added, return 1 if added
 int spread_sketch_add_hash(struct spread_sketch *ss, const char *key, size_t key_length, uint64_t item_hash, void *arg, struct timeval now) {
     uint32_t level = (uint32_t)__builtin_clzll(item_hash) + 1;
     long long now_ms = now.tv_sec * 1000 + now.tv_usec / 1000;
-    
-    if (level <= ss->level_min) {
-        if (item_hash == DUMMY_ITEM_HASH) { // TODO: 这个地方的逻辑对不上，其实返回1应该是“在sketch中”就返回1，为了get exdata 的问题，增加了一种特殊情况。
-        // 正常来说，应该是在任何时候，都调用add_sketch，不区分primary or not，并走同样的逻辑，在不包含于sketch时不get。
-        // todo: 不对，如果hll 在内部，那么hll 的更新总是要完成，这里只是区别了要更新hll 和不更新hll 的情况
-            return 0; // DUMMY_ITEM_HASH is the case of "recording a key" instead of update hll. Just return 0 to inform the key is not added to the sketch
-        }
 
-        struct entry *content = smart_ptr_table_find(ss->table, key, key_length);
-        return content == NULL ? 0 : 1;
-    }     
+    if (item_hash == DUMMY_ITEM_HASH) {
+        if (ss->level0_cnt == 0) {
+            return 0;
+        }
+        assert(ss->level0_cnt>0);
+    }
+    
     // https://www.eecs.harvard.edu/~michaelm/postscripts/tr-02-05.pdf
     // A technique from the hashing literature is to use two hash functions h1(x) and h2(x) to simulate additional hash functions of the form gi(x) = h1(x) + ih2(x)
     // Assuming that the 128-bit xxhash function is perfect, we can view it as a combination of two 64-bit hash functions.
@@ -290,7 +271,9 @@ int spread_sketch_add_hash(struct spread_sketch *ss, const char *key, size_t key
             bucket->last_update_ms = now_ms;
 
             if (bucket->level < level) {
-                min_level_state_update(ss, bucket->level, level);
+                if (bucket->level == 0) {
+                    ss->level0_cnt--;
+                }
                 bucket->level = level;
             }
             in_sketch = true;
@@ -298,7 +281,10 @@ int spread_sketch_add_hash(struct spread_sketch *ss, const char *key, size_t key
             uint32_t true_level = bucket->content == NULL ? 0: cal_true_level(ss, bucket_idx, now_ms);
 
             if (level > true_level) {
-                min_level_state_update(ss, true_level, level);
+                if (bucket->level == 0) {
+                    ss->level0_cnt--;
+                }
+                
                 // printf("update key %s to %s, and level %u to %u, in bucket (r,w)=(%d,%u)\n", bucket->content == NULL ? "NULL": bucket->content->key, key, true_level, level, i, hash_x % ss->width);
                 const struct entry *content_old = bucket->content;
                 if (content_old != NULL) {
@@ -386,20 +372,21 @@ void spread_sketch_merge(struct spread_sketch *dst, const struct spread_sketch *
         }
 
         hll_merge(bucket_dst->sthll_register, src->buckets[i].sthll_register, dst->precision);
+        if (bucket_dst->level == 0 && bucket_src->level > 0) {
+            dst->level0_cnt--;
+        }
 
         if (bucket_dst->content == NULL) {
             bucket_dst->content = smart_ptr_table_get(dst->table, bucket_src->content->key, bucket_src->content->key_len, NULL);
             bucket_dst->level = bucket_src->level;
             bucket_dst->last_update_ms = bucket_src->last_update_ms;
 
-            min_level_state_update(dst, 0, bucket_src->level);
             continue;
         }
         bucket_dst->content->dying = false;
 
         if (key_equal(bucket_src->content->key, bucket_src->content->key_len, bucket_dst->content->key, bucket_dst->content->key_len)) {
             if (bucket_src->level > bucket_dst->level) {
-                min_level_state_update(dst, bucket_dst->level, bucket_src->level);
                 bucket_dst->level = bucket_src->level;
             }
             if (bucket_src->last_update_ms > bucket_dst->last_update_ms) {
@@ -410,7 +397,6 @@ void spread_sketch_merge(struct spread_sketch *dst, const struct spread_sketch *
             uint32_t true_level_dst = cal_true_level(dst, i, bucket_dst->last_update_ms);
 
             if (true_level_src > true_level_dst) {
-                min_level_state_update(dst, bucket_dst->level, bucket_src->level);
                 smart_ptr_table_release(dst->table, bucket_dst->content->key, bucket_dst->content->key_len);
                 bucket_dst->content = smart_ptr_table_get(dst->table, bucket_src->content->key, bucket_src->content->key_len, NULL);
                 bucket_dst->last_update_ms = bucket_src->last_update_ms;
@@ -437,7 +423,7 @@ void spread_sketch_merge(struct spread_sketch *dst, const struct spread_sketch *
 }
 
 void *spread_sketch_get0_exdata(const struct spread_sketch *ss, const char *key, size_t key_len) {
-    struct entry *content = smart_ptr_table_find(ss->table, key, key_len);
+    const struct entry *content = smart_ptr_table_find(ss->table, key, key_len);
     if (content == NULL) {
         return NULL;
     }
@@ -457,9 +443,7 @@ void spread_sketch_reset(struct spread_sketch *ss) {
         content->dying = true;
     }
 
-    memset(ss->level_cnt, 0, sizeof(ss->level_cnt));
-    ss->level_cnt[0] = ss->depth * ss->width;
-    ss->level_min = 0;
+    ss->level0_cnt = ss->depth * ss->width;
 }
 
 void spread_sketch_set_exdata_schema(struct spread_sketch *ss, exdata_new_cb new_fn, exdata_free_cb free_fn, exdata_merge_cb merge_fn, exdata_reset_cb reset_fn, exdata_copy_cb copy_fn) {
@@ -532,7 +516,7 @@ double spread_sketch_get_cardinality(const struct spread_sketch *ss, const char 
 
 struct spread_sketch *spread_sketch_copy(const struct spread_sketch *src) {
     struct spread_sketch *dst = malloc(sizeof(struct spread_sketch));
-    memcpy(dst, src, sizeof(struct spread_sketch)); // copy the depth, width, level_cnt, level_min
+    memcpy(dst, src, sizeof(struct spread_sketch));
 
     dst->buckets = calloc(dst->depth * dst->width, sizeof(struct bucket));
     dst->table = smart_ptr_table_new();
@@ -603,7 +587,9 @@ void spread_sketch_serialize(const struct spread_sketch *ss, char **blob, size_t
     sz += sizeof(struct spread_sketch);
     sz += ss->depth * ss->width * (sizeof(struct bucket) + hll_size(ss->precision) + sizeof(int64_t));
     for (int i = 0; i < ss->depth * ss->width; i++) {
-        sz += ss->buckets[i].content->key_len;
+        if (ss->buckets[i].content != NULL) {
+            sz += ss->buckets[i].content->key_len;
+        }
     }
 
     char *buffer = malloc(sz);
@@ -682,7 +668,7 @@ size_t spread_sketch_calculate_memory_usage(const struct spread_sketch *ss)
     ret += sizeof(struct spread_sketch);
 
     size_t bucket_size = sizeof(struct bucket) + hll_size(ss->precision);
-    printf("every bucket size: %ld\n", bucket_size);
+    printf("every bucket size: %zu\n", bucket_size);
     ret += ss->depth * ss->width * bucket_size;
 
     printf("the number of content: %u\n", HASH_COUNT(ss->table->entry));
