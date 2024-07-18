@@ -645,9 +645,11 @@ struct spread_sketch *spread_sketch_deserialize(const char *blob, size_t blob_sz
         int64_t key_len;
         memcpy(&key_len, blob, sizeof(int64_t));
         blob += sizeof(int64_t);
+        if (key_len == 0) {
+            continue;
+        }
         const char *key = blob;
         blob += key_len;
-
         struct entry *content = smart_ptr_table_get(ss->table, key, key_len, NULL);
         ss->buckets[i].content = content;
     }

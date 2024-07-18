@@ -93,15 +93,25 @@ struct spread_sketch_list *spread_sketch_list(const struct spread_sketch *ss) {
         return ret;
     }
 
+    // sort by count
+    std::vector<std::pair<double, size_t>> sorted;
+    for (size_t i = 0; i < n_result; i++) {
+        sorted.push_back(std::make_pair(spread_sketch_get_cardinality(ss, keys[i], key_lens[i]), i));
+    }
+    std::sort(sorted.begin(), sorted.end(), [](const std::pair<double, size_t> &a, const std::pair<double, size_t> &b) {
+        return a.first > b.first;
+    });
+
     ret->key = (char **)malloc(sizeof(char *) * n_result);
     ret->count = (double *)malloc(sizeof(double) * n_result);
     ret->key_len = (size_t *)malloc(sizeof(size_t) * n_result);
 
     for (size_t i = 0; i < n_result; i++) {
-        ret->key[i] = (char *)malloc(key_lens[i]);
-        memcpy(ret->key[i], keys[i], key_lens[i]);
-        ret->count[i] = spread_sketch_get_cardinality(ss, keys[i], key_lens[i]);
-        ret->key_len[i] = key_lens[i];
+        size_t idx = sorted[i].second;
+        ret->key[i] = (char *)malloc(key_lens[idx]);
+        memcpy(ret->key[i], keys[idx], key_lens[idx]);
+        ret->key_len[i] = key_lens[idx];
+        ret->count[i] = sorted[i].first;
     }
 
     ret->n_results = n_result;
@@ -849,7 +859,7 @@ int main(int argc, char ** argv)
 	int ret=0;
 	::testing::InitGoogleTest(&argc, argv);
     ::testing::GTEST_FLAG(filter) = "-SpreadSketchExperiments.*"; // Exclude SpreadSketchExperiments tests
-    // ::testing::GTEST_FLAG(filter) = "*decay_old_key";
+    // ::testing::GTEST_FLAG(filter) = "*serialize_with_nonstring_keys";
 
 	ret=RUN_ALL_TESTS();
 	return ret;
