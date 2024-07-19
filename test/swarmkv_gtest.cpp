@@ -955,6 +955,73 @@ TEST_F(SwarmkvBasicTest, HashTags)
 		swarmkv_reply_free(reply);
 	}
 }
+
+TEST_F(SwarmkvBasicTest, TypeSS)
+{
+	struct swarmkv *db=SwarmkvBasicTest::db;
+	const char *key="ss-001";
+	struct swarmkv_reply *reply=NULL;
+	long long width=100, depth=2;
+    int precision=6;
+	reply=swarmkv_command(db, "SSINITBYDIM %s %lld %lld %d", key, width, depth,precision);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	swarmkv_reply_free(reply);
+
+    const char *entries[] = {"1.1.1.1", "2.2.2.2"};
+	const char *item_1[]={"item1_1", "item1_2","item1_3"};
+	const char *item_2[]={"item2_1"};
+    const int n_item[2] = {3, 1};
+	reply=swarmkv_command(db, "SSADD %s %s %s %s %s", key, entries[0], item_1[0], item_1[1], item_1[2]);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_DOUBLE);
+	ASSERT_NEAR(reply->dval, 3.0, 0.4);
+    swarmkv_reply_free(reply);
+	reply=swarmkv_command(db, "SSADD %s %s %s", key, entries[1], item_2[0]);
+    ASSERT_EQ(reply->type, SWARMKV_REPLY_DOUBLE);
+    ASSERT_NEAR(reply->dval, 1.0, 0.4);
+    swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db, "SSLIST %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
+	ASSERT_EQ(reply->n_element, sizeof(entries)/sizeof(entries[0]) * 2);
+	for(size_t i=0; i<reply->n_element / 2; i++)
+	{
+		EXPECT_EQ(reply->elements[i*2]->type, SWARMKV_REPLY_STRING);
+        EXPECT_EQ(reply->elements[i*2+1]->type, SWARMKV_REPLY_INTEGER);
+        EXPECT_STREQ(reply->elements[i*2]->str, entries[i]);
+        EXPECT_EQ(reply->elements[i*2+1]->integer, n_item[i]);
+	}
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db, "SSINFO %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
+	ASSERT_EQ(reply->n_element, 14);
+	ASSERT_EQ(reply->elements[1]->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->elements[1]->integer, depth);
+	ASSERT_EQ(reply->elements[3]->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->elements[3]->integer, width);
+    ASSERT_EQ(reply->elements[5]->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->elements[5]->integer, precision);
+    ASSERT_EQ(reply->elements[7]->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->elements[7]->integer, 0);
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db, "type %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STRING);
+	EXPECT_STREQ(reply->str, "spread-sketch");
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db, "DEL %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 1);
+	swarmkv_reply_free(reply);
+
+	// time-decay spread sketch
+    // 设置一个time window。
+    // 添加很多个，保证大小。
+    // sleep 时间窗口长度
+    // 重新查询，list 结果应当为空。// todo: last oper time 来filter 。
+}
+
 class SwarmkvTwoNodes : public testing::Test 
 {
 
@@ -1979,7 +2046,6 @@ TEST_F(SwarmkvTwoNodes, TypeHyperLogLog)
 	const char *key="hll-001";
 	const char *prefix[4]={"Philippe", "Flajolet", "Invents", "Hyperloglog"};
 
-
 	char precision=12;
 	reply=swarmkv_command(db[0], "PFINIT %s %d", key, precision);
 	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
@@ -1997,6 +2063,42 @@ TEST_F(SwarmkvTwoNodes, TypeHyperLogLog)
 			reply=swarmkv_command(db[(i+1)%2], "PFCOUNT %s", key);
 			ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
 			EXPECT_NEAR(reply->integer, i+1, i/20);
+			swarmkv_reply_free(reply);
+		}
+	}
+}
+TEST_F(SwarmkvTwoNodes, TypeSS)
+{
+	struct swarmkv *db[2];
+	db[0]=SwarmkvTwoNodes::db1;
+	db[1]=SwarmkvTwoNodes::db2;
+	struct swarmkv_reply *reply=NULL;
+	const char *key="ss-001";
+    
+	const char *entries[]={"1.1.1.1", "deviceA", "1","2","3"};
+    int n_entry = sizeof(entries)/sizeof(entries[0]);
+    int n_loop = 10000;
+
+	reply=swarmkv_command(db[0], "SSINITBYENTRYNUMBER %s 5", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	EXPECT_STREQ(reply->str, "OK");
+	swarmkv_reply_free(reply);
+	srand(171);
+	for(int i=0; i<n_loop; i++)
+	{
+		reply=swarmkv_command(db[i%2], "SSADD %s %s item%d", key, entries[i%n_entry], i);
+		swarmkv_reply_free(reply);
+		if(i!=0&&i%1000==0) {
+			wait_for_sync();
+			reply=swarmkv_command(db[(i+1)%2], "SSLIST %s", key);
+			ASSERT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
+            EXPECT_EQ(reply->n_element, n_entry*2);
+            for (int j = 0; j < n_entry; j++) {
+                int add_on_entry = i/n_entry;
+                EXPECT_NEAR(reply->elements[j*2+1]->integer, add_on_entry, add_on_entry/10 + i/20); // 1/10: apprroximately the hll_error. 1/20: the error caused by CM sketch.
+                // printf("i : %d, entry: %s, cardinality: %lld\n", i, reply->elements[j*2]->str, reply->elements[j*2+1]->integer);
+            }
+            
 			swarmkv_reply_free(reply);
 		}
 	}
@@ -2263,6 +2365,7 @@ int main(int argc, char ** argv)
 	int ret=0;
 	g_current_thread_id=syscall(SYS_gettid);
 	::testing::InitGoogleTest(&argc, argv);
+    // ::testing::GTEST_FLAG(filter) = "*TypeSS";
 	ret=RUN_ALL_TESTS();
 	return ret;
 }

@@ -128,6 +128,15 @@ struct swarmkv_obj_specs sobj_specs[__SWARMKV_OBJ_TYPE_MAX] =
 		.obj_replicate=(void * (*)(uuid_t, const char *, size_t))ST_hyperloglog_replicate,
 		.obj_size=(size_t (*)(const void *))ST_hyperloglog_mem_size
 	},
+    {
+		.type=OBJ_TYPE_SPREAD_SKETCH,
+		.type_name="spread-sketch",
+		.obj_free=(void (*)(void *))spread_sketch_free,
+		.obj_serialize=(void (*)(const void *, char **, size_t *))spread_sketch_serialize,
+		.obj_merge_blob=(void (*)(void *, const char *, size_t))spread_sketch_merge_blob,
+		.obj_replicate=(void * (*)(uuid_t, const char *, size_t))spread_sketch_replicate,
+		.obj_size=(size_t (*)(const void *))spread_sketch_calculate_memory_usage,
+	},
 	{
 		.type=OBJ_TYPE_UNDEFINED,
 		.type_name="undefined",

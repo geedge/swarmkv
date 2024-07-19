@@ -10,6 +10,7 @@ extern "C"{
 #include <stdint.h> //uint64_t
 #include <sys/time.h> // struct timeval
 #include <stddef.h>
+#include <uuid/uuid.h>
 
 #define DUMMY_ITEM_HASH (1ULL<<63) // level(left most zeros) = 0
 
@@ -34,6 +35,9 @@ double spread_sketch_get_cardinality(const struct spread_sketch *ss, const char 
 // query a hyperloglog 's base64 serialization. The serialization format is [1,precision,register...] and then encoded by base64
 char *spread_sketch_get_hll_base64_serialization(const struct spread_sketch *ss, const char *key, size_t key_len);
 void *spread_sketch_get0_exdata(const struct spread_sketch *ss, const char *key, size_t key_len);
+// in most cases, it has the same output as `spread_sketch_get_cardinality`, but it will perform more like an ordinary spread sketch query. 
+// Will always return a value, even if the key is not present in the spread sketch. Must pass a `now` value required by Stagger hll query.
+double spread_sketch_query(const struct spread_sketch *ss, const char *key, size_t key_length, struct timeval now);
 
 void spread_sketch_merge(struct spread_sketch *dest, const struct spread_sketch *src);
 struct spread_sketch *spread_sketch_copy(const struct spread_sketch *src);
@@ -41,6 +45,8 @@ void spread_sketch_serialize(const struct spread_sketch *ss, char **blob, size_t
 struct spread_sketch *spread_sketch_deserialize(const char *blob, size_t blob_sz);
 void spread_sketch_merge_blob(struct spread_sketch *dst, const char *blob, size_t blob_sz);
 void spread_sketch_reset(struct spread_sketch *ss);
+// exactly the same as `spread_sketch_deserialize`. `uuid` is a dummy parameter.(since spread sketch itself performs very like set CRDT, it does not need uuid to sync replicas)
+struct spread_sketch *spread_sketch_replicate(uuid_t uuid, const char *blob, size_t blob_sz);
 
 void spread_sketch_get_parameter(const struct spread_sketch *ss, int *depth_out, int *width_out, unsigned char *precision_out, int *time_window_ms_out);
 // spread sketch alway store values more than expected_query_num,expected_query_num is a hint to set spread sketch parameters properly
