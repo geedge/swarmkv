@@ -63,7 +63,7 @@ enum cmd_exec_result ssinitbydim_command(struct swarmkv_module *mod_store, const
 }
 
 enum cmd_exec_result ssinitbyentrynumber_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply) {
-    /* SSINITBYENTRYNUMBER key expected_superspreader_count [TIME window-milliseconds]*/
+    /* SSINITBYENTRYNUMBER key capacity [TIME window-milliseconds]*/
     const sds key=cmd->argv[1];
     long expected_superspreader_count = strtol(cmd->argv[2], NULL, 10);
     if(expected_superspreader_count<=0) {

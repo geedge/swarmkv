@@ -103,6 +103,7 @@ void swarmkv_register_thread(struct swarmkv *db)
 	if(__sys_tid<0) __sys_tid=syscall(SYS_gettid);
 	db->threads[thread_id].sys_tid=__sys_tid;
 	db->threads[thread_id].thread_id=thread_id;
+    printf("register thread id: %d, sys_tid: %d\n", thread_id, __sys_tid);
 	return;
 }
 struct swarmkv_options *swarmkv_get0_options(struct swarmkv *db)

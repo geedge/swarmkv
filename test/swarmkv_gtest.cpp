@@ -2102,6 +2102,7 @@ TEST_F(SwarmkvTwoNodes, TypeSS)
 			swarmkv_reply_free(reply);
 		}
 	}
+    
 }
 TEST_F(SwarmkvTwoNodes, Info)
 {
