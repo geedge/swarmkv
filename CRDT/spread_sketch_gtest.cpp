@@ -83,7 +83,7 @@ struct spread_sketch_list *spread_sketch_list(const struct spread_sketch *ss) {
     size_t n_result;
     size_t *key_lens;
     char **keys;
-    spread_sketch_list_keys(ss, &keys, &key_lens, &n_result);
+    spread_sketch_list_entries(ss, &keys, &key_lens, &n_result);
 
     struct spread_sketch_list *ret = (struct spread_sketch_list *)malloc(sizeof(struct spread_sketch_list));
     if (n_result == 0) {
@@ -238,7 +238,7 @@ public:
         return mre / total_ss;
     }
 
-    bool assess_estimate(unsigned char hll_precision, double eplilon, double delta) {
+    bool check_result(unsigned char hll_precision, double eplilon, double delta) {
         int good = 0;
         int total_valid_key = 0;
         double sigma = hll_error(hll_precision) * 2; // RSD -> max error estimation
@@ -360,7 +360,7 @@ TestRet *spread_sketch_test(struct spread_sketch *ss, long long window_s, long l
     return test_ret;
 }
 
-TestRet *spread_sketch_test_swarm(int precision, int depth, int width, long long window_s, long long duration_s, int n_super_spreader, int n_total, int fanout_superspreader, int fanout_others) 
+TestRet *spread_sketch_generic_test(int precision, int depth, int width, long long window_s, long long duration_s, int n_super_spreader, int n_total, int fanout_superspreader, int fanout_others) 
 {
     long long now = 0;
     const int N_INSTANCES = 10;
@@ -416,40 +416,40 @@ double cal_CM_epsilon(int width) {
     return 2.0 / width;
 }
 
-TEST(SpreadSketch, test_hll_on_a_single_bucket)
+TEST(SpreadSketch, OneEntry)
 {
-    TestRet *test_ret = spread_sketch_test_swarm(
+    TestRet *test_ret = spread_sketch_generic_test(
         4, // hll precision
         4, 1024, // depth, width
         10, 100, // window, duration
         0, 1, // n_super_spreader, n_total. just one flow, so no error on CM sketch
         10000, 10000); // fanout_superspreader, fanout_others
 
-    bool good = test_ret->assess_estimate(4, 0, 0);
+    bool good = test_ret->check_result(4, 0, 0);
     EXPECT_TRUE(good);
 
     delete test_ret;
 }
 
-TEST(SpreadSketch, test_hll_given_short_input)
+TEST(SpreadSketch, OneEntryNoSliding)
 {
     // use very little fp compared to big sketch so that CM sketch error are negligible
-    TestRet *test_ret = spread_sketch_test_swarm(
+    TestRet *test_ret = spread_sketch_generic_test(
         4, // hll precision
         4, 1024, // depth, width
         10, 1, // window, duration, window is larger than duration
         0, 1, // n_super_spreader, n_total. just one flow, so no error on CM sketch
         10000, 10000); // fanout_superspreader, fanout_others
     
-    bool good = test_ret->assess_estimate(4, 0, 0);
+    bool good = test_ret->check_result(4, 0, 0);
     EXPECT_TRUE(good);
 
     delete test_ret;
 }
 
-TEST(SpreadSketch, normal_flows)
+TEST(SpreadSketch, Precision)
 {
-    TestRet *test_ret = spread_sketch_test_swarm(
+    TestRet *test_ret = spread_sketch_generic_test(
         6, // hll precision
         4, 1024, // depth, width
         100, 200, // window, duration
@@ -459,7 +459,7 @@ TEST(SpreadSketch, normal_flows)
     double mre = test_ret->cal_mre();
     EXPECT_LE(mre, 0.4);
 
-    bool good = test_ret->assess_estimate(6, cal_CM_epsilon(1024), cal_CM_delta(4));
+    bool good = test_ret->check_result(6, cal_CM_epsilon(1024), cal_CM_delta(4));
     EXPECT_TRUE(good);
 
     double recall_rate = test_ret->cal_recall_rate(500); // 500: n_super_spreader
@@ -470,7 +470,7 @@ TEST(SpreadSketch, normal_flows)
     delete test_ret;
 }
 
-TEST(SpreadSketch, scarce_flow)
+TEST(SpreadSketch, PrecisionOfScarceEntry)
 {
     int window_s = 100;
     int n_super_spreader = 100;
@@ -493,7 +493,7 @@ TEST(SpreadSketch, scarce_flow)
     spread_sketch_free(ss);
 }
 
-TEST(SpreadSketch, decay_old_key) {
+TEST(SpreadSketch, Expire) {
     int n_super_spreader = 1000;
     int window_s = 10;
 
@@ -524,7 +524,7 @@ TEST(SpreadSketch, decay_old_key) {
     spread_sketch_free(ss);
 }
 
-TEST(SpreadSketch, serialize_with_nonstring_keys) {
+TEST(SpreadSketch, Serialize) {
     struct spread_sketch *ss = spread_sketch_new(4, 1024, 4, 10*1000, ms_to_timeval(0));
     int key1 = 1;
     int key2 = 2;
@@ -575,7 +575,7 @@ void spread_sketch_parameter_experiments(int depth, int width, int precision, lo
     printf("===============================================\n");
 }
 
-TEST(SpreadSketchExperiments, uniform_distribution) {
+TEST(SpreadSketchExperiments, UniformDistribution) {
     long long window_s = 10;
     // check CM sketch related parameters
     int depth[] = {3, 4};
@@ -767,7 +767,7 @@ void parameter_experiments_given_zipf_experiment(int depth, int width, int preci
     spread_sketch_free(ss);
 }
 
-TEST(SpreadSketchExperiments, zipf_distribution) {
+TEST(SpreadSketchExperiments, ZipfDistribution) {
     /*
     test with flows in zipf distribution fanout. 
     Every time window, there are `n_flows_per_window` distinct flows generated. Cardinality({y|x=x_i}) ~ Zipf(N, skewness), where N = 10 * n_superspreader

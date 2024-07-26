@@ -26,7 +26,7 @@
 #include "t_bloom_filter.h"
 #include "t_cms.h"
 #include "t_hyperloglog.h"
-#include "t_spreadsketch.h"
+#include "t_spread_sketch.h"
 
 #include "uthash.h"
 #include "sds.h"
@@ -1178,20 +1178,26 @@ void command_spec_init(struct swarmkv *db)
 								   1, 1, CMD_KEY_RO, REPLY_EMPTY_ARRAY, AUTO_ROUTE,
 								   pfinfo_command, db->mod_store);
 
-    /*spread sketch commands*/
-	command_register(&(db->command_table), "SSINITBYDIM", "key width depth precision [TIME window-milliseconds]",
+    /*Spread sketch commands*/
+	swarmkv_command_table_register(db->mod_command_table, "SSINITBYDIM", "key width depth precision [TIME window-milliseconds]",
 					4, 1, CMD_KEY_OW, REPLY_EMPTY_ARRAY, AUTO_ROUTE,
 					ssinitbydim_command, db->mod_store);
-	command_register(&(db->command_table), "SSINITBYENTRYNUMBER", "key expected_superspreader_count [TIME window-milliseconds]*/",
-					2, 1, CMD_KEY_OW, REPLY_EMPTY_ARRAY, AUTO_ROUTE,
-					ssinitbyentrynumber_command, db->mod_store);
-	command_register(&(db->command_table), "SSADD", "key entry item [item ...] ",
+	swarmkv_command_table_register(db->mod_command_table, "SSINITBYCAPACITY", "key capacity precsion [TIME window-milliseconds]*/",
+					3, 1, CMD_KEY_OW, REPLY_EMPTY_ARRAY, AUTO_ROUTE,
+					ssinitbycapacity_command, db->mod_store);
+	swarmkv_command_table_register(db->mod_command_table, "SSADD", "key entry item [item ...] ",
 					3, 1, CMD_KEY_RW, REPLY_INT_MINORS1, AUTO_ROUTE,
 					ssadd_command, db->mod_store);
-	command_register(&(db->command_table), "SSLIST", "key",
+	swarmkv_command_table_register(db->mod_command_table, "SSLIST", "key",
 					1, 1, CMD_KEY_RO, REPLY_EMPTY_ARRAY, AUTO_ROUTE,
 					sslist_command, db->mod_store);
-	command_register(&(db->command_table), "SSINFO", "key",
+    swarmkv_command_table_register(db->mod_command_table, "SSQUERY", "key entry",
+                    2, 1, CMD_KEY_RO, REPLY_INT_0, AUTO_ROUTE,
+                    ssquery_command, db->mod_store);
+    swarmkv_command_table_register(db->mod_command_table, "SSMQUERY", "key entry [entry ...]",
+                    2, 1, CMD_KEY_RO, REPLY_EMPTY_ARRAY, AUTO_ROUTE,
+                    ssmquery_command, db->mod_store);
+	swarmkv_command_table_register(db->mod_command_table, "SSINFO", "key",
 					1, 1, CMD_KEY_RO, REPLY_EMPTY_ARRAY, AUTO_ROUTE,
 					ssinfo_command, db->mod_store);
 
@@ -1283,8 +1289,6 @@ void command_spec_init(struct swarmkv *db)
 	swarmkv_command_table_register(db->mod_command_table, "KEYSPACE COUNTKEYSINSLOT", "slot",
 								   1, KEY_OFFSET_SLOTID, CMD_KEY_RO, REPLY_NA, NOT_AUTO_ROUTE,
 								   keyspace_countkeysinslot_command, db->mod_keyspace);
-
-    // TODO： 添加 SPREAD SKETCH 
 
 	/* cluster commands are defined in swarmkv-cli.c */
 	return;
