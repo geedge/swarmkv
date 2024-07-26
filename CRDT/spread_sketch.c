@@ -202,7 +202,7 @@ struct entry_table *smart_ptr_table_new() {
 
 
 struct spread_sketch *spread_sketch_new(int depth, int width, unsigned char precision, int time_window_ms, struct timeval now) {
-    struct spread_sketch *pthis = malloc(sizeof(struct spread_sketch));
+    struct spread_sketch *pthis = calloc(1, sizeof(struct spread_sketch));
 
     pthis->depth = depth;
     pthis->width = width;
@@ -592,7 +592,7 @@ void spread_sketch_serialize(const struct spread_sketch *ss, char **blob, size_t
         }
     }
 
-    char *buffer = malloc(sz);
+    char *buffer = calloc(sz, sizeof(char));
     *blob = buffer;
     *blob_sz = sz;
 

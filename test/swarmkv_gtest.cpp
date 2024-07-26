@@ -1136,7 +1136,6 @@ protected:
 	}
 	static void TearDownTestCase()
 	{
-        printf("two nodes test teardown\n");
 		swarmkv_close(db1);
 		swarmkv_close(db2);	
 		log_handle_destroy(logger);
@@ -2151,7 +2150,7 @@ TEST_F(SwarmkvTwoNodes, TypeSS)
     
 	const char *entries[]={"1.1.1.1", "deviceA", "1","2","3"};
     int n_entry = sizeof(entries)/sizeof(entries[0]);
-    int n_loop = 1;
+    int n_loop = 10000;
 
 	reply=swarmkv_command(db[0], "SSINITBYCAPACITY %s 5", key);
 	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
