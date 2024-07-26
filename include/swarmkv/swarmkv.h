@@ -165,7 +165,9 @@ void swarmkv_bfadd(struct swarmkv * db, const char * key, size_t keylen, const c
 void swarmkv_bfmexists(struct swarmkv * db, const char * key, size_t keylen, const char *items[], const size_t items_len[], size_t n_items, swarmkv_on_reply_callback_t *cb, void *cb_arg);
 
 void swarmkv_cmsincrby(struct swarmkv * db, const char * key, size_t keylen, const char * items[], const size_t items_len[], long long increments[], size_t n_increment, swarmkv_on_reply_callback_t * cb, void * cb_arg);
+void swarmkv_ssadd(struct swarmkv * db, const char * key, size_t keylen, const char * item, const size_t item_len, const char *members[], size_t members_len[], size_t n_member, swarmkv_on_reply_callback_t * cb, void * cb_arg);
 void swarmkv_cmsmquery(struct swarmkv * db, const char * key, size_t keylen, const char * items[], const size_t items_len[], size_t n_items, swarmkv_on_reply_callback_t * cb, void * cb_arg);
+void swarmkv_ssquery(struct swarmkv * db, const char * key, size_t keylen, const char * items[], const size_t items_len[], size_t n_items, swarmkv_on_reply_callback_t * cb, void * cb_arg);
 
 //Used by swarmkv-cli
 size_t swarmkv_get_possible_command_name(struct swarmkv *db, const char *prefix, const char *cmd_names[], size_t sz);

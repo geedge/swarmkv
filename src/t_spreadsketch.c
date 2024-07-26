@@ -138,7 +138,7 @@ enum cmd_exec_result ssadd_command(struct swarmkv_module *mod_store, const struc
     }
     
     double est = spread_sketch_query(obj->spread_sketch, entry_key, sdslen(entry_key), now);
-    *reply=swarmkv_reply_new_double(est);
+    *reply=swarmkv_reply_new_integer((int) (est + 0.5));
     
     store_mark_object_as_modified(mod_store, obj);
     return FINISHED;
@@ -152,8 +152,7 @@ enum cmd_exec_result sslist_command(struct swarmkv_module *mod_store, const stru
     if (!obj) {
         return NEED_KEY_ROUTE;
     }
-	if(obj->type==OBJ_TYPE_UNDEFINED)
-	{
+	if(obj->type==OBJ_TYPE_UNDEFINED) {
 		return handle_undefined_object(obj, reply);
 	}
     if(obj->type!=OBJ_TYPE_SPREAD_SKETCH) {
@@ -181,6 +180,34 @@ enum cmd_exec_result sslist_command(struct swarmkv_module *mod_store, const stru
     free(entry_keys_len);
     return FINISHED;
 }
+
+enum cmd_exec_result ssquery_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply) {
+    // SSQUERY key entry [entry ...]
+    const sds key=cmd->argv[1];
+    struct sobj *obj = store_lookup(mod_store, key);
+    if (!obj) {
+        return NEED_KEY_ROUTE;
+    }
+    if(obj->type==OBJ_TYPE_UNDEFINED) {
+        return handle_undefined_object(obj, reply);
+    }
+    if(obj->type!=OBJ_TYPE_SPREAD_SKETCH) {
+        *reply=swarmkv_reply_new_error(error_wrong_type);
+        return FINISHED;
+    }
+
+    struct spread_sketch *ss = obj->spread_sketch;
+    struct timeval now;
+    gettimeofday(&now, NULL);
+    *reply=swarmkv_reply_new_array(cmd->argc-2);
+    for (size_t i = 2; i < cmd->argc; i++) {
+        const sds entry_key = cmd->argv[i];
+        double est = spread_sketch_query(ss, entry_key, sdslen(entry_key), now);
+        (*reply)->elements[i-2] = swarmkv_reply_new_integer((int) (est + 0.5));
+    }
+    return FINISHED;
+}
+
 
 enum cmd_exec_result ssinfo_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply) {
     // SSINFO key
