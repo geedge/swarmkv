@@ -670,10 +670,8 @@ size_t spread_sketch_calculate_memory_usage(const struct spread_sketch *ss)
     ret += sizeof(struct spread_sketch);
 
     size_t bucket_size = sizeof(struct bucket) + hll_size(ss->precision);
-    printf("every bucket size: %zu\n", bucket_size);
     ret += ss->depth * ss->width * bucket_size;
 
-    printf("the number of content: %u\n", HASH_COUNT(ss->table->entry));
     struct entry *content, *tmp;
     HASH_ITER(hh, ss->table->entry, content, tmp) {
         ret += sizeof(struct entry);

@@ -31,7 +31,7 @@ enum cmd_exec_result ssinitbydim_command(struct swarmkv_module *mod_store, const
         return FINISHED;
     }
     long long time_window_ms = 0;
-    if (cmd->argc == 6) {
+    if (cmd->argc == 7) {
         if(strncasecmp(cmd->argv[5], "TIME", 4)!=0) {
             *reply=swarmkv_reply_new_error(error_arg_string_should_be, cmd->argv[5], "TIME");
             return FINISHED;
@@ -62,8 +62,8 @@ enum cmd_exec_result ssinitbydim_command(struct swarmkv_module *mod_store, const
     return FINISHED;
 }
 
-enum cmd_exec_result ssinitbyentrynumber_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply) {
-    /* SSINITBYENTRYNUMBER key capacity [TIME window-milliseconds]*/
+enum cmd_exec_result ssinitbycapacity_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply) {
+    /* SSINITBYCAPACITY key capacity [TIME window-milliseconds]*/
     const sds key=cmd->argv[1];
     long expected_superspreader_count = strtol(cmd->argv[2], NULL, 10);
     if(expected_superspreader_count<=0) {
@@ -71,7 +71,7 @@ enum cmd_exec_result ssinitbyentrynumber_command(struct swarmkv_module *mod_stor
         return FINISHED;
     }
     long long time_window_ms = 0; // when set to 0, it means no time decay is used
-    if (cmd->argc == 4) {
+    if (cmd->argc == 5) {
         if(strncasecmp(cmd->argv[3], "TIME", 4)!=0) {
             *reply=swarmkv_reply_new_error(error_arg_string_should_be, cmd->argv[3], "TIME");
             return FINISHED;
@@ -107,7 +107,6 @@ enum cmd_exec_result ssinitbyentrynumber_command(struct swarmkv_module *mod_stor
 }
 
 enum cmd_exec_result ssadd_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply) {
-    // TODO: 还是说SSADD key entry item [entry item ...] 
     // SSADD key entry item [item ...] 
     const sds key=cmd->argv[1];
     struct sobj *obj = store_lookup(mod_store, key);
@@ -207,7 +206,6 @@ enum cmd_exec_result ssquery_command(struct swarmkv_module *mod_store, const str
     }
     return FINISHED;
 }
-
 
 enum cmd_exec_result ssinfo_command(struct swarmkv_module *mod_store, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply) {
     // SSINFO key

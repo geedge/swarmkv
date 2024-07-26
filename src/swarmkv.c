@@ -1179,19 +1179,22 @@ void command_spec_init(struct swarmkv *db)
 								   pfinfo_command, db->mod_store);
 
     /*spread sketch commands*/
-	command_register(&(db->command_table), "SSINITBYDIM", "key width depth precision [TIME window-milliseconds]",
+	swarmkv_command_table_register(db->mod_command_table, "SSINITBYDIM", "key width depth precision [TIME window-milliseconds]",
 					4, 1, CMD_KEY_OW, REPLY_EMPTY_ARRAY, AUTO_ROUTE,
 					ssinitbydim_command, db->mod_store);
-	command_register(&(db->command_table), "SSINITBYENTRYNUMBER", "key expected_superspreader_count [TIME window-milliseconds]*/",
+	swarmkv_command_table_register(db->mod_command_table, "SSINITBYCAPACITY", "key capacity [TIME window-milliseconds]*/",
 					2, 1, CMD_KEY_OW, REPLY_EMPTY_ARRAY, AUTO_ROUTE,
-					ssinitbyentrynumber_command, db->mod_store);
-	command_register(&(db->command_table), "SSADD", "key entry item [item ...] ",
+					ssinitbycapacity_command, db->mod_store);
+	swarmkv_command_table_register(db->mod_command_table, "SSADD", "key entry item [item ...] ",
 					3, 1, CMD_KEY_RW, REPLY_INT_MINORS1, AUTO_ROUTE,
 					ssadd_command, db->mod_store);
-	command_register(&(db->command_table), "SSLIST", "key",
+	swarmkv_command_table_register(db->mod_command_table, "SSLIST", "key",
 					1, 1, CMD_KEY_RO, REPLY_EMPTY_ARRAY, AUTO_ROUTE,
 					sslist_command, db->mod_store);
-	command_register(&(db->command_table), "SSINFO", "key",
+    swarmkv_command_table_register(db->mod_command_table, "SSQUERY", "key entry [entry ...]",
+                    2, 1, CMD_KEY_RO, REPLY_EMPTY_ARRAY, AUTO_ROUTE,
+                    ssquery_command, db->mod_store);
+	swarmkv_command_table_register(db->mod_command_table, "SSINFO", "key",
 					1, 1, CMD_KEY_RO, REPLY_EMPTY_ARRAY, AUTO_ROUTE,
 					ssinfo_command, db->mod_store);
 
