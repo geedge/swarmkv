@@ -14,7 +14,7 @@ enum tb_consume_type
 	TB_CONSUME_FLEXIBLE,
 	TB_CONSUME_AS_MUCH_AS_POSSIBLE
 };
-long long tb_available(long long rate, long long period, long long capacity, long long consumed, long long refilled, long long delta_ms, long long refill_interval_ms, long long *new_refilled);
+long long tb_available(long long rate, long long period, long long capacity, long long refill_interval_ms, long long consumed, long long *refilled, long long now_ms, long long *last_refill_ms);
 long long tb_local_available(long long rate, long long period, long long available, long long capacity, size_t n_replica);
 
 long long tb_consume_reserve_based(long long rate, long long period, long long available, long long capacity, size_t n_replica, enum tb_consume_type cmd, long long tokens);

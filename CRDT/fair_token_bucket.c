@@ -23,9 +23,9 @@ struct fair_token_bucket
     struct ST_hyperloglog *hll[FAIR_TB_WEIGHT_MAX]; //counting active keys
     struct OC_token_bucket *bucket;
     
-    /* Local Variables*/
+    /* Local Variables. Don't sync.*/
     long long perturb_seed;
-    long long *sfq;  //per-key deficit estimation
+    long long *sfq;  //per-key deficit estimation, size = divisor
     struct timeval last_pertub;
     long long per_weight_quantum; //updated every PERTUB_INTERVAL_MS
     long long total_weight;
@@ -33,9 +33,6 @@ struct fair_token_bucket
     long long debug_last_defict;
     long long debug_last_allocated;
     long long debug_consume_call;
-#ifdef DEBUG
-    long long debug_deficit_array[256];
-#endif
 };
 struct fair_token_bucket *fair_token_bucket_new(uuid_t uuid, struct timeval now, long long rate, long long period, long long capacity, long long divisor)
 {
@@ -84,7 +81,7 @@ static void ftb_quantum_estimation(struct fair_token_bucket *ftb, struct timeval
     struct OC_token_bucket_info info;
     OC_token_bucket_info(ftb->bucket, now, &info);
     
-	//long long local_available=tb_local_available(info.rate, info.period, info.available, info.number_of_replica);
+
     long long local_available=tb_local_available(info.rate, info.period, info.available, info.capacity, info.number_of_replica);
     if(info.period==0)//Infinite Tokens
     {
@@ -97,19 +94,19 @@ static void ftb_quantum_estimation(struct fair_token_bucket *ftb, struct timeval
     ftb->total_weight=total_weight;
    
     ftb->n_active_key=n_active_key;
+    return;
+    if(ftb->perturb_seed==0)
+        printf("seed\tavailable\tper_weight_quantum\tkey1\tkey2\n");
+    printf("%lld\t%lld\t%lld\t", ftb->perturb_seed, local_available, ftb->per_weight_quantum);
+    for(int i=0; i<ftb->divisor; i++)
+    {
+        if(ftb->sfq[i]>0)
+            printf("%lld\t", ftb->sfq[i]);
+    }
+    printf("\n");
 }
 static void ftb_perturb(struct fair_token_bucket *ftb, struct timeval now)
 {
-#ifdef DEBUG
-    printf("%p\t%lld\t%lld", ftb, ftb->per_weight_quantum, ftb->n_active_key);
-    for(int i=1; i<6; i++)
-    {
-        printf("\t%lld", ftb->debug_deficit_array[i]);
-        assert(ftb->debug_deficit_array[i] <= ftb->per_weight_quantum);
-    }
-    printf("\r\n");
-    memset(ftb->debug_deficit_array, 0, sizeof(ftb->debug_deficit_array));
-#endif
 
     ftb_quantum_estimation(ftb, now);
     memset(ftb->sfq, 0, sizeof(long long)*ftb->divisor);
@@ -131,15 +128,15 @@ long long fair_token_bucket_consume(struct fair_token_bucket *ftb, struct timeva
     }
 
     int sfq_idx=0;
-    sfq_idx=XXH3_64bits_withSeed(key, keylen, ftb->perturb_seed)%ftb->divisor;
-
+    //sfq_idx=XXH3_64bits_withSeed(key, keylen, ftb->perturb_seed)%ftb->divisor;
+    sfq_idx=XXH3_64bits_withSeed(key, keylen, 171)%ftb->divisor;
     
     long long deficit_est=0;
     deficit_est=ftb->sfq[sfq_idx];
     deficit_est/=MAX(1, ftb->n_active_key/ftb->divisor);
 
     ftb->debug_last_defict=deficit_est;
-    if(cmd == TB_CONSUME_FLEXIBLE) tokens=MIN(tokens, ftb->per_weight_quantum*weight-deficit_est);
+    if(cmd == TB_CONSUME_FLEXIBLE) tokens=MIN(tokens, MAX(0, ftb->per_weight_quantum*weight-deficit_est));
     if(tokens + deficit_est > ftb->per_weight_quantum*weight && cmd!=TB_CONSUME_FORCE)// && ftb->per_weight_quantum>0)
     {
         ftb->debug_last_allocated=-1;
@@ -150,19 +147,14 @@ long long fair_token_bucket_consume(struct fair_token_bucket *ftb, struct timeva
     {
         ftb->sfq[sfq_idx] += allocated_tokens;
     }
-#ifdef DEBUG
-    ftb->debug_last_allocated=allocated_tokens;
-    ftb->debug_deficit_array[*((int*)key)]+=allocated_tokens;
-    assert(ftb->sfq[sfq_idx] <= ftb->per_weight_quantum*weight);
-#endif
     return allocated_tokens;
 }
-void fair_token_bucket_configure(struct fair_token_bucket *ftb, struct timeval now, long long refill, long long period, long long capacity, long long divisor)
+void fair_token_bucket_configure(struct fair_token_bucket *ftb, struct timeval now, long long rate, long long period, long long capacity, long long divisor)
 {
     ftb->divisor=divisor;
     ftb->sfq=(long long*)realloc(ftb->sfq, sizeof(long long)*ftb->divisor);
     memcpy(&ftb->last_cfg, &now, sizeof(ftb->last_cfg));
-    OC_token_bucket_configure(ftb->bucket, now, refill, period, capacity);
+    OC_token_bucket_configure(ftb->bucket, now, rate, period, capacity);
     ftb_perturb(ftb, now);
     return;
 }

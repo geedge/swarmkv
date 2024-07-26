@@ -73,6 +73,9 @@ int swarmkv_options_set_caller_thread_number(struct swarmkv_options *opts, int n
 int swarmkv_options_set_worker_thread_number(struct swarmkv_options *opts, int nr_worker_threads);
 int swarmkv_options_get_worker_thread_number(const struct swarmkv_options *opts);
 
+//Default 1: Enabled.
+//Enable snappy compression for network communication.
+int swarmkv_options_set_network_compression_enabled(struct swarmkv_options *opts, int value);
 /**
  * This function has change the behavior of swarmkv_caller_loop().
  * Record an interval and/or a number of callbacks after which the event base

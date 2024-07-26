@@ -108,7 +108,7 @@ struct ST_hyperloglog *ST_hyperloglog_duplicate(const struct ST_hyperloglog *ori
     copy->reset_idx=origin->reset_idx;
     copy->reset_time=origin->reset_time;
     memcpy(&copy->cfg, &origin->cfg, sizeof(struct ST_HLL_configuration));
-    free(copy->registers);
+    hll_free_register(copy->registers);
     copy->registers=hll_duplicate(origin->registers, origin->cfg.precision);
     return copy;
 }

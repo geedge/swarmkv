@@ -62,6 +62,7 @@ struct swarmkv_options
 	unsigned int health_check_announce_port;
 	int dryrun;
 	int run_for_leader_enabled;
+	int network_compression_enabled;
 	unsigned int consul_port;
     unsigned int cluster_timeout_us;
 	unsigned int sync_interval_us;

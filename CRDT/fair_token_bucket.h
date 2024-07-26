@@ -35,11 +35,28 @@ struct fair_token_bucket;
  *
  * Return:
  * -------
- *     Pointer to the created token bucket - on success
+ *     Pointer to the created fair token bucket - on success
  *     NULL - on failure
  */
 struct fair_token_bucket *fair_token_bucket_new(uuid_t uuid, struct timeval now, long long rate, long long period, long long capacity, long long divisor);
 void fair_token_bucket_free(struct fair_token_bucket *ftb);
+/** ***************************************************************************
+ * Consume tokens from a fair token bucket with a given key and weight.
+ * 
+ * Parameters:
+ * -----------
+ *     ftb   - pointer to a fair token bucket.
+ *     now   - The current time.
+ *     key - The key of the member.
+ *     keylen - The length of the member key.
+ *     weight - The weight of the member, must be 1 to FAIR_TB_WEIGHT_MAX.
+ *     cmd - The consume command type.
+ *     tokens - The number of required tokens.
+ * Return:
+ * -------
+ *     Allocated token number - on success
+ *     -1 - on failure
+ */
 long long fair_token_bucket_consume(struct fair_token_bucket *ftb, struct timeval now, const char *key, size_t keylen, long long weight, enum tb_consume_type cmd, long long tokens);
 void fair_token_bucket_configure(struct fair_token_bucket *ftb, struct timeval now, long long rate, long long period, long long capacity, long long divisor);
 void fair_token_bucket_set_pertub_interval(struct fair_token_bucket *ftb, long long perturb_interval_ms);

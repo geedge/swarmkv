@@ -62,29 +62,23 @@ void OC_token_bucket_set_no_reserve(struct OC_token_bucket *bucket)
 
 long long OC_token_bucket_consume(struct OC_token_bucket *bucket, struct timeval now, enum tb_consume_type cmd, long long tokens)
 {
-	long long delta_time_ms=timeval_to_ms(now)-bucket->refill_time_ms;
 	long long consumed=PN_counter_get(bucket->consumed);
 	long long refilled=bucket->refilled;
 	assert(refilled>=0);
 	assert(consumed>=0);
 	
-	long long new_refilled=0;
-	long long available=tb_available(bucket->cfg.rate, bucket->cfg.period, bucket->cfg.capacity, consumed, 
-				refilled, delta_time_ms, bucket->cfg.refill_interval_ms, &new_refilled);
+	long long available=tb_available(bucket->cfg.rate, bucket->cfg.period, bucket->cfg.capacity, bucket->cfg.refill_interval_ms,
+	 								consumed, &bucket->refilled, timeval_to_ms(now), &bucket->refill_time_ms);
 	
 	int infinite_flag=0;
     if(bucket->cfg.period==0)
     {
 		infinite_flag=1;
-		new_refilled += tokens;
+		bucket->refilled += tokens;
+		bucket->refill_time_ms = timeval_to_ms(now);
     }
 	
 	size_t n_replica=PN_counter_replica_num(bucket->consumed);
-	if(refilled!=new_refilled)
-	{
-		bucket->refilled=new_refilled;
-		bucket->refill_time_ms=timeval_to_ms(now);
-	}
 	
 	long long allocated=0;
 	if(infinite_flag)
@@ -107,16 +101,17 @@ long long OC_token_bucket_consume(struct OC_token_bucket *bucket, struct timeval
 
 void OC_token_bucket_info(struct OC_token_bucket *bucket, struct timeval now, struct OC_token_bucket_info *info)
 {
-	long long delta_time_ms=timeval_to_ms(now)-bucket->refill_time_ms;
-
-	info->rate=bucket->cfg.rate;
-	info->period=bucket->cfg.period;
-	info->capacity=bucket->cfg.capacity;
-	info->refill_interval_ms=bucket->cfg.refill_interval_ms;
-	info->consumed=PN_counter_get(bucket->consumed);
-	info->available=tb_available(bucket->cfg.rate, bucket->cfg.period, bucket->cfg.capacity, info->consumed, 
-				 bucket->refilled, delta_time_ms, bucket->cfg.refill_interval_ms, &info->refilled);
-	info->number_of_replica=PN_counter_replica_num(bucket->consumed);
+	info->rate = bucket->cfg.rate;
+	info->period = bucket->cfg.period;
+	info->capacity = bucket->cfg.capacity;
+	info->refill_interval_ms = bucket->cfg.refill_interval_ms;
+	info->consumed = PN_counter_get(bucket->consumed);
+	info->refilled = bucket->refilled;
+	long long tmp_refill_time_ms = bucket->refill_time_ms;
+	info->available = tb_available(bucket->cfg.rate, bucket->cfg.period, bucket->cfg.capacity, bucket->cfg.refill_interval_ms,
+								info->consumed, &info->refilled, timeval_to_ms(now), &tmp_refill_time_ms);
+	info->number_of_replica = PN_counter_replica_num(bucket->consumed);
+	info->last_consume_ms = bucket->cfg.last_cfg.tv_sec*1000 + bucket->cfg.last_cfg.tv_usec/1000 + bucket->refill_time_ms;
 	return;
 }
 size_t OC_token_bucket_serialized_size(const struct OC_token_bucket *bucket)
@@ -165,11 +160,10 @@ void OC_token_bucket_merge(struct OC_token_bucket *dst, const struct OC_token_bu
 	PN_counter_merge(dst->consumed, src->consumed);
 	
 	assert(dst->refilled>=0 && src->refilled>=0);
-	if(dst->refilled < src->refilled)//Bigger refilled wins
+	if(dst->refill_time_ms < src->refill_time_ms)//Last-write-wins
 	{
 		dst->refilled=src->refilled;
 		dst->refill_time_ms=src->refill_time_ms;
-		//memcpy(&dst->refill_timestamp, &src->refill_timestamp, sizeof(dst->refill_timestamp));
 	}	
 	return;
 }

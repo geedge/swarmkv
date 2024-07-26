@@ -231,8 +231,7 @@ Each worker thread reads and writes its own shard of KV store and Keyspace table
 <img src="./imgs/thread_model.svg" alt="Thread Model" /> 
 
 All worker threads are responsible for:
-- Watch global slot table changes.
-- Run periodic tasks. 
+- Run periodic synchronization tasks . 
 - Send command message, which is from swarmkv API caller to destination peers.
 - Receive KV command message, and then process it based on command type:
   - Key routing request (from the requester, object reader/writer): lookup the object owner, and then send key routing response.
@@ -244,6 +243,7 @@ All worker threads are responsible for:
 The worker thread 0 has extra tasks including:
 
 - Accepting TCP connections from other peers. It begins by peeking at the message header to determine the caller thread ID, then it load balances the connection across worker threads using the caller_ID mod worker thread number. This mechanism eliminates unnecessary inter-thread communication for nodes with the same worker thread number.
+- Watch global slot table changes, and update local slot table.
 - Watch leadership changes, and run for leader if cluster loses its leader.
 - For leader node:
   - Watch cluster health check, remove failed node from cluster by assigning its slots to other nodes.

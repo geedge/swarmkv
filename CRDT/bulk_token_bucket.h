@@ -1,11 +1,12 @@
 /*
-* Bulk Token Bucket CRDT. A bulk version of OC token bucket.
+* Bulk Token Bucket CRDT. A bulk of OC token buckets that are organized by cuckoo hashing.
 * Author: contact@zhengchao.io
 * 2023-4-14
 */
 #pragma once
 #include "token_bucket_common.h"
 #include <stddef.h>
+#include <stdint.h>
 #include <sys/time.h>
 #include <uuid/uuid.h>
 #ifdef __cplusplus
@@ -14,7 +15,7 @@ extern "C"
 #endif
 struct bulk_token_bucket;
 /** ***************************************************************************
- * Create a bulk token bucket that can handle multiple token buckets.
+ * Create a bulk token bucket that can handle multiple token buckets. It uses cuckoo hashing to resolve key collisions.
  * 
  * Parameters:
  * -----------
@@ -22,8 +23,8 @@ struct bulk_token_bucket;
  *     now    - The current time.
  *     rate - The number of tokens to be refilled in each period.
  *     period - The time period in second. If period is 0, the bucket generate infinite tokens.
- *     capacity - The capacity of the token bucket.
- *     bucket_num - The number of token buckets.
+ *     capacity - The capacity of a single token bucket.
+ *     bucket_num - The initial number of token buckets. Must be the power of 2. If collision cannot be resolved, the bucket number is mupltiplied by 2.
  *
  * Return:
  * -------
@@ -31,21 +32,20 @@ struct bulk_token_bucket;
  *     NULL - on failure
  *
  */
-struct bulk_token_bucket *bulk_token_bucket_new(uuid_t my_id, struct timeval now, long long refill, long long period, long long capacity, long long bucket_num);
+struct bulk_token_bucket *bulk_token_bucket_new(uuid_t my_id, struct timeval now, long long rate, long long period, long long capacity, long long bucket_num);
 void bulk_token_bucket_free(struct bulk_token_bucket *btb);
-void bulk_token_bucket_configure(struct bulk_token_bucket *btb, struct timeval now, long long refill, long long period, long long capacity, long long bucket_num);
-
+void bulk_token_bucket_configure(struct bulk_token_bucket *btb, struct timeval now, long long rate, long long period, long long capacity, long long bucket_num);
 long long bulk_token_bucket_consume(struct bulk_token_bucket *btb, struct timeval now, const char *key, size_t key_len, enum tb_consume_type cmd, long long tokens);
-long long bulk_token_bucket_read_available(const struct bulk_token_bucket *btb, struct timeval now, const char *key, size_t keylen);
+
 struct bulk_token_bucket_info
 {
 	long long rate;
 	long long period;
 	long long capacity;
+	long long initial_bucket_number;
 	long long bucket_number;
-	long long approximate_keys;
-	long long replicas;
-	double collision_rate;
+	long long active_bucket_number;
+	long long max_replicas;
 };
 void bulk_token_bucket_info(const struct bulk_token_bucket *btb, struct timeval now, struct bulk_token_bucket_info *info);
 void bulk_token_bucket_serialize(const struct bulk_token_bucket *btb, char **blob, size_t *blob_sz);
@@ -54,6 +54,18 @@ void bulk_token_bucket_merge(struct bulk_token_bucket *dst, const struct bulk_to
 void bulk_token_bucket_merge_blob(struct bulk_token_bucket *btb, const char * blob, size_t blob_sz);
 struct bulk_token_bucket *bulk_token_bucket_replicate(uuid_t uuid, const char *blob, size_t blob_sz);
 size_t bulk_token_bucket_mem_size(const struct bulk_token_bucket *btb);
+
+struct bulk_token_bucket_key_info
+{
+	uint64_t hash_low64;
+	uint64_t hash_high64;
+	long long consumed;
+	long long refilled;
+	long long available;
+	long long last_consume_ms;
+	long long number_of_replica;
+};
+void bulk_token_bucket_query(const struct bulk_token_bucket *btb, struct timeval now, const char *key, size_t keylen, struct bulk_token_bucket_key_info *key_info);
 #ifdef __cplusplus
 }
 #endif
