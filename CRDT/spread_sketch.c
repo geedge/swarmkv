@@ -538,7 +538,7 @@ struct spread_sketch *spread_sketch_copy(const struct spread_sketch *src) {
     return dst;
 }
 
-void spread_sketch_get_parameter_recommendation(int expected_super_spreader_number, int *depth_out, int *width_out, unsigned char *precision_out)
+void spread_sketch_recommend_parameters(int expected_super_spreader_number, int *depth_out, int *width_out, unsigned char *precision_out)
 {
     int logk = expected_super_spreader_number >= 3200 ? 4 : 3; // lg3200 = 3.51,round up to 4
     *depth_out = logk;

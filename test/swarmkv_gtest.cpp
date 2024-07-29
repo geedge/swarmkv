@@ -784,7 +784,7 @@ TEST_F(SwarmkvBasicTest, TypeBloomFilter)
 		EXPECT_EQ(reply->elements[i]->integer, 1);
 	}
 }
-TEST_F(SwarmkvBasicTest, TypeCMS)
+TEST_F(SwarmkvBasicTest, TypeCountMinSketch)
 {
 	struct swarmkv *db=SwarmkvBasicTest::db;
 	const char *key="cms-001";
@@ -976,7 +976,7 @@ TEST_F(SwarmkvBasicTest, HashTags)
 	}
 }
 
-TEST_F(SwarmkvBasicTest, TypeSS)
+TEST_F(SwarmkvBasicTest, TypeSpreadSketch)
 {
 	struct swarmkv *db=SwarmkvBasicTest::db;
 	const char *key="ss-001";
@@ -1082,7 +1082,7 @@ TEST_F(SwarmkvBasicTest, TypeSS)
     swarmkv_reply_free(reply);
 
     size_t entries_len[] = {strlen(entries[0]), strlen(entries[1])};
-    swarmkv_ssquery(db, key, strlen(key), entries, entries_len, 2, copy_reply_callback, &reply);
+    swarmkv_ssmquery(db, key, strlen(key), entries, entries_len, 2, copy_reply_callback, &reply);
     swarmkv_caller_loop(db, SWARMKV_LOOP_ONCE, NULL);
     ASSERT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
     ASSERT_EQ(reply->n_element, 2);
@@ -2053,7 +2053,7 @@ TEST_F(SwarmkvTwoNodes, TypeBloomFilter)
 	EXPECT_EQ(reply->integer, 1);
 	swarmkv_reply_free(reply);
 }
-TEST_F(SwarmkvTwoNodes, TypeCMS)
+TEST_F(SwarmkvTwoNodes, TypeCountMinSketch)
 {
 	struct swarmkv *db[2];
 	db[0]=SwarmkvTwoNodes::db1;
@@ -2140,7 +2140,7 @@ TEST_F(SwarmkvTwoNodes, TypeHyperLogLog)
 		}
 	}
 }
-TEST_F(SwarmkvTwoNodes, TypeSS)
+TEST_F(SwarmkvTwoNodes, TypeSpreadSketch)
 {
 	struct swarmkv *db[2];
 	db[0]=SwarmkvTwoNodes::db1;
@@ -2301,7 +2301,6 @@ TEST_F(SwarmkvTwoNodes, Latency)
 	reply=swarmkv_command(db1, "latency peer");
 	EXPECT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
 	swarmkv_reply_free(reply);
-	sleep(3500);
 }
 TEST_F(SwarmkvTwoNodes, Wait)
 {

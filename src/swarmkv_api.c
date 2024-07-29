@@ -599,11 +599,11 @@ void swarmkv_ssadd(struct swarmkv *db, const char *key, size_t keylen, const cha
     swarmkv_async_command_on_argv(db, cb, cb_arg, NULL, 3 + n_member, argv, argv_len);
 }
 
-void swarmkv_ssquery(struct swarmkv *db, const char *key, size_t keylen, const char *items[], const size_t items_len[], size_t n_items, swarmkv_on_reply_callback_t *cb, void *cb_arg)
+void swarmkv_ssmquery(struct swarmkv *db, const char *key, size_t keylen, const char *items[], const size_t items_len[], size_t n_items, swarmkv_on_reply_callback_t *cb, void *cb_arg)
 {
     const char *argv[2 + n_items];
     size_t argv_len[2 + n_items];
-    argv[0] = "SSQUERY";
+    argv[0] = "SSMQUERY";
     argv_len[0] = strlen(argv[0]);
     argv[1] = key;
     argv_len[1] = keylen;

@@ -50,7 +50,7 @@ struct spread_sketch *spread_sketch_replicate(uuid_t uuid, const char *blob, siz
 
 void spread_sketch_get_parameter(const struct spread_sketch *ss, int *depth_out, int *width_out, unsigned char *precision_out, int *time_window_ms_out);
 // spread sketch alway store values more than expected_query_num,expected_query_num is a hint to set spread sketch parameters properly
-void spread_sketch_get_parameter_recommendation(int expected_super_spreader_number, int *depth_out, int *width_out, unsigned char *precision_out);
+void spread_sketch_recommend_parameters(int expected_super_spreader_number, int *depth_out, int *width_out, unsigned char *precision_out);
 size_t spread_sketch_calculate_memory_usage(const struct spread_sketch *ss);
 
 #ifdef __cplusplus
