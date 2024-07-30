@@ -33,7 +33,7 @@ SwarmKV Data Types
 - [Bloom Filter](./docs/commands/bloom_filter.md) by age-partitioned bloom filter with the ability to expire.
 - [Count-Min Sketch](./docs/commands/count_min_sketch.md).
 - [HyperLogLog](./docs/commands/hyperloglog.md) by staggered HyperLogLog with the ability to expire.
-- [spreadsketch]() TODO
+- [Spread Sketch](./docs/commands/spread_sketch.md) by Spread Sketch with the ability to expire.
 
 # Getting started
 

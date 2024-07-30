@@ -11,6 +11,7 @@ The supported command are category as follows:
 * [Bloom Filter Type](./commands/bloom_filter.md)
 * [Count-Min Sketch Type](./commands/count_min_sketch.md)
 * [HyperLogLog Type](./commands/hyperloglog.md)
+* [Spread Sketch Type](./commands/spread_sketch.md)
 * [Cluster Management](./commands/cluster.md)
 * [Trouble Shooting](./commands/trouble_shooting.md)
 ## COMMAND LIST
