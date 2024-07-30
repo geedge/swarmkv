@@ -25,12 +25,12 @@ enum cmd_exec_result ssinitbydim_command(struct swarmkv_module *mod_store, const
         *reply = swarmkv_reply_new_error(error_arg_not_valid_integer, cmd->argv[3]);
         return FINISHED;
     }
-    unsigned char precision = (unsigned char)strtol(cmd->argv[4], NULL, 10);
-    if (precision <= 0)
-    {
-        *reply = swarmkv_reply_new_error(error_arg_not_valid_integer, cmd->argv[4]);
-        return FINISHED;
-    }
+    long precision = strtol(cmd->argv[4], NULL, 10);
+	if (precision < HLL_MIN_PRECISION || precision > HLL_MAX_PRECISION)
+	{
+		*reply = swarmkv_reply_new_error(error_arg_not_valid_integer, cmd->argv[4]);
+		return FINISHED;
+	}
     long long time_window_ms = 0;
     if (cmd->argc == 7)
     {
@@ -80,17 +80,23 @@ enum cmd_exec_result ssinitbycapacity_command(struct swarmkv_module *mod_store, 
         *reply = swarmkv_reply_new_error(error_arg_not_valid_integer, cmd->argv[2]);
         return FINISHED;
     }
+    long precision = strtol(cmd->argv[3], NULL, 10);
+	if (precision < HLL_MIN_PRECISION || precision > HLL_MAX_PRECISION)
+	{
+		*reply = swarmkv_reply_new_error(error_arg_not_valid_integer, cmd->argv[3]);
+		return FINISHED;
+	}
     long long time_window_ms = 0; // when set to 0, it means no time decay is used
-    if (cmd->argc == 5)
+    if (cmd->argc == 6)
     {
-        if (strncasecmp(cmd->argv[3], "TIME", 4) != 0)
+        if (strncasecmp(cmd->argv[4], "TIME", 4) != 0)
         {
-            *reply = swarmkv_reply_new_error(error_arg_string_should_be, cmd->argv[3], "TIME");
+            *reply = swarmkv_reply_new_error(error_arg_string_should_be, cmd->argv[4], "TIME");
             return FINISHED;
         }
-        if (str2integer(cmd->argv[4], &time_window_ms) < 0)
+        if (str2integer(cmd->argv[5], &time_window_ms) < 0)
         {
-            *reply = swarmkv_reply_new_error(error_arg_not_valid_integer, cmd->argv[4]);
+            *reply = swarmkv_reply_new_error(error_arg_not_valid_integer, cmd->argv[5]);
             return FINISHED;
         }
     }
@@ -109,8 +115,8 @@ enum cmd_exec_result ssinitbycapacity_command(struct swarmkv_module *mod_store, 
         gettimeofday(&now, NULL);
 
         int width, depth;
-        unsigned char precision;
-        spread_sketch_recommend_parameters(expected_superspreader_count, &width, &depth, &precision);
+        unsigned char precision_dummy;
+        spread_sketch_recommend_parameters(expected_superspreader_count, &width, &depth, &precision_dummy);
         obj->spread_sketch = spread_sketch_new(width, depth, precision, time_window_ms, now);
 
         obj->type = OBJ_TYPE_SPREAD_SKETCH;
@@ -182,7 +188,7 @@ enum cmd_exec_result sslist_command(struct swarmkv_module *mod_store, const stru
     size_t n_entry;
     char **entry_keys = NULL;
     size_t *entry_keys_len = NULL;
-    spread_sketch_list_keys(ss, &entry_keys, &entry_keys_len, &n_entry);
+    spread_sketch_list_entries(ss, &entry_keys, &entry_keys_len, &n_entry);
 
     *reply = swarmkv_reply_new_array(n_entry * 2);
     for (size_t i = 0; i < n_entry; i++)

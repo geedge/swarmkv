@@ -1037,7 +1037,7 @@ TEST_F(SwarmkvBasicTest, TypeSpreadSketch)
 
 	// time-decay spread sketch
     long long time_window_ms=1000;
-	reply=swarmkv_command(db, "SSINITBYCAPACITY %s %d TIME %lld", key, 10, time_window_ms);
+	reply=swarmkv_command(db, "SSINITBYCAPACITY %s %d %d TIME %lld", key, 10, 12, time_window_ms);
 	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
 	swarmkv_reply_free(reply);
 

@@ -1183,7 +1183,7 @@ void command_spec_init(struct swarmkv *db)
 					4, 1, CMD_KEY_OW, REPLY_EMPTY_ARRAY, AUTO_ROUTE,
 					ssinitbydim_command, db->mod_store);
 	swarmkv_command_table_register(db->mod_command_table, "SSINITBYCAPACITY", "key capacity precsion [TIME window-milliseconds]*/",
-					2, 1, CMD_KEY_OW, REPLY_EMPTY_ARRAY, AUTO_ROUTE,
+					3, 1, CMD_KEY_OW, REPLY_EMPTY_ARRAY, AUTO_ROUTE,
 					ssinitbycapacity_command, db->mod_store);
 	swarmkv_command_table_register(db->mod_command_table, "SSADD", "key entry item [item ...] ",
 					3, 1, CMD_KEY_RW, REPLY_INT_MINORS1, AUTO_ROUTE,

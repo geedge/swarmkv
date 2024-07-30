@@ -83,7 +83,7 @@ struct spread_sketch_list *spread_sketch_list(const struct spread_sketch *ss) {
     size_t n_result;
     size_t *key_lens;
     char **keys;
-    spread_sketch_list_keys(ss, &keys, &key_lens, &n_result);
+    spread_sketch_list_entries(ss, &keys, &key_lens, &n_result);
 
     struct spread_sketch_list *ret = (struct spread_sketch_list *)malloc(sizeof(struct spread_sketch_list));
     if (n_result == 0) {
