@@ -1,6 +1,6 @@
 ## Spread Sketch
 
-Spread Sketchis a probabilistic data structure that estimates the cardinalities of a huge number of entries. It's implemented based on [A High-Performance Invertible Sketch for Network-Wide Superspreader Detection](https://ieeexplore.ieee.org/abstract/document/9858870/) and innovated for the support of near-continuous time window based on the [Staggered HyperLogLog (STHLL)](https://www.sciencedirect.com/science/article/abs/pii/S0140366422002407) and level decay mechanism. The unique counter in sketch is implemented by STHLL instead of Multiple Resolution Bitmap suggested in the original paper.
+Spread Sketch is a probabilistic data structure that estimates the cardinalities of a huge number of entries. It's implemented based on [A High-Performance Invertible Sketch for Network-Wide Superspreader Detection](https://ieeexplore.ieee.org/abstract/document/9858870/) and innovated for the support of near-continuous time window based on the [Staggered HyperLogLog (STHLL)](https://www.sciencedirect.com/science/article/abs/pii/S0140366422002407) and level decay mechanism. The unique counter in sketch is implemented by STHLL instead of Multiple Resolution Bitmap suggested in the original paper.
 
 
 ### SSINITBYDIM
@@ -19,9 +19,7 @@ SSINITBYDIM key width depth precision [TIME window-milliseconds]
 
 The error of Spread Sketch is determined by combining the error of STHLL and the error of CM Sketch. The memory usage of Spread Sketch can be estimated by width * depth * (4 + m), and gets slightly larger as more entries are added.
 
-
 Return
-
 - Simple String Reply: OK if the HyperLogLog created successfully.
 - Empty Array if key already exists.
 
@@ -35,12 +33,11 @@ SSINITBYCAPACITY key capacity precision [TIME window-milliseconds]
 ```
 
  Initialize a Spread Sketch that can estimates cardinality of entries within a sliding time window with following arguments:
- - capacity -- The expected number of entries which will be inserted. It determines the width and depth of the sketch by `width = capacity` an `depth = lg(capacity)`. 
+ - capacity -- The expected number of entries which will be inserted. It determines the width and depth of the sketch by `width = capacity` an `depth = lg(capacity)`. Width less than 40 will be set to 40, and depth less than 3 will be set to 3.
  - precision -- The data of the HyperLogLog is stored in an array of m registers. m is 2^precision, e.g. precision=4, m=16. The precision should be between 4 to 16.
  - TIME -- Optional. Creates a time-limited Spread Sketch. 'window-milliseconds' specifies the duration of the time window in milliseconds. This mode allows estimating the cardinality of items within the range (now - window-milliseconds, now).
 
 Return
-
 - Simple String Reply: OK if the HyperLogLog created successfully.
 - Empty Array if key already exists.
 
@@ -56,7 +53,6 @@ SSADD key entry item [item ...]
 Add each `entry` and `item` to the Spread Sketch stored at `key`. For each the `entry`, the cardinality of `item` will be estimated by the Spread Sketch.
 
 Return
-
 - Integer reply an updated cardinality of the `entry` in the sketch.
 - Integer reply -1 if the key does not exist.
 
@@ -67,9 +63,12 @@ Syntax
 ```
 SSLIST key
 ```
+
 Returns all the entries in record (usually those with high cardinality in high probability) as well as the cardinality of each entry.
+
 Return
-- Array of key-cardinality pairs.
+- Array of key-cardinality pairs if the key exists.
+- Empty Array if the key does not exist.
 
 Examples
 ```
