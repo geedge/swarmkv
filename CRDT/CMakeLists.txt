@@ -3,7 +3,7 @@ add_definitions(-fPIC)
 
 add_library(CRDT lww_register.c pn_counter.c or_map.c or_set.c hll_common.c st_hyperloglog.c ap_bloom.c cm_sketch.c
 			g_array.c token_bucket_common.c oc_token_bucket.c fair_token_bucket.c bulk_token_bucket.c
-			crdt_utils.c)
+			crdt_utils.c spread_sketch.c)
 
 include_directories(${PROJECT_SOURCE_DIR}/deps/mpack
 					${PROJECT_SOURCE_DIR}/deps/uthash
@@ -18,6 +18,11 @@ add_executable(tb_CRDT_gtest tb_crdt_gtest.cpp
 				${PROJECT_SOURCE_DIR}/deps/mpack/mpack.c
 				${PROJECT_SOURCE_DIR}/deps/xxhash/xxhash.c)
 target_link_libraries(tb_CRDT_gtest CRDT gtest-static uuid)
+
+add_executable(spread_sketch_gtest spread_sketch_gtest.cpp 
+				${PROJECT_SOURCE_DIR}/deps/mpack/mpack.c
+				${PROJECT_SOURCE_DIR}/deps/xxhash/xxhash.c)
+target_link_libraries(spread_sketch_gtest CRDT gtest-static uuid)
 
 add_executable(probabilistic_CRDT_gtest probabilistic_crdt_gtest.cpp
 				${PROJECT_SOURCE_DIR}/deps/mpack/mpack.c

@@ -784,7 +784,7 @@ TEST_F(SwarmkvBasicTest, TypeBloomFilter)
 		EXPECT_EQ(reply->elements[i]->integer, 1);
 	}
 }
-TEST_F(SwarmkvBasicTest, TypeCMS)
+TEST_F(SwarmkvBasicTest, TypeCountMinSketch)
 {
 	struct swarmkv *db=SwarmkvBasicTest::db;
 	const char *key="cms-001";
@@ -974,6 +974,121 @@ TEST_F(SwarmkvBasicTest, HashTags)
 		slot_id=reply->integer;
 		swarmkv_reply_free(reply);
 	}
+}
+
+TEST_F(SwarmkvBasicTest, TypeSpreadSketch)
+{
+	struct swarmkv *db=SwarmkvBasicTest::db;
+	const char *key="ss-001";
+	struct swarmkv_reply *reply=NULL;
+	long long width=100, depth=2;
+    int precision=6;
+	reply=swarmkv_command(db, "SSINITBYDIM %s %lld %lld %d", key, width, depth,precision);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	swarmkv_reply_free(reply);
+
+    const char *entries[] = {"1.1.1.1", "2.2.2.2"};
+	const char *item_1[]={"item1_1", "item1_2","item1_3"};
+	const char *item_2[]={"item2_1"};
+    const int n_item[2] = {3, 1};
+	reply=swarmkv_command(db, "SSADD %s %s %s %s %s", key, entries[0], item_1[0], item_1[1], item_1[2]);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 3);
+    swarmkv_reply_free(reply);
+	reply=swarmkv_command(db, "SSADD %s %s %s", key, entries[1], item_2[0]);
+    ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+    EXPECT_EQ(reply->integer, 1);
+    swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db, "SSLIST %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
+	EXPECT_EQ(reply->n_element, sizeof(entries)/sizeof(entries[0]) * 2);
+	for(size_t i=0; i<reply->n_element / 2; i++)
+	{
+		EXPECT_EQ(reply->elements[i*2]->type, SWARMKV_REPLY_STRING);
+        EXPECT_EQ(reply->elements[i*2+1]->type, SWARMKV_REPLY_INTEGER);
+        EXPECT_STREQ(reply->elements[i*2]->str, entries[i]);
+        EXPECT_EQ(reply->elements[i*2+1]->integer, n_item[i]);
+	}
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db, "SSINFO %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
+	ASSERT_EQ(reply->n_element, 14);
+	ASSERT_EQ(reply->elements[1]->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->elements[1]->integer, depth);
+	ASSERT_EQ(reply->elements[3]->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->elements[3]->integer, width);
+    ASSERT_EQ(reply->elements[5]->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->elements[5]->integer, precision);
+    ASSERT_EQ(reply->elements[7]->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->elements[7]->integer, 0);
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db, "type %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STRING);
+	EXPECT_STREQ(reply->str, "spread-sketch");
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db, "DEL %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 1);
+	swarmkv_reply_free(reply);
+
+	// time-decay spread sketch
+    long long time_window_ms=1000;
+	reply=swarmkv_command(db, "SSINITBYCAPACITY %s %d %d TIME %lld", key, 10, 12, time_window_ms);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	swarmkv_reply_free(reply);
+
+	// add many entries, each 3 items
+    for (int i=0; i<1000; i++) {
+        reply=swarmkv_command(db, "SSADD %s old%d %d %d %d", key, i, 1, 2, 3);
+        swarmkv_reply_free(reply);
+    }
+
+    usleep(time_window_ms*1000 * 2);
+
+    // add other entries, they should replace the old entries.
+    for (int i=0; i<1000; i++) {
+        reply=swarmkv_command(db, "SSADD %s new%d %d %d %d", key, i, 1, 2, 3);
+        swarmkv_reply_free(reply);
+    }
+	reply=swarmkv_command(db, "SSLIST %s", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_ARRAY); 
+    int error_cnt = 0;
+	for (size_t i=0; i<reply->n_element / 2; i++) {
+        EXPECT_EQ(reply->elements[2 * i]->type, SWARMKV_REPLY_STRING);
+        EXPECT_TRUE(strncmp(reply->elements[2 * i]->str, "new", 3) == 0);
+        EXPECT_EQ(reply->elements[2 * i + 1]->type, SWARMKV_REPLY_INTEGER);
+        if (reply->elements[2 * i + 1]->integer != 3) {
+            error_cnt++;
+        }
+    }
+    EXPECT_LE(error_cnt, 1); // allow 1 of element estimations to be wrong because of probabilistic sketch algorithm error.
+	swarmkv_reply_free(reply);
+
+    //API test
+    key="ss-api";
+    reply=swarmkv_command(db, "SSINITBYDIM %s %lld %lld %d TIME %lld", key, width, depth,precision, time_window_ms);
+    ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+    swarmkv_reply_free(reply);
+    size_t item_2_len[] = {strlen(item_2[0])};
+
+    swarmkv_ssadd(db, key, strlen(key), entries[0], strlen(entries[0]), item_2, item_2_len, 1, copy_reply_callback, &reply);
+    swarmkv_caller_loop(db, SWARMKV_LOOP_ONCE, NULL);
+    ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+    EXPECT_EQ(reply->integer, 1);
+    swarmkv_reply_free(reply);
+
+    size_t entries_len[] = {strlen(entries[0]), strlen(entries[1])};
+    swarmkv_ssmquery(db, key, strlen(key), entries, entries_len, 2, copy_reply_callback, &reply);
+    swarmkv_caller_loop(db, SWARMKV_LOOP_ONCE, NULL);
+    ASSERT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
+    ASSERT_EQ(reply->n_element, 2);
+    EXPECT_EQ(reply->elements[0]->integer, 1);
+    EXPECT_EQ(reply->elements[1]->integer, 0);
+    swarmkv_reply_free(reply);
 }
 
 class SwarmkvTwoNodes : public testing::Test 
@@ -1938,7 +2053,7 @@ TEST_F(SwarmkvTwoNodes, TypeBloomFilter)
 	EXPECT_EQ(reply->integer, 1);
 	swarmkv_reply_free(reply);
 }
-TEST_F(SwarmkvTwoNodes, TypeCMS)
+TEST_F(SwarmkvTwoNodes, TypeCountMinSketch)
 {
 	struct swarmkv *db[2];
 	db[0]=SwarmkvTwoNodes::db1;
@@ -2004,7 +2119,6 @@ TEST_F(SwarmkvTwoNodes, TypeHyperLogLog)
 	const char *key="hll-001";
 	const char *prefix[4]={"Philippe", "Flajolet", "Invents", "Hyperloglog"};
 
-
 	char precision=12;
 	reply=swarmkv_command(db[0], "PFINIT %s %d", key, precision);
 	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
@@ -2022,6 +2136,42 @@ TEST_F(SwarmkvTwoNodes, TypeHyperLogLog)
 			reply=swarmkv_command(db[(i+1)%2], "PFCOUNT %s", key);
 			ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
 			EXPECT_NEAR(reply->integer, i+1, i/20);
+			swarmkv_reply_free(reply);
+		}
+	}
+}
+TEST_F(SwarmkvTwoNodes, TypeSpreadSketch)
+{
+	struct swarmkv *db[2];
+	db[0]=SwarmkvTwoNodes::db1;
+	db[1]=SwarmkvTwoNodes::db2;
+	struct swarmkv_reply *reply=NULL;
+	const char *key="ss-001";
+    
+	const char *entries[]={"1.1.1.1", "deviceA", "1","2","3"};
+    int n_entry = sizeof(entries)/sizeof(entries[0]);
+    int n_loop = 10000;
+
+	reply=swarmkv_command(db[0], "SSINITBYCAPACITY %s 5", key);
+	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	EXPECT_STREQ(reply->str, "OK");
+	swarmkv_reply_free(reply);
+	srand(171);
+	for(int i=0; i<n_loop; i++)
+	{
+		reply=swarmkv_command(db[i%2], "SSADD %s %s item%d", key, entries[i%n_entry], i);
+		swarmkv_reply_free(reply);
+		if(i!=0&&i%1000==0) {
+			wait_for_sync();
+			reply=swarmkv_command(db[(i+1)%2], "SSLIST %s", key);
+			ASSERT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
+            EXPECT_EQ(reply->n_element, n_entry*2);
+            for (int j = 0; j < n_entry; j++) {
+                int add_on_entry = i/n_entry;
+                EXPECT_NEAR(reply->elements[j*2+1]->integer, add_on_entry, add_on_entry/10 + i/20); // 1/10: apprroximately the hll_error. 1/20: the error caused by CM sketch.
+                // printf("i : %d, entry: %s, cardinality: %lld\n", i, reply->elements[j*2]->str, reply->elements[j*2+1]->integer);
+            }
+            
 			swarmkv_reply_free(reply);
 		}
 	}
@@ -2390,6 +2540,8 @@ int main(int argc, char ** argv)
 	int ret=0;
 	g_current_thread_id=syscall(SYS_gettid);
 	::testing::InitGoogleTest(&argc, argv);
+    // ::testing::GTEST_FLAG(filter) = "-*.TypeSS";
+    // ::testing::GTEST_FLAG(filter) = "SwarmkvTwoNodes.TypeSS";
 	ret=RUN_ALL_TESTS();
 	return ret;
 }

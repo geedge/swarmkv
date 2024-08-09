@@ -298,7 +298,7 @@ void hll_advance_reset_index(long long *reset_idx, long long reset_reg_count, un
 long long hll_get_reset_register_count(unsigned char precision, long long time_window_ms, struct timeval now, struct timeval *reset_time)
 {
     long long reset_time_slot_us=RESET_TIME_SLOT_US(time_window_ms, precision);
-    long long delta_us=timeval_delta_us(*reset_time, now);
+    long long delta_us=timeval_delta_us((*reset_time), now);
     if(delta_us < reset_time_slot_us)
         return 0;
     
