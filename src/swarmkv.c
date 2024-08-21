@@ -159,7 +159,10 @@ static void exec_at_thread(struct swarmkv *db, const struct swarmkv_cmd *cmd, in
 		swarmkv_rpc_complete(db->rpc_mgr, cur_tid, sequence, reply);
 		swarmkv_reply_free(reply);
 	}
-	swarmkv_rpc_set_timeout(rpc, db->opts->cluster_timeout_us + INTER_THREAD_RPC_TIMEOUT_AHEAD);
+    else
+    {
+        swarmkv_rpc_set_timeout(rpc, db->opts->cluster_timeout_us + INTER_THREAD_RPC_TIMEOUT_AHEAD);
+    }
 }
 static int spec_gettid(const struct swarmkv_cmd_spec *spec, const struct swarmkv_cmd *cmd, int nr_worker_threads)
 {
@@ -400,7 +403,7 @@ void exec_cmd(struct swarmkv *db, const struct swarmkv_cmd *cmd, struct future *
 	struct swarmkv_reply *reply = NULL;
 	struct promise *p = NULL;
 	int cur_tid = swarmkv_gettid(db);
-	
+
 	spec = swarmkv_command_table_get_spec_by_argv(db->mod_command_table, cmd->argc, cmd->argv);
 	if (!spec)
 	{
