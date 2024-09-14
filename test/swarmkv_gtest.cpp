@@ -2152,7 +2152,7 @@ TEST_F(SwarmkvTwoNodes, TypeSpreadSketch)
     int n_entry = sizeof(entries)/sizeof(entries[0]);
     int n_loop = 10000;
 
-	reply=swarmkv_command(db[0], "SSINITBYCAPACITY %s 5", key);
+	reply=swarmkv_command(db[0], "SSINITBYCAPACITY %s 5 6", key);
 	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
 	EXPECT_STREQ(reply->str, "OK");
 	swarmkv_reply_free(reply);
@@ -2540,8 +2540,6 @@ int main(int argc, char ** argv)
 	int ret=0;
 	g_current_thread_id=syscall(SYS_gettid);
 	::testing::InitGoogleTest(&argc, argv);
-    // ::testing::GTEST_FLAG(filter) = "-*.TypeSS";
-    // ::testing::GTEST_FLAG(filter) = "SwarmkvTwoNodes.TypeSS";
 	ret=RUN_ALL_TESTS();
 	return ret;
 }
