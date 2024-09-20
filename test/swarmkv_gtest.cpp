@@ -1102,7 +1102,7 @@ protected:
 		const char *log_path="./swarmkv-2-nodes.log";
 		
 		const char *cluster_name="swarmkv-2-nodes";
-
+		worker_thread_number = 1;
 		char ip_list[1024]={0};
 		snprintf(ip_list, sizeof(ip_list), "127.0.0.1:%d 127.0.0.1:%d", TWO_NODES_TEST_CLUSTER_PORT, TWO_NODES_TEST_CLUSTER_PORT+1);
 		swarmkv_cli_create_cluster(cluster_name, ip_list);
@@ -1116,9 +1116,9 @@ protected:
 			swarmkv_options_set_cluster_port(opts[i], TWO_NODES_TEST_CLUSTER_PORT+i);
 			swarmkv_options_set_health_check_port(opts[i], TWO_NODES_TEST_HEALTH_PORT+i);
 			swarmkv_options_set_logger(opts[i], logger);
-			swarmkv_options_set_sync_interval_us(opts[i], 10000);
-			swarmkv_options_set_cluster_timeout_us(opts[i], 500*1000);
-			swarmkv_options_set_worker_thread_number(opts[i], 2);
+			swarmkv_options_set_sync_interval_us(opts[i], 10*1000);
+			swarmkv_options_set_cluster_timeout_us(opts[i], 200*1000);
+			swarmkv_options_set_worker_thread_number(opts[i], worker_thread_number);
 			swarmkv_options_set_caller_thread_number(opts[i], 1);
 			swarmkv_options_set_batch_sync_enabled(opts[i], 1);
 			swarmkv_options_set_network_compression_enabled(opts[i], i%2);
@@ -1143,10 +1143,12 @@ protected:
  	// Some expensive resource shared by all tests.
  	static struct log_handle *logger;
 	static struct swarmkv *db1, *db2;
+	static int worker_thread_number;
 };
 struct log_handle *SwarmkvTwoNodes::logger;
 struct swarmkv *SwarmkvTwoNodes::db1;
 struct swarmkv *SwarmkvTwoNodes::db2;
+int SwarmkvTwoNodes::worker_thread_number;
 TEST_F(SwarmkvTwoNodes, KeyspaceKeys)
 {
 	struct swarmkv *db[2];
@@ -2008,17 +2010,19 @@ TEST_F(SwarmkvTwoNodes, TypeBloomFilter)
 	struct swarmkv_reply *reply=NULL;
 	const char *key="bloom-filter-001";
 	const char *item[4]={"hello", "world", "bloom", "filter"};
-	reply=swarmkv_command(db[0], "BFINIT %s 0.0001 1000000 time 3000000 13", key);
+	reply=swarmkv_command(db[0], "BFINIT %s 0.0001 100000 time 3000000 13", key);
 	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
 	EXPECT_STREQ(reply->str, "OK");
 	swarmkv_reply_free(reply);
 
-	for(int i=0; i<3; i++)
+	for(int i=0; i<4; i++)
 	{
 		reply=swarmkv_command(db[i%2], "BFADD %s %s", key, item[i]);
+		if(reply->type == SWARMKV_REPLY_ERROR)	swarmkv_reply_print(reply, stdout);
 		ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
 		swarmkv_reply_free(reply);
 	}
+	wait_for_sync();
 	reply=swarmkv_command(db[1], "BFMEXISTS %s %s %s %s", key, item[0], item[1], item[2]);
 	ASSERT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
 	ASSERT_EQ(reply->n_element, 3);
@@ -2046,7 +2050,7 @@ TEST_F(SwarmkvTwoNodes, TypeBloomFilter)
 	ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
 	swarmkv_reply_free(reply);
 
-	usleep(100*1000);
+	wait_for_sync();
 
 	reply=swarmkv_command(db[1], "BFEXISTS %s %s", key, item[3]);
 	ASSERT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
@@ -2185,7 +2189,7 @@ TEST_F(SwarmkvTwoNodes, Info)
 	for(size_t i=0; i<2; i++)
 	{
 		reply=swarmkv_command(db[i%2], "INFO");
-		ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+		EXPECT_EQ(reply->type, SWARMKV_REPLY_STATUS);
 		swarmkv_reply_free(reply);
 	}
 }
@@ -2198,7 +2202,7 @@ TEST_F(SwarmkvTwoNodes, Monitor)
 	for(size_t i=0; i<2; i++)
 	{
 		reply=swarmkv_command(db[i%2], "MONREG %s g?t", swarmkv_self_address(db[i%2]));
-		ASSERT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+		EXPECT_EQ(reply->type, SWARMKV_REPLY_STATUS);
 		swarmkv_reply_free(reply);
 	}
 }
@@ -2301,7 +2305,111 @@ TEST_F(SwarmkvTwoNodes, Latency)
 	reply=swarmkv_command(db1, "latency peer");
 	EXPECT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
 	swarmkv_reply_free(reply);
-	sleep(3500);
+}
+static int parse_swarmkv_info(const char *text, const char *key) {
+    // Duplicate the input text since strtok_r modifies the string
+    char *copy = strdup(text);
+    if (copy == NULL) {
+        perror("Failed to allocate memory");
+        return -1;
+    }
+
+    char *line;
+    char *rest = copy;
+    int value = -1;
+    size_t key_len = strlen(key);
+
+    // Construct the search prefix: key followed by ':'
+    char *prefix = (char*) malloc(key_len + 2); // +2 for ':' and null terminator
+    if (prefix == NULL) {
+        perror("Failed to allocate memory");
+        free(copy);
+        return -1;
+    }
+    strcpy(prefix, key);
+    strcat(prefix, ":");
+
+    // Tokenize the string by newline characters
+    while ((line = strtok_r(rest, "\n", &rest))) {
+        // Check if the line starts with the key prefix
+        if (strncmp(line, prefix, strlen(prefix)) == 0) {
+            // Extract the integer value after the key and colon
+            if (sscanf(line + strlen(prefix), "%d", &value) == 1) {
+                break; // Value found; exit the loop
+            }
+        }
+    }
+
+    // Clean up allocated memory
+    free(prefix);
+    free(copy);
+
+    return value;
+}
+TEST_F(SwarmkvTwoNodes, SyncRobustness)
+{
+	struct swarmkv *db1=SwarmkvTwoNodes::db1, *db2=SwarmkvTwoNodes::db2;
+	struct swarmkv_reply *reply=NULL;
+	const char *key="crdt-robustness";
+	reply=swarmkv_command(db1, "INCRBY %s 1", key);
+	EXPECT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 1);
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db2, "INCRBY %s 1", key);
+	EXPECT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 2);
+	swarmkv_reply_free(reply);
+
+	wait_for_sync();
+	int sync_err_before = 0, sync_err_after = 0;
+	reply = swarmkv_command(db1, "INFO Store");
+	EXPECT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	sync_err_before = parse_swarmkv_info(reply->str, "sync_err");
+	swarmkv_reply_free(reply);
+
+	reply = swarmkv_command(db2, "KEYSLOT %s", key);
+	EXPECT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	int keyslot = reply->integer;
+	swarmkv_reply_free(reply);
+	
+	//This is a hack of swarmkv_keyspace_slot2tid().
+	int tid = keyslot % SwarmkvTwoNodes::worker_thread_number;
+	reply=swarmkv_command(db2, "DEBUG %d sleep 1", tid);
+	EXPECT_EQ(reply->type, SWARMKV_REPLY_ERROR);
+	swarmkv_reply_print(reply, stdout);
+	swarmkv_reply_free(reply);
+
+	//db1 -> db2 sync failed
+	reply=swarmkv_command(db1, "INCRBY %s 1", key);
+	EXPECT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 3);
+	swarmkv_reply_free(reply);
+
+	sleep(1);
+
+	reply = swarmkv_command(db1, "INFO Store");
+	EXPECT_EQ(reply->type, SWARMKV_REPLY_STATUS);
+	sync_err_after = parse_swarmkv_info(reply->str, "sync_err");
+	EXPECT_EQ(sync_err_after - sync_err_before, 1);
+	//swarmkv_reply_print(reply, stdout);
+	swarmkv_reply_free(reply);
+
+	
+
+	//db1 -> db2 sync should be resumed after this operation
+	reply=swarmkv_command(db1, "INCRBY %s 1", key);
+	EXPECT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 4);
+	swarmkv_reply_free(reply);
+
+	wait_for_sync();
+	
+	reply=swarmkv_command(db2, "GET %s", key);
+	EXPECT_EQ(reply->type, SWARMKV_REPLY_STRING);
+	EXPECT_STREQ(reply->str, "4");
+	swarmkv_reply_free(reply);
+
 }
 TEST_F(SwarmkvTwoNodes, Wait)
 {

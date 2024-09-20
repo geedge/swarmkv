@@ -119,7 +119,7 @@ int swarmkv_gettid(const struct swarmkv *db)
 	assert(0);
 	return -1;
 }
-#define INTER_THREAD_RPC_TIMEOUT_AHEAD 1000
+#define INTER_THREAD_RPC_TIMEOUT_AHEAD 10000
 #define UNKNOWN_THREAD_ID -1
 static void exec_at_peer(struct swarmkv *db, const struct swarmkv_cmd *cmd, const node_t *peer, struct future *future_of_caller)
 {
@@ -831,25 +831,25 @@ enum cmd_exec_result ping_command(struct swarmkv_module *mod_db, const struct sw
 enum cmd_exec_result __attribute__((optimize("O0"))) debug_command(struct swarmkv_module *mod_db, const struct swarmkv_cmd *cmd, struct swarmkv_reply **reply)
 {
 
-	if (cmd->argc == 2 && !strcasecmp(cmd->argv[1], "help"))
+	if (cmd->argc == 3 && !strcasecmp(cmd->argv[1], "help"))
 	{
 		const char *help = {
-			"DEBUG <subcommand> [<arg> [value] [opt] ...]. Subcommands are:\n"
+			"DEBUG tid <subcommand> [<arg> [value] [opt] ...]. Subcommands are:\n"
 			"SLEEP <seconds>\n"
 			"    Stop the server for <seconds>. Decimals allowed.\n"
 			"ASSERT\n"
 			"    Crash by assertion failed.\n"};
 		*reply = swarmkv_reply_new_status(help);
 	}
-	else if (!strcasecmp(cmd->argv[1], "sleep") && cmd->argc > 2)
+	else if (!strcasecmp(cmd->argv[2], "sleep") && cmd->argc > 3)
 	{
-		if (cmd->argc < 3)
+		if (cmd->argc < 4)
 		{
 			*reply = swarmkv_reply_new_error(error_need_additional_arg, cmd->argv[1]);
 		}
 		else
 		{
-			double dtime = strtod(cmd->argv[2], NULL);
+			double dtime = strtod(cmd->argv[3], NULL);
 			long long utime = dtime * 1000000;
 			struct timespec tv;
 
@@ -859,13 +859,13 @@ enum cmd_exec_result __attribute__((optimize("O0"))) debug_command(struct swarmk
 			*reply = swarmkv_reply_new_status("OK");
 		}
 	}
-	else if (!strcasecmp(cmd->argv[1], "assert"))
+	else if (!strcasecmp(cmd->argv[2], "assert"))
 	{
 		assert(0);
 	}
 	else
 	{
-		*reply = swarmkv_reply_new_error(erorr_subcommand_syntax, cmd->argv[1], cmd->argv[0]);
+		*reply = swarmkv_reply_new_error(erorr_subcommand_syntax, cmd->argv[2], cmd->argv[0]);
 	}
 	return FINISHED;
 }
@@ -1208,8 +1208,8 @@ void command_spec_init(struct swarmkv *db)
 	swarmkv_command_table_register(db->mod_command_table, "INFO", "[section]",
 								   0, KEY_OFFSET_NONE, CMD_KEY_NA, REPLY_NA, AUTO_ROUTE,
 								   info_command, &db->module);
-	swarmkv_command_table_register(db->mod_command_table, "DEBUG", "<subcommand>",
-								   1, KEY_OFFSET_NONE, CMD_KEY_NA, REPLY_NA, AUTO_ROUTE,
+	swarmkv_command_table_register(db->mod_command_table, "DEBUG", "tid <subcommand>",
+								   2, KEY_OFFSET_TID, CMD_KEY_NA, REPLY_NA, AUTO_ROUTE,
 								   debug_command, &db->module);
 	swarmkv_command_table_register(db->mod_command_table, "PING", "IP:port",
 								   1, KEY_OFFSET_NONE, CMD_KEY_NA, REPLY_NA, AUTO_ROUTE,
