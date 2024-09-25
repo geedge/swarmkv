@@ -1122,6 +1122,7 @@ protected:
 			swarmkv_options_set_caller_thread_number(opts[i], 1);
 			swarmkv_options_set_batch_sync_enabled(opts[i], 1);
 			swarmkv_options_set_network_compression_enabled(opts[i], i%2);
+			swarmkv_options_set_sync_max_retry_time_ms(opts[i], 2000);
 			tmp_db[i]=swarmkv_open(opts[i], cluster_name, &err);
 			if(err)
 			{
@@ -2346,11 +2347,11 @@ static int parse_swarmkv_info(const char *text, const char *key) {
 
     return value;
 }
-TEST_F(SwarmkvTwoNodes, SyncRobustness)
+TEST_F(SwarmkvTwoNodes, SyncFailedResume)
 {
 	struct swarmkv *db1=SwarmkvTwoNodes::db1, *db2=SwarmkvTwoNodes::db2;
 	struct swarmkv_reply *reply=NULL;
-	const char *key="crdt-robustness";
+	const char *key="crdt-sync-resume";
 	reply=swarmkv_command(db1, "INCRBY %s 1", key);
 	EXPECT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
 	EXPECT_EQ(reply->integer, 1);
@@ -2372,7 +2373,7 @@ TEST_F(SwarmkvTwoNodes, SyncRobustness)
 	EXPECT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
 	int keyslot = reply->integer;
 	swarmkv_reply_free(reply);
-	
+
 	//This is a hack of swarmkv_keyspace_slot2tid().
 	int tid = keyslot % SwarmkvTwoNodes::worker_thread_number;
 	reply=swarmkv_command(db2, "DEBUG %d sleep 1", tid);
@@ -2410,6 +2411,56 @@ TEST_F(SwarmkvTwoNodes, SyncRobustness)
 	EXPECT_STREQ(reply->str, "4");
 	swarmkv_reply_free(reply);
 
+}
+TEST_F(SwarmkvTwoNodes, SyncRemoveFailedPeer)
+{
+	struct swarmkv *db1=SwarmkvTwoNodes::db1, *db2=SwarmkvTwoNodes::db2;
+	struct swarmkv_reply *reply=NULL;
+	const char *key="crdt-sync-remove";
+	reply=swarmkv_command(db1, "INCRBY %s 1", key);
+	EXPECT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 1);
+	swarmkv_reply_free(reply);
+
+	reply=swarmkv_command(db2, "INCRBY %s 1", key);
+	EXPECT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	EXPECT_EQ(reply->integer, 2);
+	swarmkv_reply_free(reply);
+
+	wait_for_sync();
+
+	reply = swarmkv_command(db1, "CRDT RLIST %s", key);
+	EXPECT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
+	EXPECT_EQ(reply->n_element, 1);
+	swarmkv_reply_free(reply);
+
+	reply = swarmkv_command(db2, "KEYSLOT %s", key);
+	EXPECT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+	int keyslot = reply->integer;
+	swarmkv_reply_free(reply);
+
+	//Sleep longger than the peer_tracking_interval_ms=2000ms
+	int tid = keyslot % SwarmkvTwoNodes::worker_thread_number;
+	reply=swarmkv_command(db2, "DEBUG %d sleep 3", tid);
+	EXPECT_EQ(reply->type, SWARMKV_REPLY_ERROR);
+	swarmkv_reply_free(reply);
+
+	//db1 -> db2 sync failed
+	for(int i=0; i<25; i++)
+	{
+		reply=swarmkv_command(db1, "INCRBY %s 1", key);
+		EXPECT_EQ(reply->type, SWARMKV_REPLY_INTEGER);
+		EXPECT_EQ(reply->integer, 3+i);
+		swarmkv_reply_free(reply);
+		usleep(100*1000);
+	}
+
+	reply = swarmkv_command(db1, "CRDT RLIST %s", key);
+	EXPECT_EQ(reply->type, SWARMKV_REPLY_ARRAY);
+	EXPECT_EQ(reply->n_element, 0);
+	swarmkv_reply_print(reply, stdout);
+	swarmkv_reply_free(reply);
+	
 }
 TEST_F(SwarmkvTwoNodes, Wait)
 {

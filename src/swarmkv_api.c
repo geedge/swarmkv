@@ -2,7 +2,6 @@
 #include "swarmkv_common.h"
 
 #include "swarmkv_utils.h"
-
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -16,7 +15,6 @@ struct swarmkv_readoptions
 struct swarmkv_writeoptions
 {
 };
-
 struct swarmkv_options *swarmkv_options_new(void)
 {
 	struct swarmkv_options *opts = ALLOC(struct swarmkv_options, 1);
@@ -26,6 +24,8 @@ struct swarmkv_options *swarmkv_options_new(void)
 	opts->loglevel = 0;
 	opts->cluster_timeout_us = 500 * 1000; // Default 500ms
 	opts->sync_interval_us = 10 * 1000;	   // Default 10ms
+	opts->sync_retry_time_ms = 300*1000;
+	opts->sync_retry_interval_ms = 100;
 	strcpy(opts->bind_address, "0.0.0.0");
 	strcpy(opts->cluster_announce_ip, "127.0.0.1");
 	strcpy(opts->consul_agent_host, "127.0.0.1");
@@ -143,6 +143,16 @@ int swarmkv_options_set_worker_thread_number(struct swarmkv_options *opts, int n
 int swarmkv_options_set_batch_sync_enabled(struct swarmkv_options *opts, int value)
 {
 	opts->batch_sync_enabled = 1;
+	return 0;
+}
+int swarmkv_options_set_sync_max_retry_time_ms(struct swarmkv_options *opts, int ms)
+{
+	opts->sync_retry_time_ms = ms;
+	return 0;
+}
+int swarmkv_options_set_sync_retry_interval_ms(struct swarmkv_options *opts, int ms)
+{
+	opts->sync_retry_interval_ms = ms;
 	return 0;
 }
 int swarmkv_options_set_network_compression_enabled(struct swarmkv_options *opts, int value)

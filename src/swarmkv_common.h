@@ -66,6 +66,8 @@ struct swarmkv_options
 	unsigned int consul_port;
     unsigned int cluster_timeout_us;
 	unsigned int sync_interval_us;
+	unsigned int sync_retry_time_ms;
+	unsigned int sync_retry_interval_ms;
 	struct log_handle *logger;
 	int loglevel;
     const char *logpath;

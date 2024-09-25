@@ -69,6 +69,9 @@ int swarmkv_options_set_run_for_leader_enabled(struct swarmkv_options *opts, int
 //Default 0: Disabled. 
 //Enabling batch synchronization requires all cluster nodes using same worker thread number.
 int swarmkv_options_set_batch_sync_enabled(struct swarmkv_options *opts, int value);
+//Default 300 seconds, after that the failed peer will be removed from replica.
+int swarmkv_options_set_sync_max_retry_time_ms(struct swarmkv_options *opts, int ms);
+int swarmkv_options_set_sync_retry_interval_ms(struct swarmkv_options *opts, int ms);
 int swarmkv_options_set_caller_thread_number(struct swarmkv_options *opts, int nr_caller_threads);
 int swarmkv_options_set_worker_thread_number(struct swarmkv_options *opts, int nr_worker_threads);
 int swarmkv_options_get_worker_thread_number(const struct swarmkv_options *opts);
