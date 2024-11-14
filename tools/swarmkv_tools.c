@@ -15,6 +15,8 @@
 #include "swarmkv/swarmkv.h"
 #include "swarmkv_tools.h"
 
+struct config g_config;
+
 static int consul_get_cluster_leader_block(const char *db_name, unsigned int consul_agent_port, node_t *leader)
 {
 	sds resp_body=NULL;

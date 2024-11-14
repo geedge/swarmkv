@@ -22,7 +22,8 @@ struct config
 	struct swarmkv *db;
 	struct cluster_manager_command cluster_mgr_cmd;
 };
-struct config g_config;
+
+extern struct config g_config;
 
 struct swarmkv_reply *cluster_sanity_command(struct swarmkv *db, char *argv[], size_t argc);
 struct swarmkv_reply *cluster_keys_command(struct swarmkv *db, char *argv[], size_t argc);
