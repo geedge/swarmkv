@@ -4,14 +4,12 @@ variables:
   INSTALL_PREFIX: "/opt/MESA/"
   INSTALL_DEPENDENCY_LIBRARY: zlib-devel libuuid-devel openssl-devel framework_env 
   TESTING_VERSION_BUILD: 0
-  BUILD_IMAGE_CENTOS8: "git.mesalab.cn:7443/mesa_platform/build-env:rockylinux"
+  BUILD_IMAGE_X86_64_ROCKY8: "git.mesalab.cn:7443/mesa_platform/build-env:rockylinux"
+  BUILD_IMAGE_AARCH64_ROCKY9: "git.mesalab.cn:7443/mesa_platform/build-env:rocky9-aarch64"  
 
 stages:
 - build
 
-###############################################################################
-# The script is set to el7 or el8
-###############################################################################
 .build_before_script:
   before_script:
     - mkdir -p $BUILD_PADDING_PREFIX/$CI_PROJECT_NAMESPACE/
@@ -20,22 +18,23 @@ stages:
     - chmod +x ./ci/travis.sh
     - yum makecache
 
+###############################################################################
+# The script is set to el8
+# compile use image: x86_64_rocky8
+# runner use tag: tsg-os-builder-el8
+###############################################################################
 
-.build_by_travis_for_centos8:
+.build_by_travis_for_x86_64_rocky8:
   stage: build
-  image: $BUILD_IMAGE_CENTOS8
+  image: $BUILD_IMAGE_X86_64_ROCKY8
   extends: .build_before_script
   script:
     - ./ci/travis.sh
   tags:
-    - share
+    - tsg-os-builder-el8
 
-
-###############################################################################
-# compile use image: centos8
-###############################################################################
-branch_build_debug_for_centos8:
-  extends: .build_by_travis_for_centos8
+branch_build_debug_for_x86_64_rocky8:
+  extends: .build_by_travis_for_x86_64_rocky8
   variables:
     BUILD_TYPE: Debug
   except:
@@ -43,61 +42,90 @@ branch_build_debug_for_centos8:
     - /^master.*$/i
     - tags
 
-branch_build_release_for_centos8:
+branch_build_release_for_x86_64_rocky8:
   variables:
     BUILD_TYPE: RelWithDebInfo
-  extends: .build_by_travis_for_centos8
+  extends: .build_by_travis_for_x86_64_rocky8
   except:
     - /^develop-.*$/i
     - /^master.*$/i
     - tags
 
-develop_build_debug_for_centos8:
-  extends: .build_by_travis_for_centos8
+
+release_build_debug_for_x86_64_rocky8:
   variables:
-    TESTING_VERSION_BUILD: 1
     UPLOAD: 0
     PACKAGE: 0
     BUILD_TYPE: Debug
     SYMBOL_TARGET: libswarmkv
-    PULP3_REPO_NAME: framework-testing-x86_64.el8
-    PULP3_DIST_NAME: framework-testing-x86_64.el8
+    PULP3_REPO_NAME: framework-stable-x86_64.el8
+    PULP3_DIST_NAME: framework-stable-x86_64.el8
+  extends: .build_by_travis_for_x86_64_rocky8
   artifacts:
     name: "libswarmkv-$CI_COMMIT_REF_NAME-debug"
     paths:
       - build/*.rpm
   only:
-    - /^develop-.*$/i
-    - /^master.*$/i
+    - tags
 
-develop_build_release_for_centos8:
-  extends: .build_by_travis_for_centos8
+release_build_release_for_x86_64_rocky8:
   variables:
-    TESTING_VERSION_BUILD: 1
+    BUILD_TYPE: RelWithDebInfo
     UPLOAD: 1
     PACKAGE: 1
-    BUILD_TYPE: RelWithDebInfo
-    ENABLE_DEVEL_SWITCH: "ON"
     SYMBOL_TARGET: libswarmkv
-    PULP3_REPO_NAME: framework-testing-x86_64.el8
-    PULP3_DIST_NAME: framework-testing-x86_64.el8
+    PULP3_REPO_NAME: framework-stable-x86_64.el8
+    PULP3_DIST_NAME: framework-stable-x86_64.el8
+  extends: .build_by_travis_for_x86_64_rocky8
   artifacts:
     name: "libswarmkv-$CI_COMMIT_REF_NAME-release"
     paths:
       - build/*.rpm
   only:
+    - tags
+
+###############################################################################
+# The script is set to el9
+# compile use image: aarch64 rocky9
+# runner use tag: tsg-os-builder-aarch64 
+###############################################################################
+
+.build_by_travis_for_aarch64_rocky9:
+  stage: build
+  image: $BUILD_IMAGE_AARCH64_ROCKY9
+  extends: .build_before_script
+  script:
+    - ./ci/travis.sh
+  tags:
+    - tsg-os-builder-aarch64 
+
+branch_build_debug_for_aarch64_rocky9:
+  extends: .build_by_travis_for_aarch64_rocky9
+  variables:
+    BUILD_TYPE: Debug
+  except:
     - /^develop-.*$/i
     - /^master.*$/i
+    - tags
 
-release_build_debug_for_centos8:
+branch_build_release_for_aarch64_rocky9:
+  variables:
+    BUILD_TYPE: RelWithDebInfo
+  extends: .build_by_travis_for_aarch64_rocky9
+  except:
+    - /^develop-.*$/i
+    - /^master.*$/i
+    - tags
+
+release_build_debug_for_aarch64_rocky9:
   variables:
     UPLOAD: 0
     PACKAGE: 0
     BUILD_TYPE: Debug
     SYMBOL_TARGET: libswarmkv
-    PULP3_REPO_NAME: framework-stable-x86_64.el8
-    PULP3_DIST_NAME: framework-stable-x86_64.el8
-  extends: .build_by_travis_for_centos8
+    PULP3_REPO_NAME: framework-stable-aarch64.el9
+    PULP3_DIST_NAME: framework-stable-aarch64.el9
+  extends: .build_by_travis_for_aarch64_rocky9
   artifacts:
     name: "libswarmkv-$CI_COMMIT_REF_NAME-debug"
     paths:
@@ -105,15 +133,15 @@ release_build_debug_for_centos8:
   only:
     - tags
 
-release_build_release_for_centos8:
+release_build_release_for_aarch64_rocky9:
   variables:
     BUILD_TYPE: RelWithDebInfo
     UPLOAD: 1
     PACKAGE: 1
     SYMBOL_TARGET: libswarmkv
-    PULP3_REPO_NAME: framework-stable-x86_64.el8
-    PULP3_DIST_NAME: framework-stable-x86_64.el8
-  extends: .build_by_travis_for_centos8
+    PULP3_REPO_NAME: framework-stable-aarch64.el9
+    PULP3_DIST_NAME: framework-stable-aarch64.el9
+  extends: .build_by_travis_for_aarch64_rocky9
   artifacts:
     name: "libswarmkv-$CI_COMMIT_REF_NAME-release"
     paths:
